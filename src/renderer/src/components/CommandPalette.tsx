@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { useRecents } from '../hooks/useRecents'
-import { fuzzySearch, type SearchResult } from '../lib/fuzzy-search'
+import { fuzzySearch } from '../lib/fuzzy-search'
 import { basename } from '../lib/path-utils'
 
 function flattenTree(nodes: any[], result: { path: string; name: string }[] = []) {
