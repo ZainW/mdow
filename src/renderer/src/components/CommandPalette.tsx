@@ -61,7 +61,7 @@ export function CommandPalette() {
   return (
     <Dialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
       <DialogContent
-        className="top-1/3 translate-y-0 overflow-hidden rounded-xl p-0"
+        className="top-[20%] translate-y-0 overflow-hidden rounded-xl p-0 sm:max-w-lg"
         showCloseButton={false}
       >
         <DialogHeader className="sr-only">
