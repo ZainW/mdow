@@ -81,7 +81,7 @@ function App(): React.JSX.Element {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
       const mdFile = files.find(
-        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx')
+        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
       if (mdFile) {
         const content = await window.api.readFile(mdFile.path)
@@ -89,7 +89,7 @@ function App(): React.JSX.Element {
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   return (
@@ -100,11 +100,7 @@ function App(): React.JSX.Element {
         onDragOver={(e) => e.preventDefault()}
       >
         <Sidebar />
-        {activeFile ? (
-          <MarkdownView content={activeFile.content} />
-        ) : (
-          <WelcomeView />
-        )}
+        {activeFile ? <MarkdownView content={activeFile.content} /> : <WelcomeView />}
         <CommandPalette />
       </div>
     </SidebarProvider>

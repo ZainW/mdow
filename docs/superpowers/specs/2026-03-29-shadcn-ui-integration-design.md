@@ -10,17 +10,17 @@ Initialize shadcn/ui with `base-nova` preset on the Electron renderer (Vite + Re
 
 ## Component Mapping
 
-| Current Component | shadcn Replacement | Notes |
-|---|---|---|
-| `CommandPalette` (custom overlay + input + result list + keyboard nav) | `Command` inside `Dialog` | Replaces all custom overlay, focus, keyboard, and search UI |
-| `Sidebar` (custom div + resize handle + header/footer) | shadcn `Sidebar` (`SidebarProvider`, `Sidebar`, `SidebarHeader`, `SidebarContent`, `SidebarFooter`) | Custom resize drag handler wraps shadcn's `--sidebar-width` variable |
-| `RecentsList` (section label + div list with active state) | `SidebarGroup` + `SidebarGroupLabel` + `SidebarMenu` + `SidebarMenuItem` + `SidebarMenuButton` | Active state via `isActive` prop or `data-active` |
-| `FolderTree` (recursive divs with expand/collapse) | `Collapsible` + `SidebarGroup` + `SidebarMenuItem` tree | `CollapsibleTrigger`/`CollapsibleContent` for directories |
-| `WelcomeView` (custom drop zone + open buttons) | `Card` (`CardHeader`/`CardContent`) for drop zone + `Button` components | Keep drag-and-drop handlers as-is |
-| All `<button>` elements | `Button` with appropriate variants (`outline`, `default`) | Sidebar footer uses `variant="outline" size="sm"` |
-| `.sidebar-divider` | `Separator` | Direct replacement |
-| `.sidebar-section-label` | `SidebarGroupLabel` | Direct replacement |
-| Quick Open trigger in sidebar header | `Button` with `variant="outline"` styled as search trigger | Keep Cmd+K shortcut display |
+| Current Component                                                      | shadcn Replacement                                                                                  | Notes                                                                |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `CommandPalette` (custom overlay + input + result list + keyboard nav) | `Command` inside `Dialog`                                                                           | Replaces all custom overlay, focus, keyboard, and search UI          |
+| `Sidebar` (custom div + resize handle + header/footer)                 | shadcn `Sidebar` (`SidebarProvider`, `Sidebar`, `SidebarHeader`, `SidebarContent`, `SidebarFooter`) | Custom resize drag handler wraps shadcn's `--sidebar-width` variable |
+| `RecentsList` (section label + div list with active state)             | `SidebarGroup` + `SidebarGroupLabel` + `SidebarMenu` + `SidebarMenuItem` + `SidebarMenuButton`      | Active state via `isActive` prop or `data-active`                    |
+| `FolderTree` (recursive divs with expand/collapse)                     | `Collapsible` + `SidebarGroup` + `SidebarMenuItem` tree                                             | `CollapsibleTrigger`/`CollapsibleContent` for directories            |
+| `WelcomeView` (custom drop zone + open buttons)                        | `Card` (`CardHeader`/`CardContent`) for drop zone + `Button` components                             | Keep drag-and-drop handlers as-is                                    |
+| All `<button>` elements                                                | `Button` with appropriate variants (`outline`, `default`)                                           | Sidebar footer uses `variant="outline" size="sm"`                    |
+| `.sidebar-divider`                                                     | `Separator`                                                                                         | Direct replacement                                                   |
+| `.sidebar-section-label`                                               | `SidebarGroupLabel`                                                                                 | Direct replacement                                                   |
+| Quick Open trigger in sidebar header                                   | `Button` with `variant="outline"` styled as search trigger                                          | Keep Cmd+K shortcut display                                          |
 
 ## shadcn Components to Install
 
@@ -32,22 +32,22 @@ sidebar button command dialog card separator collapsible scroll-area
 
 ### Color Token Migration
 
-| Old Variable | New shadcn Token |
-|---|---|
-| `--bg` | `--background` |
-| `--text` | `--foreground` |
-| `--text-secondary` | `--muted-foreground` |
-| `--border` | `--border` |
-| `--code-bg` | `--muted` |
-| `--blockquote-border` | `--border` |
-| `--blockquote-bg` | `--muted` |
-| `--table-border` | `--border` |
-| `--table-stripe` | `--muted` |
-| `--link` | `--primary` |
-| `--sidebar-bg` | `--sidebar` |
-| `--sidebar-hover` | `--sidebar-accent` |
-| `--sidebar-active` | `--sidebar-primary` |
-| `--accent` | `--primary` |
+| Old Variable          | New shadcn Token     |
+| --------------------- | -------------------- |
+| `--bg`                | `--background`       |
+| `--text`              | `--foreground`       |
+| `--text-secondary`    | `--muted-foreground` |
+| `--border`            | `--border`           |
+| `--code-bg`           | `--muted`            |
+| `--blockquote-border` | `--border`           |
+| `--blockquote-bg`     | `--muted`            |
+| `--table-border`      | `--border`           |
+| `--table-stripe`      | `--muted`            |
+| `--link`              | `--primary`          |
+| `--sidebar-bg`        | `--sidebar`          |
+| `--sidebar-hover`     | `--sidebar-accent`   |
+| `--sidebar-active`    | `--sidebar-primary`  |
+| `--accent`            | `--primary`          |
 
 ### Dark Mode
 

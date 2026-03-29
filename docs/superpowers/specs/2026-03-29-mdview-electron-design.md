@@ -18,16 +18,16 @@ Three-layer Electron architecture:
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Build tooling | electron-vite |
-| Main process | TypeScript, chokidar, electron-store |
-| Preload | TypeScript, contextBridge |
-| Renderer | React 19, TypeScript |
-| State | Zustand (app state), TanStack Query (async/IPC), TanStack Virtual (lists) |
-| Markdown | md4x (WASM parser), shiki (syntax highlighting), mermaid (diagrams) |
-| Fonts | Inter Variable (body), Geist Mono Variable (code) |
-| Platforms | macOS, Windows, Linux |
+| Layer         | Technology                                                                |
+| ------------- | ------------------------------------------------------------------------- |
+| Build tooling | electron-vite                                                             |
+| Main process  | TypeScript, chokidar, electron-store                                      |
+| Preload       | TypeScript, contextBridge                                                 |
+| Renderer      | React 19, TypeScript                                                      |
+| State         | Zustand (app state), TanStack Query (async/IPC), TanStack Virtual (lists) |
+| Markdown      | md4x (WASM parser), shiki (syntax highlighting), mermaid (diagrams)       |
+| Fonts         | Inter Variable (body), Geist Mono Variable (code)                         |
+| Platforms     | macOS, Windows, Linux                                                     |
 
 ### Window Chrome
 
@@ -48,6 +48,7 @@ Unified sidebar showing both sections at all times (no tabs/segmented picker):
 5. **Footer** — "Open File" and "Open Folder" buttons.
 
 Sidebar properties:
+
 - Resizable width via drag handle, persisted to electron-store.
 - Collapsible with Cmd/Ctrl+B.
 - Virtualized lists via TanStack Virtual for performance with large folders.
@@ -108,12 +109,12 @@ Same pipeline as the original mdview:
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| Cmd/Ctrl+O | Open file |
-| Cmd/Ctrl+Shift+O | Open folder |
-| Cmd/Ctrl+K | Command palette |
-| Cmd/Ctrl+B | Toggle sidebar |
+| Shortcut         | Action          |
+| ---------------- | --------------- |
+| Cmd/Ctrl+O       | Open file       |
+| Cmd/Ctrl+Shift+O | Open folder     |
+| Cmd/Ctrl+K       | Command palette |
+| Cmd/Ctrl+B       | Toggle sidebar  |
 
 All shortcuts are platform-aware (Cmd on macOS, Ctrl on Windows/Linux). Registered as both native menu accelerators and handled in the renderer for the command palette.
 
@@ -121,26 +122,26 @@ All shortcuts are platform-aware (Cmd on macOS, Ctrl on Windows/Linux). Register
 
 ### Renderer → Main (invoke/handle)
 
-| Channel | Purpose |
-|---------|---------|
-| `file:open-dialog` | Opens native file picker, returns `{ path, content }` |
-| `file:read` | Reads file at path, returns content string |
-| `folder:open-dialog` | Opens native folder picker, returns tree structure |
-| `folder:read-tree` | Scans folder recursively, returns filtered tree |
-| `store:get-recents` | Returns recent files list |
-| `store:get-state` | Returns persisted app state |
-| `shell:show-in-folder` | Opens file location in OS file manager |
+| Channel                | Purpose                                               |
+| ---------------------- | ----------------------------------------------------- |
+| `file:open-dialog`     | Opens native file picker, returns `{ path, content }` |
+| `file:read`            | Reads file at path, returns content string            |
+| `folder:open-dialog`   | Opens native folder picker, returns tree structure    |
+| `folder:read-tree`     | Scans folder recursively, returns filtered tree       |
+| `store:get-recents`    | Returns recent files list                             |
+| `store:get-state`      | Returns persisted app state                           |
+| `shell:show-in-folder` | Opens file location in OS file manager                |
 
 ### Main → Renderer (send/on)
 
-| Channel | Payload |
-|---------|---------|
-| `file:changed` | New content string for the watched file |
-| `folder:changed` | Updated tree structure |
-| `theme:changed` | `{ isDark: boolean }` |
-| `menu:open-file` | User clicked Open File in native menu |
-| `menu:open-folder` | User clicked Open Folder in native menu |
-| `file:opened` | File opened via CLI or file association — `{ path, content }` |
+| Channel            | Payload                                                       |
+| ------------------ | ------------------------------------------------------------- |
+| `file:changed`     | New content string for the watched file                       |
+| `folder:changed`   | Updated tree structure                                        |
+| `theme:changed`    | `{ isDark: boolean }`                                         |
+| `menu:open-file`   | User clicked Open File in native menu                         |
+| `menu:open-folder` | User clicked Open Folder in native menu                       |
+| `file:opened`      | File opened via CLI or file association — `{ path, content }` |
 
 ### TanStack Query Integration
 

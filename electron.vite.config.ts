@@ -11,13 +11,13 @@ export default defineConfig({
   renderer: {
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
-      }
+        '@renderer': resolve('src/renderer/src'),
+      },
     },
     plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
     optimizeDeps: {
-      exclude: ['md4x']
+      exclude: ['md4x'],
     },
-    assetsInclude: ['**/*.wasm']
-  }
+    assetsInclude: ['**/*.wasm'],
+  },
 })

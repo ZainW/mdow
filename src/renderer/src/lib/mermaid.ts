@@ -19,9 +19,7 @@ export function updateMermaidTheme(isDark: boolean): void {
   })
 }
 
-export async function renderMermaidBlocks(
-  blocks: { id: string; code: string }[]
-): Promise<void> {
+export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
   if (!mermaidInitialized) return
 
   for (const block of blocks) {
@@ -29,6 +27,7 @@ export async function renderMermaidBlocks(
     if (!el) continue
 
     try {
+      // oxlint-disable-next-line no-await-in-loop -- intentional sequential rendering to avoid Mermaid race conditions
       const { svg } = await mermaid.render(`${block.id}-svg`, block.code)
       el.innerHTML = svg
     } catch (e) {

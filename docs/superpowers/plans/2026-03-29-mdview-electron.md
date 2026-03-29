@@ -16,53 +16,54 @@
 
 ### Main Process (`src/main/`)
 
-| File | Responsibility |
-|------|---------------|
-| `src/main/index.ts` | App lifecycle, window creation, window state restore |
-| `src/main/menu.ts` | Native application menu (File > Open, Open Folder, etc.) |
-| `src/main/ipc.ts` | Register all ipcMain.handle and push-event wiring |
-| `src/main/file-service.ts` | Read files, open file dialog, file watching |
-| `src/main/folder-service.ts` | Scan folder tree, open folder dialog, folder watching |
-| `src/main/store.ts` | electron-store schema and accessor functions |
+| File                         | Responsibility                                           |
+| ---------------------------- | -------------------------------------------------------- |
+| `src/main/index.ts`          | App lifecycle, window creation, window state restore     |
+| `src/main/menu.ts`           | Native application menu (File > Open, Open Folder, etc.) |
+| `src/main/ipc.ts`            | Register all ipcMain.handle and push-event wiring        |
+| `src/main/file-service.ts`   | Read files, open file dialog, file watching              |
+| `src/main/folder-service.ts` | Scan folder tree, open folder dialog, folder watching    |
+| `src/main/store.ts`          | electron-store schema and accessor functions             |
 
 ### Preload (`src/preload/`)
 
-| File | Responsibility |
-|------|---------------|
-| `src/preload/index.ts` | contextBridge exposing typed `window.api` |
+| File                     | Responsibility                            |
+| ------------------------ | ----------------------------------------- |
+| `src/preload/index.ts`   | contextBridge exposing typed `window.api` |
 | `src/preload/index.d.ts` | Global type declarations for `window.api` |
 
 ### Renderer (`src/renderer/`)
 
-| File | Responsibility |
-|------|---------------|
-| `src/renderer/index.html` | HTML shell |
-| `src/renderer/src/main.tsx` | React entry, QueryClientProvider |
-| `src/renderer/src/App.tsx` | Root layout: sidebar + content area |
-| `src/renderer/src/components/Sidebar.tsx` | Sidebar container: quick open bar, recents, folder tree, footer |
-| `src/renderer/src/components/RecentsList.tsx` | Recent files list with TanStack Virtual |
-| `src/renderer/src/components/FolderTree.tsx` | Hierarchical folder tree with expand/collapse |
-| `src/renderer/src/components/MarkdownView.tsx` | Rendered markdown output area |
-| `src/renderer/src/components/CommandPalette.tsx` | Modal fuzzy search overlay |
-| `src/renderer/src/components/WelcomeView.tsx` | Empty state with drag-drop and open buttons |
-| `src/renderer/src/hooks/useFileContent.ts` | TanStack Query hook wrapping file:read IPC |
-| `src/renderer/src/hooks/useFolderTree.ts` | TanStack Query hook wrapping folder:read-tree IPC |
-| `src/renderer/src/hooks/useRecents.ts` | TanStack Query hook wrapping store:get-recents IPC |
-| `src/renderer/src/hooks/useTheme.ts` | Listen for theme:changed, sync CSS class |
-| `src/renderer/src/hooks/useIpcEvent.ts` | Generic hook for subscribing to main-to-renderer events |
-| `src/renderer/src/store/app-store.ts` | Zustand store: activeFile, sidebarWidth, sidebarOpen, openFolder |
-| `src/renderer/src/lib/markdown.ts` | md4x + shiki init, renderMarkdown function |
-| `src/renderer/src/lib/mermaid.ts` | Mermaid init + render helper |
-| `src/renderer/src/lib/fuzzy-search.ts` | Fuzzy matching with scoring |
-| `src/renderer/src/lib/path-utils.ts` | basename/shortenPath helpers for browser context |
-| `src/renderer/src/assets/fonts/` | Inter Variable, Geist Mono Variable (woff2) |
-| `src/renderer/src/assets/styles/index.css` | Global styles, markdown CSS, theme variables |
+| File                                             | Responsibility                                                   |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| `src/renderer/index.html`                        | HTML shell                                                       |
+| `src/renderer/src/main.tsx`                      | React entry, QueryClientProvider                                 |
+| `src/renderer/src/App.tsx`                       | Root layout: sidebar + content area                              |
+| `src/renderer/src/components/Sidebar.tsx`        | Sidebar container: quick open bar, recents, folder tree, footer  |
+| `src/renderer/src/components/RecentsList.tsx`    | Recent files list with TanStack Virtual                          |
+| `src/renderer/src/components/FolderTree.tsx`     | Hierarchical folder tree with expand/collapse                    |
+| `src/renderer/src/components/MarkdownView.tsx`   | Rendered markdown output area                                    |
+| `src/renderer/src/components/CommandPalette.tsx` | Modal fuzzy search overlay                                       |
+| `src/renderer/src/components/WelcomeView.tsx`    | Empty state with drag-drop and open buttons                      |
+| `src/renderer/src/hooks/useFileContent.ts`       | TanStack Query hook wrapping file:read IPC                       |
+| `src/renderer/src/hooks/useFolderTree.ts`        | TanStack Query hook wrapping folder:read-tree IPC                |
+| `src/renderer/src/hooks/useRecents.ts`           | TanStack Query hook wrapping store:get-recents IPC               |
+| `src/renderer/src/hooks/useTheme.ts`             | Listen for theme:changed, sync CSS class                         |
+| `src/renderer/src/hooks/useIpcEvent.ts`          | Generic hook for subscribing to main-to-renderer events          |
+| `src/renderer/src/store/app-store.ts`            | Zustand store: activeFile, sidebarWidth, sidebarOpen, openFolder |
+| `src/renderer/src/lib/markdown.ts`               | md4x + shiki init, renderMarkdown function                       |
+| `src/renderer/src/lib/mermaid.ts`                | Mermaid init + render helper                                     |
+| `src/renderer/src/lib/fuzzy-search.ts`           | Fuzzy matching with scoring                                      |
+| `src/renderer/src/lib/path-utils.ts`             | basename/shortenPath helpers for browser context                 |
+| `src/renderer/src/assets/fonts/`                 | Inter Variable, Geist Mono Variable (woff2)                      |
+| `src/renderer/src/assets/styles/index.css`       | Global styles, markdown CSS, theme variables                     |
 
 ---
 
 ## Task 1: Scaffold Project with electron-vite
 
 **Files:**
+
 - Create: `package.json`, `electron.vite.config.ts`, `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`
 - Create: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/index.html`, `src/renderer/src/main.tsx`, `src/renderer/src/App.tsx`, `src/renderer/src/env.d.ts`
 
@@ -104,15 +105,15 @@ export default defineConfig({
   renderer: {
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
-      }
+        '@renderer': resolve('src/renderer/src'),
+      },
     },
     plugins: [react(), wasm(), topLevelAwait()],
     optimizeDeps: {
-      exclude: ['md4x']
+      exclude: ['md4x'],
     },
-    assetsInclude: ['**/*.wasm']
-  }
+    assetsInclude: ['**/*.wasm'],
+  },
 })
 ```
 
@@ -136,6 +137,7 @@ git commit -m "feat: scaffold electron-vite project with React+TS template and d
 ## Task 2: Fonts and Global Styles
 
 **Files:**
+
 - Create: `src/renderer/src/assets/fonts/InterVariable.woff2`
 - Create: `src/renderer/src/assets/fonts/GeistMono-Variable.woff2`
 - Create: `src/renderer/src/assets/styles/index.css`
@@ -208,13 +210,20 @@ html.dark {
   padding: 0;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Helvetica Neue',
+    sans-serif;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text);
@@ -314,9 +323,15 @@ body {
   color: white;
 }
 
-.sidebar-item.indent-1 { padding-left: 28px; }
-.sidebar-item.indent-2 { padding-left: 44px; }
-.sidebar-item.indent-3 { padding-left: 60px; }
+.sidebar-item.indent-1 {
+  padding-left: 28px;
+}
+.sidebar-item.indent-2 {
+  padding-left: 44px;
+}
+.sidebar-item.indent-3 {
+  padding-left: 60px;
+}
 
 .sidebar-footer {
   padding: 8px 16px;
@@ -364,24 +379,53 @@ body {
 
 /* ===== Markdown Styles ===== */
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3,
-.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   font-weight: 600;
   line-height: 1.3;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
 }
 
-.markdown-body h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-.markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
-.markdown-body h3 { font-size: 1.25em; }
+.markdown-body h1 {
+  font-size: 2em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+.markdown-body h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+}
+.markdown-body h3 {
+  font-size: 1.25em;
+}
 
-.markdown-body a { color: var(--link); text-decoration: none; }
-.markdown-body a:hover { text-decoration: underline; }
+.markdown-body a {
+  color: var(--link);
+  text-decoration: none;
+}
+.markdown-body a:hover {
+  text-decoration: underline;
+}
 
-.markdown-body p { margin: 0.8em 0; font-size: 16px; }
-.markdown-body img { max-width: 100%; border-radius: 8px; }
-.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.markdown-body p {
+  margin: 0.8em 0;
+  font-size: 16px;
+}
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
 
 .markdown-body code {
   font-family: 'Geist Mono', 'SF Mono', SFMono-Regular, Menlo, monospace;
@@ -427,21 +471,53 @@ html.dark .shiki span {
   color: var(--text-secondary);
 }
 
-.markdown-body blockquote p { margin: 0.4em 0; }
+.markdown-body blockquote p {
+  margin: 0.4em 0;
+}
 
-.markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-.markdown-body th, .markdown-body td { border: 1px solid var(--table-border); padding: 8px 12px; text-align: left; }
-.markdown-body th { font-weight: 600; background: var(--table-stripe); }
-.markdown-body tr:nth-child(even) { background: var(--table-stripe); }
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--table-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown-body th {
+  font-weight: 600;
+  background: var(--table-stripe);
+}
+.markdown-body tr:nth-child(even) {
+  background: var(--table-stripe);
+}
 
-.markdown-body ul, .markdown-body ol { padding-left: 2em; }
-.markdown-body li { margin: 0.25em 0; }
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 2em;
+}
+.markdown-body li {
+  margin: 0.25em 0;
+}
 
-.markdown-body .task-list-item { list-style: none; margin-left: -1.5em; }
-.markdown-body .task-list-item input { margin-right: 0.5em; }
+.markdown-body .task-list-item {
+  list-style: none;
+  margin-left: -1.5em;
+}
+.markdown-body .task-list-item input {
+  margin-right: 0.5em;
+}
 
-.markdown-body .mermaid { text-align: center; margin: 1.5em 0; background: transparent; }
-.markdown-body .mermaid svg { max-width: 100%; }
+.markdown-body .mermaid {
+  text-align: center;
+  margin: 1.5em 0;
+  background: transparent;
+}
+.markdown-body .mermaid svg {
+  max-width: 100%;
+}
 
 .markdown-body .mermaid-error {
   color: #ff3b30;
@@ -594,7 +670,7 @@ import './assets/styles/index.css'
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
+  </React.StrictMode>,
 )
 ```
 
@@ -642,6 +718,7 @@ git commit -m "feat: add fonts, global CSS with light/dark theme vars, and app s
 ## Task 3: Preload Script and Typed API
 
 **Files:**
+
 - Modify: `src/preload/index.ts`
 - Create: `src/preload/index.d.ts`
 
@@ -755,11 +832,7 @@ Check that `src/preload/*.d.ts` is in the `include` array of `tsconfig.web.json`
 
 ```json
 {
-  "include": [
-    "src/renderer/src/env.d.ts",
-    "src/renderer/src/**/*",
-    "src/preload/*.d.ts"
-  ]
+  "include": ["src/renderer/src/env.d.ts", "src/renderer/src/**/*", "src/preload/*.d.ts"]
 }
 ```
 
@@ -783,6 +856,7 @@ git commit -m "feat: add typed preload bridge with all IPC channels"
 ## Task 4: electron-store and Persistence
 
 **Files:**
+
 - Create: `src/main/store.ts`
 
 - [ ] **Step 1: Create `src/main/store.ts`**
@@ -861,6 +935,7 @@ git commit -m "feat: add electron-store with recents, window bounds, and app sta
 ## Task 5: File Service
 
 **Files:**
+
 - Create: `src/main/file-service.ts`
 
 - [ ] **Step 1: Create `src/main/file-service.ts`**
@@ -927,6 +1002,7 @@ git commit -m "feat: add file service with dialog, read, and chokidar watching"
 ## Task 6: Folder Service
 
 **Files:**
+
 - Create: `src/main/folder-service.ts`
 
 - [ ] **Step 1: Create `src/main/folder-service.ts`**
@@ -996,10 +1072,7 @@ export async function openFolderDialog(win: BrowserWindow) {
   return { path: folderPath, tree }
 }
 
-export function watchFolder(
-  folderPath: string,
-  onChange: (tree: TreeNode[]) => void
-): void {
+export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => void): void {
   unwatchFolder()
 
   folderWatcher = watch(folderPath, {
@@ -1048,6 +1121,7 @@ git commit -m "feat: add folder service with recursive scan, md filtering, and w
 ## Task 7: IPC Handler Registration
 
 **Files:**
+
 - Create: `src/main/ipc.ts`
 
 - [ ] **Step 1: Create `src/main/ipc.ts`**
@@ -1132,6 +1206,7 @@ git commit -m "feat: register all IPC handlers with file/folder watching wiring"
 ## Task 8: Native Menu
 
 **Files:**
+
 - Create: `src/main/menu.ts`
 
 - [ ] **Step 1: Create `src/main/menu.ts`**
@@ -1239,6 +1314,7 @@ git commit -m "feat: add native menu with File, Edit, View, Window menus"
 ## Task 9: Main Process Entry Point
 
 **Files:**
+
 - Modify: `src/main/index.ts`
 
 - [ ] **Step 1: Replace `src/main/index.ts` with full app lifecycle**
@@ -1313,8 +1389,8 @@ function createWindow(): void {
     }
 
     // Handle CLI arguments (file passed as argument)
-    const filePath = process.argv.find((arg) =>
-      arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx')
+    const filePath = process.argv.find(
+      (arg) => arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx'),
     )
     if (filePath) {
       try {
@@ -1386,6 +1462,7 @@ git commit -m "feat: main process with window lifecycle, theme detection, and fo
 ## Task 10: Zustand Store
 
 **Files:**
+
 - Create: `src/renderer/src/store/app-store.ts`
 
 - [ ] **Step 1: Create `src/renderer/src/store/app-store.ts`**
@@ -1464,6 +1541,7 @@ git commit -m "feat: add Zustand store for app state"
 ## Task 11: IPC Event Hook and TanStack Query Hooks
 
 **Files:**
+
 - Create: `src/renderer/src/hooks/useIpcEvent.ts`
 - Create: `src/renderer/src/hooks/useFileContent.ts`
 - Create: `src/renderer/src/hooks/useFolderTree.ts`
@@ -1477,7 +1555,7 @@ import { useEffect } from 'react'
 
 export function useIpcEvent<T>(
   subscribe: (callback: (data: T) => void) => () => void,
-  handler: (data: T) => void
+  handler: (data: T) => void,
 ): void {
   useEffect(() => {
     const unsubscribe = subscribe(handler)
@@ -1505,7 +1583,7 @@ export function useFileContent(filePath: string | null) {
         updateActiveFileContent(content)
       }
     },
-    [filePath, queryClient, updateActiveFileContent]
+    [filePath, queryClient, updateActiveFileContent],
   )
 
   useIpcEvent(window.api.onFileChanged, handleFileChanged)
@@ -1538,7 +1616,7 @@ export function useFolderTree(folderPath: string | null) {
         setFolderTree(tree)
       }
     },
-    [folderPath, queryClient, setFolderTree]
+    [folderPath, queryClient, setFolderTree],
   )
 
   useIpcEvent(window.api.onFolderChanged, handleFolderChanged)
@@ -1594,6 +1672,7 @@ git commit -m "feat: add TanStack Query hooks and IPC event hook"
 ## Task 12: Markdown Rendering Library
 
 **Files:**
+
 - Create: `src/renderer/src/lib/markdown.ts`
 - Create: `src/renderer/src/lib/mermaid.ts`
 
@@ -1644,11 +1723,38 @@ import langPhp from 'shiki/langs/php.mjs'
 import { init as initMd4x, renderToHtml } from 'md4x/wasm'
 
 const langs = [
-  langJavascript, langTypescript, langPython, langRust, langGo, langJava,
-  langC, langCpp, langCsharp, langRuby, langSwift, langKotlin,
-  langHtml, langCss, langJson, langYaml, langToml, langXml, langMarkdown,
-  langSql, langBash, langShell, langDiff, langGraphql, langDockerfile,
-  langLua, langZig, langElixir, langHaskell, langOcaml, langJsx, langTsx,
+  langJavascript,
+  langTypescript,
+  langPython,
+  langRust,
+  langGo,
+  langJava,
+  langC,
+  langCpp,
+  langCsharp,
+  langRuby,
+  langSwift,
+  langKotlin,
+  langHtml,
+  langCss,
+  langJson,
+  langYaml,
+  langToml,
+  langXml,
+  langMarkdown,
+  langSql,
+  langBash,
+  langShell,
+  langDiff,
+  langGraphql,
+  langDockerfile,
+  langLua,
+  langZig,
+  langElixir,
+  langHaskell,
+  langOcaml,
+  langJsx,
+  langTsx,
   langPhp,
 ]
 
@@ -1755,9 +1861,7 @@ export function updateMermaidTheme(isDark: boolean): void {
   })
 }
 
-export async function renderMermaidBlocks(
-  blocks: { id: string; code: string }[]
-): Promise<void> {
+export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
   if (!mermaidInitialized) return
 
   for (const block of blocks) {
@@ -1790,6 +1894,7 @@ git commit -m "feat: add markdown rendering pipeline (md4x + shiki + mermaid)"
 ## Task 13: Fuzzy Search and Path Utils
 
 **Files:**
+
 - Create: `src/renderer/src/lib/fuzzy-search.ts`
 - Create: `src/renderer/src/lib/path-utils.ts`
 
@@ -1847,7 +1952,7 @@ function fuzzyScore(query: string, target: string): number {
 export function fuzzySearch(
   query: string,
   items: { path: string; name: string }[],
-  maxResults = 50
+  maxResults = 50,
 ): SearchResult[] {
   if (!query.trim()) return items.slice(0, maxResults).map((item) => ({ ...item, score: 0 }))
 
@@ -1896,6 +2001,7 @@ git commit -m "feat: add fuzzy search scoring and path utils"
 ## Task 14: WelcomeView Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/WelcomeView.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/WelcomeView.tsx`**
@@ -1932,8 +2038,8 @@ export function WelcomeView() {
       setIsDragOver(false)
 
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find((f) =>
-        f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx')
+      const mdFile = files.find(
+        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
 
       if (mdFile) {
@@ -1942,7 +2048,7 @@ export function WelcomeView() {
         queryClient.invalidateQueries({ queryKey: ['recents'] })
       }
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1986,6 +2092,7 @@ git commit -m "feat: add WelcomeView with drag-drop and open buttons"
 ## Task 15: MarkdownView Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/MarkdownView.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/MarkdownView.tsx`**
@@ -2050,15 +2157,14 @@ export function MarkdownView({ content }: MarkdownViewProps) {
   }, [ready, content])
 
   if (!ready) {
-    return <div className="content-area" style={{ opacity: 0.5 }}>Loading...</div>
+    return (
+      <div className="content-area" style={{ opacity: 0.5 }}>
+        Loading...
+      </div>
+    )
   }
 
-  return (
-    <div
-      className="content-area markdown-body"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  )
+  return <div className="content-area markdown-body" dangerouslySetInnerHTML={{ __html: html }} />
 }
 ```
 
@@ -2076,6 +2182,7 @@ git commit -m "feat: add MarkdownView with md4x, shiki, and mermaid rendering"
 ## Task 16: RecentsList Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/RecentsList.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/RecentsList.tsx`**
@@ -2099,7 +2206,7 @@ export function RecentsList() {
       setActiveFile({ path, content })
       queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   const handleContextMenu = useCallback((path: string) => {
@@ -2143,6 +2250,7 @@ git commit -m "feat: add RecentsList component"
 ## Task 17: FolderTree Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/FolderTree.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/FolderTree.tsx`**
@@ -2222,7 +2330,7 @@ export function FolderTree() {
       setActiveFile({ path, content })
       queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   if (!openFolderPath || folderTree.length === 0) return null
@@ -2232,7 +2340,10 @@ export function FolderTree() {
   return (
     <>
       <div className="sidebar-divider" />
-      <div className="sidebar-section-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div
+        className="sidebar-section-label"
+        style={{ display: 'flex', justifyContent: 'space-between' }}
+      >
         <span>Folder</span>
         <span style={{ opacity: 0.6, textTransform: 'none', fontWeight: 400 }}>{folderName}</span>
       </div>
@@ -2264,6 +2375,7 @@ git commit -m "feat: add FolderTree component with expand/collapse"
 ## Task 18: Sidebar Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/Sidebar.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/Sidebar.tsx`**
@@ -2322,7 +2434,7 @@ export function Sidebar() {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
     },
-    [sidebarWidth, setSidebarWidth]
+    [sidebarWidth, setSidebarWidth],
   )
 
   const isMac = navigator.platform.includes('Mac')
@@ -2365,6 +2477,7 @@ git commit -m "feat: add Sidebar with resize handle, quick open trigger, and foo
 ## Task 19: CommandPalette Component
 
 **Files:**
+
 - Create: `src/renderer/src/components/CommandPalette.tsx`
 
 - [ ] **Step 1: Create `src/renderer/src/components/CommandPalette.tsx`**
@@ -2428,7 +2541,7 @@ export function CommandPalette() {
       setActiveFile({ path, content })
       queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setCommandPaletteOpen, setActiveFile, queryClient]
+    [setCommandPaletteOpen, setActiveFile, queryClient],
   )
 
   const handleKeyDown = useCallback(
@@ -2454,7 +2567,7 @@ export function CommandPalette() {
           break
       }
     },
-    [results, selectedIndex, selectFile, setCommandPaletteOpen]
+    [results, selectedIndex, selectFile, setCommandPaletteOpen],
   )
 
   if (!commandPaletteOpen) return null
@@ -2507,6 +2620,7 @@ git commit -m "feat: add CommandPalette with fuzzy search and keyboard navigatio
 ## Task 20: Wire Up App.tsx with All Components
 
 **Files:**
+
 - Modify: `src/renderer/src/App.tsx`
 - Modify: `src/renderer/src/main.tsx`
 
@@ -2533,7 +2647,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 )
 ```
 
@@ -2630,7 +2744,7 @@ function App(): React.JSX.Element {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
       const mdFile = files.find(
-        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx')
+        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
       if (mdFile) {
         const content = await window.api.readFile(mdFile.path)
@@ -2638,21 +2752,13 @@ function App(): React.JSX.Element {
         queryClient.invalidateQueries({ queryKey: ['recents'] })
       }
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   return (
-    <div
-      className="app-layout"
-      onDrop={handleDrop}
-      onDragOver={(e) => e.preventDefault()}
-    >
+    <div className="app-layout" onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
       {sidebarOpen && <Sidebar />}
-      {activeFile ? (
-        <MarkdownView content={activeFile.content} />
-      ) : (
-        <WelcomeView />
-      )}
+      {activeFile ? <MarkdownView content={activeFile.content} /> : <WelcomeView />}
       <CommandPalette />
     </div>
   )
@@ -2681,6 +2787,7 @@ git commit -m "feat: wire up all components in App with keyboard shortcuts and d
 ## Task 21: Gitignore and Final Polish
 
 **Files:**
+
 - Create: `.gitignore`
 - Modify: `package.json`
 
@@ -2697,6 +2804,7 @@ dist/
 - [ ] **Step 2: Update `package.json` name and description**
 
 In `package.json`, ensure:
+
 - `"name": "mdview-electron"`
 - `"description": "A modern cross-platform markdown viewer"`
 
@@ -2707,6 +2815,7 @@ npm run dev
 ```
 
 Test the following:
+
 1. App launches with sidebar + welcome view
 2. Open File button selects a `.md` file and renders it with syntax highlighting
 3. Open Folder shows a filtered tree and clicking a file renders it
@@ -2728,26 +2837,26 @@ git commit -m "feat: add gitignore and finalize package metadata"
 
 ## Summary
 
-| Task | What it builds |
-|------|---------------|
-| 1 | Project scaffold with electron-vite + all deps |
-| 2 | Fonts, CSS theme system, app shell layout |
-| 3 | Typed preload bridge (all IPC channels) |
-| 4 | electron-store persistence layer |
-| 5 | File service (read, dialog, watch) |
-| 6 | Folder service (scan, dialog, watch) |
-| 7 | IPC handler registration |
-| 8 | Native application menu |
-| 9 | Main process entry with window lifecycle |
-| 10 | Zustand store |
-| 11 | TanStack Query hooks + IPC event hook |
-| 12 | Markdown rendering (md4x + shiki + mermaid) |
-| 13 | Fuzzy search and path utils |
-| 14 | WelcomeView component |
-| 15 | MarkdownView component |
-| 16 | RecentsList component |
-| 17 | FolderTree component |
-| 18 | Sidebar component |
-| 19 | CommandPalette component |
-| 20 | Wire everything in App.tsx |
-| 21 | Gitignore and final polish |
+| Task | What it builds                                 |
+| ---- | ---------------------------------------------- |
+| 1    | Project scaffold with electron-vite + all deps |
+| 2    | Fonts, CSS theme system, app shell layout      |
+| 3    | Typed preload bridge (all IPC channels)        |
+| 4    | electron-store persistence layer               |
+| 5    | File service (read, dialog, watch)             |
+| 6    | Folder service (scan, dialog, watch)           |
+| 7    | IPC handler registration                       |
+| 8    | Native application menu                        |
+| 9    | Main process entry with window lifecycle       |
+| 10   | Zustand store                                  |
+| 11   | TanStack Query hooks + IPC event hook          |
+| 12   | Markdown rendering (md4x + shiki + mermaid)    |
+| 13   | Fuzzy search and path utils                    |
+| 14   | WelcomeView component                          |
+| 15   | MarkdownView component                         |
+| 16   | RecentsList component                          |
+| 17   | FolderTree component                           |
+| 18   | Sidebar component                              |
+| 19   | CommandPalette component                       |
+| 20   | Wire everything in App.tsx                     |
+| 21   | Gitignore and final polish                     |

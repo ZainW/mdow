@@ -56,7 +56,9 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle('store:get-recents', () => getRecents())
   ipcMain.handle('store:get-state', () => getAppState())
-  ipcMain.handle('store:save-state', (_, state) => saveAppState(state))
+  ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) =>
+    saveAppState(state as Parameters<typeof saveAppState>[0]),
+  )
   ipcMain.handle('store:add-recent', (_, filePath: string) => addRecent(filePath))
 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {

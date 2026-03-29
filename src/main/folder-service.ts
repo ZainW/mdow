@@ -25,7 +25,7 @@ export async function scanFolder(folderPath: string): Promise<TreeNode[]> {
   const entries = await readdir(folderPath, { withFileTypes: true })
   const nodes: TreeNode[] = []
 
-  const sorted = entries.sort((a, b) => {
+  const sorted = entries.toSorted((a, b) => {
     if (a.isDirectory() && !b.isDirectory()) return -1
     if (!a.isDirectory() && b.isDirectory()) return 1
     return a.name.localeCompare(b.name)
@@ -37,6 +37,7 @@ export async function scanFolder(folderPath: string): Promise<TreeNode[]> {
     const fullPath = join(folderPath, entry.name)
 
     if (entry.isDirectory()) {
+      // oxlint-disable-next-line no-await-in-loop -- intentional sequential recursive tree walk
       const children = await scanFolder(fullPath)
       if (children.length > 0) {
         nodes.push({ name: entry.name, path: fullPath, isDirectory: true, children })
@@ -61,10 +62,7 @@ export async function openFolderDialog(win: BrowserWindow) {
   return { path: folderPath, tree }
 }
 
-export function watchFolder(
-  folderPath: string,
-  onChange: (tree: TreeNode[]) => void
-): void {
+export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => void): void {
   unwatchFolder()
 
   folderWatcher = watch(folderPath, {
@@ -77,13 +75,14 @@ export function watchFolder(
 
   const handleChange = () => {
     if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(async () => {
-      try {
-        const tree = await scanFolder(folderPath)
-        onChange(tree)
-      } catch {
-        // Folder might have been deleted
-      }
+    debounceTimer = setTimeout(() => {
+      void scanFolder(folderPath)
+        .then((tree) => {
+          onChange(tree)
+        })
+        .catch(() => {
+          // Folder might have been deleted
+        })
     }, 1000)
   }
 
@@ -95,7 +94,7 @@ export function watchFolder(
 
 export function unwatchFolder(): void {
   if (folderWatcher) {
-    folderWatcher.close()
+    void folderWatcher.close()
     folderWatcher = null
   }
 }

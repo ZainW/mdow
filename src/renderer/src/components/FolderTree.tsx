@@ -12,12 +12,8 @@ import {
   SidebarMenuSubItem,
   SidebarMenuSubButton,
 } from './ui/sidebar'
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from './ui/collapsible'
-import { ChevronRightIcon, FileTextIcon, FolderIcon } from 'lucide-react'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible'
+import { ChevronRightIcon, FileTextIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 import { Separator } from './ui/separator'
 
 interface TreeNode {
@@ -25,6 +21,11 @@ interface TreeNode {
   path: string
   isDirectory: boolean
   children?: TreeNode[]
+}
+
+function containsPath(node: TreeNode, filePath: string): boolean {
+  if (!node.isDirectory) return node.path === filePath
+  return node.children?.some((child) => containsPath(child, filePath)) ?? false
 }
 
 function TreeItemDirectory({
@@ -38,16 +39,19 @@ function TreeItemDirectory({
   onFileClick: (path: string) => void
   depth: number
 }) {
+  const shouldOpen = activeFilePath ? containsPath(node, activeFilePath) : false
+
   return (
     <SidebarMenuItem>
-      <Collapsible defaultOpen={depth === 0} className="group/collapsible">
-        <CollapsibleTrigger render={<SidebarMenuButton />}>
-          <ChevronRightIcon className="transition-transform group-data-[state=open]/collapsible:rotate-90" />
-          <FolderIcon />
+      <Collapsible defaultOpen={shouldOpen} className="group/collapsible">
+        <CollapsibleTrigger render={<SidebarMenuButton className="tree-folder-btn" />}>
+          <ChevronRightIcon className="tree-chevron size-3.5 opacity-50" />
+          <FolderIcon className="tree-folder-icon-closed size-4 text-sidebar-primary/70" />
+          <FolderOpenIcon className="tree-folder-icon-open size-4 text-sidebar-primary/70" />
           <span className="truncate">{node.name}</span>
         </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub>
+        <CollapsibleContent className="tree-collapsible-content">
+          <SidebarMenuSub className="border-sidebar-border/50">
             {node.children?.map((child) => (
               <TreeItemNode
                 key={child.path}
@@ -73,15 +77,17 @@ function TreeItemFile({
   activeFilePath: string | null
   onFileClick: (path: string) => void
 }) {
+  const isActive = activeFilePath === node.path
   return (
     <SidebarMenuSubItem>
       <SidebarMenuSubButton
         render={<button type="button" />}
-        isActive={activeFilePath === node.path}
+        isActive={isActive}
         onClick={() => void onFileClick(node.path)}
         title={node.path}
+        className={isActive ? 'tree-file-active' : ''}
       >
-        <FileTextIcon />
+        <FileTextIcon className="size-3.5 opacity-40" />
         <span className="truncate">{node.name}</span>
       </SidebarMenuSubButton>
     </SidebarMenuSubItem>
@@ -109,13 +115,7 @@ function TreeItemNode({
       />
     )
   }
-  return (
-    <TreeItemFile
-      node={node}
-      activeFilePath={activeFilePath}
-      onFileClick={onFileClick}
-    />
-  )
+  return <TreeItemFile node={node} activeFilePath={activeFilePath} onFileClick={onFileClick} />
 }
 
 export function FolderTree() {
@@ -131,7 +131,7 @@ export function FolderTree() {
       setActiveFile({ path, content })
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   if (!openFolderPath || folderTree.length === 0) return null
@@ -144,7 +144,9 @@ export function FolderTree() {
       <SidebarGroup>
         <SidebarGroupLabel className="flex justify-between">
           <span>Folder</span>
-          <span className="text-muted-foreground font-normal normal-case opacity-60">{folderName}</span>
+          <span className="text-muted-foreground font-normal normal-case opacity-60">
+            {folderName}
+          </span>
         </SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>

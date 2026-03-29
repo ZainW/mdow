@@ -14,7 +14,7 @@ export function useFolderTree(folderPath: string | null) {
         setFolderTree(tree)
       }
     },
-    [folderPath, queryClient, setFolderTree]
+    [folderPath, queryClient, setFolderTree],
   )
 
   useIpcEvent(window.api.onFolderChanged, handleFolderChanged)

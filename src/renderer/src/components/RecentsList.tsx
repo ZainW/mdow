@@ -25,7 +25,7 @@ export function RecentsList() {
       setActiveFile({ path, content })
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   const handleContextMenu = useCallback((path: string) => {
@@ -48,8 +48,9 @@ export function RecentsList() {
                 onClick={() => void handleClick(path)}
                 onContextMenu={() => handleContextMenu(path)}
                 title={path}
+                className={activeFile?.path === path ? 'tree-file-active' : ''}
               >
-                <FileTextIcon />
+                <FileTextIcon className="size-3.5 opacity-40" />
                 <span className="truncate">{basename(path)}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>

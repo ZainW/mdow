@@ -43,9 +43,10 @@ function fuzzyScore(query: string, target: string): number {
 export function fuzzySearch(
   query: string,
   items: { path: string; name: string }[],
-  maxResults = 50
+  maxResults = 50,
 ): SearchResult[] {
-  if (!query.trim()) return items.slice(0, maxResults).map((item) => ({ ...item, score: 0 }))
+  if (!query.trim())
+    return items.slice(0, maxResults).map((item) => Object.assign({}, item, { score: 0 }))
 
   const results: SearchResult[] = []
 
@@ -59,6 +60,5 @@ export function fuzzySearch(
     }
   }
 
-  results.sort((a, b) => b.score - a.score)
-  return results.slice(0, maxResults)
+  return results.toSorted((a, b) => b.score - a.score).slice(0, maxResults)
 }

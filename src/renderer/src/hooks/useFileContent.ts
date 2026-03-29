@@ -14,7 +14,7 @@ export function useFileContent(filePath: string | null) {
         updateActiveFileContent(content)
       }
     },
-    [filePath, queryClient, updateActiveFileContent]
+    [filePath, queryClient, updateActiveFileContent],
   )
 
   useIpcEvent(window.api.onFileChanged, handleFileChanged)
