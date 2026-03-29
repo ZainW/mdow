@@ -25,7 +25,7 @@ function createWindow(): void {
     minHeight: 400,
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
     },
   })
@@ -46,39 +46,41 @@ function createWindow(): void {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
   })
 
-  mainWindow.webContents.on('did-finish-load', async () => {
+  mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
 
     const lastFolder = getLastFolder()
     if (lastFolder) {
-      try {
-        const tree = await scanFolder(lastFolder)
-        mainWindow?.webContents.send('folder:changed', tree)
-        watchFolder(lastFolder, (newTree) => {
-          mainWindow?.webContents.send('folder:changed', newTree)
+      void scanFolder(lastFolder)
+        .then((tree) => {
+          mainWindow?.webContents.send('folder:changed', tree)
+          watchFolder(lastFolder, (newTree) => {
+            mainWindow?.webContents.send('folder:changed', newTree)
+          })
         })
-      } catch {
-        // Folder no longer exists
-      }
+        .catch(() => {
+          // Folder no longer exists
+        })
     }
 
-    const filePath = process.argv.find((arg) =>
-      arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx')
+    const filePath = process.argv.find(
+      (arg) => arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx'),
     )
     if (filePath) {
-      try {
-        const content = await readFileContent(filePath)
-        mainWindow?.webContents.send('file:opened', { path: filePath, content })
-      } catch {
-        // Invalid file path
-      }
+      void readFileContent(filePath)
+        .then((content) => {
+          mainWindow?.webContents.send('file:opened', { path: filePath, content })
+        })
+        .catch(() => {
+          // Invalid file path
+        })
     }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
   mainWindow.on('closed', () => {
@@ -86,7 +88,7 @@ function createWindow(): void {
   })
 }
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   registerIpcHandlers(getMainWindow)
   createMenu(getMainWindow)
   createWindow()
@@ -100,14 +102,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('open-file', async (event, path) => {
+app.on('open-file', (event, path) => {
   event.preventDefault()
   if (mainWindow) {
-    try {
-      const content = await readFileContent(path)
-      mainWindow.webContents.send('file:opened', { path, content })
-    } catch {
-      // Invalid file
-    }
+    void readFileContent(path)
+      .then((content) => {
+        mainWindow?.webContents.send('file:opened', { path, content })
+      })
+      .catch(() => {
+        // Invalid file
+      })
   }
 })

@@ -33,8 +33,8 @@ export function WelcomeView() {
       setIsDragOver(false)
 
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find((f) =>
-        f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx')
+      const mdFile = files.find(
+        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
 
       if (mdFile) {
@@ -43,7 +43,7 @@ export function WelcomeView() {
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }
     },
-    [setActiveFile, queryClient]
+    [setActiveFile, queryClient],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -62,10 +62,12 @@ export function WelcomeView() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <Card className={cn(
-        'border-2 border-dashed text-center',
-        isDragOver && 'border-primary bg-primary/5'
-      )}>
+      <Card
+        className={cn(
+          'border-2 border-dashed text-center transition-[border-color,background-color] duration-150 ease-out',
+          isDragOver && 'border-primary bg-primary/5',
+        )}
+      >
         <CardContent className="flex flex-col items-center gap-2 px-12 py-8">
           <h2 className="text-xl font-semibold text-foreground">mdview</h2>
           <p className="text-sm">Drop a markdown file here to view it</p>

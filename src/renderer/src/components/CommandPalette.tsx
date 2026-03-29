@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { useRecents } from '../hooks/useRecents'
-import { basename } from '../lib/path-utils'
+import { basename, parentDir } from '../lib/path-utils'
 import {
   Command,
   CommandInput,
@@ -11,14 +11,8 @@ import {
   CommandGroup,
   CommandItem,
 } from './ui/command'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
-import { FileIcon } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { FileTextIcon } from 'lucide-react'
 
 function flattenTree(nodes: any[], result: { path: string; name: string }[] = []) {
   for (const node of nodes) {
@@ -55,7 +49,7 @@ export function CommandPalette() {
       setActiveFile({ path, content })
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setCommandPaletteOpen, setActiveFile, queryClient]
+    [setCommandPaletteOpen, setActiveFile, queryClient],
   )
 
   return (
@@ -63,6 +57,7 @@ export function CommandPalette() {
       <DialogContent
         className="top-[20%] translate-y-0 overflow-hidden rounded-xl p-0 sm:max-w-lg"
         showCloseButton={false}
+        instant
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Quick Open</DialogTitle>
@@ -73,20 +68,25 @@ export function CommandPalette() {
           <CommandList>
             <CommandEmpty>No matching files</CommandEmpty>
             <CommandGroup heading="Files">
-              {allFiles.map((file) => (
-                <CommandItem
-                  key={file.path}
-                  value={file.path}
-                  keywords={[file.name]}
-                  onSelect={() => void selectFile(file.path)}
-                >
-                  <FileIcon />
-                  <div className="flex flex-col">
-                    <span className="text-sm">{file.name}</span>
-                    <span className="text-xs text-muted-foreground">{file.path}</span>
-                  </div>
-                </CommandItem>
-              ))}
+              {allFiles.map((file) => {
+                const dir = parentDir(file.path)
+                return (
+                  <CommandItem
+                    key={file.path}
+                    value={file.path}
+                    keywords={[file.name]}
+                    onSelect={() => void selectFile(file.path)}
+                  >
+                    <FileTextIcon />
+                    <span className="min-w-0 truncate">{file.name}</span>
+                    {dir && (
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">
+                        {dir}
+                      </span>
+                    )}
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
           </CommandList>
         </Command>

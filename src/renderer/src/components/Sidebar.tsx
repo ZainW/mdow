@@ -38,30 +38,31 @@ export function Sidebar() {
   }, [setOpenFolder])
 
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent) => {
       if (!sidebarOpen) return
       e.preventDefault()
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
       resizing.current = true
       const startX = e.clientX
       const startWidth = sidebarWidth
 
-      const handleMouseMove = (e: MouseEvent) => {
+      const handlePointerMove = (e: PointerEvent) => {
         if (!resizing.current) return
         const newWidth = Math.max(200, Math.min(400, startWidth + (e.clientX - startX)))
         setSidebarWidth(newWidth)
       }
 
-      const handleMouseUp = () => {
+      const handlePointerUp = () => {
         resizing.current = false
         void window.api.saveAppState({ sidebarWidth })
-        document.removeEventListener('mousemove', handleMouseMove)
-        document.removeEventListener('mouseup', handleMouseUp)
+        document.removeEventListener('pointermove', handlePointerMove)
+        document.removeEventListener('pointerup', handlePointerUp)
       }
 
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
+      document.addEventListener('pointermove', handlePointerMove)
+      document.addEventListener('pointerup', handlePointerUp)
     },
-    [sidebarWidth, setSidebarWidth, sidebarOpen]
+    [sidebarWidth, setSidebarWidth, sidebarOpen],
   )
 
   const isMac = navigator.platform.includes('Mac')
@@ -70,7 +71,7 @@ export function Sidebar() {
   return (
     <>
       <div
-        className="shrink-0 overflow-hidden border-r border-border/60 transition-[width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        className="shrink-0 overflow-hidden border-r border-border/60 transition-[width] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]"
         style={{ width: sidebarOpen ? sidebarWidth : 0 }}
       >
         <ShadcnSidebar
@@ -96,11 +97,21 @@ export function Sidebar() {
           </SidebarContent>
 
           <SidebarFooter className="flex-row gap-1.5 p-2">
-            <Button variant="ghost" size="sm" className="flex-1 text-[11px] text-muted-foreground h-7" onClick={() => void handleOpenFile()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-[11px] text-muted-foreground h-7"
+              onClick={() => void handleOpenFile()}
+            >
               <FileIcon data-icon="inline-start" />
               Open File
             </Button>
-            <Button variant="ghost" size="sm" className="flex-1 text-[11px] text-muted-foreground h-7" onClick={() => void handleOpenFolder()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 text-[11px] text-muted-foreground h-7"
+              onClick={() => void handleOpenFolder()}
+            >
               <FolderOpenIcon data-icon="inline-start" />
               Open Folder
             </Button>
@@ -111,7 +122,7 @@ export function Sidebar() {
       <div
         className="w-px shrink-0 cursor-col-resize hover:w-0.5 hover:bg-primary/40 active:bg-primary/60 transition-colors"
         role="separator"
-        onMouseDown={handleResizeStart}
+        onPointerDown={handleResizeStart}
       />
     </>
   )
