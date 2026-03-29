@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/zain/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.6/skills/brainstorming/scripts/start-server.sh --project-dir /Users/zain/labs/mdview-electron)",
+      "WebSearch",
+      "WebFetch(domain:electron-vite.org)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:shiki.style)",
+      "WebFetch(domain:mermaid.ai)",
+      "WebFetch(domain:md4x.unjs.io)",
+      "WebFetch(domain:releases.electronjs.org)",
+      "WebFetch(domain:bundlephobia.com)",
+      "WebFetch(domain:rendazhang.medium.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:mermaid.js.org)",
+      "WebFetch(domain:vite.dev)",
+      "Read(//Users/zain/labs/**)",
+      "Bash(npx @quick-start/create-electron mdview-electron-tmp --template react-ts)",
+      "Bash(npm install:*)",
+      "Bash(npm view:*)"
+    ]
+  }
+}
