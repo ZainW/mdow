@@ -11,7 +11,6 @@ import { SidebarProvider } from './components/ui/sidebar'
 
 function App(): React.JSX.Element {
   const activeFile = useAppStore((s) => s.activeFile)
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const setActiveFile = useAppStore((s) => s.setActiveFile)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
@@ -100,7 +99,7 @@ function App(): React.JSX.Element {
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
-        {sidebarOpen && <Sidebar />}
+        <Sidebar />
         {activeFile ? (
           <MarkdownView content={activeFile.content} />
         ) : (

@@ -15,6 +15,7 @@ import { SearchIcon, FileIcon, FolderOpenIcon } from 'lucide-react'
 export function Sidebar() {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const setActiveFile = useAppStore((s) => s.setActiveFile)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
@@ -38,6 +39,7 @@ export function Sidebar() {
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
+      if (!sidebarOpen) return
       e.preventDefault()
       resizing.current = true
       const startX = e.clientX
@@ -59,7 +61,7 @@ export function Sidebar() {
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
     },
-    [sidebarWidth, setSidebarWidth]
+    [sidebarWidth, setSidebarWidth, sidebarOpen]
   )
 
   const isMac = navigator.platform.includes('Mac')
@@ -67,42 +69,47 @@ export function Sidebar() {
 
   return (
     <>
-      <ShadcnSidebar
-        collapsible="none"
-        className="border-r"
-        style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+      <div
+        className="shrink-0 overflow-hidden border-r border-border/60 transition-[width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
       >
-        <SidebarHeader className="p-3">
-          <Button
-            variant="outline"
-            className="w-full justify-start gap-2 text-muted-foreground text-xs"
-            onClick={() => setCommandPaletteOpen(true)}
-          >
-            <SearchIcon />
-            <span>Quick Open</span>
-            <span className="ml-auto opacity-40 text-[11px]">{modKey}K</span>
-          </Button>
-        </SidebarHeader>
+        <ShadcnSidebar
+          collapsible="none"
+          className="h-full border-none"
+          style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+        >
+          <SidebarHeader className="p-2">
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 text-muted-foreground text-[11px] h-7"
+              onClick={() => setCommandPaletteOpen(true)}
+            >
+              <SearchIcon />
+              <span>Quick Open</span>
+              <span className="ml-auto opacity-30 text-[10px] font-mono">{modKey}K</span>
+            </Button>
+          </SidebarHeader>
 
-        <SidebarContent>
-          <RecentsList />
-          <FolderTree />
-        </SidebarContent>
+          <SidebarContent>
+            <RecentsList />
+            <FolderTree />
+          </SidebarContent>
 
-        <SidebarFooter className="flex-row gap-2 p-2">
-          <Button variant="outline" size="sm" className="flex-1" onClick={() => void handleOpenFile()}>
-            <FileIcon data-icon="inline-start" />
-            Open File
-          </Button>
-          <Button variant="outline" size="sm" className="flex-1" onClick={() => void handleOpenFolder()}>
-            <FolderOpenIcon data-icon="inline-start" />
-            Open Folder
-          </Button>
-        </SidebarFooter>
-      </ShadcnSidebar>
+          <SidebarFooter className="flex-row gap-1.5 p-2">
+            <Button variant="ghost" size="sm" className="flex-1 text-[11px] text-muted-foreground h-7" onClick={() => void handleOpenFile()}>
+              <FileIcon data-icon="inline-start" />
+              Open File
+            </Button>
+            <Button variant="ghost" size="sm" className="flex-1 text-[11px] text-muted-foreground h-7" onClick={() => void handleOpenFolder()}>
+              <FolderOpenIcon data-icon="inline-start" />
+              Open Folder
+            </Button>
+          </SidebarFooter>
+        </ShadcnSidebar>
+      </div>
 
       <div
-        className="w-1 cursor-col-resize shrink-0 hover:bg-primary active:bg-primary"
+        className="w-px shrink-0 cursor-col-resize hover:w-0.5 hover:bg-primary/40 active:bg-primary/60 transition-colors"
         role="separator"
         onMouseDown={handleResizeStart}
       />
