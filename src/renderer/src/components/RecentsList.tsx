@@ -3,6 +3,15 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRecents } from '../hooks/useRecents'
 import { useAppStore } from '../store/app-store'
 import { basename } from '../lib/path-utils'
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+} from './ui/sidebar'
+import { FileTextIcon } from 'lucide-react'
 
 export function RecentsList() {
   const { data: recents = [] } = useRecents()
@@ -14,7 +23,7 @@ export function RecentsList() {
     async (path: string) => {
       const content = await window.api.readFile(path)
       setActiveFile({ path, content })
-      queryClient.invalidateQueries({ queryKey: ['recents'] })
+      void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
     [setActiveFile, queryClient]
   )
@@ -28,21 +37,25 @@ export function RecentsList() {
   }
 
   return (
-    <>
-      <div className="sidebar-section-label">Recents</div>
-      <div className="sidebar-list">
-        {recents.map((path) => (
-          <div
-            key={path}
-            className={`sidebar-item ${activeFile?.path === path ? 'active' : ''}`}
-            onClick={() => handleClick(path)}
-            onContextMenu={() => handleContextMenu(path)}
-            title={path}
-          >
-            {basename(path)}
-          </div>
-        ))}
-      </div>
-    </>
+    <SidebarGroup>
+      <SidebarGroupLabel>Recents</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {recents.map((path) => (
+            <SidebarMenuItem key={path}>
+              <SidebarMenuButton
+                isActive={activeFile?.path === path}
+                onClick={() => void handleClick(path)}
+                onContextMenu={() => handleContextMenu(path)}
+                title={path}
+              >
+                <FileTextIcon />
+                <span className="truncate">{basename(path)}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   )
 }

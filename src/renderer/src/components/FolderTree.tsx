@@ -1,6 +1,24 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
+import {
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
+} from './ui/sidebar'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from './ui/collapsible'
+import { ChevronRightIcon, FileTextIcon, FolderIcon } from 'lucide-react'
+import { Separator } from './ui/separator'
 
 interface TreeNode {
   name: string
@@ -9,53 +27,94 @@ interface TreeNode {
   children?: TreeNode[]
 }
 
-function TreeItem({
+function TreeItemDirectory({
   node,
+  activeFilePath,
+  onFileClick,
   depth,
+}: {
+  node: TreeNode
+  activeFilePath: string | null
+  onFileClick: (path: string) => void
+  depth: number
+}) {
+  return (
+    <SidebarMenuItem>
+      <Collapsible defaultOpen={depth === 0} className="group/collapsible">
+        <CollapsibleTrigger render={<SidebarMenuButton />}>
+          <ChevronRightIcon className="transition-transform group-data-[state=open]/collapsible:rotate-90" />
+          <FolderIcon />
+          <span className="truncate">{node.name}</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {node.children?.map((child) => (
+              <TreeItemNode
+                key={child.path}
+                node={child}
+                activeFilePath={activeFilePath}
+                onFileClick={onFileClick}
+                depth={depth + 1}
+              />
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </Collapsible>
+    </SidebarMenuItem>
+  )
+}
+
+function TreeItemFile({
+  node,
   activeFilePath,
   onFileClick,
 }: {
   node: TreeNode
-  depth: number
   activeFilePath: string | null
   onFileClick: (path: string) => void
 }) {
-  const [expanded, setExpanded] = useState(depth === 0)
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton
+        render={<button type="button" />}
+        isActive={activeFilePath === node.path}
+        onClick={() => void onFileClick(node.path)}
+        title={node.path}
+      >
+        <FileTextIcon />
+        <span className="truncate">{node.name}</span>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  )
+}
 
+function TreeItemNode({
+  node,
+  activeFilePath,
+  onFileClick,
+  depth,
+}: {
+  node: TreeNode
+  activeFilePath: string | null
+  onFileClick: (path: string) => void
+  depth: number
+}) {
   if (node.isDirectory) {
     return (
-      <>
-        <div
-          className={`sidebar-item indent-${Math.min(depth, 3)}`}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span style={{ fontSize: 10, marginRight: 4 }}>{expanded ? '\u25BE' : '\u25B8'}</span>
-          {node.name}/
-        </div>
-        {expanded &&
-          node.children?.map((child) => (
-            <TreeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              activeFilePath={activeFilePath}
-              onFileClick={onFileClick}
-            />
-          ))}
-      </>
+      <TreeItemDirectory
+        node={node}
+        activeFilePath={activeFilePath}
+        onFileClick={onFileClick}
+        depth={depth}
+      />
     )
   }
-
   return (
-    <div
-      className={`sidebar-item indent-${Math.min(depth, 3)} ${
-        activeFilePath === node.path ? 'active' : ''
-      }`}
-      onClick={() => onFileClick(node.path)}
-      title={node.path}
-    >
-      {node.name}
-    </div>
+    <TreeItemFile
+      node={node}
+      activeFilePath={activeFilePath}
+      onFileClick={onFileClick}
+    />
   )
 }
 
@@ -70,7 +129,7 @@ export function FolderTree() {
     async (path: string) => {
       const content = await window.api.readFile(path)
       setActiveFile({ path, content })
-      queryClient.invalidateQueries({ queryKey: ['recents'] })
+      void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
     [setActiveFile, queryClient]
   )
@@ -81,22 +140,26 @@ export function FolderTree() {
 
   return (
     <>
-      <div className="sidebar-divider" />
-      <div className="sidebar-section-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span>Folder</span>
-        <span style={{ opacity: 0.6, textTransform: 'none', fontWeight: 400 }}>{folderName}</span>
-      </div>
-      <div className="sidebar-list">
-        {folderTree.map((node) => (
-          <TreeItem
-            key={node.path}
-            node={node}
-            depth={0}
-            activeFilePath={activeFile?.path ?? null}
-            onFileClick={handleFileClick}
-          />
-        ))}
-      </div>
+      <Separator />
+      <SidebarGroup>
+        <SidebarGroupLabel className="flex justify-between">
+          <span>Folder</span>
+          <span className="text-muted-foreground font-normal normal-case opacity-60">{folderName}</span>
+        </SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {folderTree.map((node) => (
+              <TreeItemNode
+                key={node.path}
+                node={node}
+                activeFilePath={activeFile?.path ?? null}
+                onFileClick={handleFileClick}
+                depth={0}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
     </>
   )
 }

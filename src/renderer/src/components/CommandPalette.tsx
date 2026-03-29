@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { useRecents } from '../hooks/useRecents'
-import { fuzzySearch } from '../lib/fuzzy-search'
 import { basename } from '../lib/path-utils'
+import {
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from './ui/command'
+import { FileIcon } from 'lucide-react'
 
 function flattenTree(nodes: any[], result: { path: string; name: string }[] = []) {
   for (const node of nodes) {
@@ -24,10 +32,6 @@ export function CommandPalette() {
   const { data: recents = [] } = useRecents()
   const queryClient = useQueryClient()
 
-  const [query, setQuery] = useState('')
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-
   const allFiles = useMemo(() => {
     const folderFiles = flattenTree(folderTree)
     const folderPaths = new Set(folderFiles.map((f) => f.path))
@@ -37,85 +41,38 @@ export function CommandPalette() {
     return [...folderFiles, ...recentFiles]
   }, [folderTree, recents])
 
-  const results = useMemo(() => fuzzySearch(query, allFiles), [query, allFiles])
-
-  useEffect(() => {
-    if (commandPaletteOpen) {
-      setQuery('')
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 0)
-    }
-  }, [commandPaletteOpen])
-
   const selectFile = useCallback(
     async (path: string) => {
       setCommandPaletteOpen(false)
       const content = await window.api.readFile(path)
       setActiveFile({ path, content })
-      queryClient.invalidateQueries({ queryKey: ['recents'] })
+      void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
     [setCommandPaletteOpen, setActiveFile, queryClient]
   )
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault()
-          setSelectedIndex((i) => Math.min(i + 1, results.length - 1))
-          break
-        case 'ArrowUp':
-          e.preventDefault()
-          setSelectedIndex((i) => Math.max(i - 1, 0))
-          break
-        case 'Enter':
-          e.preventDefault()
-          if (results[selectedIndex]) {
-            selectFile(results[selectedIndex].path)
-          }
-          break
-        case 'Escape':
-          e.preventDefault()
-          setCommandPaletteOpen(false)
-          break
-      }
-    },
-    [results, selectedIndex, selectFile, setCommandPaletteOpen]
-  )
-
-  if (!commandPaletteOpen) return null
-
   return (
-    <div className="command-palette-overlay" onClick={() => setCommandPaletteOpen(false)}>
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="command-palette-input"
-          placeholder="Search files..."
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setSelectedIndex(0)
-          }}
-          onKeyDown={handleKeyDown}
-        />
-        <div className="command-palette-results">
-          {results.length === 0 && query && (
-            <div className="command-palette-empty">No matching files</div>
-          )}
-          {results.map((result, index) => (
-            <div
-              key={result.path}
-              className={`command-palette-item ${index === selectedIndex ? 'selected' : ''}`}
-              onClick={() => selectFile(result.path)}
-              onMouseEnter={() => setSelectedIndex(index)}
+    <CommandDialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
+      <CommandInput placeholder="Search files..." />
+      <CommandList>
+        <CommandEmpty>No matching files</CommandEmpty>
+        <CommandGroup heading="Files">
+          {allFiles.map((file) => (
+            <CommandItem
+              key={file.path}
+              value={file.path}
+              keywords={[file.name]}
+              onSelect={() => void selectFile(file.path)}
             >
-              <span className="filename">{result.name}</span>
-              <span className="filepath">{result.path}</span>
-            </div>
+              <FileIcon />
+              <div className="flex flex-col">
+                <span className="text-sm">{file.name}</span>
+                <span className="text-xs text-muted-foreground">{file.path}</span>
+              </div>
+            </CommandItem>
           ))}
-        </div>
-      </div>
-    </div>
+        </CommandGroup>
+      </CommandList>
+    </CommandDialog>
   )
 }

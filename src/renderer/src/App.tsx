@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { MarkdownView } from './components/MarkdownView'
 import { WelcomeView } from './components/WelcomeView'
 import { CommandPalette } from './components/CommandPalette'
+import { SidebarProvider } from './components/ui/sidebar'
 
 function App(): React.JSX.Element {
   const activeFile = useAppStore((s) => s.activeFile)
@@ -24,10 +25,10 @@ function App(): React.JSX.Element {
   useFolderTree(openFolderPath)
 
   useEffect(() => {
-    window.api.getAppState().then((state) => {
+    void window.api.getAppState().then((state) => {
       if (state.sidebarWidth) setSidebarWidth(state.sidebarWidth)
       if (state.lastFolder) {
-        window.api.readFolderTree(state.lastFolder).then((tree) => {
+        void window.api.readFolderTree(state.lastFolder).then((tree) => {
           setOpenFolder(state.lastFolder!, tree)
         })
       }
@@ -40,7 +41,7 @@ function App(): React.JSX.Element {
         const result = await window.api.openFileDialog()
         if (result) {
           setActiveFile(result)
-          queryClient.invalidateQueries({ queryKey: ['recents'] })
+          void queryClient.invalidateQueries({ queryKey: ['recents'] })
         }
       }),
       window.api.onMenuOpenFolder(async () => {
@@ -51,7 +52,7 @@ function App(): React.JSX.Element {
       }),
       window.api.onFileOpened((file) => {
         setActiveFile(file)
-        queryClient.invalidateQueries({ queryKey: ['recents'] })
+        void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }),
       window.api.onFileChanged((content) => {
         updateActiveFileContent(content)
@@ -86,26 +87,28 @@ function App(): React.JSX.Element {
       if (mdFile) {
         const content = await window.api.readFile(mdFile.path)
         setActiveFile({ path: mdFile.path, content })
-        queryClient.invalidateQueries({ queryKey: ['recents'] })
+        void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }
     },
     [setActiveFile, queryClient]
   )
 
   return (
-    <div
-      className="app-layout"
-      onDrop={handleDrop}
-      onDragOver={(e) => e.preventDefault()}
-    >
-      {sidebarOpen && <Sidebar />}
-      {activeFile ? (
-        <MarkdownView content={activeFile.content} />
-      ) : (
-        <WelcomeView />
-      )}
-      <CommandPalette />
-    </div>
+    <SidebarProvider>
+      <div
+        className="flex h-screen w-screen overflow-hidden bg-background text-foreground"
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        {sidebarOpen && <Sidebar />}
+        {activeFile ? (
+          <MarkdownView content={activeFile.content} />
+        ) : (
+          <WelcomeView />
+        )}
+        <CommandPalette />
+      </div>
+    </SidebarProvider>
   )
 }
 

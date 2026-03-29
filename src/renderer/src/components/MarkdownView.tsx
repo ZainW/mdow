@@ -13,7 +13,7 @@ export function MarkdownView({ content }: MarkdownViewProps) {
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
-    initMarkdown().then(() => {
+    void initMarkdown().then(() => {
       initMermaid(isDark)
       setReady(true)
     })
@@ -29,7 +29,7 @@ export function MarkdownView({ content }: MarkdownViewProps) {
 
   useEffect(() => {
     if (mermaidBlocksRef.current.length > 0) {
-      renderMermaidBlocks(mermaidBlocksRef.current)
+      void renderMermaidBlocks(mermaidBlocksRef.current)
     }
   }, [html])
 
@@ -53,12 +53,12 @@ export function MarkdownView({ content }: MarkdownViewProps) {
   }, [ready, content])
 
   if (!ready) {
-    return <div className="content-area" style={{ opacity: 0.5 }}>Loading...</div>
+    return <div className="flex-1 overflow-y-auto px-12 py-8 opacity-50">Loading...</div>
   }
 
   return (
     <div
-      className="content-area markdown-body"
+      className="flex-1 overflow-y-auto px-12 py-8 text-foreground markdown-body"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

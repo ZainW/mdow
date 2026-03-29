@@ -3,6 +3,14 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { RecentsList } from './RecentsList'
 import { FolderTree } from './FolderTree'
+import { Button } from './ui/button'
+import {
+  Sidebar as ShadcnSidebar,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+} from './ui/sidebar'
+import { SearchIcon, FileIcon, FolderOpenIcon } from 'lucide-react'
 
 export function Sidebar() {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -17,7 +25,7 @@ export function Sidebar() {
     const result = await window.api.openFileDialog()
     if (result) {
       setActiveFile(result)
-      queryClient.invalidateQueries({ queryKey: ['recents'] })
+      void queryClient.invalidateQueries({ queryKey: ['recents'] })
     }
   }, [setActiveFile, queryClient])
 
@@ -43,7 +51,7 @@ export function Sidebar() {
 
       const handleMouseUp = () => {
         resizing.current = false
-        window.api.saveAppState({ sidebarWidth })
+        void window.api.saveAppState({ sidebarWidth })
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
       }
@@ -59,24 +67,45 @@ export function Sidebar() {
 
   return (
     <>
-      <div className="sidebar" style={{ width: sidebarWidth }}>
-        <div className="sidebar-header">
-          <div className="quick-open-trigger" onClick={() => setCommandPaletteOpen(true)}>
-            <span style={{ opacity: 0.5 }}>&#x1F50D;</span>
+      <ShadcnSidebar
+        collapsible="none"
+        className="border-r"
+        style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+      >
+        <SidebarHeader className="p-3">
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2 text-muted-foreground text-xs"
+            onClick={() => setCommandPaletteOpen(true)}
+          >
+            <SearchIcon />
             <span>Quick Open</span>
-            <span className="shortcut">{modKey}K</span>
-          </div>
-        </div>
+            <span className="ml-auto opacity-40 text-[11px]">{modKey}K</span>
+          </Button>
+        </SidebarHeader>
 
-        <RecentsList />
-        <FolderTree />
+        <SidebarContent>
+          <RecentsList />
+          <FolderTree />
+        </SidebarContent>
 
-        <div className="sidebar-footer">
-          <button onClick={handleOpenFile}>Open File</button>
-          <button onClick={handleOpenFolder}>Open Folder</button>
-        </div>
-      </div>
-      <div className="resize-handle" onMouseDown={handleResizeStart} />
+        <SidebarFooter className="flex-row gap-2 p-2">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => void handleOpenFile()}>
+            <FileIcon data-icon="inline-start" />
+            Open File
+          </Button>
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => void handleOpenFolder()}>
+            <FolderOpenIcon data-icon="inline-start" />
+            Open Folder
+          </Button>
+        </SidebarFooter>
+      </ShadcnSidebar>
+
+      <div
+        className="w-1 cursor-col-resize shrink-0 hover:bg-primary active:bg-primary"
+        role="separator"
+        onMouseDown={handleResizeStart}
+      />
     </>
   )
 }
