@@ -75,7 +75,7 @@ export function MarkdownView({ content }: MarkdownViewProps) {
       </Button>
       <div
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]"
-        style={{ maxWidth: wideMode ? '100%' : '65ch' }}
+        style={{ maxWidth: wideMode ? '100%' : '52rem' }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
