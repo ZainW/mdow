@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useAppStore } from '../store/app-store'
-import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { ArrowLeftRightIcon } from 'lucide-react'
 
@@ -75,10 +74,8 @@ export function MarkdownView({ content }: MarkdownViewProps) {
         <ArrowLeftRightIcon />
       </Button>
       <div
-        className={cn(
-          'mx-auto px-12 py-8 text-foreground markdown-body',
-          !wideMode && 'max-w-prose'
-        )}
+        className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        style={{ maxWidth: wideMode ? '100%' : '65ch' }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
