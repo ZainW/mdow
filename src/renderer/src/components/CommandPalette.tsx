@@ -4,13 +4,20 @@ import { useAppStore } from '../store/app-store'
 import { useRecents } from '../hooks/useRecents'
 import { basename } from '../lib/path-utils'
 import {
-  CommandDialog,
+  Command,
   CommandInput,
   CommandList,
   CommandEmpty,
   CommandGroup,
   CommandItem,
 } from './ui/command'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog'
 import { FileIcon } from 'lucide-react'
 
 function flattenTree(nodes: any[], result: { path: string; name: string }[] = []) {
@@ -52,27 +59,38 @@ export function CommandPalette() {
   )
 
   return (
-    <CommandDialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
-      <CommandInput placeholder="Search files..." />
-      <CommandList>
-        <CommandEmpty>No matching files</CommandEmpty>
-        <CommandGroup heading="Files">
-          {allFiles.map((file) => (
-            <CommandItem
-              key={file.path}
-              value={file.path}
-              keywords={[file.name]}
-              onSelect={() => void selectFile(file.path)}
-            >
-              <FileIcon />
-              <div className="flex flex-col">
-                <span className="text-sm">{file.name}</span>
-                <span className="text-xs text-muted-foreground">{file.path}</span>
-              </div>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      </CommandList>
-    </CommandDialog>
+    <Dialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
+      <DialogContent
+        className="top-1/3 translate-y-0 overflow-hidden rounded-xl p-0"
+        showCloseButton={false}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Quick Open</DialogTitle>
+          <DialogDescription>Search for files to open</DialogDescription>
+        </DialogHeader>
+        <Command>
+          <CommandInput placeholder="Search files..." />
+          <CommandList>
+            <CommandEmpty>No matching files</CommandEmpty>
+            <CommandGroup heading="Files">
+              {allFiles.map((file) => (
+                <CommandItem
+                  key={file.path}
+                  value={file.path}
+                  keywords={[file.name]}
+                  onSelect={() => void selectFile(file.path)}
+                >
+                  <FileIcon />
+                  <div className="flex flex-col">
+                    <span className="text-sm">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">{file.path}</span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }
