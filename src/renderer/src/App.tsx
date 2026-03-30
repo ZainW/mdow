@@ -78,6 +78,15 @@ function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handler)
   }, [setCommandPaletteOpen, toggleSidebar])
 
+  useEffect(() => {
+    if (activeFile) {
+      const name = activeFile.path.split(/[/\\]/).pop() || 'mdview'
+      void window.api.setWindowTitle(name, activeFile.path)
+    } else {
+      void window.api.setWindowTitle('mdview')
+    }
+  }, [activeFile?.path])
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()

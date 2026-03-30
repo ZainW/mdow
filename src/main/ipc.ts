@@ -64,4 +64,13 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {
     shell.showItemInFolder(filePath)
   })
+
+  ipcMain.handle('window:set-title', (_, title: string, filePath?: string) => {
+    const win = getMainWindow()
+    if (!win) return
+    win.setTitle(title)
+    if (process.platform === 'darwin' && filePath) {
+      win.setRepresentedFilename(filePath)
+    }
+  })
 }

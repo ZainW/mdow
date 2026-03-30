@@ -28,6 +28,7 @@ export interface ElectronAPI {
   saveAppState: (state: Partial<AppState>) => Promise<void>
   addRecent: (filePath: string) => Promise<void>
   showInFolder: (filePath: string) => Promise<void>
+  setWindowTitle: (title: string, filePath?: string) => Promise<void>
 
   onFileChanged: (callback: (content: string) => void) => () => void
   onFolderChanged: (callback: (tree: TreeNode[]) => void) => () => void
@@ -47,6 +48,7 @@ const api: ElectronAPI = {
   saveAppState: (state) => ipcRenderer.invoke('store:save-state', state),
   addRecent: (filePath) => ipcRenderer.invoke('store:add-recent', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:show-in-folder', filePath),
+  setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
 
   onFileChanged: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, content: string) => callback(content)
