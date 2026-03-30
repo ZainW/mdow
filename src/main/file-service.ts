@@ -26,22 +26,21 @@ export function watchFile(filePath: string, onChange: (content: string) => void)
   fileWatcher = watch(filePath, { ignoreInitial: true })
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-  fileWatcher.on('change', async () => {
+  fileWatcher.on('change', () => {
     if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(async () => {
-      try {
-        const content = await readFile(filePath, 'utf-8')
-        onChange(content)
-      } catch {
-        // File might be temporarily unavailable during save
-      }
+    debounceTimer = setTimeout(() => {
+      readFile(filePath, 'utf-8')
+        .then((content) => onChange(content))
+        .catch(() => {
+          // File might be temporarily unavailable during save
+        })
     }, 300)
   })
 }
 
 export function unwatchFile(): void {
   if (fileWatcher) {
-    fileWatcher.close()
+    void fileWatcher.close()
     fileWatcher = null
   }
 }
