@@ -13,6 +13,21 @@ function getMainWindow(): BrowserWindow | null {
   return mainWindow
 }
 
+function openFileFromArgv(argv: string[]): void {
+  const filePath = argv.find(
+    (arg) => arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx'),
+  )
+  if (filePath) {
+    void readFileContent(filePath)
+      .then((content) => {
+        mainWindow?.webContents.send('file:opened', { path: filePath, content })
+      })
+      .catch(() => {
+        // Invalid file path
+      })
+  }
+}
+
 function createWindow(): void {
   const savedBounds = getWindowBounds()
 
@@ -63,18 +78,7 @@ function createWindow(): void {
         })
     }
 
-    const filePath = process.argv.find(
-      (arg) => arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx'),
-    )
-    if (filePath) {
-      void readFileContent(filePath)
-        .then((content) => {
-          mainWindow?.webContents.send('file:opened', { path: filePath, content })
-        })
-        .catch(() => {
-          // Invalid file path
-        })
-    }
+    openFileFromArgv(process.argv)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -88,29 +92,43 @@ function createWindow(): void {
   })
 }
 
-void app.whenReady().then(() => {
-  registerIpcHandlers(getMainWindow)
-  createMenu(getMainWindow)
-  createWindow()
+const gotTheLock = app.requestSingleInstanceLock()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+      openFileFromArgv(argv)
+    }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  void app.whenReady().then(() => {
+    registerIpcHandlers(getMainWindow)
+    createMenu(getMainWindow)
+    createWindow()
 
-app.on('open-file', (event, path) => {
-  event.preventDefault()
-  if (mainWindow) {
-    void readFileContent(path)
-      .then((content) => {
-        mainWindow?.webContents.send('file:opened', { path, content })
-      })
-      .catch(() => {
-        // Invalid file
-      })
-  }
-})
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('open-file', (event, path) => {
+    event.preventDefault()
+    if (mainWindow) {
+      void readFileContent(path)
+        .then((content) => {
+          mainWindow?.webContents.send('file:opened', { path, content })
+        })
+        .catch(() => {
+          // Invalid file
+        })
+    }
+  })
+}
