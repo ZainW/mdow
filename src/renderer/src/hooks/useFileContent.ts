@@ -5,16 +5,16 @@ import { useAppStore } from '../store/app-store'
 
 export function useFileContent(filePath: string | null) {
   const queryClient = useQueryClient()
-  const updateActiveFileContent = useAppStore((s) => s.updateActiveFileContent)
+  const updateTabContent = useAppStore((s) => s.updateTabContent)
 
   const handleFileChanged = useCallback(
-    (content: string) => {
+    (data: { path: string; content: string }) => {
       if (filePath) {
-        queryClient.setQueryData(['file', filePath], content)
-        updateActiveFileContent(content)
+        queryClient.setQueryData(['file', filePath], data.content)
+        updateTabContent(data.path, data.content)
       }
     },
-    [filePath, queryClient, updateActiveFileContent],
+    [filePath, queryClient, updateTabContent],
   )
 
   useIpcEvent(window.api.onFileChanged, handleFileChanged)

@@ -21,6 +21,7 @@ export interface AppState {
 export interface ElectronAPI {
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
+  unwatchFile: (path: string) => Promise<void>
   openFolderDialog: () => Promise<{ path: string; tree: TreeNode[] } | null>
   readFolderTree: (folderPath: string) => Promise<TreeNode[]>
   getRecents: () => Promise<string[]>
@@ -30,7 +31,8 @@ export interface ElectronAPI {
   showInFolder: (filePath: string) => Promise<void>
   setWindowTitle: (title: string, filePath?: string) => Promise<void>
 
-  onFileChanged: (callback: (content: string) => void) => () => void
+  onFileChanged: (callback: (data: { path: string; content: string }) => void) => () => void
+  onFileDeleted: (callback: (path: string) => void) => () => void
   onFolderChanged: (callback: (tree: TreeNode[]) => void) => () => void
   onThemeChanged: (callback: (isDark: boolean) => void) => () => void
   onMenuOpenFile: (callback: () => void) => () => void
@@ -41,6 +43,7 @@ export interface ElectronAPI {
 const api: ElectronAPI = {
   openFileDialog: () => ipcRenderer.invoke('file:open-dialog'),
   readFile: (path) => ipcRenderer.invoke('file:read', path),
+  unwatchFile: (path) => ipcRenderer.invoke('file:unwatch', path),
   openFolderDialog: () => ipcRenderer.invoke('folder:open-dialog'),
   readFolderTree: (folderPath) => ipcRenderer.invoke('folder:read-tree', folderPath),
   getRecents: () => ipcRenderer.invoke('store:get-recents'),
@@ -51,9 +54,15 @@ const api: ElectronAPI = {
   setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
 
   onFileChanged: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, content: string) => callback(content)
+    const handler = (_: Electron.IpcRendererEvent, data: { path: string; content: string }) =>
+      callback(data)
     ipcRenderer.on('file:changed', handler)
     return () => ipcRenderer.removeListener('file:changed', handler)
+  },
+  onFileDeleted: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, path: string) => callback(path)
+    ipcRenderer.on('file:deleted', handler)
+    return () => ipcRenderer.removeListener('file:deleted', handler)
   },
   onFolderChanged: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, tree: TreeNode[]) => callback(tree)

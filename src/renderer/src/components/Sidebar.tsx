@@ -17,7 +17,7 @@ export function Sidebar() {
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const queryClient = useQueryClient()
   const resizing = useRef(false)
@@ -25,10 +25,10 @@ export function Sidebar() {
   const handleOpenFile = useCallback(async () => {
     const result = await window.api.openFileDialog()
     if (result) {
-      setActiveFile(result)
+      openTab(result)
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     }
-  }, [setActiveFile, queryClient])
+  }, [openTab, queryClient])
 
   const handleOpenFolder = useCallback(async () => {
     const result = await window.api.openFolderDialog()

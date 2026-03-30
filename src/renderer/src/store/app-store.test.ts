@@ -1,11 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { useAppStore } from './app-store'
+import { useAppStore, selectActiveTab } from './app-store'
 
 describe('app-store', () => {
   beforeEach(() => {
-    // Reset store to defaults between tests
     useAppStore.setState({
-      activeFile: null,
+      tabs: [],
+      activeTabId: null,
       sidebarOpen: true,
       sidebarWidth: 260,
       openFolderPath: null,
@@ -15,38 +15,107 @@ describe('app-store', () => {
     })
   })
 
-  describe('activeFile', () => {
-    it('starts as null', () => {
-      expect(useAppStore.getState().activeFile).toBeNull()
+  describe('tabs', () => {
+    it('starts with no tabs', () => {
+      expect(useAppStore.getState().tabs).toEqual([])
+      expect(useAppStore.getState().activeTabId).toBeNull()
     })
 
-    it('sets active file', () => {
-      const file = { path: '/docs/readme.md', content: '# Hello' }
-      useAppStore.getState().setActiveFile(file)
-      expect(useAppStore.getState().activeFile).toEqual(file)
+    it('opens a tab', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: '# Hello' })
+      const state = useAppStore.getState()
+      expect(state.tabs).toHaveLength(1)
+      expect(state.tabs[0].path).toBe('/a.md')
+      expect(state.tabs[0].content).toBe('# Hello')
+      expect(state.activeTabId).toBe(state.tabs[0].id)
     })
 
-    it('clears active file with null', () => {
-      useAppStore.getState().setActiveFile({ path: '/a.md', content: 'hi' })
-      useAppStore.getState().setActiveFile(null)
-      expect(useAppStore.getState().activeFile).toBeNull()
+    it('deduplicates by path — focuses existing tab', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v1' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v2' })
+      const state = useAppStore.getState()
+      expect(state.tabs).toHaveLength(2)
+      expect(state.tabs[0].content).toBe('v2')
+      expect(state.activeTabId).toBe(state.tabs[0].id)
     })
 
-    it('updates active file content', () => {
-      useAppStore.getState().setActiveFile({ path: '/a.md', content: 'old' })
-      useAppStore.getState().updateActiveFileContent('new')
-      expect(useAppStore.getState().activeFile).toEqual({ path: '/a.md', content: 'new' })
+    it('inserts new tab after active tab', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      // Active is now /b.md (index 1). Switch to /a.md, then open /c.md
+      const aId = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setActiveTab(aId)
+      useAppStore.getState().openTab({ path: '/c.md', content: 'c' })
+      const paths = useAppStore.getState().tabs.map((t) => t.path)
+      expect(paths).toEqual(['/a.md', '/c.md', '/b.md'])
     })
 
-    it('updateActiveFileContent is a no-op when no active file', () => {
-      useAppStore.getState().updateActiveFileContent('new')
-      expect(useAppStore.getState().activeFile).toBeNull()
+    it('closes a tab', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      const bId = useAppStore.getState().tabs[1].id
+      useAppStore.getState().closeTab(bId)
+      expect(useAppStore.getState().tabs).toHaveLength(1)
+      expect(useAppStore.getState().tabs[0].path).toBe('/a.md')
     })
 
-    it('preserves path when updating content', () => {
-      useAppStore.getState().setActiveFile({ path: '/docs/file.md', content: 'v1' })
-      useAppStore.getState().updateActiveFileContent('v2')
-      expect(useAppStore.getState().activeFile!.path).toBe('/docs/file.md')
+    it('closing active tab activates next tab to right', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      useAppStore.getState().openTab({ path: '/c.md', content: 'c' })
+      const aId = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setActiveTab(aId)
+      useAppStore.getState().closeTab(aId)
+      expect(useAppStore.getState().activeTabId).toBe(useAppStore.getState().tabs[0].id)
+      expect(useAppStore.getState().tabs[0].path).toBe('/b.md')
+    })
+
+    it('closing last tab results in null activeTabId', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().closeTab(id)
+      expect(useAppStore.getState().tabs).toEqual([])
+      expect(useAppStore.getState().activeTabId).toBeNull()
+    })
+
+    it('updates tab content by path', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'old' })
+      useAppStore.getState().updateTabContent('/a.md', 'new')
+      expect(useAppStore.getState().tabs[0].content).toBe('new')
+    })
+
+    it('updates tab scroll position', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().updateTabScroll(id, 500)
+      expect(useAppStore.getState().tabs[0].scrollPosition).toBe(500)
+    })
+
+    it('sets tab error by path', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().setTabError('/a.md', { type: 'deleted', path: '/a.md' })
+      expect(useAppStore.getState().tabs[0].error).toEqual({ type: 'deleted', path: '/a.md' })
+    })
+
+    it('clears tab error', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setTabError('/a.md', { type: 'deleted', path: '/a.md' })
+      useAppStore.getState().clearTabError(id)
+      expect(useAppStore.getState().tabs[0].error).toBeNull()
+    })
+  })
+
+  describe('selectActiveTab', () => {
+    it('returns null when no tabs', () => {
+      expect(selectActiveTab(useAppStore.getState())).toBeNull()
+    })
+
+    it('returns the active tab', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'hello' })
+      const tab = selectActiveTab(useAppStore.getState())
+      expect(tab?.path).toBe('/a.md')
     })
   })
 
@@ -58,7 +127,6 @@ describe('app-store', () => {
     it('toggles sidebar', () => {
       useAppStore.getState().toggleSidebar()
       expect(useAppStore.getState().sidebarOpen).toBe(false)
-
       useAppStore.getState().toggleSidebar()
       expect(useAppStore.getState().sidebarOpen).toBe(true)
     })
@@ -89,10 +157,8 @@ describe('app-store', () => {
     it('sets folder tree independently', () => {
       const tree1 = [{ name: 'a.md', path: '/a.md', isDirectory: false }]
       const tree2 = [{ name: 'b.md', path: '/b.md', isDirectory: false }]
-
       useAppStore.getState().setOpenFolder('/docs', tree1)
       useAppStore.getState().setFolderTree(tree2)
-
       expect(useAppStore.getState().openFolderPath).toBe('/docs')
       expect(useAppStore.getState().folderTree).toEqual(tree2)
     })
@@ -106,7 +172,6 @@ describe('app-store', () => {
     it('toggles wide mode', () => {
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(true)
-
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(false)
     })
@@ -130,17 +195,17 @@ describe('app-store', () => {
   })
 
   describe('state independence', () => {
-    it('toggling sidebar does not affect other state', () => {
-      useAppStore.getState().setActiveFile({ path: '/a.md', content: 'hi' })
+    it('toggling sidebar does not affect tabs', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'hi' })
       useAppStore.getState().toggleSidebar()
-      expect(useAppStore.getState().activeFile).toEqual({ path: '/a.md', content: 'hi' })
+      expect(useAppStore.getState().tabs).toHaveLength(1)
       expect(useAppStore.getState().wideMode).toBe(false)
     })
 
-    it('setting folder does not affect active file', () => {
-      useAppStore.getState().setActiveFile({ path: '/a.md', content: 'hi' })
+    it('setting folder does not affect tabs', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'hi' })
       useAppStore.getState().setOpenFolder('/docs', [])
-      expect(useAppStore.getState().activeFile).toEqual({ path: '/a.md', content: 'hi' })
+      expect(useAppStore.getState().tabs).toHaveLength(1)
     })
   })
 })

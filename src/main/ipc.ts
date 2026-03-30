@@ -1,7 +1,17 @@
 import { ipcMain, shell, BrowserWindow } from 'electron'
-import { openFileDialog, readFileContent, watchFile } from './file-service'
+import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
+
+function setupFileWatcher(win: BrowserWindow, path: string): void {
+  watchFile(path, (event) => {
+    if (event.type === 'changed') {
+      win.webContents.send('file:changed', { path, content: event.content })
+    } else if (event.type === 'deleted') {
+      win.webContents.send('file:deleted', path)
+    }
+  })
+}
 
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle('file:open-dialog', async () => {
@@ -10,23 +20,30 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await openFileDialog(win)
     if (result) {
       addRecent(result.path)
-      watchFile(result.path, (content) => {
-        win.webContents.send('file:changed', content)
-      })
+      setupFileWatcher(win, result.path)
     }
     return result
   })
 
   ipcMain.handle('file:read', async (_, path: string) => {
-    const content = await readFileContent(path)
-    const win = getMainWindow()
-    if (win) {
-      addRecent(path)
-      watchFile(path, (newContent) => {
-        win.webContents.send('file:changed', newContent)
-      })
+    try {
+      const content = await readFileContent(path)
+      const win = getMainWindow()
+      if (win) {
+        addRecent(path)
+        setupFileWatcher(win, path)
+      }
+      return content
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') throw new Error('not-found')
+      if (code === 'EACCES') throw new Error('permission-denied')
+      throw new Error('read-error')
     }
-    return content
+  })
+
+  ipcMain.handle('file:unwatch', (_, path: string) => {
+    unwatchFile(path)
   })
 
   ipcMain.handle('folder:open-dialog', async () => {

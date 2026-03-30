@@ -35,7 +35,7 @@ function flattenTree(nodes: TreeNode[], result: { path: string; name: string }[]
 export function CommandPalette() {
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const openTab = useAppStore((s) => s.openTab)
   const folderTree = useAppStore((s) => s.folderTree)
   const { data: recents = [] } = useRecents()
   const queryClient = useQueryClient()
@@ -53,10 +53,10 @@ export function CommandPalette() {
     async (path: string) => {
       setCommandPaletteOpen(false)
       const content = await window.api.readFile(path)
-      setActiveFile({ path, content })
+      openTab({ path, content })
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setCommandPaletteOpen, setActiveFile, queryClient],
+    [setCommandPaletteOpen, openTab, queryClient],
   )
 
   return (

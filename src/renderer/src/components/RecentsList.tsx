@@ -15,17 +15,20 @@ import { FileTextIcon } from 'lucide-react'
 
 export function RecentsList() {
   const { data: recents = [] } = useRecents()
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
-  const activeFile = useAppStore((s) => s.activeFile)
+  const openTab = useAppStore((s) => s.openTab)
+  const activeTab = useAppStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    return tab ?? null
+  })
   const queryClient = useQueryClient()
 
   const handleClick = useCallback(
     async (path: string) => {
       const content = await window.api.readFile(path)
-      setActiveFile({ path, content })
+      openTab({ path, content })
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     },
-    [setActiveFile, queryClient],
+    [openTab, queryClient],
   )
 
   const handleContextMenu = useCallback((path: string) => {
@@ -44,11 +47,11 @@ export function RecentsList() {
           {recents.map((path) => (
             <SidebarMenuItem key={path}>
               <SidebarMenuButton
-                isActive={activeFile?.path === path}
+                isActive={activeTab?.path === path}
                 onClick={() => void handleClick(path)}
                 onContextMenu={() => handleContextMenu(path)}
                 title={path}
-                className={activeFile?.path === path ? 'tree-file-active' : ''}
+                className={activeTab?.path === path ? 'tree-file-active' : ''}
               >
                 <FileTextIcon className="size-3.5 opacity-40" />
                 <span className="truncate">{basename(path)}</span>

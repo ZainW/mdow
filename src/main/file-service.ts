@@ -2,7 +2,7 @@ import { dialog, BrowserWindow } from 'electron'
 import { readFile } from 'fs/promises'
 import { watch, type FSWatcher } from 'chokidar'
 
-let fileWatcher: FSWatcher | null = null
+const fileWatchers = new Map<string, FSWatcher>()
 
 export async function openFileDialog(win: BrowserWindow) {
   const result = await dialog.showOpenDialog(win, {
@@ -21,26 +21,42 @@ export async function readFileContent(path: string): Promise<string> {
   return readFile(path, 'utf-8')
 }
 
-export function watchFile(filePath: string, onChange: (content: string) => void): void {
-  unwatchFile()
-  fileWatcher = watch(filePath, { ignoreInitial: true })
+export type FileWatchEvent = { type: 'changed'; content: string } | { type: 'deleted' }
+
+export function watchFile(filePath: string, onChange: (event: FileWatchEvent) => void): void {
+  if (fileWatchers.has(filePath)) return
+  const watcher = watch(filePath, { ignoreInitial: true })
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-  fileWatcher.on('change', () => {
+  watcher.on('change', () => {
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       readFile(filePath, 'utf-8')
-        .then((content) => onChange(content))
+        .then((content) => onChange({ type: 'changed', content }))
         .catch(() => {
           // File might be temporarily unavailable during save
         })
     }, 300)
   })
+
+  watcher.on('unlink', () => {
+    onChange({ type: 'deleted' })
+  })
+
+  fileWatchers.set(filePath, watcher)
 }
 
-export function unwatchFile(): void {
-  if (fileWatcher) {
-    void fileWatcher.close()
-    fileWatcher = null
+export function unwatchFile(filePath: string): void {
+  const watcher = fileWatchers.get(filePath)
+  if (watcher) {
+    void watcher.close()
+    fileWatchers.delete(filePath)
   }
+}
+
+export function unwatchAllFiles(): void {
+  for (const watcher of fileWatchers.values()) {
+    void watcher.close()
+  }
+  fileWatchers.clear()
 }

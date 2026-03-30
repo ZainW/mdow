@@ -1,23 +1,27 @@
 import { useCallback, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAppStore } from './store/app-store'
+import { useAppStore, selectActiveTab } from './store/app-store'
 import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
 import { Sidebar } from './components/Sidebar'
+import { TabBar } from './components/TabBar'
 import { MarkdownView } from './components/MarkdownView'
 import { WelcomeView } from './components/WelcomeView'
+import { ErrorView } from './components/ErrorView'
 import { CommandPalette } from './components/CommandPalette'
 import { SidebarProvider } from './components/ui/sidebar'
 
 function App(): React.JSX.Element {
-  const activeFile = useAppStore((s) => s.activeFile)
+  const activeTab = useAppStore(selectActiveTab)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const updateActiveFileContent = useAppStore((s) => s.updateActiveFileContent)
+  const setSearchOpen = useAppStore((s) => s.setSearchOpen)
+  const updateTabContent = useAppStore((s) => s.updateTabContent)
+  const setTabError = useAppStore((s) => s.setTabError)
   const queryClient = useQueryClient()
 
   useTheme()
@@ -39,7 +43,7 @@ function App(): React.JSX.Element {
       window.api.onMenuOpenFile(() => {
         void window.api.openFileDialog().then((result) => {
           if (result) {
-            setActiveFile(result)
+            openTab(result)
             void queryClient.invalidateQueries({ queryKey: ['recents'] })
           }
         })
@@ -52,15 +56,18 @@ function App(): React.JSX.Element {
         })
       }),
       window.api.onFileOpened((file) => {
-        setActiveFile(file)
+        openTab(file)
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }),
-      window.api.onFileChanged((content) => {
-        updateActiveFileContent(content)
+      window.api.onFileChanged((data) => {
+        updateTabContent(data.path, data.content)
+      }),
+      window.api.onFileDeleted((path) => {
+        setTabError(path, { type: 'deleted', path })
       }),
     ]
     return () => unsubs.forEach((fn) => fn())
-  }, [setActiveFile, setOpenFolder, updateActiveFileContent, queryClient])
+  }, [openTab, setOpenFolder, updateTabContent, setTabError, queryClient])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -73,19 +80,23 @@ function App(): React.JSX.Element {
         e.preventDefault()
         toggleSidebar()
       }
+      if (mod && e.key === 'f') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [setCommandPaletteOpen, toggleSidebar])
+  }, [setCommandPaletteOpen, setSearchOpen, toggleSidebar])
 
   useEffect(() => {
-    if (activeFile) {
-      const name = activeFile.path.split(/[/\\]/).pop() || 'mdview'
-      void window.api.setWindowTitle(name, activeFile.path)
+    if (activeTab) {
+      const name = activeTab.path.split(/[/\\]/).pop() || 'mdview'
+      void window.api.setWindowTitle(name, activeTab.path)
     } else {
       void window.api.setWindowTitle('mdview')
     }
-  }, [activeFile?.path])
+  }, [activeTab?.path])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -96,13 +107,19 @@ function App(): React.JSX.Element {
       )
       if (mdFile) {
         void window.api.readFile(mdFile.path).then((content) => {
-          setActiveFile({ path: mdFile.path, content })
+          openTab({ path: mdFile.path, content })
           void queryClient.invalidateQueries({ queryKey: ['recents'] })
         })
       }
     },
-    [setActiveFile, queryClient],
+    [openTab, queryClient],
   )
+
+  const renderContent = () => {
+    if (!activeTab) return <WelcomeView />
+    if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
+    return <MarkdownView tab={activeTab} />
+  }
 
   return (
     <SidebarProvider>
@@ -112,7 +129,10 @@ function App(): React.JSX.Element {
         onDragOver={(e) => e.preventDefault()}
       >
         <Sidebar />
-        {activeFile ? <MarkdownView content={activeFile.content} /> : <WelcomeView />}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TabBar />
+          {renderContent()}
+        </div>
         <CommandPalette />
       </div>
     </SidebarProvider>

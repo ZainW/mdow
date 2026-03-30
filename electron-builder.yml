@@ -1,0 +1,54 @@
+appId: com.mdview.app
+productName: mdview
+directories:
+  buildResources: resources
+  output: dist
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+    - target: zip
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Markdown Document
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Default
+        LSItemContentTypes:
+          - net.daringfireball.markdown
+          - public.plain-text
+        CFBundleTypeExtensions:
+          - md
+          - markdown
+          - mdx
+    UTImportedTypeDeclarations:
+      - UTTypeIdentifier: net.daringfireball.markdown
+        UTTypeDescription: Markdown Document
+        UTTypeConformsTo:
+          - public.plain-text
+        UTTypeTagSpecification:
+          public.filename-extension:
+            - md
+            - markdown
+            - mdx
+
+win:
+  target:
+    - target: nsis
+  fileAssociations:
+    - ext: md
+      name: Markdown Document
+      role: Viewer
+    - ext: markdown
+      name: Markdown Document
+      role: Viewer
+    - ext: mdx
+      name: MDX Document
+      role: Viewer
+
+linux:
+  target:
+    - target: AppImage
+  mimeTypes:
+    - text/markdown
+    - text/x-markdown

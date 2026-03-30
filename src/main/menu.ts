@@ -49,6 +49,12 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find...',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => getMainWindow()?.webContents.send('menu:find'),
+        },
       ],
     },
     {

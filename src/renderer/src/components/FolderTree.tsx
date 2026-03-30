@@ -121,18 +121,21 @@ function TreeItemNode({
 export function FolderTree() {
   const folderTree = useAppStore((s) => s.folderTree)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
-  const activeFile = useAppStore((s) => s.activeFile)
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const activeTab = useAppStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId)
+    return tab ?? null
+  })
+  const openTab = useAppStore((s) => s.openTab)
   const queryClient = useQueryClient()
 
   const handleFileClick = useCallback(
     (path: string) => {
       void window.api.readFile(path).then((content) => {
-        setActiveFile({ path, content })
+        openTab({ path, content })
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       })
     },
-    [setActiveFile, queryClient],
+    [openTab, queryClient],
   )
 
   if (!openFolderPath || folderTree.length === 0) return null
@@ -155,7 +158,7 @@ export function FolderTree() {
               <TreeItemNode
                 key={node.path}
                 node={node}
-                activeFilePath={activeFile?.path ?? null}
+                activeFilePath={activeTab?.path ?? null}
                 onFileClick={handleFileClick}
                 depth={0}
               />

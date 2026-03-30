@@ -118,6 +118,18 @@ export interface RenderResult {
 
 let mermaidCounter = 0
 
+function wrapWithCopyButton(preElement: Element, rawCode: string): HTMLDivElement {
+  const container = document.createElement('div')
+  container.className = 'code-block-wrapper group/code relative'
+  const copyBtn = document.createElement('button')
+  copyBtn.className = 'copy-code-btn'
+  copyBtn.setAttribute('data-code', btoa(encodeURIComponent(rawCode)))
+  copyBtn.textContent = 'Copy'
+  container.appendChild(preElement)
+  container.appendChild(copyBtn)
+  return container
+}
+
 export function renderMarkdown(text: string): RenderResult {
   const rawHtml = renderToHtml(text)
 
@@ -144,8 +156,10 @@ export function renderMarkdown(text: string): RenderResult {
       const highlighted = highlightCode(code, lang)
       const temp = document.createElement('div')
       temp.innerHTML = highlighted
-      if (temp.firstElementChild) {
-        block.closest('pre')!.replaceWith(temp.firstElementChild)
+      const newPre = temp.firstElementChild
+      if (newPre) {
+        const wrapped = wrapWithCopyButton(newPre, code)
+        block.closest('pre')!.replaceWith(wrapped)
       }
     }
   }

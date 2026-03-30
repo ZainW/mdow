@@ -7,7 +7,7 @@ import { Card, CardContent } from './ui/card'
 import { FileIcon, FolderOpenIcon } from 'lucide-react'
 
 export function WelcomeView() {
-  const setActiveFile = useAppStore((s) => s.setActiveFile)
+  const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const queryClient = useQueryClient()
   const [isDragOver, setIsDragOver] = useState(false)
@@ -15,10 +15,10 @@ export function WelcomeView() {
   const handleOpenFile = useCallback(async () => {
     const result = await window.api.openFileDialog()
     if (result) {
-      setActiveFile(result)
+      openTab(result)
       void queryClient.invalidateQueries({ queryKey: ['recents'] })
     }
-  }, [setActiveFile, queryClient])
+  }, [openTab, queryClient])
 
   const handleOpenFolder = useCallback(async () => {
     const result = await window.api.openFolderDialog()
@@ -39,12 +39,12 @@ export function WelcomeView() {
 
       if (mdFile) {
         void window.api.readFile(mdFile.path).then((content) => {
-          setActiveFile({ path: mdFile.path, content })
+          openTab({ path: mdFile.path, content })
           void queryClient.invalidateQueries({ queryKey: ['recents'] })
         })
       }
     },
-    [setActiveFile, queryClient],
+    [openTab, queryClient],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
