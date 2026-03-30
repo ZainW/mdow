@@ -36,18 +36,20 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     const unsubs = [
-      window.api.onMenuOpenFile(async () => {
-        const result = await window.api.openFileDialog()
-        if (result) {
-          setActiveFile(result)
-          void queryClient.invalidateQueries({ queryKey: ['recents'] })
-        }
+      window.api.onMenuOpenFile(() => {
+        void window.api.openFileDialog().then((result) => {
+          if (result) {
+            setActiveFile(result)
+            void queryClient.invalidateQueries({ queryKey: ['recents'] })
+          }
+        })
       }),
-      window.api.onMenuOpenFolder(async () => {
-        const result = await window.api.openFolderDialog()
-        if (result) {
-          setOpenFolder(result.path, result.tree)
-        }
+      window.api.onMenuOpenFolder(() => {
+        void window.api.openFolderDialog().then((result) => {
+          if (result) {
+            setOpenFolder(result.path, result.tree)
+          }
+        })
       }),
       window.api.onFileOpened((file) => {
         setActiveFile(file)
@@ -77,16 +79,17 @@ function App(): React.JSX.Element {
   }, [setCommandPaletteOpen, toggleSidebar])
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
+    (e: React.DragEvent) => {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
       const mdFile = files.find(
         (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
       if (mdFile) {
-        const content = await window.api.readFile(mdFile.path)
-        setActiveFile({ path: mdFile.path, content })
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
+        void window.api.readFile(mdFile.path).then((content) => {
+          setActiveFile({ path: mdFile.path, content })
+          void queryClient.invalidateQueries({ queryKey: ['recents'] })
+        })
       }
     },
     [setActiveFile, queryClient],

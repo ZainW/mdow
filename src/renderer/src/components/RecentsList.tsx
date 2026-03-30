@@ -29,7 +29,7 @@ export function RecentsList() {
   )
 
   const handleContextMenu = useCallback((path: string) => {
-    window.api.showInFolder(path)
+    void window.api.showInFolder(path)
   }, [])
 
   if (recents.length === 0) {

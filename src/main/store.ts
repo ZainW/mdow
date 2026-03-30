@@ -37,9 +37,10 @@ export function getAppState() {
 }
 
 export function saveAppState(state: Partial<StoreSchema>): void {
-  for (const [key, value] of Object.entries(state)) {
-    store.set(key as keyof StoreSchema, value)
-  }
+  if (state.sidebarWidth !== undefined) store.set('sidebarWidth', state.sidebarWidth)
+  if (state.lastFolder !== undefined) store.set('lastFolder', state.lastFolder)
+  if (state.windowBounds !== undefined) store.set('windowBounds', state.windowBounds)
+  if (state.recents !== undefined) store.set('recents', state.recents)
 }
 
 export function getWindowBounds() {

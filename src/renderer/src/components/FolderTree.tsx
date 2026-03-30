@@ -83,7 +83,7 @@ function TreeItemFile({
       <SidebarMenuSubButton
         render={<button type="button" />}
         isActive={isActive}
-        onClick={() => void onFileClick(node.path)}
+        onClick={() => onFileClick(node.path)}
         title={node.path}
         className={isActive ? 'tree-file-active' : ''}
       >
@@ -126,10 +126,11 @@ export function FolderTree() {
   const queryClient = useQueryClient()
 
   const handleFileClick = useCallback(
-    async (path: string) => {
-      const content = await window.api.readFile(path)
-      setActiveFile({ path, content })
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
+    (path: string) => {
+      void window.api.readFile(path).then((content) => {
+        setActiveFile({ path, content })
+        void queryClient.invalidateQueries({ queryKey: ['recents'] })
+      })
     },
     [setActiveFile, queryClient],
   )

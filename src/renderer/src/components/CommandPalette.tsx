@@ -14,7 +14,14 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 import { FileTextIcon } from 'lucide-react'
 
-function flattenTree(nodes: any[], result: { path: string; name: string }[] = []) {
+interface TreeNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  children?: TreeNode[]
+}
+
+function flattenTree(nodes: TreeNode[], result: { path: string; name: string }[] = []) {
   for (const node of nodes) {
     if (node.isDirectory && node.children) {
       flattenTree(node.children, result)

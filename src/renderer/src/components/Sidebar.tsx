@@ -41,7 +41,9 @@ export function Sidebar() {
     (e: React.PointerEvent) => {
       if (!sidebarOpen) return
       e.preventDefault()
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+      if (e.target instanceof HTMLElement) {
+        e.target.setPointerCapture(e.pointerId)
+      }
       resizing.current = true
       const startX = e.clientX
       const startWidth = sidebarWidth
@@ -77,7 +79,7 @@ export function Sidebar() {
         <ShadcnSidebar
           collapsible="none"
           className="h-full border-none"
-          style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+          style={{ '--sidebar-width': `${sidebarWidth}px` }}
         >
           <SidebarHeader className="p-2">
             <Button

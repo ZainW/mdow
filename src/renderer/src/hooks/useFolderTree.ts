@@ -3,12 +3,19 @@ import { useCallback } from 'react'
 import { useIpcEvent } from './useIpcEvent'
 import { useAppStore } from '../store/app-store'
 
+interface TreeNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  children?: TreeNode[]
+}
+
 export function useFolderTree(folderPath: string | null) {
   const queryClient = useQueryClient()
   const setFolderTree = useAppStore((s) => s.setFolderTree)
 
   const handleFolderChanged = useCallback(
-    (tree: any[]) => {
+    (tree: TreeNode[]) => {
       if (folderPath) {
         queryClient.setQueryData(['folder', folderPath], tree)
         setFolderTree(tree)

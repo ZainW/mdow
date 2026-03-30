@@ -28,7 +28,7 @@ export function WelcomeView() {
   }, [setOpenFolder])
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
+    (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
 
@@ -38,9 +38,10 @@ export function WelcomeView() {
       )
 
       if (mdFile) {
-        const content = await window.api.readFile(mdFile.path)
-        setActiveFile({ path: mdFile.path, content })
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
+        void window.api.readFile(mdFile.path).then((content) => {
+          setActiveFile({ path: mdFile.path, content })
+          void queryClient.invalidateQueries({ queryKey: ['recents'] })
+        })
       }
     },
     [setActiveFile, queryClient],
