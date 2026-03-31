@@ -13,7 +13,7 @@ import {
   SidebarMenuSubButton,
 } from './ui/sidebar'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible'
-import { ChevronRightIcon, FileTextIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
+import { CaretRight, FileText, Folder, FolderOpen } from '@phosphor-icons/react'
 import { Separator } from './ui/separator'
 
 interface TreeNode {
@@ -45,9 +45,9 @@ function TreeItemDirectory({
     <SidebarMenuItem>
       <Collapsible defaultOpen={shouldOpen} className="group/collapsible">
         <CollapsibleTrigger render={<SidebarMenuButton className="tree-folder-btn" />}>
-          <ChevronRightIcon className="tree-chevron size-3.5 opacity-50" />
-          <FolderIcon className="tree-folder-icon-closed size-4 text-sidebar-primary/70" />
-          <FolderOpenIcon className="tree-folder-icon-open size-4 text-sidebar-primary/70" />
+          <CaretRight className="tree-chevron size-3.5 opacity-50" />
+          <Folder className="tree-folder-icon-closed size-4 text-sidebar-primary/70" />
+          <FolderOpen className="tree-folder-icon-open size-4 text-sidebar-primary/70" />
           <span className="truncate">{node.name}</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="tree-collapsible-content">
@@ -87,7 +87,7 @@ function TreeItemFile({
         title={node.path}
         className={isActive ? 'tree-file-active' : ''}
       >
-        <FileTextIcon className="size-3.5 opacity-40" />
+        <FileText className="size-3.5 opacity-40" />
         <span className="truncate">{node.name}</span>
       </SidebarMenuSubButton>
     </SidebarMenuSubItem>

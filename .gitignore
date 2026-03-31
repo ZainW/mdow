@@ -3,5 +3,11 @@ out/
 dist/
 .turbo/
 .superpowers/
+.agents/
+.playwright-mcp/
+.claude/settings.local.json
+.claude/worktrees/
 CLAUDE.local.md
 *.log
+*.tsbuildinfo
+skills-lock.json

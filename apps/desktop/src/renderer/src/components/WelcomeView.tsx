@@ -4,7 +4,7 @@ import { useAppStore } from '../store/app-store'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
-import { FileIcon, FolderOpenIcon } from 'lucide-react'
+import { File, FolderOpen } from '@phosphor-icons/react'
 
 export function WelcomeView() {
   const openTab = useAppStore((s) => s.openTab)
@@ -76,11 +76,11 @@ export function WelcomeView() {
       </Card>
       <div className="flex gap-2">
         <Button variant="outline" onClick={() => void handleOpenFile()}>
-          <FileIcon data-icon="inline-start" />
+          <File data-icon="inline-start" />
           Open File
         </Button>
         <Button variant="outline" onClick={() => void handleOpenFolder()}>
-          <FolderOpenIcon data-icon="inline-start" />
+          <FolderOpen data-icon="inline-start" />
           Open Folder
         </Button>
       </div>

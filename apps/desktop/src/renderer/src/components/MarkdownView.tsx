@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
 import { SearchBar } from './SearchBar'
 import { Button } from './ui/button'
-import { ArrowLeftRightIcon } from 'lucide-react'
+import { ArrowsLeftRight } from '@phosphor-icons/react'
 
 interface MarkdownViewProps {
   tab: Tab
 }
 
 export function MarkdownView({ tab }: MarkdownViewProps) {
-  const [html, setHtml] = useState('')
   const [ready, setReady] = useState(false)
+  const [themeKey, setThemeKey] = useState(0)
   const mermaidBlocksRef = useRef<RenderResult['mermaidBlocks']>([])
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -21,9 +21,21 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const wideMode = useAppStore((s) => s.wideMode)
   const toggleWideMode = useAppStore((s) => s.toggleWideMode)
+  const zoomLevel = useAppStore((s) => s.zoomLevel)
   const updateTabScroll = useAppStore((s) => s.updateTabScroll)
   const searchOpen = useAppStore((s) => s.searchOpen)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
+
+  // Synchronous HTML computation — updates in the same render as the tab switch,
+  // preventing intermediate frames with stale content that cause scrollbar flash
+  const html = useMemo(() => {
+    if (!ready || !tab.content) return ''
+    const result = renderMarkdown(tab.content)
+    mermaidBlocksRef.current = result.mermaidBlocks
+    return result.html
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
+  }, [ready, tab.content, themeKey])
+
   const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
     searchOpen ? searchQuery : '',
@@ -39,14 +51,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   }, [])
 
   useEffect(() => {
-    if (!ready || !tab.content) return
-
-    const result = renderMarkdown(tab.content)
-    setHtml(result.html)
-    mermaidBlocksRef.current = result.mermaidBlocks
-  }, [tab.content, ready])
-
-  useEffect(() => {
     if (mermaidBlocksRef.current.length > 0) {
       void renderMermaidBlocks(mermaidBlocksRef.current)
     }
@@ -56,11 +60,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     const observer = new MutationObserver(() => {
       const isDark = document.documentElement.classList.contains('dark')
       updateMermaidTheme(isDark)
-      if (ready && tab.content) {
-        const result = renderMarkdown(tab.content)
-        setHtml(result.html)
-        mermaidBlocksRef.current = result.mermaidBlocks
-      }
+      setThemeKey((k) => k + 1)
     })
 
     observer.observe(document.documentElement, {
@@ -69,7 +69,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     })
 
     return () => observer.disconnect()
-  }, [ready, tab.content])
+  }, [])
 
   // Copy code button handler
   useEffect(() => {
@@ -110,14 +110,13 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     }
   }, [tab.id, updateTabScroll])
 
-  // Scroll position: restore on tab switch
-  useEffect(() => {
+  // Scroll position: restore on tab switch — useLayoutEffect runs before paint,
+  // so the browser never renders an intermediate frame at the wrong scroll position
+  useLayoutEffect(() => {
     if (prevTabIdRef.current !== tab.id) {
       const el = scrollRef.current
       if (el) {
-        requestAnimationFrame(() => {
-          el.scrollTo(0, tab.scrollPosition)
-        })
+        el.scrollTo(0, tab.scrollPosition)
       }
       prevTabIdRef.current = tab.id
     }
@@ -153,12 +152,12 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
         onClick={toggleWideMode}
         title={wideMode ? 'Constrained width' : 'Full width'}
       >
-        <ArrowLeftRightIcon />
+        <ArrowsLeftRight />
       </Button>
       <div
         ref={contentRef}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
-        style={{ maxWidth: wideMode ? '100%' : '52rem' }}
+        style={{ maxWidth: wideMode ? '100%' : '52rem', fontSize: `${zoomLevel}%` }}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

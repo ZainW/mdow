@@ -14,8 +14,11 @@ export interface TreeNode {
 
 export interface AppState {
   sidebarWidth: number
+  zoomLevel: number
   lastFolder: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
+  sessionTabs: { path: string }[]
+  sessionActiveTabPath: string | null
 }
 
 export interface ElectronAPI {
@@ -38,6 +41,10 @@ export interface ElectronAPI {
   onMenuOpenFile: (callback: () => void) => () => void
   onMenuOpenFolder: (callback: () => void) => () => void
   onFileOpened: (callback: (file: FileResult) => void) => () => void
+  onMenuZoomIn: (callback: () => void) => () => void
+  onMenuZoomOut: (callback: () => void) => () => void
+  onMenuZoomReset: (callback: () => void) => () => void
+  onMenuShortcuts: (callback: () => void) => () => void
 }
 
 const api: ElectronAPI = {
@@ -88,6 +95,26 @@ const api: ElectronAPI = {
     const handler = (_: Electron.IpcRendererEvent, file: FileResult) => callback(file)
     ipcRenderer.on('file:opened', handler)
     return () => ipcRenderer.removeListener('file:opened', handler)
+  },
+  onMenuZoomIn: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:zoom-in', handler)
+    return () => ipcRenderer.removeListener('menu:zoom-in', handler)
+  },
+  onMenuZoomOut: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:zoom-out', handler)
+    return () => ipcRenderer.removeListener('menu:zoom-out', handler)
+  },
+  onMenuZoomReset: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:zoom-reset', handler)
+    return () => ipcRenderer.removeListener('menu:zoom-reset', handler)
+  },
+  onMenuShortcuts: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:shortcuts', handler)
+    return () => ipcRenderer.removeListener('menu:shortcuts', handler)
   },
 }
 

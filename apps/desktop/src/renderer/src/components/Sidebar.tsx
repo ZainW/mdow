@@ -10,12 +10,13 @@ import {
   SidebarContent,
   SidebarFooter,
 } from './ui/sidebar'
-import { SearchIcon, FileIcon, FolderOpenIcon } from 'lucide-react'
+import { MagnifyingGlass, File, FolderOpen, SidebarSimple } from '@phosphor-icons/react'
 
 export function Sidebar() {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
@@ -70,11 +71,16 @@ export function Sidebar() {
   const isMac = navigator.platform.includes('Mac')
   const modKey = isMac ? '\u2318' : 'Ctrl+'
 
+  const collapsedWidth = 38
+
   return (
     <>
       <div
-        className="shrink-0 overflow-hidden border-r border-border/60 transition-[width] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]"
-        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+        className="shrink-0 overflow-hidden border-r border-border/60"
+        style={{
+          width: sidebarOpen ? sidebarWidth : collapsedWidth,
+          transition: 'width 200ms cubic-bezier(0.23, 1, 0.32, 1)',
+        }}
       >
         <ShadcnSidebar
           collapsible="none"
@@ -82,30 +88,68 @@ export function Sidebar() {
           style={{ '--sidebar-width': `${sidebarWidth}px` }}
         >
           <SidebarHeader className="p-2">
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-2 text-muted-foreground text-[11px] h-7"
-              onClick={() => setCommandPaletteOpen(true)}
-            >
-              <SearchIcon />
-              <span>Quick Open</span>
-              <span className="ml-auto opacity-30 text-[10px] font-mono">{modKey}K</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground"
+                onClick={toggleSidebar}
+                title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              >
+                <SidebarSimple className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                className="flex-1 justify-start gap-2 text-muted-foreground text-[11px] h-7 min-w-0"
+                style={{
+                  opacity: sidebarOpen ? 1 : 0,
+                  transform: sidebarOpen ? 'translateX(0)' : 'translateX(-4px)',
+                  transition: sidebarOpen
+                    ? 'opacity 200ms cubic-bezier(0.23, 1, 0.32, 1) 60ms, transform 200ms cubic-bezier(0.23, 1, 0.32, 1) 60ms'
+                    : 'opacity 120ms ease, transform 120ms ease',
+                  pointerEvents: sidebarOpen ? 'auto' : 'none',
+                }}
+                onClick={() => setCommandPaletteOpen(true)}
+              >
+                <MagnifyingGlass />
+                <span>Quick Open</span>
+                <span className="ml-auto opacity-30 text-[10px] font-mono">{modKey}K</span>
+              </Button>
+            </div>
           </SidebarHeader>
 
-          <SidebarContent>
+          <SidebarContent
+            style={{
+              opacity: sidebarOpen ? 1 : 0,
+              transform: sidebarOpen ? 'translateX(0)' : 'translateX(-8px)',
+              transition: sidebarOpen
+                ? 'opacity 200ms cubic-bezier(0.23, 1, 0.32, 1) 40ms, transform 200ms cubic-bezier(0.23, 1, 0.32, 1) 40ms'
+                : 'opacity 100ms ease, transform 100ms ease',
+              pointerEvents: sidebarOpen ? 'auto' : 'none',
+            }}
+          >
             <RecentsList />
             <FolderTree />
           </SidebarContent>
 
-          <SidebarFooter className="flex-row gap-1.5 p-2">
+          <SidebarFooter
+            className="flex-row gap-1.5 p-2"
+            style={{
+              opacity: sidebarOpen ? 1 : 0,
+              transform: sidebarOpen ? 'translateX(0)' : 'translateX(-4px)',
+              transition: sidebarOpen
+                ? 'opacity 200ms cubic-bezier(0.23, 1, 0.32, 1) 80ms, transform 200ms cubic-bezier(0.23, 1, 0.32, 1) 80ms'
+                : 'opacity 80ms ease, transform 80ms ease',
+              pointerEvents: sidebarOpen ? 'auto' : 'none',
+            }}
+          >
             <Button
               variant="ghost"
               size="sm"
               className="flex-1 text-[11px] text-muted-foreground h-7"
               onClick={() => void handleOpenFile()}
             >
-              <FileIcon data-icon="inline-start" />
+              <File data-icon="inline-start" />
               Open File
             </Button>
             <Button
@@ -114,7 +158,7 @@ export function Sidebar() {
               className="flex-1 text-[11px] text-muted-foreground h-7"
               onClick={() => void handleOpenFolder()}
             >
-              <FolderOpenIcon data-icon="inline-start" />
+              <FolderOpen data-icon="inline-start" />
               Open Folder
             </Button>
           </SidebarFooter>

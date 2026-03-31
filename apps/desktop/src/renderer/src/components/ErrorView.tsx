@@ -1,36 +1,30 @@
 import { useAppStore, type FileError } from '../store/app-store'
 import { Button } from './ui/button'
-import {
-  FileQuestionIcon,
-  Trash2Icon,
-  ShieldAlertIcon,
-  AlertCircleIcon,
-  FolderOpenIcon,
-} from 'lucide-react'
+import { FileX, Trash, ShieldWarning, WarningCircle, FolderOpen } from '@phosphor-icons/react'
 
 const errorMessages: Record<
   FileError['type'],
-  { title: string; body: string; icon: typeof FileQuestionIcon }
+  { title: string; body: string; icon: typeof FileX }
 > = {
   'not-found': {
     title: 'File not found',
     body: 'This file seems to have wandered off. It may have been moved or renamed.',
-    icon: FileQuestionIcon,
+    icon: FileX,
   },
   deleted: {
     title: 'File moved or deleted',
     body: 'This file was here a moment ago. Someone (or something) must have moved it.',
-    icon: Trash2Icon,
+    icon: Trash,
   },
   'permission-denied': {
     title: 'Access denied',
     body: "You don't have permission to read this file. Check the file permissions and try again.",
-    icon: ShieldAlertIcon,
+    icon: ShieldWarning,
   },
   'read-error': {
     title: "Couldn't read file",
     body: 'Something went wrong trying to read this file. It might be corrupted or locked by another process.',
-    icon: AlertCircleIcon,
+    icon: WarningCircle,
   },
 }
 
@@ -78,7 +72,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
           </Button>
           {error.type !== 'permission-denied' && (
             <Button variant="ghost" size="sm" onClick={handleShowInFolder}>
-              <FolderOpenIcon className="mr-1.5 size-3.5" />
+              <FolderOpen className="mr-1.5 size-3.5" />
               Show in folder
             </Button>
           )}

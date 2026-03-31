@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from './ui/button'
-import { ChevronUpIcon, ChevronDownIcon, XIcon } from 'lucide-react'
+import { CaretUp, CaretDown, X } from '@phosphor-icons/react'
 
 interface SearchBarProps {
   matchCount: number
@@ -66,13 +66,13 @@ export function SearchBar({
         {query ? (matchCount > 0 ? `${currentIndex + 1} of ${matchCount}` : 'No results') : ''}
       </span>
       <Button variant="ghost" size="icon-xs" onClick={onPrev} disabled={matchCount === 0}>
-        <ChevronUpIcon className="size-3.5" />
+        <CaretUp className="size-3.5" />
       </Button>
       <Button variant="ghost" size="icon-xs" onClick={onNext} disabled={matchCount === 0}>
-        <ChevronDownIcon className="size-3.5" />
+        <CaretDown className="size-3.5" />
       </Button>
       <Button variant="ghost" size="icon-xs" onClick={onClose}>
-        <XIcon className="size-3.5" />
+        <X className="size-3.5" />
       </Button>
     </div>
   )

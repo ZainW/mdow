@@ -159,6 +159,11 @@
     @apply border-border;
   }
 
+  html,
+  body {
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family:
@@ -268,6 +273,72 @@
   [data-slot='sidebar-menu-sub-button'] {
     transition-duration: 0ms !important;
   }
+}
+
+/* ── Tab bar polish ──────────────────────────────────────── */
+
+/* Tab button — transitions on specific properties, custom ease-out */
+.tab-btn {
+  transition:
+    background-color 150ms var(--ease-out-ui),
+    color 150ms var(--ease-out-ui),
+    transform 120ms var(--ease-out-ui);
+}
+
+/* Press feedback — subtle scale */
+.tab-btn:active {
+  transform: scale(0.98);
+}
+
+/* Hover only for pointer devices */
+@media (hover: hover) and (pointer: fine) {
+  .tab-btn:not([class*='bg-background']):hover {
+    background-color: color-mix(in oklch, var(--background) 50%, transparent);
+    color: var(--foreground);
+  }
+}
+
+/* Active tab bottom indicator */
+.tab-active-indicator {
+  border-radius: 1px 1px 0 0;
+}
+
+/* Close button — opacity + scale transition */
+.tab-close-btn {
+  transition:
+    opacity 100ms var(--ease-out-ui),
+    transform 100ms var(--ease-out-ui),
+    background-color 100ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab-close-btn:hover {
+    opacity: 1 !important;
+    background-color: var(--muted);
+    transform: scale(1.1);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .tab-btn,
+  .tab-close-btn {
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ── Command palette — suppress focus rings, cmdk handles selection ── */
+[cmdk-item],
+[cmdk-item]:focus,
+[cmdk-item]:focus-visible,
+[cmdk-list],
+[cmdk-list]:focus,
+[cmdk-list]:focus-visible,
+[cmdk-group],
+[cmdk-group]:focus,
+[cmdk-group]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ── Code block copy button ──────────────────────────────── */

@@ -12,7 +12,7 @@ import {
   CommandItem,
 } from './ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
-import { FileTextIcon } from 'lucide-react'
+import { FileText } from '@phosphor-icons/react'
 
 interface TreeNode {
   name: string
@@ -84,7 +84,7 @@ export function CommandPalette() {
                     keywords={[file.name]}
                     onSelect={() => void selectFile(file.path)}
                   >
-                    <FileTextIcon />
+                    <FileText />
                     <span className="min-w-0 truncate">{file.name}</span>
                     {dir && (
                       <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">

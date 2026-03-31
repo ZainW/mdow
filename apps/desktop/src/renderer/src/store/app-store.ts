@@ -51,10 +51,27 @@ interface AppStore {
 
   searchOpen: boolean
   setSearchOpen: (open: boolean) => void
+
+  shortcutsDialogOpen: boolean
+  setShortcutsDialogOpen: (open: boolean) => void
+
+  zoomLevel: number
+  zoomIn: () => void
+  zoomOut: () => void
+  resetZoom: () => void
 }
 
 export const selectActiveTab = (s: AppStore): Tab | null =>
   s.tabs.find((t) => t.id === s.activeTabId) ?? null
+
+function saveSession(tabs: Tab[], activeTabId: string | null): void {
+  if (typeof window === 'undefined' || !window.api) return
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  void window.api.saveAppState({
+    sessionTabs: tabs.map((t) => ({ path: t.path })),
+    sessionActiveTabPath: activeTab?.path ?? null,
+  })
+}
 
 export const useAppStore = create<AppStore>((set) => ({
   tabs: [],
@@ -142,4 +159,32 @@ export const useAppStore = create<AppStore>((set) => ({
 
   searchOpen: false,
   setSearchOpen: (open) => set({ searchOpen: open }),
+
+  shortcutsDialogOpen: false,
+  setShortcutsDialogOpen: (open) => set({ shortcutsDialogOpen: open }),
+
+  zoomLevel: 100,
+  zoomIn: () =>
+    set((state) => {
+      const next = Math.min(state.zoomLevel + 10, 200)
+      void window.api.saveAppState({ zoomLevel: next })
+      return { zoomLevel: next }
+    }),
+  zoomOut: () =>
+    set((state) => {
+      const next = Math.max(state.zoomLevel - 10, 60)
+      void window.api.saveAppState({ zoomLevel: next })
+      return { zoomLevel: next }
+    }),
+  resetZoom: () => {
+    void window.api.saveAppState({ zoomLevel: 100 })
+    return set({ zoomLevel: 100 })
+  },
 }))
+
+// Persist session (open tabs) whenever tabs or active tab change
+useAppStore.subscribe((state, prev) => {
+  if (state.tabs !== prev.tabs || state.activeTabId !== prev.activeTabId) {
+    saveSession(state.tabs, state.activeTabId)
+  }
+})

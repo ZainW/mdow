@@ -70,9 +70,21 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          click: () => getMainWindow()?.webContents.send('menu:zoom-reset'),
+        },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+=',
+          click: () => getMainWindow()?.webContents.send('menu:zoom-in'),
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: () => getMainWindow()?.webContents.send('menu:zoom-out'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
@@ -85,6 +97,16 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         ...(isMac
           ? [{ type: 'separator' as const }, { role: 'front' as const }]
           : [{ role: 'close' as const }]),
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'CmdOrCtrl+/',
+          click: () => getMainWindow()?.webContents.send('menu:shortcuts'),
+        },
       ],
     },
   ]

@@ -8,7 +8,9 @@ import { TabBar } from './components/TabBar'
 import { MarkdownView } from './components/MarkdownView'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { CommandPalette } from './components/CommandPalette'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 
 function App(): React.JSX.Element {
@@ -22,21 +24,47 @@ function App(): React.JSX.Element {
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
   const updateTabContent = useAppStore((s) => s.updateTabContent)
   const setTabError = useAppStore((s) => s.setTabError)
+  const zoomIn = useAppStore((s) => s.zoomIn)
+  const zoomOut = useAppStore((s) => s.zoomOut)
+  const resetZoom = useAppStore((s) => s.resetZoom)
+  const shortcutsDialogOpen = useAppStore((s) => s.shortcutsDialogOpen)
+  const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
   const queryClient = useQueryClient()
 
   useTheme()
   useFolderTree(openFolderPath)
 
   useEffect(() => {
-    void window.api.getAppState().then((state) => {
+    void window.api.getAppState().then(async (state) => {
       if (state.sidebarWidth) setSidebarWidth(state.sidebarWidth)
+      if (state.zoomLevel && state.zoomLevel !== 100) {
+        useAppStore.setState({ zoomLevel: state.zoomLevel })
+      }
       if (state.lastFolder) {
         void window.api.readFolderTree(state.lastFolder).then((tree) => {
           setOpenFolder(state.lastFolder!, tree)
         })
       }
+
+      // Restore session tabs
+      if (state.sessionTabs?.length) {
+        for (const tab of state.sessionTabs) {
+          try {
+            const content = await window.api.readFile(tab.path)
+            openTab({ path: tab.path, content })
+          } catch {
+            // File no longer exists — skip
+          }
+        }
+        // Set the previously active tab
+        if (state.sessionActiveTabPath) {
+          const tabs = useAppStore.getState().tabs
+          const active = tabs.find((t) => t.path === state.sessionActiveTabPath)
+          if (active) useAppStore.setState({ activeTabId: active.id })
+        }
+      }
     })
-  }, [setSidebarWidth, setOpenFolder])
+  }, [setSidebarWidth, setOpenFolder, openTab])
 
   useEffect(() => {
     const unsubs = [
@@ -65,9 +93,23 @@ function App(): React.JSX.Element {
       window.api.onFileDeleted((path) => {
         setTabError(path, { type: 'deleted', path })
       }),
+      window.api.onMenuZoomIn(() => zoomIn()),
+      window.api.onMenuZoomOut(() => zoomOut()),
+      window.api.onMenuZoomReset(() => resetZoom()),
+      window.api.onMenuShortcuts(() => setShortcutsDialogOpen(true)),
     ]
     return () => unsubs.forEach((fn) => fn())
-  }, [openTab, setOpenFolder, updateTabContent, setTabError, queryClient])
+  }, [
+    openTab,
+    setOpenFolder,
+    updateTabContent,
+    setTabError,
+    queryClient,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+    setShortcutsDialogOpen,
+  ])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -84,10 +126,34 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setSearchOpen(true)
       }
+      if (mod && (e.key === '=' || e.key === '+')) {
+        e.preventDefault()
+        zoomIn()
+      }
+      if (mod && e.key === '-') {
+        e.preventDefault()
+        zoomOut()
+      }
+      if (mod && e.key === '0') {
+        e.preventDefault()
+        resetZoom()
+      }
+      if (mod && e.key === '/') {
+        e.preventDefault()
+        setShortcutsDialogOpen(true)
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [setCommandPaletteOpen, setSearchOpen, toggleSidebar])
+  }, [
+    setCommandPaletteOpen,
+    setSearchOpen,
+    toggleSidebar,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+    setShortcutsDialogOpen,
+  ])
 
   useEffect(() => {
     if (activeTab) {
@@ -118,7 +184,11 @@ function App(): React.JSX.Element {
   const renderContent = () => {
     if (!activeTab) return <WelcomeView />
     if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
-    return <MarkdownView tab={activeTab} />
+    return (
+      <ErrorBoundary tabId={activeTab.id}>
+        <MarkdownView tab={activeTab} />
+      </ErrorBoundary>
+    )
   }
 
   return (
@@ -134,6 +204,7 @@ function App(): React.JSX.Element {
           {renderContent()}
         </div>
         <CommandPalette />
+        <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
       </div>
     </SidebarProvider>
   )

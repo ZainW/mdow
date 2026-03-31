@@ -1,6 +1,6 @@
 import { useAppStore } from '../store/app-store'
 import { cn } from '../lib/utils'
-import { XIcon } from 'lucide-react'
+import { X } from '@phosphor-icons/react'
 
 export function TabBar() {
   const tabs = useAppStore((s) => s.tabs)
@@ -29,10 +29,8 @@ export function TabBar() {
             key={tab.id}
             type="button"
             className={cn(
-              'group/tab flex h-full items-center gap-1.5 border-r border-border/40 px-3 text-xs transition-colors duration-100',
-              isActive
-                ? 'bg-background text-foreground'
-                : 'text-muted-foreground hover:bg-background/50 hover:text-foreground',
+              'tab-btn group/tab relative flex h-full items-center gap-1.5 border-r border-border/40 px-3 text-xs',
+              isActive ? 'bg-background text-foreground' : 'text-muted-foreground',
             )}
             onClick={() => setActiveTab(tab.id)}
             onMouseDown={(e) => {
@@ -42,14 +40,17 @@ export function TabBar() {
               }
             }}
           >
+            {isActive && (
+              <span className="tab-active-indicator absolute inset-x-0 bottom-0 h-[2px] bg-primary/80" />
+            )}
             <span className="max-w-[140px] truncate">{filename}</span>
             <button
               type="button"
               tabIndex={-1}
-              className="flex size-4 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-muted group-hover/tab:opacity-60"
+              className="tab-close-btn flex size-4 items-center justify-center rounded-sm opacity-0 group-hover/tab:opacity-60"
               onClick={(e) => handleClose(e, tab.id)}
             >
-              <XIcon className="size-3" />
+              <X className="size-3" />
             </button>
           </button>
         )

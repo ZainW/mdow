@@ -11,7 +11,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from './ui/sidebar'
-import { FileTextIcon } from 'lucide-react'
+import { FileText } from '@phosphor-icons/react'
 
 export function RecentsList() {
   const { data: recents = [] } = useRecents()
@@ -53,7 +53,7 @@ export function RecentsList() {
                 title={path}
                 className={activeTab?.path === path ? 'tree-file-active' : ''}
               >
-                <FileTextIcon className="size-3.5 opacity-40" />
+                <FileText className="size-3.5 opacity-40" />
                 <span className="truncate">{basename(path)}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>

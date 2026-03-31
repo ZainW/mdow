@@ -51,7 +51,10 @@ describe('store', () => {
     storeData.set('recents', [])
     storeData.set('lastFolder', null)
     storeData.set('sidebarWidth', 260)
+    storeData.set('zoomLevel', 100)
     storeData.set('windowBounds', null)
+    storeData.set('sessionTabs', [])
+    storeData.set('sessionActiveTabPath', null)
   })
 
   describe('recents', () => {
@@ -92,8 +95,11 @@ describe('store', () => {
       const state = getAppState()
       expect(state).toEqual({
         sidebarWidth: 260,
+        zoomLevel: 100,
         lastFolder: null,
         windowBounds: null,
+        sessionTabs: [],
+        sessionActiveTabPath: null,
       })
     })
 
