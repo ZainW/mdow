@@ -96,7 +96,7 @@ function App(): React.JSX.Element {
     } else {
       void window.api.setWindowTitle('Mdow')
     }
-  }, [activeTab?.path])
+  }, [activeTab])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

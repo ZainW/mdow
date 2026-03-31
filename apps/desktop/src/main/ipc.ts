@@ -35,10 +35,13 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       }
       return content
     } catch (err: unknown) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') throw new Error('not-found')
-      if (code === 'EACCES') throw new Error('permission-denied')
-      throw new Error('read-error')
+      let code: unknown
+      if (err instanceof Error && 'code' in err) {
+        code = err.code
+      }
+      if (code === 'ENOENT') throw new Error('not-found', { cause: err })
+      if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
+      throw new Error('read-error', { cause: err })
     }
   })
 

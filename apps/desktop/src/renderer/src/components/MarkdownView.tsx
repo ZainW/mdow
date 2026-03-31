@@ -76,7 +76,8 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     const container = contentRef.current
     if (!container) return
     const handler = (e: MouseEvent) => {
-      const btn = (e.target as HTMLElement).closest('.copy-code-btn') as HTMLElement | null
+      if (!(e.target instanceof HTMLElement)) return
+      const btn = e.target.closest('.copy-code-btn')
       if (!btn) return
       const encoded = btn.getAttribute('data-code')
       if (!encoded) return

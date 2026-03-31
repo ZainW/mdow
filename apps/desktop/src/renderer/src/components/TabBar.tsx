@@ -43,15 +43,14 @@ export function TabBar() {
             }}
           >
             <span className="max-w-[140px] truncate">{filename}</span>
-            <span
-              role="button"
+            <button
+              type="button"
               tabIndex={-1}
               className="flex size-4 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-muted group-hover/tab:opacity-60"
               onClick={(e) => handleClose(e, tab.id)}
-              onKeyDown={() => {}}
             >
               <XIcon className="size-3" />
-            </span>
+            </button>
           </button>
         )
       })}

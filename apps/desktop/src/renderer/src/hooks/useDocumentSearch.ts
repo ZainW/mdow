@@ -16,7 +16,9 @@ function highlightMatches(container: HTMLElement, query: string): number {
 
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
   const textNodes: Text[] = []
-  while (walker.nextNode()) textNodes.push(walker.currentNode as Text)
+  while (walker.nextNode()) {
+    if (walker.currentNode instanceof Text) textNodes.push(walker.currentNode)
+  }
 
   const lowerQuery = query.toLowerCase()
   let matchIndex = 0

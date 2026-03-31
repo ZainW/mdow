@@ -27,7 +27,7 @@ describe('scanFolder', () => {
 
     const result = await scanFolder(tempDir)
     expect(result).toHaveLength(3)
-    expect(result.map((n) => n.name).sort()).toEqual(['doc.mdx', 'notes.markdown', 'readme.md'])
+    expect(result.map((n) => n.name).toSorted()).toEqual(['doc.mdx', 'notes.markdown', 'readme.md'])
   })
 
   it('ignores non-markdown files', async () => {
