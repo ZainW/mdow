@@ -91,10 +91,10 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     if (activeTab) {
-      const name = activeTab.path.split(/[/\\]/).pop() || 'mdview'
+      const name = activeTab.path.split(/[/\\]/).pop() || 'Mdow'
       void window.api.setWindowTitle(name, activeTab.path)
     } else {
-      void window.api.setWindowTitle('mdview')
+      void window.api.setWindowTitle('Mdow')
     }
   }, [activeTab?.path])
 

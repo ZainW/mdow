@@ -1,5 +1,5 @@
-appId: com.mdview.app
-productName: mdview
+appId: com.mdow.app
+productName: Mdow
 directories:
   buildResources: resources
   output: dist

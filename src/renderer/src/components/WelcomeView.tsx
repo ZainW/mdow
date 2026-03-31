@@ -70,7 +70,7 @@ export function WelcomeView() {
         )}
       >
         <CardContent className="flex flex-col items-center gap-2 px-12 py-8">
-          <h2 className="text-xl font-semibold text-foreground">mdview</h2>
+          <h2 className="text-xl font-semibold text-foreground">Mdow</h2>
           <p className="text-sm">Drop a markdown file here to view it</p>
         </CardContent>
       </Card>
