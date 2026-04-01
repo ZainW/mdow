@@ -3,6 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { createMenu } from './menu'
+import { initAutoUpdater } from './updater'
 import { getWindowBounds, saveWindowBounds, getLastFolder } from './store'
 import { scanFolder, watchFolder } from './folder-service'
 import { readFileContent } from './file-service'
@@ -109,6 +110,7 @@ if (!gotTheLock) {
     registerIpcHandlers(getMainWindow)
     createMenu(getMainWindow)
     createWindow()
+    initAutoUpdater(getMainWindow)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

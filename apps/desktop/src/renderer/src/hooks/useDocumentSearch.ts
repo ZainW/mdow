@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-function clearHighlights(container: HTMLElement | null): void {
-  if (!container) return
-  const marks = container.querySelectorAll('mark.search-highlight')
-  for (const mark of marks) {
-    const parent = mark.parentNode!
-    parent.replaceChild(document.createTextNode(mark.textContent || ''), mark)
-    parent.normalize()
-  }
-}
+/**
+ * Highlights search matches in an HTML string by parsing it with DOMParser,
+ * walking text nodes, and wrapping matches in <mark> elements.
+ * Returns the modified HTML and the match count.
+ *
+ * This approach works WITH React (producing a new HTML string) rather than
+ * fighting it (mutating the live DOM that React owns).
+ *
+ * Security note: The input HTML is from local markdown files rendered by md4x
+ * (a trusted WASM renderer) — not from untrusted user input or external sources.
+ */
+function highlightHtml(html: string, query: string): { html: string; count: number } {
+  if (!query || !html) return { html, count: 0 }
 
-function highlightMatches(container: HTMLElement, query: string): number {
-  clearHighlights(container)
-  if (!query) return 0
-
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
   const textNodes: Text[] = []
   while (walker.nextNode()) {
-    if (walker.currentNode instanceof Text) textNodes.push(walker.currentNode)
+    if (walker.currentNode instanceof Text) textNodes.push(walker.currentNode as Text)
   }
 
   const lowerQuery = query.toLowerCase()
@@ -29,13 +30,13 @@ function highlightMatches(container: HTMLElement, query: string): number {
     let pos = lowerText.indexOf(lowerQuery)
     if (pos === -1) continue
 
-    const fragment = document.createDocumentFragment()
+    const fragment = doc.createDocumentFragment()
     let lastEnd = 0
     while (pos !== -1) {
       if (pos > lastEnd) {
-        fragment.appendChild(document.createTextNode(text.slice(lastEnd, pos)))
+        fragment.appendChild(doc.createTextNode(text.slice(lastEnd, pos)))
       }
-      const mark = document.createElement('mark')
+      const mark = doc.createElement('mark')
       mark.className = 'search-highlight'
       mark.setAttribute('data-match-index', String(matchIndex++))
       mark.textContent = text.slice(pos, pos + query.length)
@@ -44,51 +45,54 @@ function highlightMatches(container: HTMLElement, query: string): number {
       pos = lowerText.indexOf(lowerQuery, lastEnd)
     }
     if (lastEnd < text.length) {
-      fragment.appendChild(document.createTextNode(text.slice(lastEnd)))
+      fragment.appendChild(doc.createTextNode(text.slice(lastEnd)))
     }
     node.parentNode!.replaceChild(fragment, node)
   }
 
-  return matchIndex
+  return { html: doc.body.innerHTML, count: matchIndex }
 }
 
 export function useDocumentSearch(
   containerRef: React.RefObject<HTMLElement | null>,
   query: string,
-  htmlVersion: string,
+  html: string,
 ) {
-  const [matchCount, setMatchCount] = useState(0)
   const [currentIndex, setCurrentIndex] = useState(-1)
-  const prevActiveRef = useRef<Element | null>(null)
+  const activeMarkRef = useRef<Element | null>(null)
 
-  // Run highlighting whenever query or html changes
+  // Memoize: only recompute when html or query actually change,
+  // not on every re-render (e.g. scroll-triggered store updates)
+  const { html: highlightedHtml, count: matchCount } = useMemo(
+    () => highlightHtml(html, query),
+    [html, query],
+  )
+
+  // Reset current index when query or html changes
+  const prevQueryRef = useRef(query)
+  const prevHtmlRef = useRef(html)
+  if (query !== prevQueryRef.current || html !== prevHtmlRef.current) {
+    prevQueryRef.current = query
+    prevHtmlRef.current = html
+    setCurrentIndex(matchCount > 0 ? 0 : -1)
+  }
+
+  // Scroll to and style the active match after React renders the highlighted HTML
+  // Only depends on currentIndex — not highlightedHtml — so scroll-triggered
+  // re-renders don't strip and re-add the active class
   useEffect(() => {
     const container = containerRef.current
-    if (!container) {
-      setMatchCount(0)
-      setCurrentIndex(-1)
-      return
-    }
-    const count = highlightMatches(container, query)
-    setMatchCount(count)
-    setCurrentIndex(count > 0 ? 0 : -1)
-  }, [query, htmlVersion, containerRef])
+    if (!container || currentIndex < 0) return
 
-  // Update active highlight styling
-  useEffect(() => {
-    if (prevActiveRef.current) {
-      prevActiveRef.current.classList.remove('search-highlight-active')
+    if (activeMarkRef.current) {
+      activeMarkRef.current.classList.remove('search-highlight-active')
     }
-    if (currentIndex >= 0) {
-      const container = containerRef.current
-      if (container) {
-        const mark = container.querySelector(`mark[data-match-index="${currentIndex}"]`)
-        if (mark) {
-          mark.classList.add('search-highlight-active')
-          mark.scrollIntoView({ block: 'center', behavior: 'smooth' })
-          prevActiveRef.current = mark
-        }
-      }
+
+    const mark = container.querySelector(`mark[data-match-index="${currentIndex}"]`)
+    if (mark) {
+      mark.classList.add('search-highlight-active')
+      mark.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      activeMarkRef.current = mark
     }
   }, [currentIndex, containerRef])
 
@@ -105,10 +109,9 @@ export function useDocumentSearch(
   }, [matchCount])
 
   const clear = useCallback(() => {
-    clearHighlights(containerRef.current)
-    setMatchCount(0)
     setCurrentIndex(-1)
-  }, [containerRef])
+    activeMarkRef.current = null
+  }, [])
 
-  return { matchCount, currentIndex, next, prev, clear }
+  return { highlightedHtml, matchCount, currentIndex, next, prev, clear }
 }

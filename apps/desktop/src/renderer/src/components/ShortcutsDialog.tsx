@@ -13,6 +13,7 @@ const shortcuts = [
   { label: 'Zoom out', keys: `${mod} -` },
   { label: 'Reset zoom', keys: `${mod} 0` },
   { label: 'Toggle full screen', keys: isMac ? '⌃ ⌘ F' : 'F11' },
+  { label: 'Settings', keys: `${mod} ,` },
 ]
 
 interface ShortcutsDialogProps {

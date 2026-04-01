@@ -84,6 +84,7 @@
 /* Linear-inspired light theme — cool gray tones, subtle blue accents */
 @layer base {
   :root {
+    color-scheme: light;
     --background: oklch(0.995 0.002 260);
     --foreground: oklch(0.17 0.01 260);
     --card: oklch(0.995 0.002 260);
@@ -120,6 +121,7 @@
 
   /* Linear-inspired dark theme — deep blue-gray, violet accents */
   .dark {
+    color-scheme: dark;
     --background: oklch(0.135 0.01 260);
     --foreground: oklch(0.93 0.005 260);
     --card: oklch(0.135 0.01 260);
@@ -176,6 +178,45 @@
     -webkit-font-smoothing: antialiased;
     font-size: 13px;
   }
+}
+
+/* ── Scrollbar styling ───────────────────────────────────── */
+
+/* Thin, rounded, quiet — visible only when needed */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.6 0.005 260 / 0.25);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.01 260 / 0.45);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark mode — lighter thumb on dark background */
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.75 0.01 260 / 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.75 0.015 270 / 0.4);
+}
+
+/* Sidebar — thinner, more subtle (secondary hierarchy) */
+[data-slot='sidebar'] ::-webkit-scrollbar {
+  width: 4px;
 }
 
 /* ── File tree polish ─────────────────────────────────────── */
@@ -375,24 +416,49 @@
   color: var(--color-accent-foreground);
 }
 
+/* ── Search bar enter animation ──────────────────────────── */
+.search-bar {
+  animation: search-bar-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes search-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
 /* ── In-document search highlights ───────────────────────── */
-.search-highlight {
-  background: oklch(0.88 0.15 90);
-  border-radius: 2px;
-  padding: 0 1px;
+mark.search-highlight {
+  background-color: oklch(0.93 0.08 95) !important;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0;
+  margin: 0;
+  transition:
+    background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.search-highlight-active {
-  background: oklch(0.75 0.18 55);
-  color: white;
+mark.search-highlight.search-highlight-active {
+  background-color: oklch(0.82 0.12 260) !important;
+  color: oklch(0.15 0 0);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 2px oklch(0.55 0.15 260 / 0.25),
+    0 1px 3px oklch(0.55 0.15 260 / 0.15);
 }
 
-.dark .search-highlight {
-  background: oklch(0.45 0.12 90);
-  color: white;
+.dark mark.search-highlight {
+  background-color: oklch(0.4 0.06 90) !important;
+  color: oklch(0.92 0 0);
 }
 
-.dark .search-highlight-active {
-  background: oklch(0.6 0.18 55);
-  color: white;
+.dark mark.search-highlight.search-highlight-active {
+  background-color: oklch(0.35 0.12 270) !important;
+  color: oklch(0.92 0 0);
+  box-shadow:
+    0 0 0 2px oklch(0.65 0.18 270 / 0.3),
+    0 1px 3px oklch(0.65 0.18 270 / 0.2);
 }

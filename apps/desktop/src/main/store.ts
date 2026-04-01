@@ -12,6 +12,10 @@ interface StoreSchema {
   windowBounds: { x: number; y: number; width: number; height: number } | null
   sessionTabs: SessionTab[]
   sessionActiveTabPath: string | null
+  contentFont: string
+  codeFont: string
+  fontSize: number
+  lineHeight: number
 }
 
 const store = new Store<StoreSchema>({
@@ -23,6 +27,10 @@ const store = new Store<StoreSchema>({
     windowBounds: null,
     sessionTabs: [],
     sessionActiveTabPath: null,
+    contentFont: 'inter',
+    codeFont: 'geist-mono',
+    fontSize: 16,
+    lineHeight: 1.6,
   },
 })
 
@@ -46,6 +54,10 @@ export function getAppState() {
     windowBounds: store.get('windowBounds'),
     sessionTabs: store.get('sessionTabs'),
     sessionActiveTabPath: store.get('sessionActiveTabPath'),
+    contentFont: store.get('contentFont'),
+    codeFont: store.get('codeFont'),
+    fontSize: store.get('fontSize'),
+    lineHeight: store.get('lineHeight'),
   }
 }
 
@@ -58,6 +70,10 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.sessionTabs !== undefined) store.set('sessionTabs', state.sessionTabs)
   if (state.sessionActiveTabPath !== undefined)
     store.set('sessionActiveTabPath', state.sessionActiveTabPath)
+  if (state.contentFont !== undefined) store.set('contentFont', state.contentFont)
+  if (state.codeFont !== undefined) store.set('codeFont', state.codeFont)
+  if (state.fontSize !== undefined) store.set('fontSize', state.fontSize)
+  if (state.lineHeight !== undefined) store.set('lineHeight', state.lineHeight)
 }
 
 export function getWindowBounds() {

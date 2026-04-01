@@ -19,6 +19,10 @@ export interface AppState {
   windowBounds: { x: number; y: number; width: number; height: number } | null
   sessionTabs: { path: string }[]
   sessionActiveTabPath: string | null
+  contentFont: string
+  codeFont: string
+  fontSize: number
+  lineHeight: number
 }
 
 export interface ElectronAPI {
@@ -45,6 +49,18 @@ export interface ElectronAPI {
   onMenuZoomOut: (callback: () => void) => () => void
   onMenuZoomReset: (callback: () => void) => () => void
   onMenuShortcuts: (callback: () => void) => () => void
+  onMenuSettings: (callback: () => void) => () => void
+
+  checkForUpdates: () => Promise<void>
+  downloadUpdate: () => Promise<void>
+  installUpdate: () => Promise<void>
+  onUpdateAvailable: (
+    callback: (info: { version: string; releaseNotes?: string }) => void,
+  ) => () => void
+  onUpdateUpToDate: (callback: () => void) => () => void
+  onUpdateDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void
+  onUpdateDownloaded: (callback: () => void) => () => void
+  onUpdateError: (callback: (message: string) => void) => () => void
 }
 
 const api: ElectronAPI = {
@@ -115,6 +131,44 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('menu:shortcuts', handler)
     return () => ipcRenderer.removeListener('menu:shortcuts', handler)
+  },
+  onMenuSettings: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:settings', handler)
+    return () => ipcRenderer.removeListener('menu:settings', handler)
+  },
+
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdateAvailable: (callback) => {
+    const handler = (
+      _: Electron.IpcRendererEvent,
+      info: { version: string; releaseNotes?: string },
+    ) => callback(info)
+    ipcRenderer.on('updater:update-available', handler)
+    return () => ipcRenderer.removeListener('updater:update-available', handler)
+  },
+  onUpdateUpToDate: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('updater:up-to-date', handler)
+    return () => ipcRenderer.removeListener('updater:up-to-date', handler)
+  },
+  onUpdateDownloadProgress: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, progress: { percent: number }) =>
+      callback(progress)
+    ipcRenderer.on('updater:download-progress', handler)
+    return () => ipcRenderer.removeListener('updater:download-progress', handler)
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('updater:update-downloaded', handler)
+    return () => ipcRenderer.removeListener('updater:update-downloaded', handler)
+  },
+  onUpdateError: (callback) => {
+    const handler = (_: Electron.IpcRendererEvent, message: string) => callback(message)
+    ipcRenderer.on('updater:error', handler)
+    return () => ipcRenderer.removeListener('updater:error', handler)
   },
 }
 

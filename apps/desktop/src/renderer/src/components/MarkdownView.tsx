@@ -3,6 +3,7 @@ import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
+import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
 import { SearchBar } from './SearchBar'
 import { Button } from './ui/button'
 import { ArrowsLeftRight } from '@phosphor-icons/react'
@@ -25,6 +26,10 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const updateTabScroll = useAppStore((s) => s.updateTabScroll)
   const searchOpen = useAppStore((s) => s.searchOpen)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
+  const contentFont = useAppStore((s) => s.contentFont)
+  const codeFont = useAppStore((s) => s.codeFont)
+  const fontSize = useAppStore((s) => s.fontSize)
+  const lineHeight = useAppStore((s) => s.lineHeight)
 
   // Synchronous HTML computation — updates in the same render as the tab switch,
   // preventing intermediate frames with stale content that cause scrollbar flash
@@ -36,7 +41,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
   }, [ready, tab.content, themeKey])
 
-  const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
+  const { highlightedHtml, matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
     searchOpen ? searchQuery : '',
     html,
@@ -157,8 +162,17 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       <div
         ref={contentRef}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
-        style={{ maxWidth: wideMode ? '100%' : '52rem', fontSize: `${zoomLevel}%` }}
-        dangerouslySetInnerHTML={{ __html: html }}
+        style={
+          {
+            maxWidth: wideMode ? '100%' : '52rem',
+            fontSize: `${zoomLevel}%`,
+            '--md-content-font': getContentFontFamily(contentFont),
+            '--md-code-font': getCodeFontFamily(codeFont),
+            '--md-font-size': `${fontSize}px`,
+            '--md-line-height': lineHeight,
+          } as React.CSSProperties
+        }
+        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
       />
     </div>
   )

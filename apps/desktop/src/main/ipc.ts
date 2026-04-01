@@ -2,6 +2,7 @@ import { ipcMain, shell, BrowserWindow } from 'electron'
 import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
+import { checkForUpdates, downloadUpdate, installUpdate } from './updater'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
@@ -93,4 +94,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       win.setRepresentedFilename(filePath)
     }
   })
+
+  ipcMain.handle('updater:check', () => checkForUpdates())
+  ipcMain.handle('updater:download', () => downloadUpdate())
+  ipcMain.handle('updater:install', () => installUpdate())
 }

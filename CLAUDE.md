@@ -34,6 +34,7 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - React 19 with JSX transform — no `import React` needed
 - Tailwind CSS v4 with CSS variables for theming (light/dark)
 - shadcn/ui components live in `apps/desktop/src/renderer/src/components/ui/`
+- When running shadcn CLI commands, always use `-c apps/desktop` flag (e.g. `npx shadcn@latest add -c apps/desktop button`)
 - Use `cn()` from `apps/desktop/src/renderer/src/lib/utils.ts` for conditional class merging
 
 ## Architecture
@@ -49,3 +50,10 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - State: Zustand for UI state (`store/app-store.ts`), TanStack Query for async data
 - IPC: all main↔renderer communication through typed handlers in `ipc.ts` / `preload/index.ts`
 - File types: `.md`, `.markdown`, `.mdx` are treated as markdown
+
+## Testing
+
+- `pnpm run test` — run all tests (Vitest, single run)
+- `pnpm run --filter desktop test -- -t 'test name'` — run a single test by name
+- `pnpm run --filter desktop test:watch` — run tests in watch mode
+- Test environment: jsdom with `@testing-library/react`

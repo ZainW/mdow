@@ -10,10 +10,13 @@ import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { CommandPalette } from './components/CommandPalette'
+import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 
 function App(): React.JSX.Element {
+  const initialized = useAppStore((s) => s.initialized)
   const activeTab = useAppStore(selectActiveTab)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const openTab = useAppStore((s) => s.openTab)
@@ -29,6 +32,8 @@ function App(): React.JSX.Element {
   const resetZoom = useAppStore((s) => s.resetZoom)
   const shortcutsDialogOpen = useAppStore((s) => s.shortcutsDialogOpen)
   const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
+  const settingsOpen = useAppStore((s) => s.settingsOpen)
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const queryClient = useQueryClient()
 
   useTheme()
@@ -40,6 +45,13 @@ function App(): React.JSX.Element {
       if (state.zoomLevel && state.zoomLevel !== 100) {
         useAppStore.setState({ zoomLevel: state.zoomLevel })
       }
+      // Restore typography settings
+      const typo: Record<string, unknown> = {}
+      if (state.contentFont) typo.contentFont = state.contentFont
+      if (state.codeFont) typo.codeFont = state.codeFont
+      if (state.fontSize) typo.fontSize = state.fontSize
+      if (state.lineHeight) typo.lineHeight = state.lineHeight
+      if (Object.keys(typo).length) useAppStore.setState(typo)
       if (state.lastFolder) {
         void window.api.readFolderTree(state.lastFolder).then((tree) => {
           setOpenFolder(state.lastFolder!, tree)
@@ -63,6 +75,8 @@ function App(): React.JSX.Element {
           if (active) useAppStore.setState({ activeTabId: active.id })
         }
       }
+
+      useAppStore.setState({ initialized: true })
     })
   }, [setSidebarWidth, setOpenFolder, openTab])
 
@@ -97,6 +111,7 @@ function App(): React.JSX.Element {
       window.api.onMenuZoomOut(() => zoomOut()),
       window.api.onMenuZoomReset(() => resetZoom()),
       window.api.onMenuShortcuts(() => setShortcutsDialogOpen(true)),
+      window.api.onMenuSettings(() => setSettingsOpen(true)),
     ]
     return () => unsubs.forEach((fn) => fn())
   }, [
@@ -109,6 +124,7 @@ function App(): React.JSX.Element {
     zoomOut,
     resetZoom,
     setShortcutsDialogOpen,
+    setSettingsOpen,
   ])
 
   useEffect(() => {
@@ -142,6 +158,10 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setShortcutsDialogOpen(true)
       }
+      if (mod && e.key === ',') {
+        e.preventDefault()
+        setSettingsOpen(true)
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -153,6 +173,7 @@ function App(): React.JSX.Element {
     zoomOut,
     resetZoom,
     setShortcutsDialogOpen,
+    setSettingsOpen,
   ])
 
   useEffect(() => {
@@ -191,6 +212,10 @@ function App(): React.JSX.Element {
     )
   }
 
+  if (!initialized) {
+    return <div className="h-screen w-screen bg-background" />
+  }
+
   return (
     <SidebarProvider>
       <div
@@ -202,9 +227,11 @@ function App(): React.JSX.Element {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TabBar />
           {renderContent()}
+          <UpdateBanner />
         </div>
         <CommandPalette />
         <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
     </SidebarProvider>
   )

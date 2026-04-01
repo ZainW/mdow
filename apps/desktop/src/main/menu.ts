@@ -66,6 +66,12 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           click: () => getMainWindow()?.webContents.send('menu:toggle-sidebar'),
         },
         { type: 'separator' },
+        {
+          label: 'Settings...',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => getMainWindow()?.webContents.send('menu:settings'),
+        },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },

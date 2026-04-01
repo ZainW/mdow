@@ -23,6 +23,7 @@ export interface FileError {
 }
 
 interface AppStore {
+  initialized: boolean
   tabs: Tab[]
   activeTabId: string | null
   openTab: (file: { path: string; content: string }) => void
@@ -55,10 +56,22 @@ interface AppStore {
   shortcutsDialogOpen: boolean
   setShortcutsDialogOpen: (open: boolean) => void
 
+  settingsOpen: boolean
+  setSettingsOpen: (open: boolean) => void
+
   zoomLevel: number
   zoomIn: () => void
   zoomOut: () => void
   resetZoom: () => void
+
+  contentFont: string
+  codeFont: string
+  fontSize: number
+  lineHeight: number
+  setContentFont: (font: string) => void
+  setCodeFont: (font: string) => void
+  setFontSize: (size: number) => void
+  setLineHeight: (height: number) => void
 }
 
 export const selectActiveTab = (s: AppStore): Tab | null =>
@@ -74,6 +87,7 @@ function saveSession(tabs: Tab[], activeTabId: string | null): void {
 }
 
 export const useAppStore = create<AppStore>((set) => ({
+  initialized: false,
   tabs: [],
   activeTabId: null,
 
@@ -163,6 +177,9 @@ export const useAppStore = create<AppStore>((set) => ({
   shortcutsDialogOpen: false,
   setShortcutsDialogOpen: (open) => set({ shortcutsDialogOpen: open }),
 
+  settingsOpen: false,
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+
   zoomLevel: 100,
   zoomIn: () =>
     set((state) => {
@@ -179,6 +196,27 @@ export const useAppStore = create<AppStore>((set) => ({
   resetZoom: () => {
     void window.api.saveAppState({ zoomLevel: 100 })
     return set({ zoomLevel: 100 })
+  },
+
+  contentFont: 'inter',
+  codeFont: 'geist-mono',
+  fontSize: 16,
+  lineHeight: 1.6,
+  setContentFont: (font) => {
+    void window.api.saveAppState({ contentFont: font })
+    set({ contentFont: font })
+  },
+  setCodeFont: (font) => {
+    void window.api.saveAppState({ codeFont: font })
+    set({ codeFont: font })
+  },
+  setFontSize: (size) => {
+    void window.api.saveAppState({ fontSize: size })
+    set({ fontSize: size })
+  },
+  setLineHeight: (height) => {
+    void window.api.saveAppState({ lineHeight: height })
+    set({ lineHeight: height })
   },
 }))
 

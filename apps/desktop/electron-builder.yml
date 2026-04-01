@@ -4,6 +4,9 @@ directories:
   buildResources: resources
   output: dist
 
+publish:
+  provider: github
+
 mac:
   category: public.app-category.developer-tools
   target:

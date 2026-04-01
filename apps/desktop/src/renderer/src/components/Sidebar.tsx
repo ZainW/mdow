@@ -10,7 +10,7 @@ import {
   SidebarContent,
   SidebarFooter,
 } from './ui/sidebar'
-import { MagnifyingGlass, File, FolderOpen, SidebarSimple } from '@phosphor-icons/react'
+import { MagnifyingGlass, File, FolderOpen, SidebarSimple, GearSix } from '@phosphor-icons/react'
 
 export function Sidebar() {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -18,6 +18,7 @@ export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const queryClient = useQueryClient()
@@ -160,6 +161,15 @@ export function Sidebar() {
             >
               <FolderOpen data-icon="inline-start" />
               Open Folder
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 text-muted-foreground"
+              onClick={() => setSettingsOpen(true)}
+              title="Settings"
+            >
+              <GearSix className="size-4" />
             </Button>
           </SidebarFooter>
         </ShadcnSidebar>

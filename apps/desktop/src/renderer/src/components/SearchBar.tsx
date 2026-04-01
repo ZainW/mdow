@@ -26,7 +26,6 @@ export function SearchBar({
     inputRef.current?.focus()
   }, [])
 
-  // Clear query on close and refocus on reopen
   useEffect(() => {
     inputRef.current?.select()
   }, [])
@@ -52,26 +51,43 @@ export function SearchBar({
   }
 
   return (
-    <div className="absolute top-0 right-0 z-20 flex items-center gap-1.5 rounded-bl-lg border-b border-l border-border/60 bg-background/95 px-3 py-1.5 shadow-sm backdrop-blur-sm">
+    <div className="search-bar sticky top-0 z-20 ml-auto flex w-fit items-center gap-1.5 rounded-bl-xl border-b border-l border-border/50 bg-background/90 px-3 py-2 shadow-md backdrop-blur-md">
       <input
         ref={inputRef}
         type="text"
-        className="h-6 w-44 rounded-md border border-border/60 bg-transparent px-2 text-xs outline-none focus:border-ring"
+        className="search-input h-6 w-44 rounded-md border border-border/60 bg-muted/40 px-2 text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.3)]"
         placeholder="Search..."
         value={query}
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <span className="min-w-[4rem] text-center text-[10px] text-muted-foreground">
+      <span className="min-w-[4rem] text-center text-[10px] tabular-nums text-muted-foreground">
         {query ? (matchCount > 0 ? `${currentIndex + 1} of ${matchCount}` : 'No results') : ''}
       </span>
-      <Button variant="ghost" size="icon-xs" onClick={onPrev} disabled={matchCount === 0}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={onPrev}
+        disabled={matchCount === 0}
+        className="active:scale-90 transition-transform"
+      >
         <CaretUp className="size-3.5" />
       </Button>
-      <Button variant="ghost" size="icon-xs" onClick={onNext} disabled={matchCount === 0}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={onNext}
+        disabled={matchCount === 0}
+        className="active:scale-90 transition-transform"
+      >
         <CaretDown className="size-3.5" />
       </Button>
-      <Button variant="ghost" size="icon-xs" onClick={onClose}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={onClose}
+        className="active:scale-90 transition-transform"
+      >
         <X className="size-3.5" />
       </Button>
     </div>
