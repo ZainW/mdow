@@ -96,7 +96,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm">Theme</span>
-              <Select value={theme} onValueChange={(v) => v && setTheme(v)}>
+              <Select
+                value={theme}
+                onValueChange={(v) => v && setTheme(v as string)}
+                items={THEME_OPTIONS}
+              >
                 <SelectTrigger className="w-[130px]" size="sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -124,7 +128,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <div className="flex items-center justify-between">
               <span className="text-sm">Content Font</span>
-              <Select value={contentFont} onValueChange={(v) => v && setContentFont(v)}>
+              <Select
+                value={contentFont}
+                onValueChange={(v) => v && setContentFont(v as string)}
+                items={CONTENT_FONTS}
+              >
                 <SelectTrigger className="w-[160px]" size="sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -142,7 +150,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <div className="flex items-center justify-between">
               <span className="text-sm">Code Font</span>
-              <Select value={codeFont} onValueChange={(v) => v && setCodeFont(v)}>
+              <Select
+                value={codeFont}
+                onValueChange={(v) => v && setCodeFont(v as string)}
+                items={CODE_FONTS}
+              >
                 <SelectTrigger className="w-[160px]" size="sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -164,8 +176,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
               </div>
               <Slider
-                value={[fontSize]}
-                onValueChange={(v) => setFontSize(Number(v[0]))}
+                value={fontSize}
+                onValueChange={(v) => setFontSize(v as number)}
                 min={13}
                 max={24}
                 step={1}
@@ -184,8 +196,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </span>
               </div>
               <Slider
-                value={[lineHeight]}
-                onValueChange={(v) => setLineHeight(Number(v[0]))}
+                value={lineHeight}
+                onValueChange={(v) => setLineHeight(v as number)}
                 min={1.2}
                 max={2.2}
                 step={0.1}
