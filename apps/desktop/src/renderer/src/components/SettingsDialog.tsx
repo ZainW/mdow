@@ -12,8 +12,9 @@ import { Slider } from './ui/slider'
 import { Separator } from './ui/separator'
 
 const CONTENT_FONTS = [
-  { value: 'inter', label: 'Inter', family: "'Inter', system-ui, sans-serif" },
+  { value: 'charter', label: 'Charter', family: "Charter, 'Bitstream Charter', Georgia, serif" },
   { value: 'system-sans', label: 'System Sans', family: 'system-ui, -apple-system, sans-serif' },
+  { value: 'inter', label: 'Inter', family: "'Inter', system-ui, sans-serif" },
   {
     value: 'helvetica-neue',
     label: 'Helvetica Neue',
@@ -21,7 +22,6 @@ const CONTENT_FONTS = [
   },
   { value: 'georgia', label: 'Georgia', family: "Georgia, 'Times New Roman', serif" },
   { value: 'palatino', label: 'Palatino', family: "Palatino, 'Palatino Linotype', serif" },
-  { value: 'charter', label: 'Charter', family: "Charter, 'Bitstream Charter', Georgia, serif" },
   {
     value: 'times-new-roman',
     label: 'Times New Roman',
@@ -48,6 +48,12 @@ const CODE_FONTS = [
   { value: 'source-code-pro', label: 'Source Code Pro', family: "'Source Code Pro', monospace" },
 ] as const
 
+const THEME_OPTIONS = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+] as const
+
 export function getContentFontFamily(value: string): string {
   return CONTENT_FONTS.find((f) => f.value === value)?.family ?? CONTENT_FONTS[0].family
 }
@@ -70,6 +76,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setCodeFont = useAppStore((s) => s.setCodeFont)
   const setFontSize = useAppStore((s) => s.setFontSize)
   const setLineHeight = useAppStore((s) => s.setLineHeight)
+  const theme = useAppStore((s) => s.theme)
+  const setTheme = useAppStore((s) => s.setTheme)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -80,10 +88,42 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
-          {/* Content Font */}
-          <div className="flex flex-col gap-2">
+          {/* ── Appearance ── */}
+          <div className="flex flex-col gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Appearance</h3>
+              <p className="text-xs text-muted-foreground">Colors and visual style</p>
+            </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Content Font</span>
+              <span className="text-sm">Theme</span>
+              <Select value={theme} onValueChange={(v) => v && setTheme(v)}>
+                <SelectTrigger className="w-[130px]" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {THEME_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* ── Typography ── */}
+          <div className="flex flex-col gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Typography</h3>
+              <p className="text-xs text-muted-foreground">Fonts and reading comfort</p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Content Font</span>
               <Select value={contentFont} onValueChange={(v) => v && setContentFont(v)}>
                 <SelectTrigger className="w-[160px]" size="sm">
                   <SelectValue />
@@ -99,17 +139,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">
-              The typeface used for paragraphs, headings, and lists.
-            </p>
-          </div>
 
-          <Separator />
-
-          {/* Code Font */}
-          <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Code Font</span>
+              <span className="text-sm">Code Font</span>
               <Select value={codeFont} onValueChange={(v) => v && setCodeFont(v)}>
                 <SelectTrigger className="w-[160px]" size="sm">
                   <SelectValue />
@@ -125,52 +157,43 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">
-              The typeface used for inline code and code blocks.
-            </p>
-          </div>
 
-          <Separator />
-
-          {/* Font Size */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Font Size</span>
-              <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Font Size</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
+              </div>
+              <Slider
+                value={[fontSize]}
+                onValueChange={(v) => setFontSize(Number(v[0]))}
+                min={13}
+                max={24}
+                step={1}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Small</span>
+                <span>Large</span>
+              </div>
             </div>
-            <Slider
-              value={[fontSize]}
-              onValueChange={(v) => setFontSize(Number(v[0]))}
-              min={13}
-              max={24}
-              step={1}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Small</span>
-              <span>Large</span>
-            </div>
-          </div>
 
-          <Separator />
-
-          {/* Line Height */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Line Height</span>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {lineHeight.toFixed(1)}
-              </span>
-            </div>
-            <Slider
-              value={[lineHeight]}
-              onValueChange={(v) => setLineHeight(Number(v[0]))}
-              min={1.2}
-              max={2.2}
-              step={0.1}
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Compact</span>
-              <span>Spacious</span>
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Line Height</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {lineHeight.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                value={[lineHeight]}
+                onValueChange={(v) => setLineHeight(Number(v[0]))}
+                min={1.2}
+                max={2.2}
+                step={0.1}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Compact</span>
+                <span>Spacious</span>
+              </div>
             </div>
           </div>
         </div>
