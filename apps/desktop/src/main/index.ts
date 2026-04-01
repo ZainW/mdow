@@ -4,7 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { createMenu } from './menu'
 import { initAutoUpdater } from './updater'
-import { getWindowBounds, saveWindowBounds, getLastFolder } from './store'
+import { getWindowBounds, saveWindowBounds, getLastFolder, getAppState } from './store'
 import { scanFolder, watchFolder } from './folder-service'
 import { readFileContent } from './file-service'
 
@@ -107,6 +107,10 @@ if (!gotTheLock) {
   })
 
   void app.whenReady().then(() => {
+    const appState = getAppState()
+    if (appState.theme && appState.theme !== 'system') {
+      nativeTheme.themeSource = appState.theme as typeof nativeTheme.themeSource
+    }
     registerIpcHandlers(getMainWindow)
     createMenu(getMainWindow)
     createWindow()

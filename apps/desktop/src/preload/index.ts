@@ -23,6 +23,7 @@ export interface AppState {
   codeFont: string
   fontSize: number
   lineHeight: number
+  theme: string
 }
 
 export interface ElectronAPI {
@@ -37,6 +38,7 @@ export interface ElectronAPI {
   addRecent: (filePath: string) => Promise<void>
   showInFolder: (filePath: string) => Promise<void>
   setWindowTitle: (title: string, filePath?: string) => Promise<void>
+  setTheme: (theme: string) => Promise<void>
 
   onFileChanged: (callback: (data: { path: string; content: string }) => void) => () => void
   onFileDeleted: (callback: (path: string) => void) => () => void
@@ -75,6 +77,7 @@ const api: ElectronAPI = {
   addRecent: (filePath) => ipcRenderer.invoke('store:add-recent', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:show-in-folder', filePath),
   setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
+  setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
 
   onFileChanged: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, data: { path: string; content: string }) =>

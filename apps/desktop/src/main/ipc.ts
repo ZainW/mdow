@@ -1,4 +1,4 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
 import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
@@ -81,6 +81,13 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     saveAppState(state as Parameters<typeof saveAppState>[0]),
   )
   ipcMain.handle('store:add-recent', (_, filePath: string) => addRecent(filePath))
+
+  ipcMain.handle('theme:set', (_, theme: string) => {
+    const valid = ['light', 'dark', 'system']
+    if (!valid.includes(theme)) return
+    nativeTheme.themeSource = theme as typeof nativeTheme.themeSource
+    saveAppState({ theme })
+  })
 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {
     shell.showItemInFolder(filePath)

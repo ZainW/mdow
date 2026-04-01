@@ -16,6 +16,7 @@ interface StoreSchema {
   codeFont: string
   fontSize: number
   lineHeight: number
+  theme: string
 }
 
 const store = new Store<StoreSchema>({
@@ -27,10 +28,11 @@ const store = new Store<StoreSchema>({
     windowBounds: null,
     sessionTabs: [],
     sessionActiveTabPath: null,
-    contentFont: 'inter',
+    contentFont: 'charter',
     codeFont: 'geist-mono',
     fontSize: 16,
     lineHeight: 1.6,
+    theme: 'system',
   },
 })
 
@@ -58,6 +60,7 @@ export function getAppState() {
     codeFont: store.get('codeFont'),
     fontSize: store.get('fontSize'),
     lineHeight: store.get('lineHeight'),
+    theme: store.get('theme'),
   }
 }
 
@@ -74,6 +77,7 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.codeFont !== undefined) store.set('codeFont', state.codeFont)
   if (state.fontSize !== undefined) store.set('fontSize', state.fontSize)
   if (state.lineHeight !== undefined) store.set('lineHeight', state.lineHeight)
+  if (state.theme !== undefined) store.set('theme', state.theme)
 }
 
 export function getWindowBounds() {
