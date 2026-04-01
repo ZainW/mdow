@@ -83,10 +83,11 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('store:add-recent', (_, filePath: string) => addRecent(filePath))
 
   ipcMain.handle('theme:set', (_, theme: string) => {
-    const valid = ['light', 'dark', 'system']
-    if (!valid.includes(theme)) return
-    nativeTheme.themeSource = theme as typeof nativeTheme.themeSource
-    saveAppState({ theme })
+    const valid: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
+    const source = valid.find((v) => v === theme)
+    if (!source) return
+    nativeTheme.themeSource = source
+    saveAppState({ theme: source })
   })
 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {

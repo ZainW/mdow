@@ -1,6 +1,6 @@
 /* Typography settings — overridden via inline style from SettingsDialog */
 .markdown-body {
-  --md-content-font: 'Inter', system-ui, sans-serif;
+  --md-content-font: Charter, 'Bitstream Charter', Georgia, serif;
   --md-code-font: 'Geist Mono', ui-monospace, monospace;
   --md-font-size: 16px;
   --md-line-height: 1.6;

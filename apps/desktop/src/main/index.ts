@@ -108,8 +108,10 @@ if (!gotTheLock) {
 
   void app.whenReady().then(() => {
     const appState = getAppState()
-    if (appState.theme && appState.theme !== 'system') {
-      nativeTheme.themeSource = appState.theme as typeof nativeTheme.themeSource
+    const validThemes: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
+    const theme = validThemes.find((v) => v === appState.theme)
+    if (theme && theme !== 'system') {
+      nativeTheme.themeSource = theme
     }
     registerIpcHandlers(getMainWindow)
     createMenu(getMainWindow)
