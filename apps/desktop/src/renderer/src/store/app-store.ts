@@ -64,6 +64,9 @@ interface AppStore {
   zoomOut: () => void
   resetZoom: () => void
 
+  theme: string
+  setTheme: (theme: string) => void
+
   contentFont: string
   codeFont: string
   fontSize: number
@@ -198,7 +201,13 @@ export const useAppStore = create<AppStore>((set) => ({
     return set({ zoomLevel: 100 })
   },
 
-  contentFont: 'inter',
+  theme: 'system',
+  setTheme: (theme) => {
+    void window.api.setTheme(theme)
+    set({ theme })
+  },
+
+  contentFont: 'charter',
   codeFont: 'geist-mono',
   fontSize: 16,
   lineHeight: 1.6,

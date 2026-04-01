@@ -45,6 +45,7 @@ function App(): React.JSX.Element {
       if (state.zoomLevel && state.zoomLevel !== 100) {
         useAppStore.setState({ zoomLevel: state.zoomLevel })
       }
+      if (state.theme) useAppStore.setState({ theme: state.theme })
       // Restore typography settings
       const typo: Record<string, unknown> = {}
       if (state.contentFont) typo.contentFont = state.contentFont
