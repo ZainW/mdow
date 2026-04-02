@@ -17,9 +17,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: depot-macos-latest
+          - os: macos-latest
             platform: mac
-          - os: depot-ubuntu-latest-4
+          - os: depot-ubuntu-24.04-4
             platform: linux
           - os: windows-latest
             platform: windows
