@@ -19,7 +19,7 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-          - os: depot-ubuntu-24.04-4
+          - os: ubuntu-latest
             platform: linux
           - os: windows-latest
             platform: windows
