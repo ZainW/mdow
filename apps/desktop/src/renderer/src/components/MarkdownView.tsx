@@ -7,6 +7,7 @@ import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
 import { SearchBar } from './SearchBar'
 import { Button } from './ui/button'
 import { ArrowsLeftRight } from '@phosphor-icons/react'
+import { ZoomIndicator } from './ZoomIndicator'
 
 interface MarkdownViewProps {
   tab: Tab
@@ -165,15 +166,15 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
         style={
           {
             maxWidth: wideMode ? '100%' : '52rem',
-            fontSize: `${zoomLevel}%`,
             '--md-content-font': getContentFontFamily(contentFont),
             '--md-code-font': getCodeFontFamily(codeFont),
-            '--md-font-size': `${fontSize}px`,
+            '--md-font-size': `${fontSize * (zoomLevel / 100)}px`,
             '--md-line-height': lineHeight,
           } as React.CSSProperties
         }
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}
       />
+      <ZoomIndicator />
     </div>
   )
 }
