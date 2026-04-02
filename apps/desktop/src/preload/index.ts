@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 export interface FileResult {
   path: string
@@ -39,6 +39,7 @@ export interface ElectronAPI {
   showInFolder: (filePath: string) => Promise<void>
   setWindowTitle: (title: string, filePath?: string) => Promise<void>
   setTheme: (theme: string) => Promise<void>
+  getPathForFile: (file: File) => string
 
   onFileChanged: (callback: (data: { path: string; content: string }) => void) => () => void
   onFileDeleted: (callback: (path: string) => void) => () => void
@@ -78,6 +79,7 @@ const api: ElectronAPI = {
   showInFolder: (filePath) => ipcRenderer.invoke('shell:show-in-folder', filePath),
   setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   onFileChanged: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, data: { path: string; content: string }) =>

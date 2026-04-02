@@ -194,8 +194,9 @@ function App(): React.JSX.Element {
         (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
       if (mdFile) {
-        void window.api.readFile(mdFile.path).then((content) => {
-          openTab({ path: mdFile.path, content })
+        const filePath = window.api.getPathForFile(mdFile)
+        void window.api.readFile(filePath).then((content) => {
+          openTab({ path: filePath, content })
           void queryClient.invalidateQueries({ queryKey: ['recents'] })
         })
       }
