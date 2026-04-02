@@ -55,6 +55,11 @@ describe('store', () => {
     storeData.set('windowBounds', null)
     storeData.set('sessionTabs', [])
     storeData.set('sessionActiveTabPath', null)
+    storeData.set('contentFont', 'inter')
+    storeData.set('codeFont', 'geist-mono')
+    storeData.set('fontSize', 15.5)
+    storeData.set('lineHeight', 1.65)
+    storeData.set('theme', 'system')
   })
 
   describe('recents', () => {
@@ -100,6 +105,11 @@ describe('store', () => {
         windowBounds: null,
         sessionTabs: [],
         sessionActiveTabPath: null,
+        contentFont: 'inter',
+        codeFont: 'geist-mono',
+        fontSize: 15.5,
+        lineHeight: 1.65,
+        theme: 'system',
       })
     })
 

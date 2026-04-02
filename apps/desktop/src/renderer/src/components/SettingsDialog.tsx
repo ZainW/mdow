@@ -12,40 +12,28 @@ import { Slider } from './ui/slider'
 import { Separator } from './ui/separator'
 
 const CONTENT_FONTS = [
+  { value: 'inter', label: 'Inter', family: "'Inter', system-ui, -apple-system, sans-serif" },
   { value: 'charter', label: 'Charter', family: "Charter, 'Bitstream Charter', Georgia, serif" },
-  { value: 'system-sans', label: 'System Sans', family: 'system-ui, -apple-system, sans-serif' },
-  { value: 'inter', label: 'Inter', family: "'Inter', system-ui, sans-serif" },
   {
-    value: 'helvetica-neue',
-    label: 'Helvetica Neue',
-    family: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    value: 'system-sans',
+    label: 'System Sans',
+    family: 'system-ui, -apple-system, sans-serif',
   },
   { value: 'georgia', label: 'Georgia', family: "Georgia, 'Times New Roman', serif" },
-  { value: 'palatino', label: 'Palatino', family: "Palatino, 'Palatino Linotype', serif" },
-  {
-    value: 'times-new-roman',
-    label: 'Times New Roman',
-    family: "'Times New Roman', Times, serif",
-  },
-  {
-    value: 'bookerly',
-    label: 'Bookerly',
-    family: "Bookerly, 'Iowan Old Style', Palatino, Georgia, serif",
-  },
 ] as const
 
 const CODE_FONTS = [
+  { value: 'geist-mono', label: 'Geist Mono', family: "'Geist Mono', ui-monospace, monospace" },
   {
-    value: 'geist-mono',
-    label: 'Geist Mono',
-    family: "'Geist Mono', ui-monospace, monospace",
+    value: 'sf-mono',
+    label: 'SF Mono',
+    family: "'SF Mono', SFMono-Regular, ui-monospace, monospace",
   },
-  { value: 'sf-mono', label: 'SF Mono', family: "'SF Mono', SFMono-Regular, monospace" },
-  { value: 'menlo', label: 'Menlo', family: 'Menlo, Monaco, monospace' },
-  { value: 'consolas', label: 'Consolas', family: "Consolas, 'Courier New', monospace" },
-  { value: 'fira-code', label: 'Fira Code', family: "'Fira Code', monospace" },
-  { value: 'jetbrains-mono', label: 'JetBrains Mono', family: "'JetBrains Mono', monospace" },
-  { value: 'source-code-pro', label: 'Source Code Pro', family: "'Source Code Pro', monospace" },
+  {
+    value: 'jetbrains-mono',
+    label: 'JetBrains Mono',
+    family: "'JetBrains Mono', ui-monospace, monospace",
+  },
 ] as const
 
 const THEME_OPTIONS = [

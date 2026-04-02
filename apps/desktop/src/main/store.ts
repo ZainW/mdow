@@ -28,10 +28,10 @@ const store = new Store<StoreSchema>({
     windowBounds: null,
     sessionTabs: [],
     sessionActiveTabPath: null,
-    contentFont: 'charter',
+    contentFont: 'inter',
     codeFont: 'geist-mono',
-    fontSize: 16,
-    lineHeight: 1.6,
+    fontSize: 15.5,
+    lineHeight: 1.65,
     theme: 'system',
   },
 })

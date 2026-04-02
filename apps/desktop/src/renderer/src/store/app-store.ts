@@ -207,10 +207,10 @@ export const useAppStore = create<AppStore>((set) => ({
     set({ theme })
   },
 
-  contentFont: 'charter',
+  contentFont: 'inter',
   codeFont: 'geist-mono',
-  fontSize: 16,
-  lineHeight: 1.6,
+  fontSize: 15.5,
+  lineHeight: 1.65,
   setContentFont: (font) => {
     void window.api.saveAppState({ contentFont: font })
     set({ contentFont: font })
