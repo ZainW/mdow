@@ -20,7 +20,7 @@ export function TabBar() {
   }
 
   return (
-    <div className="flex h-9 shrink-0 items-center overflow-x-auto border-b border-border/60 bg-sidebar/30 scrollbar-none">
+    <div className="flex h-9 shrink-0 items-center overflow-x-auto border-b border-border-subtle bg-background scrollbar-none">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId
         const filename = tab.path.split(/[/\\]/).pop() || 'Untitled'
@@ -29,8 +29,8 @@ export function TabBar() {
             key={tab.id}
             type="button"
             className={cn(
-              'tab-btn group/tab relative flex h-full items-center gap-1.5 border-r border-border/40 px-3 text-xs',
-              isActive ? 'bg-background text-foreground' : 'text-muted-foreground',
+              'tab-btn group/tab relative flex h-full items-center gap-1.5 px-3 text-xs',
+              isActive ? 'text-foreground font-medium' : 'text-muted-foreground',
             )}
             onClick={() => setActiveTab(tab.id)}
             onMouseDown={(e) => {
@@ -41,7 +41,7 @@ export function TabBar() {
             }}
           >
             {isActive && (
-              <span className="tab-active-indicator absolute inset-x-0 bottom-0 h-[2px] bg-primary/80" />
+              <span className="tab-active-indicator absolute inset-x-0 bottom-0 h-[2px] bg-foreground/20" />
             )}
             <span className="max-w-[140px] truncate">{filename}</span>
             <button
