@@ -25,6 +25,6 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run fmt:check
       - run: pnpm run test
-      - run: pnpm run --filter desktop build:dist -- --mac
+      - run: pnpm run --filter desktop build:dist -- --linux
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false

@@ -61,13 +61,16 @@ function App(): React.JSX.Element {
 
       // Restore session tabs
       if (state.sessionTabs?.length) {
-        for (const tab of state.sessionTabs) {
-          try {
-            const content = await window.api.readFile(tab.path)
-            openTab({ path: tab.path, content })
-          } catch {
-            // File no longer exists — skip
-          }
+        const results = await Promise.all(
+          state.sessionTabs.map((tab) =>
+            window.api
+              .readFile(tab.path)
+              .then((content) => ({ path: tab.path, content }))
+              .catch(() => null),
+          ),
+        )
+        for (const result of results) {
+          if (result) openTab(result)
         }
         // Set the previously active tab
         if (state.sessionActiveTabPath) {

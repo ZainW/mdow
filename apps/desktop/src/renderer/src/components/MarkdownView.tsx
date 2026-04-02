@@ -169,7 +169,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
             '--md-content-font': getContentFontFamily(contentFont),
             '--md-code-font': getCodeFontFamily(codeFont),
             '--md-font-size': `${fontSize * (zoomLevel / 100)}px`,
-            '--md-line-height': lineHeight,
+            '--md-line-height': String(lineHeight),
           } as React.CSSProperties
         }
         dangerouslySetInnerHTML={{ __html: highlightedHtml }}

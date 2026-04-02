@@ -84,11 +84,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm">Theme</span>
-              <Select
-                value={theme}
-                onValueChange={(v) => v && setTheme(v as string)}
-                items={THEME_OPTIONS}
-              >
+              <Select value={theme} onValueChange={(v) => v && setTheme(v)} items={THEME_OPTIONS}>
                 <SelectTrigger className="w-[130px]" size="sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -118,7 +114,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <span className="text-sm">Content Font</span>
               <Select
                 value={contentFont}
-                onValueChange={(v) => v && setContentFont(v as string)}
+                onValueChange={(v) => v && setContentFont(v)}
                 items={CONTENT_FONTS}
               >
                 <SelectTrigger className="w-[160px]" size="sm">
@@ -140,7 +136,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <span className="text-sm">Code Font</span>
               <Select
                 value={codeFont}
-                onValueChange={(v) => v && setCodeFont(v as string)}
+                onValueChange={(v) => v && setCodeFont(v)}
                 items={CODE_FONTS}
               >
                 <SelectTrigger className="w-[160px]" size="sm">
@@ -165,7 +161,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
               <Slider
                 value={fontSize}
-                onValueChange={(v) => setFontSize(v as number)}
+                onValueChange={(v) => setFontSize(Number(v))}
                 min={13}
                 max={24}
                 step={1}
@@ -185,7 +181,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
               <Slider
                 value={lineHeight}
-                onValueChange={(v) => setLineHeight(v as number)}
+                onValueChange={(v) => setLineHeight(Number(v))}
                 min={1.2}
                 max={2.2}
                 step={0.1}

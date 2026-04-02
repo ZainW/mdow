@@ -9,7 +9,7 @@ export function ZoomIndicator() {
   const resetZoom = useAppStore((s) => s.resetZoom)
   const [visible, setVisible] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const prevZoom = useRef(zoomLevel)
 
   useEffect(() => {
