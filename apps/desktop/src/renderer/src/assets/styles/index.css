@@ -295,7 +295,7 @@
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
-  background-color: var(--sidebar-primary);
+  background-color: var(--accent);
 }
 
 /* File sub-buttons — press feedback + faster hover */
