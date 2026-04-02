@@ -40,6 +40,7 @@ function createWindow(): void {
     minWidth: 600,
     minHeight: 400,
     show: false,
+    icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
