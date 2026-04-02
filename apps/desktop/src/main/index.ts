@@ -40,7 +40,7 @@ function createWindow(): void {
     minWidth: 600,
     minHeight: 400,
     show: false,
-    icon: join(__dirname, '../../resources/icon.png'),
+    ...(process.platform === 'linux' ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -107,7 +107,12 @@ if (!gotTheLock) {
     }
   })
 
+  app.setName('Mdow')
+
   void app.whenReady().then(() => {
+    if (process.platform === 'darwin' && app.dock) {
+      app.dock.setIcon(join(__dirname, '../../resources/icon.png'))
+    }
     const appState = getAppState()
     const validThemes: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
     const theme = validThemes.find((v) => v === appState.theme)
