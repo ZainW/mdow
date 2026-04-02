@@ -18,7 +18,7 @@ function highlightHtml(html: string, query: string): { html: string; count: numb
   const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
   const textNodes: Text[] = []
   while (walker.nextNode()) {
-    if (walker.currentNode instanceof Text) textNodes.push(walker.currentNode as Text)
+    if (walker.currentNode instanceof Text) textNodes.push(walker.currentNode)
   }
 
   const lowerQuery = query.toLowerCase()

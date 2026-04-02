@@ -61,13 +61,16 @@ function App(): React.JSX.Element {
 
       // Restore session tabs
       if (state.sessionTabs?.length) {
-        for (const tab of state.sessionTabs) {
-          try {
-            const content = await window.api.readFile(tab.path)
-            openTab({ path: tab.path, content })
-          } catch {
-            // File no longer exists — skip
-          }
+        const results = await Promise.all(
+          state.sessionTabs.map((tab) =>
+            window.api
+              .readFile(tab.path)
+              .then((content) => ({ path: tab.path, content }))
+              .catch(() => null),
+          ),
+        )
+        for (const result of results) {
+          if (result) openTab(result)
         }
         // Set the previously active tab
         if (state.sessionActiveTabPath) {
@@ -194,8 +197,9 @@ function App(): React.JSX.Element {
         (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
       )
       if (mdFile) {
-        void window.api.readFile(mdFile.path).then((content) => {
-          openTab({ path: mdFile.path, content })
+        const filePath = window.api.getPathForFile(mdFile)
+        void window.api.readFile(filePath).then((content) => {
+          openTab({ path: filePath, content })
           void queryClient.invalidateQueries({ queryKey: ['recents'] })
         })
       }

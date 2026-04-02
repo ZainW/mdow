@@ -6,12 +6,27 @@
       "persistent": true
     },
     "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tsconfig*.json", "electron.vite.config.*", "package.json"],
       "outputs": ["out/**"]
     },
-    "typecheck": {},
-    "lint": {},
-    "fmt": {},
-    "fmt:check": {},
-    "test": {}
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tsconfig*.json", "package.json"]
+    },
+    "lint": {
+      "inputs": ["src/**", "oxlint*.json", "package.json"]
+    },
+    "fmt": {
+      "cache": false
+    },
+    "fmt:check": {
+      "inputs": ["src/**", "package.json"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tsconfig*.json", "vitest.config.*", "package.json"],
+      "outputs": ["coverage/**"]
+    }
   }
 }
