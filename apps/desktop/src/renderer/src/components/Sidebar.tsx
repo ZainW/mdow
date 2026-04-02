@@ -77,7 +77,7 @@ export function Sidebar() {
   return (
     <>
       <div
-        className="shrink-0 overflow-hidden border-r border-border/60"
+        className="shrink-0 overflow-hidden border-r border-border-subtle"
         style={{
           width: sidebarOpen ? sidebarWidth : collapsedWidth,
           transition: 'width 200ms cubic-bezier(0.23, 1, 0.32, 1)',
