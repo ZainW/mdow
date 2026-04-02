@@ -8,14 +8,18 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: depot-macos-latest
             platform: mac
-          - os: ubuntu-latest
+          - os: depot-ubuntu-latest-4
             platform: linux
           - os: windows-latest
             platform: windows

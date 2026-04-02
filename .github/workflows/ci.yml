@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: macos-latest
+  checks:
+    runs-on: depot-ubuntu-latest-4
     steps:
       - uses: actions/checkout@v4
 
@@ -21,13 +25,39 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm run typecheck
+      - name: Typecheck + Lint + Format (parallel via turbo)
+        run: pnpm turbo typecheck lint fmt:check
 
-      - run: pnpm run lint
+  test:
+    runs-on: depot-ubuntu-latest-4
+    steps:
+      - uses: actions/checkout@v4
 
-      - run: pnpm run fmt:check
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm run test
+
+  build:
+    runs-on: depot-macos-latest
+    needs: [checks, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm run --filter desktop build:dist -- --mac
         env:
