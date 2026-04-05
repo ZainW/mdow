@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { Outlet, createRootRoute, HeadContent, Scripts, Link } from '@tanstack/react-router'
 import appCss from '~/styles/app.css?url'
 import { seo } from '~/lib/seo'
+import { SiteHeader } from '~/components/site-header'
+import { SiteFooter } from '~/components/site-footer'
 
 const THEME_SCRIPT = `(function(){var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')})()`
 
@@ -59,7 +61,9 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <HeadContent />
       </head>
       <body className="min-h-screen font-sans">
-        {children}
+        <SiteHeader />
+        <main className="flex-1">{children}</main>
+        <SiteFooter />
         <Scripts />
       </body>
     </html>
