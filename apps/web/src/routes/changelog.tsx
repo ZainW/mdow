@@ -1,14 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Comark } from '@comark/react'
 import { seo } from '~/lib/seo'
 
 const fetchChangelog = createServerFn({ method: 'GET' }).handler(async () => {
   const { readFile } = await import('node:fs/promises')
   const { join } = await import('node:path')
+  const { renderToHtml, init } = await import('md4x')
+  await init()
   const raw = await readFile(join(process.cwd(), 'content', 'changelog.md'), 'utf-8')
   const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/)
-  return match ? match[1] : raw
+  const markdown = match ? match[1] : raw
+  return renderToHtml(markdown)
 })
 
 export const Route = createFileRoute('/changelog')({
@@ -23,13 +25,15 @@ export const Route = createFileRoute('/changelog')({
 })
 
 function ChangelogPage() {
-  const content = Route.useLoaderData()
+  const html = Route.useLoaderData()
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16">
-      <article className="prose prose-neutral dark:prose-invert max-w-none">
-        <Comark markdown={content} />
-      </article>
+      {/* Content is trusted — rendered from our own changelog.md by md4x server-side */}
+      <article
+        className="prose prose-neutral dark:prose-invert max-w-none"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   )
 }

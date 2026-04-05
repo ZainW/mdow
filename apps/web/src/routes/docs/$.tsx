@@ -1,10 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Comark } from '@comark/react'
 import { getDoc, getAllDocs } from '~/lib/content'
 import { DocsLayout } from '~/components/docs-layout'
 import { DocsNav } from '~/components/docs-nav'
-import { docsComponents } from '~/components/comark-components'
 import { seo } from '~/lib/seo'
 
 const fetchDoc = createServerFn({ method: 'GET' })
@@ -34,9 +32,10 @@ export const Route = createFileRoute('/docs/$')({
 function DocPage() {
   const { doc, allDocs } = Route.useLoaderData()
 
+  // Content is trusted — rendered from our own .md files by md4x server-side
   return (
     <DocsLayout docs={allDocs} currentSlug={doc.meta.slug} headings={[]}>
-      <Comark markdown={doc.raw} components={docsComponents} />
+      <div dangerouslySetInnerHTML={{ __html: doc.html }} />
       <DocsNav docs={allDocs} currentSlug={doc.meta.slug} />
     </DocsLayout>
   )

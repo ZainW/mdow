@@ -8,7 +8,7 @@ export interface DocMeta {
 
 export interface DocEntry {
   meta: DocMeta
-  raw: string
+  html: string
 }
 
 function parseFrontmatter(raw: string): {
@@ -48,6 +48,9 @@ export async function getDoc(slug: string): Promise<DocEntry | null> {
     const contentDir = await getContentDir()
     const raw = await readFile(join(contentDir, `${slug}.md`), 'utf-8')
     const { frontmatter, body } = parseFrontmatter(raw)
+    const { renderToHtml, init } = await import('md4x')
+    await init()
+    const html = renderToHtml(body)
     return {
       meta: {
         slug,
@@ -56,7 +59,7 @@ export async function getDoc(slug: string): Promise<DocEntry | null> {
         category: frontmatter.category || 'General',
         order: parseInt(frontmatter.order || '99', 10),
       },
-      raw: body,
+      html,
     }
   } catch {
     return null
