@@ -1,6 +1,3 @@
-import { readdir, readFile } from 'node:fs/promises'
-import { join, basename } from 'node:path'
-
 export interface DocMeta {
   slug: string
   title: string
@@ -12,13 +9,6 @@ export interface DocMeta {
 export interface DocEntry {
   meta: DocMeta
   raw: string
-}
-
-const CONTENT_DIR = join(process.cwd(), 'content', 'docs')
-
-export async function getDocSlugs(): Promise<string[]> {
-  const files = await readdir(CONTENT_DIR)
-  return files.filter((f) => f.endsWith('.md')).map((f) => basename(f, '.md'))
 }
 
 function parseFrontmatter(raw: string): {
@@ -38,9 +28,25 @@ function parseFrontmatter(raw: string): {
   return { frontmatter, body: match[2] }
 }
 
+async function getContentDir() {
+  const { join } = await import('node:path')
+  return join(process.cwd(), 'content', 'docs')
+}
+
+export async function getDocSlugs(): Promise<string[]> {
+  const { readdir } = await import('node:fs/promises')
+  const { basename } = await import('node:path')
+  const contentDir = await getContentDir()
+  const files = await readdir(contentDir)
+  return files.filter((f: string) => f.endsWith('.md')).map((f: string) => basename(f, '.md'))
+}
+
 export async function getDoc(slug: string): Promise<DocEntry | null> {
   try {
-    const raw = await readFile(join(CONTENT_DIR, `${slug}.md`), 'utf-8')
+    const { readFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const contentDir = await getContentDir()
+    const raw = await readFile(join(contentDir, `${slug}.md`), 'utf-8')
     const { frontmatter, body } = parseFrontmatter(raw)
     return {
       meta: {

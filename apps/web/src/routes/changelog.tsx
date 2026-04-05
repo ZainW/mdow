@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { Comark } from '@comark/react'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { seo } from '~/lib/seo'
 
 const fetchChangelog = createServerFn({ method: 'GET' }).handler(async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { join } = await import('node:path')
   const raw = await readFile(join(process.cwd(), 'content', 'changelog.md'), 'utf-8')
   const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/)
   return match ? match[1] : raw

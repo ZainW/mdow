@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { getRequestHeader } from '@tanstack/react-start/server'
 import { DownloadCard } from '~/components/download-card'
 import { seo } from '~/lib/seo'
 
-const detectOS = createServerFn({ method: 'GET' }).handler(({ request }) => {
-  const ua = request?.headers.get('user-agent') || ''
+const detectOS = createServerFn({ method: 'GET' }).handler(() => {
+  const ua = getRequestHeader('user-agent') || ''
   if (ua.includes('Mac')) return 'mac'
   if (ua.includes('Windows')) return 'windows'
   if (ua.includes('Linux')) return 'linux'
