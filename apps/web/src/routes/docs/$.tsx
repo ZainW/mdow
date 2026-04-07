@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getDoc, getAllDocs } from '~/lib/content'
+import { extractHeadings } from '~/lib/extract-headings'
 import { DocsLayout } from '~/components/docs-layout'
 import { DocsNav } from '~/components/docs-nav'
 import { seo } from '~/lib/seo'
@@ -10,7 +11,12 @@ const fetchDoc = createServerFn({ method: 'GET' })
   .handler(async ({ data: slug }) => {
     const [doc, allDocs] = await Promise.all([getDoc(slug), getAllDocs()])
     if (!doc) throw new Error(`Doc not found: ${slug}`)
-    return { doc, allDocs }
+    const headings = extractHeadings(doc.html).map((h) => ({
+      id: h.id,
+      text: h.text,
+      level: h.level,
+    }))
+    return { doc, allDocs, headings }
   })
 
 export const Route = createFileRoute('/docs/$')({
@@ -30,11 +36,11 @@ export const Route = createFileRoute('/docs/$')({
 })
 
 function DocPage() {
-  const { doc, allDocs } = Route.useLoaderData()
+  const { doc, allDocs, headings } = Route.useLoaderData()
 
   // Content is trusted — rendered from our own .md files by md4x server-side
   return (
-    <DocsLayout docs={allDocs} currentSlug={doc.meta.slug} headings={[]}>
+    <DocsLayout docs={allDocs} currentSlug={doc.meta.slug} headings={headings}>
       <div dangerouslySetInnerHTML={{ __html: doc.html }} />
       <DocsNav docs={allDocs} currentSlug={doc.meta.slug} />
     </DocsLayout>

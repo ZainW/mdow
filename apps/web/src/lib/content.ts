@@ -33,6 +33,17 @@ async function getContentDir() {
   return join(process.cwd(), 'content', 'docs')
 }
 
+function injectHeadingIds(html: string): string {
+  return html.replace(/<(h[23])>([\s\S]*?)<\/\1>/gi, (_, tag, inner) => {
+    const text = inner.replace(/<[^>]+>/g, '').trim()
+    const id = text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+    return `<${tag} id="${id}">${inner}</${tag}>`
+  })
+}
+
 export async function getDocSlugs(): Promise<string[]> {
   const { readdir } = await import('node:fs/promises')
   const { basename } = await import('node:path')
@@ -50,7 +61,7 @@ export async function getDoc(slug: string): Promise<DocEntry | null> {
     const { frontmatter, body } = parseFrontmatter(raw)
     const { renderToHtml, init } = await import('md4x')
     await init()
-    const html = renderToHtml(body)
+    const html = injectHeadingIds(renderToHtml(body))
     return {
       meta: {
         slug,
