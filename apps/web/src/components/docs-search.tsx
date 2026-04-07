@@ -76,18 +76,34 @@ export function DocsSearch({ docs }: DocsSearchProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
+        className="flex w-full items-center gap-2 rounded-md border border-border-subtle bg-surface px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
       >
-        <span>Search docs...</span>
-        <kbd className="ml-auto rounded border bg-background px-1.5 py-0.5 text-xs">&#8984;K</kbd>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <span>Search docs</span>
+        <kbd className="ml-auto rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
+          ⌘K
+        </kbd>
       </button>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       <div
-        className="fixed inset-0 bg-background/60 backdrop-blur-sm"
+        className="fixed inset-0 bg-background/70 backdrop-blur-md"
         onClick={() => setOpen(false)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false)
@@ -96,37 +112,75 @@ export function DocsSearch({ docs }: DocsSearchProps) {
         tabIndex={-1}
         aria-label="Close search"
       />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border bg-popover shadow-lg">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search docs..."
-          className="w-full rounded-t-lg border-b bg-transparent px-4 py-3 text-sm outline-none"
-        />
+      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl border border-border-subtle bg-popover shadow-soft-lg">
+        <div className="flex items-center gap-3 border-b border-border-subtle px-4">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-muted-foreground"
+            aria-hidden
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search docs..."
+            className="flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <kbd className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+            esc
+          </kbd>
+        </div>
         {results.length > 0 && (
-          <ul className="max-h-64 overflow-y-auto py-2">
+          <ul className="max-h-80 overflow-y-auto py-2">
             {results.map((r, i) => (
               <li key={r.slug}>
                 <button
                   type="button"
+                  onMouseEnter={() => setSelected(i)}
                   onClick={() => goTo(r.slug)}
                   className={cn(
-                    'w-full px-4 py-2 text-left text-sm transition-colors',
-                    i === selected ? 'bg-muted text-foreground' : 'text-muted-foreground',
+                    'flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left transition-colors',
+                    i === selected ? 'bg-surface' : '',
                   )}
                 >
-                  <span className="font-medium">{r.title}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">{r.category}</span>
+                  <span className="text-sm font-medium text-foreground">{r.title}</span>
+                  {r.description && (
+                    <span className="line-clamp-1 text-xs text-muted-foreground">
+                      {r.description}
+                    </span>
+                  )}
+                  <span className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {r.category}
+                  </span>
                 </button>
               </li>
             ))}
           </ul>
         )}
         {query && results.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">No results found.</p>
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">No results found.</p>
         )}
+        <div className="flex items-center gap-3 border-t border-border-subtle bg-surface/50 px-4 py-2 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-border bg-background px-1 font-mono">↑↓</kbd>{' '}
+            navigate
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-border bg-background px-1 font-mono">↵</kbd>{' '}
+            select
+          </span>
+        </div>
       </div>
     </div>
   )
