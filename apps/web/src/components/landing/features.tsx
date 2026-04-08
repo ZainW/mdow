@@ -1,6 +1,7 @@
 import { BrowserFrame } from '~/components/browser-frame'
 import { FeatureRow } from '~/components/feature-row'
 import { GradientSection } from '~/components/gradient-section'
+import { Screenshot } from './screenshot'
 
 function CodeMockup() {
   return (
@@ -50,32 +51,22 @@ function MermaidMockup() {
 function ThemeMockup() {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <img
-        src="/screenshots/reading-light.png"
+      <Screenshot
+        name="reading-light"
         alt="Mdow in light mode"
-        width={1200}
-        height={750}
-        className="h-auto w-full rounded-lg shadow-soft"
+        className="rounded-lg shadow-soft"
       />
-      <img
-        src="/screenshots/reading-dark.png"
-        alt="Mdow in dark mode"
-        width={1200}
-        height={750}
-        className="h-auto w-full rounded-lg shadow-soft"
-      />
+      <Screenshot name="reading-dark" alt="Mdow in dark mode" className="rounded-lg shadow-soft" />
     </div>
   )
 }
 
 function DropFileMockup() {
   return (
-    <img
-      src="/screenshots/empty-light.png"
+    <Screenshot
+      name="empty-light"
       alt="Mdow empty state showing the drop zone"
-      width={2400}
-      height={1500}
-      className="h-auto w-full rounded-xl shadow-soft-lg"
+      className="rounded-xl shadow-soft-lg"
     />
   )
 }

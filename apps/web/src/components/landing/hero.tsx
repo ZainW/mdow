@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { Screenshot } from './screenshot'
 
 export function LandingHero() {
   return (
@@ -28,12 +29,11 @@ export function LandingHero() {
           </div>
         </div>
         <div className="mx-auto mt-16 max-w-5xl">
-          <img
-            src="/screenshots/reading-dark.png"
+          <Screenshot
+            name="reading-dark"
             alt="Mdow rendering a markdown document in dark mode"
-            width={2400}
-            height={1500}
-            className="h-auto w-full rounded-xl shadow-soft-lg"
+            priority
+            className="rounded-xl shadow-soft-lg"
           />
         </div>
       </div>

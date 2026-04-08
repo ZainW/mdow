@@ -1,4 +1,5 @@
 import { GradientSection } from '~/components/gradient-section'
+import { Screenshot } from './screenshot'
 
 export function LandingProductPreview() {
   return (
@@ -13,21 +14,17 @@ export function LandingProductPreview() {
       <div className="relative mx-auto mt-14 max-w-5xl">
         <div className="grid gap-6 md:grid-cols-2 md:gap-4">
           <div className="md:translate-y-4">
-            <img
-              src="/screenshots/reading-light.png"
+            <Screenshot
+              name="reading-light"
               alt="Mdow in light mode"
-              width={2400}
-              height={1500}
-              className="h-auto w-full rounded-xl shadow-soft-lg"
+              className="rounded-xl shadow-soft-lg"
             />
           </div>
           <div className="md:-translate-y-4">
-            <img
-              src="/screenshots/reading-dark.png"
+            <Screenshot
+              name="reading-dark"
               alt="Mdow in dark mode"
-              width={2400}
-              height={1500}
-              className="h-auto w-full rounded-xl shadow-soft-lg"
+              className="rounded-xl shadow-soft-lg"
             />
           </div>
         </div>
