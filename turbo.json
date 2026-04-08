@@ -7,8 +7,15 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig*.json", "electron.vite.config.*", "package.json"],
-      "outputs": ["out/**"]
+      "inputs": [
+        "src/**",
+        "content/**",
+        "tsconfig*.json",
+        "vite.config.*",
+        "electron.vite.config.*",
+        "package.json"
+      ],
+      "outputs": ["out/**", ".output/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
