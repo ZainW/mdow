@@ -1,15 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { seo } from '~/lib/seo'
+import changelogRaw from '../../content/changelog.md?raw'
 
 const fetchChangelog = createServerFn({ method: 'GET' }).handler(async () => {
-  const { readFile } = await import('node:fs/promises')
-  const { join } = await import('node:path')
   const { renderToHtml, init } = await import('md4x')
   await init()
-  const raw = await readFile(join(process.cwd(), 'content', 'changelog.md'), 'utf-8')
-  const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/)
-  const markdown = match ? match[1] : raw
+  const match = changelogRaw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/)
+  const markdown = match ? match[1] : changelogRaw
   return renderToHtml(markdown)
 })
 

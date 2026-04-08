@@ -13,6 +13,15 @@ export interface DocEntry {
   html: string
 }
 
+// Bundle all docs/*.md files at build time as raw strings. This eliminates
+// runtime filesystem access — necessary for Cloudflare Workers, which have
+// no real fs and where process.cwd() resolves to a virtual /bundle path.
+const docFiles = import.meta.glob('../../content/docs/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+
 function parseFrontmatter(raw: string): {
   frontmatter: Record<string, string>
   body: string
@@ -30,11 +39,6 @@ function parseFrontmatter(raw: string): {
   return { frontmatter, body: match[2] }
 }
 
-async function getContentDir() {
-  const { join } = await import('node:path')
-  return join(process.cwd(), 'content', 'docs')
-}
-
 function injectHeadingIds(html: string): string {
   return html.replace(/<(h[23])>([\s\S]*?)<\/\1>/gi, (_, tag, inner) => {
     const text = inner.replace(/<[^>]+>/g, '').trim()
@@ -43,36 +47,33 @@ function injectHeadingIds(html: string): string {
   })
 }
 
+function slugFromPath(path: string): string {
+  const file = path.split('/').pop() ?? ''
+  return file.replace(/\.md$/, '')
+}
+
 export async function getDocSlugs(): Promise<string[]> {
-  const { readdir } = await import('node:fs/promises')
-  const { basename } = await import('node:path')
-  const contentDir = await getContentDir()
-  const files = await readdir(contentDir)
-  return files.filter((f: string) => f.endsWith('.md')).map((f: string) => basename(f, '.md'))
+  return Object.keys(docFiles).map(slugFromPath)
 }
 
 export async function getDoc(slug: string): Promise<DocEntry | null> {
-  try {
-    const { readFile } = await import('node:fs/promises')
-    const { join } = await import('node:path')
-    const contentDir = await getContentDir()
-    const raw = await readFile(join(contentDir, `${slug}.md`), 'utf-8')
-    const { frontmatter, body } = parseFrontmatter(raw)
-    const { renderToHtml, init } = await import('md4x')
-    await init()
-    const html = injectHeadingIds(renderToHtml(body))
-    return {
-      meta: {
-        slug,
-        title: frontmatter.title || slug,
-        description: frontmatter.description || '',
-        category: frontmatter.category || 'General',
-        order: parseInt(frontmatter.order || '99', 10),
-      },
-      html,
-    }
-  } catch {
-    return null
+  const entry = Object.entries(docFiles).find(([path]) => slugFromPath(path) === slug)
+  if (!entry) return null
+
+  const [, raw] = entry
+  const { frontmatter, body } = parseFrontmatter(raw)
+  const { renderToHtml, init } = await import('md4x')
+  await init()
+  const html = injectHeadingIds(renderToHtml(body))
+  return {
+    meta: {
+      slug,
+      title: frontmatter.title || slug,
+      description: frontmatter.description || '',
+      category: frontmatter.category || 'General',
+      order: parseInt(frontmatter.order || '99', 10),
+    },
+    html,
   }
 }
 
