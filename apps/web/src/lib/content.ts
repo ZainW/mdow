@@ -1,3 +1,5 @@
+import { slugify } from './slugify'
+
 export interface DocMeta {
   slug: string
   title: string
@@ -36,10 +38,7 @@ async function getContentDir() {
 function injectHeadingIds(html: string): string {
   return html.replace(/<(h[23])>([\s\S]*?)<\/\1>/gi, (_, tag, inner) => {
     const text = inner.replace(/<[^>]+>/g, '').trim()
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
+    const id = slugify(text)
     return `<${tag} id="${id}">${inner}</${tag}>`
   })
 }

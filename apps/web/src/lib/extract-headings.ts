@@ -1,15 +1,9 @@
+import { slugify } from './slugify'
+
 export interface ExtractedHeading {
   id: string
   text: string
   level: 2 | 3
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
 }
 
 /**

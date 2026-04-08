@@ -11,6 +11,7 @@ interface DocsSearchProps {
 export function DocsSearch({ docs }: DocsSearchProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [shortcutLabel, setShortcutLabel] = useState('⌘K')
   const [results, setResults] = useState<ReturnType<typeof search>>([])
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -19,6 +20,12 @@ export function DocsSearch({ docs }: DocsSearchProps) {
   useEffect(() => {
     buildSearchIndex(docs)
   }, [docs])
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && !navigator.platform.startsWith('Mac')) {
+      setShortcutLabel('Ctrl K')
+    }
+  }, [])
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -94,7 +101,7 @@ export function DocsSearch({ docs }: DocsSearchProps) {
         </svg>
         <span>Search docs</span>
         <kbd className="ml-auto rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
-          ⌘K
+          {shortcutLabel}
         </kbd>
       </button>
     )
