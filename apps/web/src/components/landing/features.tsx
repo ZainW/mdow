@@ -38,7 +38,7 @@ function MermaidMockup() {
             Draft
           </div>
           <div className="text-muted-foreground">→</div>
-          <div className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 shadow-soft text-foreground">
+          <div className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-foreground shadow-soft">
             Publish
           </div>
         </div>
@@ -50,35 +50,33 @@ function MermaidMockup() {
 function ThemeMockup() {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <BrowserFrame className="bg-[oklch(0.98_0.005_70)]">
-        <div className="px-4 py-4 text-xs">
-          <div className="font-semibold text-[oklch(0.13_0.02_50)]">Light</div>
-          <div className="text-[oklch(0.45_0.015_50)] mt-1">Warm stone tones.</div>
-        </div>
-      </BrowserFrame>
-      <BrowserFrame className="bg-[oklch(0.14_0_0)]">
-        <div className="px-4 py-4 text-xs">
-          <div className="font-semibold text-[oklch(0.92_0_0)]">Dark</div>
-          <div className="text-[oklch(0.65_0_0)] mt-1">Pure neutrals.</div>
-        </div>
-      </BrowserFrame>
+      <img
+        src="/screenshots/reading-light.png"
+        alt="Mdow in light mode"
+        width={1200}
+        height={750}
+        className="h-auto w-full rounded-lg shadow-soft"
+      />
+      <img
+        src="/screenshots/reading-dark.png"
+        alt="Mdow in dark mode"
+        width={1200}
+        height={750}
+        className="h-auto w-full rounded-lg shadow-soft"
+      />
     </div>
   )
 }
 
-function FileTreeMockup() {
+function DropFileMockup() {
   return (
-    <BrowserFrame title="Project">
-      <div className="px-5 py-4 text-xs leading-loose">
-        <div className="font-medium">📁 my-notes</div>
-        <div className="ml-4 text-muted-foreground">📁 daily</div>
-        <div className="ml-8 text-muted-foreground">📄 monday.md</div>
-        <div className="ml-8 text-foreground font-medium">📄 tuesday.md</div>
-        <div className="ml-4 text-muted-foreground">📁 projects</div>
-        <div className="ml-8 text-muted-foreground">📄 readme.md</div>
-        <div className="ml-4 text-muted-foreground">📄 todo.md</div>
-      </div>
-    </BrowserFrame>
+    <img
+      src="/screenshots/empty-light.png"
+      alt="Mdow empty state showing the drop zone"
+      width={2400}
+      height={1500}
+      className="h-auto w-full rounded-xl shadow-soft-lg"
+    />
   )
 }
 
@@ -86,32 +84,32 @@ export function LandingFeatures() {
   return (
     <GradientSection innerClassName="space-y-24 md:space-y-32">
       <FeatureRow
-        title="Editor-quality syntax highlighting"
-        description="Powered by Shiki with the same engine VS Code uses. 30+ languages, themed for both light and dark mode out of the box."
+        title="Just drop a file in"
+        description="Open a file, open a folder, or drag and drop. No setup, no accounts, no configuration. Mdow gets out of your way and lets you read."
         align="left"
+      >
+        <DropFileMockup />
+      </FeatureRow>
+      <FeatureRow
+        title="Editor-quality syntax highlighting"
+        description="Powered by Shiki — the same engine VS Code uses. 30+ languages, themed for both light and dark mode out of the box."
+        align="right"
       >
         <CodeMockup />
       </FeatureRow>
       <FeatureRow
         title="Mermaid diagrams, rendered inline"
         description="Flowcharts, sequence diagrams, state machines — write them in plain text and watch them render where you'd expect."
-        align="right"
+        align="left"
       >
         <MermaidMockup />
       </FeatureRow>
       <FeatureRow
         title="Light and dark, just right"
         description="Warm stone tones in light mode, pure neutrals in dark. Follows your system, switches instantly, never fights your eyes."
-        align="left"
-      >
-        <ThemeMockup />
-      </FeatureRow>
-      <FeatureRow
-        title="A file tree for the way you actually write"
-        description="Open any folder and browse your markdown like a familiar workspace. Collapsible, keyboard-friendly, and out of your way."
         align="right"
       >
-        <FileTreeMockup />
+        <ThemeMockup />
       </FeatureRow>
     </GradientSection>
   )

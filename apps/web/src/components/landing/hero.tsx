@@ -1,16 +1,14 @@
 import { Link } from '@tanstack/react-router'
-import { BrowserFrame } from '~/components/browser-frame'
-import { MockMarkdown } from './mock-markdown'
 
 export function LandingHero() {
   return (
     <section className="relative overflow-hidden bg-warm-gradient">
-      <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 md:pt-28 md:pb-24">
+      <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 md:pt-28 md:pb-20">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-balance sm:text-5xl md:text-6xl">
+          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
             A quiet place to read markdown
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground text-balance">
+          <p className="mx-auto mt-6 max-w-2xl text-balance text-lg text-muted-foreground">
             Beautiful rendering, syntax highlighting, and a reading experience that gets out of the
             way. Free for Mac, Windows, and Linux.
           </p>
@@ -29,10 +27,14 @@ export function LandingHero() {
             </Link>
           </div>
         </div>
-        <div className="mx-auto mt-16 max-w-4xl">
-          <BrowserFrame title="readme.md — Mdow">
-            <MockMarkdown />
-          </BrowserFrame>
+        <div className="mx-auto mt-16 max-w-5xl">
+          <img
+            src="/screenshots/reading-dark.png"
+            alt="Mdow rendering a markdown document in dark mode"
+            width={2400}
+            height={1500}
+            className="h-auto w-full rounded-xl shadow-soft-lg"
+          />
         </div>
       </div>
     </section>
