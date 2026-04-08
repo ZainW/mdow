@@ -25,4 +25,14 @@ export default defineConfig({
       '~': resolve(__dirname, './src'),
     },
   },
+  // Add the `unwasm` export condition to the SSR environment so md4x resolves
+  // to its bundler-friendly variant (lib/wasm/unwasm.mjs) instead of the
+  // default one that tries to readFile its own wasm via a relative URL.
+  environments: {
+    ssr: {
+      resolve: {
+        conditions: ['unwasm', 'workerd', 'worker', 'module', 'browser'],
+      },
+    },
+  },
 })
