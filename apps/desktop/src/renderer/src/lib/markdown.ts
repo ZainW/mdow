@@ -1,5 +1,8 @@
-import { createHighlighterCore } from 'shiki/core'
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { createParse } from 'comark'
+import { renderHTML } from '@comark/html'
+import highlight from 'comark/plugins/highlight'
+import mermaid from 'comark/plugins/mermaid'
+
 import githubLight from 'shiki/themes/github-light.mjs'
 import githubDark from 'shiki/themes/github-dark.mjs'
 
@@ -37,8 +40,6 @@ import langJsx from 'shiki/langs/jsx.mjs'
 import langTsx from 'shiki/langs/tsx.mjs'
 import langPhp from 'shiki/langs/php.mjs'
 
-import { init as initMd4x, renderToHtml } from 'md4x/wasm'
-
 const langs = [
   langJavascript,
   langTypescript,
@@ -75,40 +76,20 @@ const langs = [
   langPhp,
 ]
 
-let highlighter: Awaited<ReturnType<typeof createHighlighterCore>> | null = null
-let initialized = false
+const parse = createParse({
+  plugins: [
+    highlight({
+      registerDefaultThemes: false,
+      registerDefaultLanguages: false,
+      themes: { light: githubLight, dark: githubDark },
+      languages: langs,
+    }),
+    mermaid(),
+  ],
+})
 
 export async function initMarkdown(): Promise<void> {
-  if (initialized) return
-
-  await initMd4x()
-
-  highlighter = await createHighlighterCore({
-    themes: [githubLight, githubDark],
-    langs,
-    engine: createJavaScriptRegexEngine(),
-  })
-
-  initialized = true
-}
-
-function highlightCode(code: string, lang: string | null): string {
-  if (!highlighter) {
-    const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    return `<pre><code>${escaped}</code></pre>`
-  }
-
-  const loaded = highlighter.getLoadedLanguages()
-
-  if (lang && loaded.includes(lang)) {
-    return highlighter.codeToHtml(code, {
-      lang,
-      themes: { light: 'github-light', dark: 'github-dark' },
-    })
-  }
-
-  const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return `<pre><code>${escaped}</code></pre>`
+  await parse('```ts\n//\n```')
 }
 
 export interface DocHeading {
@@ -131,67 +112,60 @@ function slugifyHeading(text: string): string {
     .replace(/\s+/g, '-')
 }
 
-let mermaidCounter = 0
-
-function wrapWithCopyButton(preElement: Element, rawCode: string): HTMLDivElement {
-  const container = document.createElement('div')
-  container.className = 'code-block-wrapper group/code relative'
-  const copyBtn = document.createElement('button')
-  copyBtn.className = 'copy-code-btn'
-  copyBtn.setAttribute('data-code', btoa(encodeURIComponent(rawCode)))
-  copyBtn.textContent = 'Copy'
-  container.appendChild(preElement)
-  container.appendChild(copyBtn)
-  return container
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 }
 
-export function renderMarkdown(text: string): RenderResult {
-  const rawHtml = renderToHtml(text)
+export async function renderMarkdown(text: string): Promise<RenderResult> {
+  const tree = await parse(text)
 
+  const mermaidBlocks: { id: string; code: string }[] = []
+  let mermaidCounter = 0
+
+  const rawHtml = await renderHTML(tree, {
+    components: {
+      mermaid: ([, attrs]) => {
+        const code = String(attrs.content ?? '')
+        const id = `mermaid-${mermaidCounter++}`
+        mermaidBlocks.push({ id, code })
+        return `<div class="mermaid" id="${escapeAttr(id)}"></div>`
+      },
+    },
+  })
+
+  // Trusted source: local markdown files rendered by comark, not user-submitted web content.
   const wrapper = document.createElement('div')
   wrapper.innerHTML = rawHtml
 
-  const mermaidBlocks: { id: string; code: string }[] = []
-  mermaidCounter = 0
-
   const headings: DocHeading[] = []
   const slugCounts = new Map<string, number>()
-  const headingNodes = wrapper.querySelectorAll('h1, h2, h3, h4')
-  for (const node of headingNodes) {
-    const text = (node.textContent ?? '').trim()
-    if (!text) continue
-    const base = slugifyHeading(text)
-    if (!base) continue
-    const count = slugCounts.get(base) ?? 0
-    slugCounts.set(base, count + 1)
-    const id = count === 0 ? base : `${base}-${count}`
-    node.id = id
-    headings.push({ level: Number(node.tagName.slice(1)), text, id })
+  for (const node of wrapper.querySelectorAll('h1, h2, h3, h4')) {
+    const headingText = (node.textContent ?? '').trim()
+    if (!headingText) continue
+    let id = node.id
+    if (!id) {
+      const base = slugifyHeading(headingText)
+      if (!base) continue
+      const count = slugCounts.get(base) ?? 0
+      slugCounts.set(base, count + 1)
+      id = count === 0 ? base : `${base}-${count}`
+      node.id = id
+    }
+    headings.push({ level: Number(node.tagName.slice(1)), text: headingText, id })
   }
 
-  const codeBlocks = wrapper.querySelectorAll('pre > code')
-  for (const block of codeBlocks) {
-    const langClass = [...block.classList].find((c) => c.startsWith('language-'))
-    const lang = langClass ? langClass.replace('language-', '') : null
-    const code = block.textContent || ''
-
-    if (lang === 'mermaid') {
-      const id = `mermaid-${mermaidCounter++}`
-      const mermaidDiv = document.createElement('div')
-      mermaidDiv.className = 'mermaid'
-      mermaidDiv.id = id
-      block.closest('pre')!.replaceWith(mermaidDiv)
-      mermaidBlocks.push({ id, code })
-    } else {
-      const highlighted = highlightCode(code, lang)
-      const temp = document.createElement('div')
-      temp.innerHTML = highlighted
-      const newPre = temp.firstElementChild
-      if (newPre) {
-        const wrapped = wrapWithCopyButton(newPre, code)
-        block.closest('pre')!.replaceWith(wrapped)
-      }
-    }
+  for (const pre of wrapper.querySelectorAll('pre')) {
+    if (pre.parentElement?.classList.contains('code-block-wrapper')) continue
+    const code = pre.textContent ?? ''
+    const container = document.createElement('div')
+    container.className = 'code-block-wrapper group/code relative'
+    const copyBtn = document.createElement('button')
+    copyBtn.className = 'copy-code-btn'
+    copyBtn.setAttribute('data-code', btoa(encodeURIComponent(code)))
+    copyBtn.textContent = 'Copy'
+    pre.replaceWith(container)
+    container.appendChild(pre)
+    container.appendChild(copyBtn)
   }
 
   return { html: wrapper.innerHTML, mermaidBlocks, headings }

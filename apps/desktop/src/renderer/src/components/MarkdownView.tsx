@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
@@ -32,15 +32,36 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const setDocHeadings = useAppStore((s) => s.setDocHeadings)
   const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
 
-  // Synchronous HTML computation — updates in the same render as the tab switch,
-  // preventing intermediate frames with stale content that cause scrollbar flash
-  const renderResult = useMemo(() => {
-    if (!ready || !tab.content) {
-      return { html: '', mermaidBlocks: [], headings: [] } as RenderResult
+  const [renderResult, setRenderResult] = useState<RenderResult>({
+    html: '',
+    mermaidBlocks: [],
+    headings: [],
+  })
+  const lastRenderedTabIdRef = useRef(tab.id)
+
+  useEffect(() => {
+    if (!ready) return undefined
+    if (!tab.content) {
+      setRenderResult({ html: '', mermaidBlocks: [], headings: [] })
+      return undefined
     }
-    return renderMarkdown(tab.content)
+    // Clear stale content on tab switch to avoid showing the old document briefly.
+    // For same-tab re-renders (theme change, content edit), keep showing the
+    // previous html until the new render lands to avoid a flash of empty.
+    if (lastRenderedTabIdRef.current !== tab.id) {
+      lastRenderedTabIdRef.current = tab.id
+      setRenderResult({ html: '', mermaidBlocks: [], headings: [] })
+    }
+    let cancelled = false
+    void renderMarkdown(tab.content).then((res) => {
+      if (cancelled) return
+      setRenderResult(res)
+    })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
-  }, [ready, tab.content, themeKey])
+  }, [ready, tab.id, tab.content, themeKey])
 
   const html = renderResult.html
   mermaidBlocksRef.current = renderResult.mermaidBlocks
@@ -169,7 +190,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     clear()
   }
 
-  // Content is from local markdown files rendered by md4x — trusted source, not user-generated web content
+  // Content is from local markdown files rendered by comark — trusted source, not user-generated web content
   return (
     <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
       {searchOpen && (

@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
  * This approach works WITH React (producing a new HTML string) rather than
  * fighting it (mutating the live DOM that React owns).
  *
- * Security note: The input HTML is from local markdown files rendered by md4x
- * (a trusted WASM renderer) — not from untrusted user input or external sources.
+ * Security note: The input HTML is from local markdown files rendered by comark —
+ * not from untrusted user input or external sources.
  */
 function highlightHtml(html: string, query: string): { html: string; count: number } {
   if (!query || !html) return { html, count: 0 }

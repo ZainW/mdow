@@ -2,8 +2,6 @@ import { resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import wasm from 'vite-plugin-wasm'
-import topLevelAwait from 'vite-plugin-top-level-await'
 
 export default defineConfig({
   main: {},
@@ -14,10 +12,6 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src'),
       },
     },
-    plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
-    optimizeDeps: {
-      exclude: ['md4x'],
-    },
-    assetsInclude: ['**/*.wasm'],
+    plugins: [tailwindcss(), react()],
   },
 })
