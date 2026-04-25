@@ -36,7 +36,15 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           click: () => getMainWindow()?.webContents.send('menu:open-folder'),
         },
         { type: 'separator' },
-        isMac ? { role: 'close' } : { role: 'quit' },
+        ...(isMac
+          ? [
+              {
+                label: 'Close Tab',
+                accelerator: 'CmdOrCtrl+W',
+                click: () => getMainWindow()?.webContents.send('menu:close-tab'),
+              },
+            ]
+          : [{ role: 'quit' as const }]),
       ],
     },
     {

@@ -38,6 +38,7 @@ export interface ElectronAPI {
   addRecent: (filePath: string) => Promise<void>
   showInFolder: (filePath: string) => Promise<void>
   setWindowTitle: (title: string, filePath?: string) => Promise<void>
+  closeWindow: () => Promise<void>
   setTheme: (theme: string) => Promise<void>
   getPathForFile: (file: File) => string
 
@@ -53,6 +54,7 @@ export interface ElectronAPI {
   onMenuZoomReset: (callback: () => void) => () => void
   onMenuShortcuts: (callback: () => void) => () => void
   onMenuSettings: (callback: () => void) => () => void
+  onMenuCloseTab: (callback: () => void) => () => void
 
   checkForUpdates: () => Promise<void>
   downloadUpdate: () => Promise<void>
@@ -78,6 +80,7 @@ const api: ElectronAPI = {
   addRecent: (filePath) => ipcRenderer.invoke('store:add-recent', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:show-in-folder', filePath),
   setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
   getPathForFile: (file) => webUtils.getPathForFile(file),
 
@@ -141,6 +144,11 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('menu:settings', handler)
     return () => ipcRenderer.removeListener('menu:settings', handler)
+  },
+  onMenuCloseTab: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:close-tab', handler)
+    return () => ipcRenderer.removeListener('menu:close-tab', handler)
   },
 
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),

@@ -5,6 +5,7 @@ import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
+import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
 import { MarkdownView } from './components/MarkdownView'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
@@ -34,6 +35,9 @@ function App(): React.JSX.Element {
   const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const closeTab = useAppStore((s) => s.closeTab)
+  const cycleTab = useAppStore((s) => s.cycleTab)
+  const selectTabByIndex = useAppStore((s) => s.selectTabByIndex)
   const queryClient = useQueryClient()
 
   useTheme()
@@ -116,6 +120,11 @@ function App(): React.JSX.Element {
       window.api.onMenuZoomReset(() => resetZoom()),
       window.api.onMenuShortcuts(() => setShortcutsDialogOpen(true)),
       window.api.onMenuSettings(() => setSettingsOpen(true)),
+      window.api.onMenuCloseTab(() => {
+        const state = useAppStore.getState()
+        if (state.activeTabId) closeTab(state.activeTabId)
+        else void window.api.closeWindow()
+      }),
     ]
     return () => unsubs.forEach((fn) => fn())
   }, [
@@ -129,6 +138,7 @@ function App(): React.JSX.Element {
     resetZoom,
     setShortcutsDialogOpen,
     setSettingsOpen,
+    closeTab,
   ])
 
   useEffect(() => {
@@ -166,6 +176,24 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setSettingsOpen(true)
       }
+      // Cmd+Alt+ArrowLeft / ArrowRight cycle tabs (matches macOS browser convention)
+      if (mod && e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        cycleTab(1)
+      }
+      if (mod && e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        cycleTab(-1)
+      }
+      // Cmd+1..9 jump to tab N (Cmd+9 is "last tab" by browser convention)
+      if (mod && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const tabs = useAppStore.getState().tabs
+        if (tabs.length === 0) return
+        e.preventDefault()
+        const n = Number(e.key)
+        if (n === 9) selectTabByIndex(tabs.length - 1)
+        else selectTabByIndex(n - 1)
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -178,6 +206,8 @@ function App(): React.JSX.Element {
     resetZoom,
     setShortcutsDialogOpen,
     setSettingsOpen,
+    cycleTab,
+    selectTabByIndex,
   ])
 
   useEffect(() => {
@@ -231,6 +261,7 @@ function App(): React.JSX.Element {
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
           <TabBar />
+          {activeTab && <DocumentBreadcrumb tab={activeTab} />}
           {renderContent()}
           <UpdateBanner />
         </div>

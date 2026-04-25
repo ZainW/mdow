@@ -5,8 +5,6 @@ import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
 import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
 import { SearchBar } from './SearchBar'
-import { Button } from './ui/button'
-import { ArrowsLeftRight } from '@phosphor-icons/react'
 import { ZoomIndicator } from './ZoomIndicator'
 
 interface MarkdownViewProps {
@@ -22,7 +20,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const prevTabIdRef = useRef(tab.id)
   const [searchQuery, setSearchQuery] = useState('')
   const wideMode = useAppStore((s) => s.wideMode)
-  const toggleWideMode = useAppStore((s) => s.toggleWideMode)
   const zoomLevel = useAppStore((s) => s.zoomLevel)
   const updateTabScroll = useAppStore((s) => s.updateTabScroll)
   const searchOpen = useAppStore((s) => s.searchOpen)
@@ -91,7 +88,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   // Copy code button handler
   useEffect(() => {
     const container = contentRef.current
-    if (!container) return
+    if (!container) return undefined
     const handler = (e: MouseEvent) => {
       if (!(e.target instanceof HTMLElement)) return
       const btn = e.target.closest('.copy-code-btn')
@@ -113,9 +110,9 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   useEffect(() => {
     const root = scrollRef.current
     const container = contentRef.current
-    if (!root || !container) return
+    if (!root || !container) return undefined
     const headingEls = container.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')
-    if (headingEls.length === 0) return
+    if (headingEls.length === 0) return undefined
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -135,7 +132,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   // Scroll position: save on scroll (debounced)
   useEffect(() => {
     const el = scrollRef.current
-    if (!el) return
+    if (!el) return undefined
     let timer: ReturnType<typeof setTimeout>
     const handler = () => {
       clearTimeout(timer)
@@ -185,15 +182,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
           onQueryChange={setSearchQuery}
         />
       )}
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className="absolute top-2 right-3 z-10 text-muted-foreground opacity-0 transition-opacity hover:opacity-100 group-hover/content:opacity-60"
-        onClick={toggleWideMode}
-        title={wideMode ? 'Constrained width' : 'Full width'}
-      >
-        <ArrowsLeftRight />
-      </Button>
       <div
         ref={contentRef}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"

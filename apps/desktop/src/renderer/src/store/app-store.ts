@@ -29,6 +29,12 @@ interface AppStore {
   activeTabId: string | null
   openTab: (file: { path: string; content: string }) => void
   closeTab: (tabId: string) => void
+  closeOtherTabs: (tabId: string) => void
+  closeTabsToRight: (tabId: string) => void
+  closeAllTabs: () => void
+  reorderTabs: (fromIndex: number, toIndex: number) => void
+  cycleTab: (direction: 1 | -1) => void
+  selectTabByIndex: (index: number) => void
   setActiveTab: (tabId: string) => void
   updateTabContent: (path: string, content: string) => void
   updateTabScroll: (tabId: string, scrollPosition: number) => void
@@ -95,6 +101,11 @@ function saveSession(tabs: Tab[], activeTabId: string | null): void {
   })
 }
 
+function unwatchPath(path: string): void {
+  if (typeof window === 'undefined' || !window.api) return
+  void window.api.unwatchFile(path)
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   initialized: false,
   tabs: [],
@@ -128,6 +139,7 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => {
       const index = state.tabs.findIndex((t) => t.id === tabId)
       if (index === -1) return state
+      unwatchPath(state.tabs[index].path)
       const tabs = state.tabs.filter((t) => t.id !== tabId)
       let activeTabId = state.activeTabId
       if (state.activeTabId === tabId) {
@@ -140,6 +152,60 @@ export const useAppStore = create<AppStore>((set) => ({
         }
       }
       return { tabs, activeTabId }
+    }),
+
+  closeOtherTabs: (tabId) =>
+    set((state) => {
+      const keep = state.tabs.find((t) => t.id === tabId)
+      if (!keep) return state
+      for (const t of state.tabs) {
+        if (t.id !== tabId) unwatchPath(t.path)
+      }
+      return { tabs: [keep], activeTabId: tabId }
+    }),
+
+  closeTabsToRight: (tabId) =>
+    set((state) => {
+      const index = state.tabs.findIndex((t) => t.id === tabId)
+      if (index === -1) return state
+      const tabs = state.tabs.slice(0, index + 1)
+      for (const t of state.tabs.slice(index + 1)) {
+        unwatchPath(t.path)
+      }
+      const stillActive = tabs.some((t) => t.id === state.activeTabId)
+      return { tabs, activeTabId: stillActive ? state.activeTabId : tabId }
+    }),
+
+  closeAllTabs: () =>
+    set((state) => {
+      for (const t of state.tabs) unwatchPath(t.path)
+      return { tabs: [], activeTabId: null }
+    }),
+
+  reorderTabs: (fromIndex, toIndex) =>
+    set((state) => {
+      if (fromIndex === toIndex) return state
+      if (fromIndex < 0 || fromIndex >= state.tabs.length) return state
+      if (toIndex < 0 || toIndex > state.tabs.length) return state
+      const tabs = [...state.tabs]
+      const [moved] = tabs.splice(fromIndex, 1)
+      const adjusted = toIndex > fromIndex ? toIndex - 1 : toIndex
+      tabs.splice(adjusted, 0, moved)
+      return { tabs }
+    }),
+
+  cycleTab: (direction) =>
+    set((state) => {
+      if (state.tabs.length === 0) return state
+      const i = state.tabs.findIndex((t) => t.id === state.activeTabId)
+      const next = (i + direction + state.tabs.length) % state.tabs.length
+      return { activeTabId: state.tabs[next].id }
+    }),
+
+  selectTabByIndex: (index) =>
+    set((state) => {
+      if (index < 0 || index >= state.tabs.length) return state
+      return { activeTabId: state.tabs[index].id }
     }),
 
   setActiveTab: (tabId) => set({ activeTabId: tabId }),

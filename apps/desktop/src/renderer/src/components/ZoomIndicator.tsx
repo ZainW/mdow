@@ -13,7 +13,7 @@ export function ZoomIndicator() {
   const prevZoom = useRef(zoomLevel)
 
   useEffect(() => {
-    if (zoomLevel === prevZoom.current) return
+    if (zoomLevel === prevZoom.current) return undefined
     prevZoom.current = zoomLevel
 
     // Show indicator on any zoom change

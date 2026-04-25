@@ -390,53 +390,99 @@
 
 /* ── Tab bar polish ──────────────────────────────────────── */
 
-/* Tab button — transitions on specific properties, custom ease-out */
+/* Outer tab wrapper — drag/drop region. Block native drag image flicker. */
+.tab {
+  -webkit-user-drag: element;
+}
+
+/* Inner tab button — pill style with smooth state transitions */
 .tab-btn {
   transition:
-    background-color 150ms var(--ease-out-ui),
-    color 150ms var(--ease-out-ui),
+    background-color 140ms var(--ease-out-ui),
+    color 140ms var(--ease-out-ui),
+    box-shadow 140ms var(--ease-out-ui),
     transform 120ms var(--ease-out-ui);
 }
 
-/* Press feedback — subtle scale */
 .tab-btn:active {
   transform: scale(0.98);
 }
 
-/* Hover only for pointer devices */
+/* Hover on inactive tabs only — keep active tab visually stable */
 @media (hover: hover) and (pointer: fine) {
-  .tab-btn:not([class*='bg-background']):hover {
-    background-color: color-mix(in oklch, var(--background) 50%, transparent);
+  [data-active='false'] .tab-btn:hover {
+    background-color: color-mix(in oklch, var(--muted) 60%, transparent);
     color: var(--foreground);
   }
 }
 
-/* Active tab bottom indicator */
-.tab-active-indicator {
-  border-radius: 1px 1px 0 0;
-}
-
-/* Close button — opacity + scale transition */
+/* Close button — quiet by default, hover lifts it */
 .tab-close-btn {
   transition:
-    opacity 100ms var(--ease-out-ui),
-    transform 100ms var(--ease-out-ui),
-    background-color 100ms ease-out;
+    opacity 120ms var(--ease-out-ui),
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    transform 120ms var(--ease-out-ui);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .tab-close-btn:hover {
     opacity: 1 !important;
-    background-color: var(--muted);
-    transform: scale(1.1);
+    color: var(--foreground);
+    background-color: color-mix(in oklch, var(--muted) 80%, transparent);
+    transform: scale(1.08);
   }
+}
+
+/* Drop indicator — subtle grow/in animation */
+[data-tab] > span:where([class*='bg-primary']) {
+  animation: tab-drop-indicator 140ms var(--ease-out-ui) both;
+}
+
+@keyframes tab-drop-indicator {
+  from {
+    opacity: 0;
+    transform: scaleY(0.6);
+  }
+}
+
+/* Context menu items — quiet hover state */
+.tab-menu-item {
+  transition:
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+
+/* Context menu enter animation */
+.tab-context-menu {
+  animation: tab-menu-in 140ms var(--ease-out-ui) both;
+  transform-origin: top left;
+}
+
+@keyframes tab-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+}
+
+/* Breadcrumb file name — soft hover */
+.breadcrumb-file {
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
 }
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .tab-btn,
-  .tab-close-btn {
+  .tab-close-btn,
+  .tab-menu-item,
+  .tab-context-menu,
+  .breadcrumb-file,
+  [data-tab] > span:where([class*='bg-primary']) {
     transition-duration: 0ms !important;
+    animation: none !important;
   }
 }
 
