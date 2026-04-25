@@ -111,9 +111,24 @@ function highlightCode(code: string, lang: string | null): string {
   return `<pre><code>${escaped}</code></pre>`
 }
 
+export interface DocHeading {
+  level: number
+  text: string
+  id: string
+}
+
 export interface RenderResult {
   html: string
   mermaidBlocks: { id: string; code: string }[]
+  headings: DocHeading[]
+}
+
+function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
 }
 
 let mermaidCounter = 0
@@ -138,6 +153,21 @@ export function renderMarkdown(text: string): RenderResult {
 
   const mermaidBlocks: { id: string; code: string }[] = []
   mermaidCounter = 0
+
+  const headings: DocHeading[] = []
+  const slugCounts = new Map<string, number>()
+  const headingNodes = wrapper.querySelectorAll('h1, h2, h3, h4')
+  for (const node of headingNodes) {
+    const text = (node.textContent ?? '').trim()
+    if (!text) continue
+    const base = slugifyHeading(text)
+    if (!base) continue
+    const count = slugCounts.get(base) ?? 0
+    slugCounts.set(base, count + 1)
+    const id = count === 0 ? base : `${base}-${count}`
+    node.id = id
+    headings.push({ level: Number(node.tagName.slice(1)), text, id })
+  }
 
   const codeBlocks = wrapper.querySelectorAll('pre > code')
   for (const block of codeBlocks) {
@@ -164,5 +194,5 @@ export function renderMarkdown(text: string): RenderResult {
     }
   }
 
-  return { html: wrapper.innerHTML, mermaidBlocks }
+  return { html: wrapper.innerHTML, mermaidBlocks, headings }
 }

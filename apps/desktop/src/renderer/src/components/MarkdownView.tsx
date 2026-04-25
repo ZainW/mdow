@@ -32,15 +32,26 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const fontSize = useAppStore((s) => s.fontSize)
   const lineHeight = useAppStore((s) => s.lineHeight)
 
+  const setDocHeadings = useAppStore((s) => s.setDocHeadings)
+  const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
+
   // Synchronous HTML computation — updates in the same render as the tab switch,
   // preventing intermediate frames with stale content that cause scrollbar flash
-  const html = useMemo(() => {
-    if (!ready || !tab.content) return ''
-    const result = renderMarkdown(tab.content)
-    mermaidBlocksRef.current = result.mermaidBlocks
-    return result.html
+  const renderResult = useMemo(() => {
+    if (!ready || !tab.content) {
+      return { html: '', mermaidBlocks: [], headings: [] } as RenderResult
+    }
+    return renderMarkdown(tab.content)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
   }, [ready, tab.content, themeKey])
+
+  const html = renderResult.html
+  mermaidBlocksRef.current = renderResult.mermaidBlocks
+
+  useEffect(() => {
+    setDocHeadings(renderResult.headings)
+    setActiveHeadingId(renderResult.headings[0]?.id ?? null)
+  }, [renderResult.headings, setDocHeadings, setActiveHeadingId])
 
   const { highlightedHtml, matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
@@ -97,6 +108,29 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     container.addEventListener('click', handler)
     return () => container.removeEventListener('click', handler)
   }, [html])
+
+  // Scroll-spy: track which heading is currently in view
+  useEffect(() => {
+    const root = scrollRef.current
+    const container = contentRef.current
+    if (!root || !container) return
+    const headingEls = container.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')
+    if (headingEls.length === 0) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .toSorted((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible[0]) {
+          setActiveHeadingId(visible[0].target.id)
+        }
+      },
+      { root, rootMargin: '0px 0px -75% 0px', threshold: 0 },
+    )
+    for (const el of headingEls) observer.observe(el)
+    return () => observer.disconnect()
+  }, [html, setActiveHeadingId])
 
   // Scroll position: save on scroll (debounced)
   useEffect(() => {

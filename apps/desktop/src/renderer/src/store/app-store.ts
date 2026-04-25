@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { DocHeading } from '../lib/markdown'
 
 export interface Tab {
   id: string
@@ -46,6 +47,11 @@ interface AppStore {
 
   wideMode: boolean
   toggleWideMode: () => void
+
+  docHeadings: DocHeading[]
+  activeHeadingId: string | null
+  setDocHeadings: (headings: DocHeading[]) => void
+  setActiveHeadingId: (id: string | null) => void
 
   commandPaletteOpen: boolean
   setCommandPaletteOpen: (open: boolean) => void
@@ -170,6 +176,11 @@ export const useAppStore = create<AppStore>((set) => ({
 
   wideMode: false,
   toggleWideMode: () => set((state) => ({ wideMode: !state.wideMode })),
+
+  docHeadings: [],
+  activeHeadingId: null,
+  setDocHeadings: (headings) => set({ docHeadings: headings }),
+  setActiveHeadingId: (id) => set({ activeHeadingId: id }),
 
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),

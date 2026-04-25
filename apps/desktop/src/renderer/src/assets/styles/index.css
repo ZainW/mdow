@@ -326,6 +326,68 @@
   }
 }
 
+/* ── Sidebar rail ────────────────────────────────────────── */
+
+/* Icon button — color transition + press feedback */
+.rail-icon-btn {
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out,
+    transform 120ms var(--ease-out-ui);
+}
+.rail-icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* Sliding active indicator — single element that moves between mode positions */
+.rail-indicator {
+  transition:
+    transform 220ms var(--ease-out-ui),
+    opacity 160ms ease-out;
+}
+
+/* Outline panel — animated mode transition + per-link styling */
+.outline-link {
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.outline-link[data-active='true'] {
+  color: var(--foreground);
+  background-color: var(--sidebar-accent);
+}
+
+/* Smooth scroll target offset so anchored headings aren't flush with viewport top */
+.markdown-body :is(h1, h2, h3, h4)[id] {
+  scroll-margin-top: 1.5rem;
+}
+
+/* Drawer mode swap — gentle fade-in for the freshly-mounted content */
+.drawer-mode {
+  animation: drawer-mode-in 180ms var(--ease-out-ui) both;
+}
+
+@keyframes drawer-mode-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-icon-btn,
+  .rail-indicator,
+  .outline-link,
+  .drawer-mode {
+    transition-duration: 0ms !important;
+    animation: none !important;
+  }
+  .markdown-body {
+    scroll-behavior: auto;
+  }
+}
+
 /* ── Tab bar polish ──────────────────────────────────────── */
 
 /* Tab button — transitions on specific properties, custom ease-out */
