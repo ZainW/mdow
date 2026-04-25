@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Sun, Moon, Desktop } from '@phosphor-icons/react'
 import { useAppStore } from '../store/app-store'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
@@ -71,9 +72,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogDescription>Tune how markdown reads.</DialogDescription>
         </DialogHeader>
 
-        {/* ── Live preview ────────────────────────────────────── */}
+        {/* Decorative preview — not in tab/select flow */}
         <div
-          className="overflow-hidden rounded-lg border border-border-subtle bg-muted/40 px-4 py-3.5"
+          className="overflow-hidden rounded-lg border border-border-subtle bg-muted/40 px-4 py-3.5 select-none [&_*]:pointer-events-none"
           style={{ fontFamily: contentFamily }}
           aria-hidden="true"
         >
@@ -101,9 +102,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </p>
         </div>
 
-        {/* ── Theme ───────────────────────────────────────────── */}
         <Field label="Theme">
-          <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-0.5">
+          <div
+            role="group"
+            aria-label="Theme"
+            className="grid grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
+          >
             {THEME_OPTIONS.map((opt) => {
               const active = theme === opt.value
               return (
@@ -113,8 +117,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   aria-pressed={active}
                   onClick={() => setTheme(opt.value)}
                   className={cn(
-                    'flex h-7 items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium transition-colors outline-none',
-                    'focus-visible:ring-2 focus-visible:ring-ring/50',
+                    'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium outline-none',
+                    'transition-[background-color,color,box-shadow,transform] duration-150',
+                    'active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/50',
                     active
                       ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/5'
                       : 'text-muted-foreground hover:text-foreground',
@@ -128,47 +133,38 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </Field>
 
-        {/* ── Content font ────────────────────────────────────── */}
         <Field label="Content font">
-          <div className="grid grid-cols-4 gap-1.5">
-            {CONTENT_FONTS.map((font) => {
-              const active = contentFont === font.value
-              return (
-                <FontTile
-                  key={font.value}
-                  active={active}
-                  label={font.label}
-                  family={font.family}
-                  glyph="Aa"
-                  onClick={() => setContentFont(font.value)}
-                />
-              )
-            })}
-          </div>
+          <FontGrid groupLabel="Content font" cols={4}>
+            {CONTENT_FONTS.map((font) => (
+              <FontTile
+                key={font.value}
+                active={contentFont === font.value}
+                label={font.label}
+                family={font.family}
+                glyph="Aa"
+                onClick={() => setContentFont(font.value)}
+              />
+            ))}
+          </FontGrid>
         </Field>
 
-        {/* ── Code font ───────────────────────────────────────── */}
         <Field label="Code font">
-          <div className="grid grid-cols-3 gap-1.5">
-            {CODE_FONTS.map((font) => {
-              const active = codeFont === font.value
-              return (
-                <FontTile
-                  key={font.value}
-                  active={active}
-                  label={font.label}
-                  family={font.family}
-                  glyph="() => {}"
-                  glyphSize={13}
-                  onClick={() => setCodeFont(font.value)}
-                />
-              )
-            })}
-          </div>
+          <FontGrid groupLabel="Code font" cols={3}>
+            {CODE_FONTS.map((font) => (
+              <FontTile
+                key={font.value}
+                active={codeFont === font.value}
+                label={font.label}
+                family={font.family}
+                glyph="() => {}"
+                glyphSize={13}
+                onClick={() => setCodeFont(font.value)}
+              />
+            ))}
+          </FontGrid>
         </Field>
 
-        {/* ── Sliders ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 gap-4">
+        <div className="flex flex-col gap-4">
           <SliderField
             label="Size"
             valueLabel={`${fontSize}px`}
@@ -184,7 +180,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           />
           <SliderField
             label="Line height"
-            valueLabel={lineHeight.toFixed(2)}
+            valueLabel={lineHeight.toFixed(1)}
             value={lineHeight}
             onValueChange={(v) => setLineHeight(Number(v))}
             min={1.2}
@@ -200,9 +196,32 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = useId()
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div id={id} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function FontGrid({
+  groupLabel,
+  cols,
+  children,
+}: {
+  groupLabel: string
+  cols: 3 | 4
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={groupLabel}
+      className={cn('grid gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
+    >
       {children}
     </div>
   )
@@ -229,8 +248,9 @@ function FontTile({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'group flex flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 transition-colors outline-none',
-        'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
+        'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 outline-none',
+        'transition-[background-color,border-color,box-shadow,transform] duration-150',
+        'active:scale-[0.98] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
         active
           ? 'border-foreground/15 bg-accent/5 ring-1 ring-foreground/5'
           : 'border-border-subtle bg-background hover:border-border hover:bg-muted/60',
@@ -241,14 +261,17 @@ function FontTile({
           'leading-none',
           active ? 'text-foreground' : 'text-foreground/70 group-hover:text-foreground',
         )}
-        style={{ fontFamily: family, fontSize: glyphSize ? `${glyphSize}px` : '18px' }}
+        style={{
+          fontFamily: family,
+          fontSize: glyphSize ? `${glyphSize / 16}rem` : '1.125rem',
+        }}
       >
         {glyph}
       </span>
       <span
         className={cn(
-          'text-[10px] leading-none tracking-wide',
-          active ? 'font-medium text-foreground' : 'text-muted-foreground',
+          'text-[0.625rem] font-medium leading-none tracking-wide',
+          active ? 'text-foreground' : 'text-muted-foreground',
         )}
       >
         {label}
@@ -284,20 +307,26 @@ function SliderField({
   leftHintSize,
   rightHintSize,
 }: SliderFieldProps) {
+  const id = useId()
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+          {label}
+        </label>
         <span className="text-xs tabular-nums text-foreground">{valueLabel}</span>
       </div>
       <div className="flex items-center gap-3">
         <span
-          className="select-none text-muted-foreground/70"
-          style={leftHintSize ? { fontSize: `${leftHintSize}px` } : { fontSize: '10px' }}
+          aria-hidden="true"
+          className="select-none leading-none text-muted-foreground/70"
+          style={{ fontSize: leftHintSize ? `${leftHintSize / 16}rem` : '0.625rem' }}
         >
           {leftHint}
         </span>
         <Slider
+          id={id}
+          aria-label={label}
           value={value}
           onValueChange={onValueChange}
           min={min}
@@ -306,8 +335,9 @@ function SliderField({
           className="flex-1"
         />
         <span
-          className="select-none text-muted-foreground/70"
-          style={rightHintSize ? { fontSize: `${rightHintSize}px` } : { fontSize: '10px' }}
+          aria-hidden="true"
+          className="select-none leading-none text-muted-foreground/70"
+          style={{ fontSize: rightHintSize ? `${rightHintSize / 16}rem` : '0.625rem' }}
         >
           {rightHint}
         </span>
