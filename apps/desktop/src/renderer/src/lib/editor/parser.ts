@@ -3,31 +3,70 @@ import {
   schema as defaultSchema,
   MarkdownParser,
 } from 'prosemirror-markdown'
-import { Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Fragment, Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Transform } from '@tiptap/pm/transform'
 import MarkdownIt from 'markdown-it'
 
 export const schema = new Schema({
-  nodes: defaultSchema.spec.nodes.addToEnd('mermaidBlock', {
-    group: 'block',
-    atom: true,
-    attrs: { source: { default: '' } },
-    parseDOM: [{ tag: 'div[data-type="mermaid"]' }],
-    toDOM: () => ['div', { 'data-type': 'mermaid' }],
-  }),
+  nodes: defaultSchema.spec.nodes
+    .addToStart('frontmatter', {
+      group: 'block',
+      atom: true,
+      attrs: { source: { default: '' } },
+      parseDOM: [{ tag: 'div[data-type="frontmatter"]' }],
+      toDOM: () => ['div', { 'data-type': 'frontmatter' }],
+    })
+    .addToEnd('mermaidBlock', {
+      group: 'block',
+      atom: true,
+      attrs: { source: { default: '' } },
+      parseDOM: [{ tag: 'div[data-type="mermaid"]' }],
+      toDOM: () => ['div', { 'data-type': 'mermaid' }],
+    })
+    .addToEnd('htmlBlock', {
+      group: 'block',
+      atom: true,
+      attrs: { source: { default: '' } },
+      parseDOM: [{ tag: 'div[data-type="html-block"]' }],
+      toDOM: () => ['div', { 'data-type': 'html-block' }],
+    }),
   marks: defaultSchema.spec.marks,
 })
 
 const tokenizer = MarkdownIt('commonmark', { html: true } as never)
 
-const parser = new MarkdownParser(schema, tokenizer, defaultMarkdownParser.tokens)
+const parser = new MarkdownParser(schema, tokenizer, {
+  ...defaultMarkdownParser.tokens,
+  html_block: {
+    node: 'htmlBlock',
+    getAttrs: (tok) => ({ source: (tok as { content: string }).content.replace(/\n+$/, '') }),
+  },
+})
+
+const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?(\n)?/
 
 export function parseMarkdown(text: string): ProseMirrorNode {
-  const doc = parser.parse(text)
-  if (!doc) {
+  let input = text
+  let frontmatterSource: string | null = null
+  const fmMatch = FRONTMATTER_RE.exec(input)
+  if (fmMatch) {
+    frontmatterSource = fmMatch[1]
+    input = input.slice(fmMatch[0].length)
+  }
+
+  let result = parser.parse(input)
+  if (!result) {
     throw new Error('Failed to parse markdown')
   }
-  return convertMermaidBlocks(doc)
+  result = convertMermaidBlocks(result)
+
+  if (frontmatterSource !== null) {
+    const fmNode = schema.nodes.frontmatter.create({ source: frontmatterSource })
+    const newContent = Fragment.from(fmNode).append(result.content)
+    result = result.type.create(result.attrs, newContent, result.marks)
+  }
+
+  return result
 }
 
 function convertMermaidBlocks(doc: ProseMirrorNode): ProseMirrorNode {
