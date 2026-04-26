@@ -43,6 +43,16 @@ function App(): React.JSX.Element {
   useTheme()
   useFolderTree(openFolderPath)
 
+  const createNewFile = useCallback(async () => {
+    const folderPath = useAppStore.getState().openFolderPath
+    const result = await window.api.createFile(folderPath)
+    if (!result) return
+    openTab({ path: result.path, content: '' })
+    const newId = useAppStore.getState().activeTabId
+    if (newId) useAppStore.getState().setTabMode(newId, 'edit')
+    void queryClient.invalidateQueries({ queryKey: ['recents'] })
+  }, [openTab, queryClient])
+
   useEffect(() => {
     void window.api.getAppState().then(async (state) => {
       if (state.sidebarWidth) setSidebarWidth(state.sidebarWidth)
@@ -90,6 +100,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     const unsubs = [
+      window.api.onMenuNewFile(() => void createNewFile()),
       window.api.onMenuOpenFile(() => {
         void window.api.openFileDialog().then((result) => {
           if (result) {
@@ -137,6 +148,7 @@ function App(): React.JSX.Element {
     ]
     return () => unsubs.forEach((fn) => fn())
   }, [
+    createNewFile,
     openTab,
     setOpenFolder,
     updateTabContent,
@@ -153,6 +165,10 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key === 'n' && !e.shiftKey) {
+        e.preventDefault()
+        void createNewFile()
+      }
       if (mod && e.key === 'k') {
         e.preventDefault()
         setCommandPaletteOpen(true)
@@ -212,6 +228,7 @@ function App(): React.JSX.Element {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [
+    createNewFile,
     setCommandPaletteOpen,
     setSearchOpen,
     toggleSidebar,

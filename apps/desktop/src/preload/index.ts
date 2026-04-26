@@ -56,6 +56,7 @@ export interface ElectronAPI {
   onMenuZoomReset: (callback: () => void) => () => void
   onMenuShortcuts: (callback: () => void) => () => void
   onMenuSettings: (callback: () => void) => () => void
+  onMenuNewFile: (callback: () => void) => () => void
   onMenuCloseTab: (callback: () => void) => () => void
 
   checkForUpdates: () => Promise<void>
@@ -148,6 +149,11 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('menu:settings', handler)
     return () => ipcRenderer.removeListener('menu:settings', handler)
+  },
+  onMenuNewFile: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:new-file', handler)
+    return () => ipcRenderer.removeListener('menu:new-file', handler)
   },
   onMenuCloseTab: (callback) => {
     const handler = () => callback()
