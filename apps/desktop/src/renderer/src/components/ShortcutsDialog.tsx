@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
+import { isMac } from '@renderer/lib/utils'
 
-const isMac = navigator.platform.includes('Mac')
 const mod = isMac ? '⌘' : 'Ctrl'
 
 const shortcuts = [

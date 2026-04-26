@@ -20,7 +20,7 @@ import {
   ListBullets,
   MagnifyingGlass,
 } from '@phosphor-icons/react'
-import type { DocHeading } from '../lib/editor/extensions/heading-ids'
+import type { DocHeading } from '../lib/markdown'
 
 type RailMode = 'recents' | 'folder' | 'outline'
 

@@ -1,8 +1,7 @@
-import { Menu, app, BrowserWindow } from 'electron'
+import { Menu, app, BrowserWindow, shell } from 'electron'
+import { isMac } from './platform'
 
 export function createMenu(getMainWindow: () => BrowserWindow | null): void {
-  const isMac = process.platform === 'darwin'
-
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -25,12 +24,6 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
     {
       label: 'File',
       submenu: [
-        {
-          label: 'New',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => getMainWindow()?.webContents.send('menu:new-file'),
-        },
-        { type: 'separator' },
         {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
@@ -126,6 +119,17 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
           click: () => getMainWindow()?.webContents.send('menu:shortcuts'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            if (isMac) {
+              void shell.openExternal('https://github.com/ZainW/mdow/releases/latest')
+            } else {
+              getMainWindow()?.webContents.send('menu:check-for-updates')
+            }
+          },
         },
       ],
     },

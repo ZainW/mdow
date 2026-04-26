@@ -1,15 +1,9 @@
-import { ipcMain, shell, BrowserWindow, nativeTheme, dialog } from 'electron'
-import {
-  openFileDialog,
-  readFileContent,
-  watchFile,
-  unwatchFile,
-  writeFile,
-  createFileInFolder,
-} from './file-service'
+import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
+import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
-import { checkForUpdates, downloadUpdate, installUpdate } from './updater'
+import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
+import { isMac } from './platform'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
@@ -51,25 +45,6 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
       throw new Error('read-error', { cause: err })
     }
-  })
-
-  ipcMain.handle('file:write', async (_, path: string, content: string) => {
-    await writeFile(path, content)
-  })
-
-  ipcMain.handle('file:create', async (_, folderPath: string | null) => {
-    if (folderPath) {
-      return await createFileInFolder(folderPath)
-    }
-    const win = getMainWindow()
-    if (!win) return null
-    const result = await dialog.showSaveDialog(win, {
-      defaultPath: 'Untitled.md',
-      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdx'] }],
-    })
-    if (result.canceled || !result.filePath) return null
-    await writeFile(result.filePath, '')
-    return { path: result.filePath }
   })
 
   ipcMain.handle('file:unwatch', (_, path: string) => {
@@ -124,7 +99,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const win = getMainWindow()
     if (!win) return
     win.setTitle(title)
-    if (process.platform === 'darwin' && filePath) {
+    if (isMac && filePath) {
       win.setRepresentedFilename(filePath)
     }
   })
@@ -133,7 +108,10 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     getMainWindow()?.close()
   })
 
-  ipcMain.handle('updater:check', () => checkForUpdates())
+  ipcMain.handle('updater:check', (_event, opts?: { manual?: boolean }) => checkForUpdates(opts))
+  ipcMain.handle('updater:set-scheduling', (_event, enabled: boolean) =>
+    setAutoUpdateScheduling(enabled),
+  )
   ipcMain.handle('updater:download', () => downloadUpdate())
   ipcMain.handle('updater:install', () => installUpdate())
 }

@@ -12,7 +12,7 @@ import {
   CommandItem,
 } from './ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
-import { FileText, Plus, PencilSimple } from '@phosphor-icons/react'
+import { FileText } from '@phosphor-icons/react'
 
 interface TreeNode {
   name: string
@@ -59,22 +59,6 @@ export function CommandPalette() {
     [setCommandPaletteOpen, openTab, queryClient],
   )
 
-  const handleNewDocument = useCallback(async () => {
-    setCommandPaletteOpen(false)
-    const folderPath = useAppStore.getState().openFolderPath
-    const result = await window.api.createFile(folderPath)
-    if (!result) return
-    useAppStore.getState().openTab({ path: result.path, content: '' })
-    const newId = useAppStore.getState().activeTabId
-    if (newId) useAppStore.getState().setTabMode(newId, 'edit')
-  }, [setCommandPaletteOpen])
-
-  const handleToggleEdit = useCallback(() => {
-    setCommandPaletteOpen(false)
-    const id = useAppStore.getState().activeTabId
-    if (id) useAppStore.getState().toggleTabMode(id)
-  }, [setCommandPaletteOpen])
-
   return (
     <Dialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
       <DialogContent
@@ -90,26 +74,6 @@ export function CommandPalette() {
           <CommandInput placeholder="Search files..." />
           <CommandList>
             <CommandEmpty>No matching files</CommandEmpty>
-            <CommandGroup heading="Commands">
-              <CommandItem
-                value="new-document"
-                keywords={['new', 'create', 'document', 'file']}
-                onSelect={() => void handleNewDocument()}
-              >
-                <Plus />
-                <span>New document</span>
-                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">Cmd+N</span>
-              </CommandItem>
-              <CommandItem
-                value="toggle-edit"
-                keywords={['edit', 'toggle', 'mode', 'writing']}
-                onSelect={handleToggleEdit}
-              >
-                <PencilSimple />
-                <span>Toggle edit mode</span>
-                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">Cmd+E</span>
-              </CommandItem>
-            </CommandGroup>
             <CommandGroup heading="Files">
               {allFiles.map((file) => {
                 const dir = parentDir(file.path)

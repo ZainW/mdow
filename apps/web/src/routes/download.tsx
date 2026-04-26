@@ -1,19 +1,37 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { getRequestHeader } from '@tanstack/react-start/server'
+import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadCard } from '~/components/download-card'
+import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { seo } from '~/lib/seo'
 
-const detectOS = createServerFn({ method: 'GET' }).handler(() => {
+const REPO_RELEASES_URL = 'https://github.com/ZainW/mdow/releases'
+
+const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
   const ua = getRequestHeader('user-agent') || ''
-  if (ua.includes('Mac')) return 'mac'
-  if (ua.includes('Windows')) return 'windows'
-  if (ua.includes('Linux')) return 'linux'
-  return 'mac'
+  const os: 'mac' | 'windows' | 'linux' = ua.includes('Mac')
+    ? 'mac'
+    : ua.includes('Windows')
+      ? 'windows'
+      : ua.includes('Linux')
+        ? 'linux'
+        : 'mac'
+
+  const release = await fetchLatestRelease()
+
+  // Cache successes at the edge for 10 minutes (GitHub API is 60/hr per IP
+  // unauth). On failure, cache for only 30s so a transient blip doesn't
+  // pin the "temporarily unavailable" page to every visitor.
+  setResponseHeader(
+    'Cache-Control',
+    release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
+  )
+
+  return { os, release }
 })
 
 export const Route = createFileRoute('/download')({
-  loader: () => detectOS(),
+  loader: () => loadDownloadData(),
   head: () => ({
     meta: seo({
       title: 'Download Mdow',
@@ -23,47 +41,44 @@ export const Route = createFileRoute('/download')({
   component: DownloadPage,
 })
 
-// Replace with actual Cloudflare R2 URLs once binaries are uploaded
-const DOWNLOAD_BASE = '#'
-
-const platforms = [
-  {
-    id: 'mac',
-    platform: 'macOS',
-    icon: '\u{1F4BB}',
-    formats: [
-      { label: 'Download .dmg', url: `${DOWNLOAD_BASE}/Mdow.dmg` },
-      { label: 'Download .zip', url: `${DOWNLOAD_BASE}/Mdow-mac.zip` },
-    ],
-  },
-  {
-    id: 'windows',
-    platform: 'Windows',
-    icon: '\u{1FAA9}',
-    formats: [{ label: 'Download Installer', url: `${DOWNLOAD_BASE}/Mdow-Setup.exe` }],
-  },
-  {
-    id: 'linux',
-    platform: 'Linux',
-    icon: '\u{1F427}',
-    formats: [{ label: 'Download .AppImage', url: `${DOWNLOAD_BASE}/Mdow.AppImage` }],
-  },
-]
-
 function DownloadPage() {
-  const detectedOS = Route.useLoaderData()
+  const { os, release } = Route.useLoaderData() as {
+    os: 'mac' | 'windows' | 'linux'
+    release: ReleaseInfo | null
+  }
 
-  const sorted = [...platforms].sort((a, b) => {
-    if (a.id === detectedOS) return -1
-    if (b.id === detectedOS) return 1
-    return 0
-  })
+  if (!release) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-16">
+        <div className="mb-12 text-center">
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Download Mdow</h1>
+          <p className="mt-3 text-muted-foreground">
+            Downloads are temporarily unavailable.{' '}
+            <a className="underline" href={REPO_RELEASES_URL}>
+              Browse all releases on GitHub
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const platforms = buildPlatforms(release)
+  const sorted = [...platforms].sort((a, b) => (a.id === os ? -1 : b.id === os ? 1 : 0))
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
-      <div className="mb-12 text-center">
+      <div className="mb-10 text-center">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Download Mdow</h1>
-        <p className="mt-3 text-muted-foreground">Available for Mac, Windows, and Linux.</p>
+        <p className="mt-3 text-muted-foreground">
+          Version <span className="tabular-nums">{release.version}</span> · released{' '}
+          {new Date(release.publishedAt).toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          })}
+        </p>
       </div>
       <div className="grid gap-6 sm:grid-cols-3">
         {sorted.map((p) => (
@@ -72,10 +87,63 @@ function DownloadPage() {
             platform={p.platform}
             icon={p.icon}
             formats={p.formats}
-            recommended={p.id === detectedOS}
+            recommended={p.id === os}
+            note={p.note}
           />
         ))}
       </div>
+      <p className="mt-8 text-center text-sm text-muted-foreground">
+        <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
+          View all releases
+        </a>
+      </p>
     </div>
   )
+}
+
+interface PlatformBlock {
+  id: 'mac' | 'windows' | 'linux'
+  platform: string
+  icon: string
+  formats: { label: string; url: string }[]
+  note?: string
+}
+
+function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
+  const macFormats = [
+    ...release.assets.mac.dmg.map((a) => ({
+      label: a.arch ? `Download .dmg (${a.arch})` : 'Download .dmg',
+      url: a.url,
+    })),
+    ...release.assets.mac.zip.map((a) => ({
+      label: a.arch ? `Download .zip (${a.arch})` : 'Download .zip',
+      url: a.url,
+    })),
+  ]
+
+  return [
+    {
+      id: 'mac',
+      platform: 'macOS',
+      icon: '\u{1F4BB}',
+      formats: macFormats,
+      note: 'brew install --cask zainw/mdow/mdow',
+    },
+    {
+      id: 'windows',
+      platform: 'Windows',
+      icon: '\u{1FAA9}',
+      formats: release.assets.windows.exe
+        ? [{ label: 'Download Installer', url: release.assets.windows.exe }]
+        : [],
+    },
+    {
+      id: 'linux',
+      platform: 'Linux',
+      icon: '\u{1F427}',
+      formats: release.assets.linux.appImage
+        ? [{ label: 'Download .AppImage', url: release.assets.linux.appImage }]
+        : [],
+    },
+  ]
 }
