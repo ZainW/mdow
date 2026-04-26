@@ -3,6 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import { useAppStore, type Tab } from '../store/app-store'
 import { editorExtensions } from '../lib/editor/schema'
 import { parseMarkdown } from '../lib/editor/parser'
+import { serializeMarkdown } from '../lib/editor/serializer'
 import { computeHeadingIds } from '../lib/editor/extensions/heading-ids'
 import { Search } from '../lib/editor/extensions/search'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
@@ -25,6 +26,7 @@ export function Editor({ tab }: EditorProps) {
   const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
   const searchOpen = useAppStore((s) => s.searchOpen)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
+  const markTabWritten = useAppStore((s) => s.markTabWritten)
 
   const [searchMatchCount, setSearchMatchCount] = useState(0)
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1)
@@ -56,6 +58,32 @@ export function Editor({ tab }: EditorProps) {
       editor.commands.setContent(next, { emitUpdate: false })
     }
   }, [editor, tab.content])
+
+  // Auto-save edits (debounced).
+  useEffect(() => {
+    if (!editor) return undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const handler = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        const markdown = serializeMarkdown(editor.state.doc)
+        if (markdown === tab.content) return
+        void (async () => {
+          try {
+            await window.api.writeFile(tab.path, markdown)
+            markTabWritten(tab.path, Date.now())
+          } catch (err) {
+            console.error('Auto-save failed:', err)
+          }
+        })()
+      }, 500)
+    }
+    editor.on('update', handler)
+    return () => {
+      editor.off('update', handler)
+      if (timer) clearTimeout(timer)
+    }
+  }, [editor, tab.path, tab.content, markTabWritten])
 
   // Update editability when tab mode changes.
   useEffect(() => {
