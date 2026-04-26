@@ -1,6 +1,7 @@
 import { dialog, BrowserWindow } from 'electron'
-import { readFile, writeFile as fsWriteFile } from 'fs/promises'
+import { readFile, writeFile as fsWriteFile, readdir } from 'fs/promises'
 import { watch, type FSWatcher } from 'chokidar'
+import { join } from 'path'
 
 const fileWatchers = new Map<string, FSWatcher>()
 
@@ -63,4 +64,22 @@ export function unwatchAllFiles(): void {
     void watcher.close()
   }
   fileWatchers.clear()
+}
+
+export function generateUniqueName(existing: string[], base: string): string {
+  if (!existing.includes(base)) return base
+  const dot = base.lastIndexOf('.')
+  const stem = dot > 0 ? base.slice(0, dot) : base
+  const ext = dot > 0 ? base.slice(dot) : ''
+  let n = 2
+  while (existing.includes(`${stem}-${n}${ext}`)) n++
+  return `${stem}-${n}${ext}`
+}
+
+export async function createFileInFolder(folderPath: string): Promise<{ path: string }> {
+  const entries = await readdir(folderPath)
+  const name = generateUniqueName(entries, 'Untitled.md')
+  const path = join(folderPath, name)
+  await fsWriteFile(path, '', 'utf8')
+  return { path }
 }

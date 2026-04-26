@@ -1,5 +1,12 @@
-import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
-import { openFileDialog, readFileContent, watchFile, unwatchFile, writeFile } from './file-service'
+import { ipcMain, shell, BrowserWindow, nativeTheme, dialog } from 'electron'
+import {
+  openFileDialog,
+  readFileContent,
+  watchFile,
+  unwatchFile,
+  writeFile,
+  createFileInFolder,
+} from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate } from './updater'
@@ -48,6 +55,21 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle('file:write', async (_, path: string, content: string) => {
     await writeFile(path, content)
+  })
+
+  ipcMain.handle('file:create', async (_, folderPath: string | null) => {
+    if (folderPath) {
+      return await createFileInFolder(folderPath)
+    }
+    const win = getMainWindow()
+    if (!win) return null
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: 'Untitled.md',
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdx'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    await writeFile(result.filePath, '')
+    return { path: result.filePath }
   })
 
   ipcMain.handle('file:unwatch', (_, path: string) => {
