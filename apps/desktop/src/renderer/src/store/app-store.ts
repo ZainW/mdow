@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DocHeading } from '../lib/markdown'
+import type { DocHeading } from '../lib/editor/extensions/heading-ids'
 
 export interface Tab {
   id: string

@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@comark/html": "^0.3.1",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@phosphor-icons/react": "^2.1.10",
@@ -43,7 +42,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "comark": "^0.3.1",
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3",
