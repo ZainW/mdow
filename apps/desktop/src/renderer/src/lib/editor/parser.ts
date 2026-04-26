@@ -42,6 +42,10 @@ const parser = new MarkdownParser(schema, tokenizer, {
     node: 'htmlBlock',
     getAttrs: (tok) => ({ source: (tok as { content: string }).content.replace(/\n+$/, '') }),
   },
+  // markdown-it emits html_inline for raw inline HTML tags like <span>, <br/>, etc.
+  // prosemirror-markdown has no default handler and throws. Skip them — the
+  // surrounding text still parses, we just drop the bare tag wrappers.
+  html_inline: { ignore: true },
 })
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?(\n)?/
@@ -76,7 +80,17 @@ export function parseMarkdown(text: string): ProseMirrorNode {
     input = input.slice(fmMatch[0].length)
   }
 
-  let result = parser.parse(input)
+  let result: ProseMirrorNode | null = null
+  try {
+    result = parser.parse(input)
+  } catch (err) {
+    // An unhandled markdown-it token type was emitted (e.g. footnote, math,
+    // dl/dt). Fall back to a single htmlBlock carrying the raw source so the
+    // user still sees their content rather than a blank page.
+    console.warn('parseMarkdown: falling back to raw passthrough:', err)
+    const fallbackNode = schema.nodes.htmlBlock.create({ source: input })
+    result = schema.topNodeType.create(null, Fragment.from(fallbackNode))
+  }
   if (!result) {
     throw new Error('Failed to parse markdown')
   }
