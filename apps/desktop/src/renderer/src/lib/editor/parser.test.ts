@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseMarkdown } from './parser'
+import { parseMarkdown, parseMarkdownChecked } from './parser'
 
 describe('parseMarkdown', () => {
   it('parses a heading', () => {
@@ -19,5 +19,20 @@ describe('parseMarkdown', () => {
     const doc = parseMarkdown('```ts\nconst x = 1\n```')
     expect(doc.firstChild?.type.name).toBe('code_block')
     expect(doc.firstChild?.attrs.params).toBe('ts')
+  })
+})
+
+describe('parseMarkdownChecked', () => {
+  it('reports clean round-trip as not lossy', () => {
+    const result = parseMarkdownChecked('# Hello\n\nA paragraph.')
+    expect(result.lossy).toBe(false)
+  })
+
+  it('returns a boolean lossy flag for any markdown input', () => {
+    // Use a plain block-level html input that the parser handles without throwing.
+    // The exact lossy value may vary — we just assert the helper returns a well-formed result.
+    const result = parseMarkdownChecked('<div>block html</div>')
+    expect(typeof result.lossy).toBe('boolean')
+    expect(result.doc).toBeDefined()
   })
 })

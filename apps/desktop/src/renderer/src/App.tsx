@@ -6,7 +6,7 @@ import { useFolderTree } from './hooks/useFolderTree'
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
-import { MarkdownView } from './components/MarkdownView'
+import { Editor } from './components/Editor'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -42,6 +42,16 @@ function App(): React.JSX.Element {
 
   useTheme()
   useFolderTree(openFolderPath)
+
+  const createNewFile = useCallback(async () => {
+    const folderPath = useAppStore.getState().openFolderPath
+    const result = await window.api.createFile(folderPath)
+    if (!result) return
+    openTab({ path: result.path, content: '' })
+    const newId = useAppStore.getState().activeTabId
+    if (newId) useAppStore.getState().setTabMode(newId, 'edit')
+    void queryClient.invalidateQueries({ queryKey: ['recents'] })
+  }, [openTab, queryClient])
 
   useEffect(() => {
     void window.api.getAppState().then(async (state) => {
@@ -90,6 +100,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     const unsubs = [
+      window.api.onMenuNewFile(() => void createNewFile()),
       window.api.onMenuOpenFile(() => {
         void window.api.openFileDialog().then((result) => {
           if (result) {
@@ -110,7 +121,16 @@ function App(): React.JSX.Element {
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }),
       window.api.onFileChanged((data) => {
-        updateTabContent(data.path, data.content)
+        const state = useAppStore.getState()
+        const tab = state.tabs.find((t) => t.path === data.path)
+        if (!tab) return
+        if (tab.lastDiskWriteAt && Date.now() - tab.lastDiskWriteAt < 1000) return
+        if (tab.mode === 'read') {
+          updateTabContent(data.path, data.content)
+          return
+        }
+        if (data.content === tab.content) return
+        state.setTabConflict(tab.id, data.content)
       }),
       window.api.onFileDeleted((path) => {
         setTabError(path, { type: 'deleted', path })
@@ -128,6 +148,7 @@ function App(): React.JSX.Element {
     ]
     return () => unsubs.forEach((fn) => fn())
   }, [
+    createNewFile,
     openTab,
     setOpenFolder,
     updateTabContent,
@@ -144,6 +165,10 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key === 'n' && !e.shiftKey) {
+        e.preventDefault()
+        void createNewFile()
+      }
       if (mod && e.key === 'k') {
         e.preventDefault()
         setCommandPaletteOpen(true)
@@ -176,6 +201,14 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setSettingsOpen(true)
       }
+      if (mod && e.key === 'e') {
+        e.preventDefault()
+        const state = useAppStore.getState()
+        const tab = state.tabs.find((t) => t.id === state.activeTabId)
+        if (!tab) return
+        if (!tab.editableSafe) return
+        state.toggleTabMode(tab.id)
+      }
       // Cmd+Alt+ArrowLeft / ArrowRight cycle tabs (matches macOS browser convention)
       if (mod && e.altKey && e.key === 'ArrowRight') {
         e.preventDefault()
@@ -198,6 +231,7 @@ function App(): React.JSX.Element {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [
+    createNewFile,
     setCommandPaletteOpen,
     setSearchOpen,
     toggleSidebar,
@@ -242,7 +276,7 @@ function App(): React.JSX.Element {
     if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
     return (
       <ErrorBoundary tabId={activeTab.id}>
-        <MarkdownView tab={activeTab} />
+        <Editor tab={activeTab} />
       </ErrorBoundary>
     )
   }

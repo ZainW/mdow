@@ -1,11 +1,14 @@
 import { create } from 'zustand'
-import type { DocHeading } from '../lib/markdown'
+import type { DocHeading } from '../lib/editor/extensions/heading-ids'
 
 export interface Tab {
   id: string
   path: string
   content: string
   scrollPosition: number
+  mode: 'read' | 'edit'
+  lastDiskWriteAt?: number
+  editableSafe: boolean
   error?: FileError | null
 }
 
@@ -40,6 +43,13 @@ interface AppStore {
   updateTabScroll: (tabId: string, scrollPosition: number) => void
   setTabError: (path: string, error: FileError) => void
   clearTabError: (tabId: string) => void
+  toggleTabMode: (tabId: string) => void
+  setTabMode: (tabId: string, mode: 'read' | 'edit') => void
+  setTabEditableSafe: (tabId: string, safe: boolean) => void
+  markTabWritten: (path: string, timestamp: number) => void
+
+  tabConflicts: Record<string, string>
+  setTabConflict: (tabId: string, diskContent: string | null) => void
 
   sidebarOpen: boolean
   sidebarWidth: number
@@ -127,6 +137,8 @@ export const useAppStore = create<AppStore>((set) => ({
         path: file.path,
         content: file.content,
         scrollPosition: 0,
+        mode: 'read',
+        editableSafe: true,
       }
       const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId)
       const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
@@ -151,7 +163,9 @@ export const useAppStore = create<AppStore>((set) => ({
           activeTabId = tabs[tabs.length - 1].id
         }
       }
-      return { tabs, activeTabId }
+      const tabConflicts = { ...state.tabConflicts }
+      delete tabConflicts[tabId]
+      return { tabs, activeTabId, tabConflicts }
     }),
 
   closeOtherTabs: (tabId) =>
@@ -229,6 +243,37 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, error: null } : t)),
     })),
+
+  toggleTabMode: (tabId) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, mode: t.mode === 'read' ? 'edit' : 'read' } : t,
+      ),
+    })),
+
+  setTabMode: (tabId, mode) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, mode } : t)),
+    })),
+
+  setTabEditableSafe: (tabId, safe) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, editableSafe: safe } : t)),
+    })),
+
+  markTabWritten: (path, timestamp) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.path === path ? { ...t, lastDiskWriteAt: timestamp } : t)),
+    })),
+
+  tabConflicts: {},
+  setTabConflict: (tabId, diskContent) =>
+    set((state) => {
+      const next = { ...state.tabConflicts }
+      if (diskContent === null) delete next[tabId]
+      else next[tabId] = diskContent
+      return { tabConflicts: next }
+    }),
 
   sidebarOpen: true,
   sidebarWidth: 260,

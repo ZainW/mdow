@@ -29,6 +29,8 @@ export interface AppState {
 export interface ElectronAPI {
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
+  writeFile: (path: string, content: string) => Promise<void>
+  createFile: (folderPath: string | null) => Promise<{ path: string } | null>
   unwatchFile: (path: string) => Promise<void>
   openFolderDialog: () => Promise<{ path: string; tree: TreeNode[] } | null>
   readFolderTree: (folderPath: string) => Promise<TreeNode[]>
@@ -54,6 +56,7 @@ export interface ElectronAPI {
   onMenuZoomReset: (callback: () => void) => () => void
   onMenuShortcuts: (callback: () => void) => () => void
   onMenuSettings: (callback: () => void) => () => void
+  onMenuNewFile: (callback: () => void) => () => void
   onMenuCloseTab: (callback: () => void) => () => void
 
   checkForUpdates: () => Promise<void>
@@ -71,6 +74,8 @@ export interface ElectronAPI {
 const api: ElectronAPI = {
   openFileDialog: () => ipcRenderer.invoke('file:open-dialog'),
   readFile: (path) => ipcRenderer.invoke('file:read', path),
+  writeFile: (path, content) => ipcRenderer.invoke('file:write', path, content),
+  createFile: (folderPath) => ipcRenderer.invoke('file:create', folderPath),
   unwatchFile: (path) => ipcRenderer.invoke('file:unwatch', path),
   openFolderDialog: () => ipcRenderer.invoke('folder:open-dialog'),
   readFolderTree: (folderPath) => ipcRenderer.invoke('folder:read-tree', folderPath),
@@ -144,6 +149,11 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('menu:settings', handler)
     return () => ipcRenderer.removeListener('menu:settings', handler)
+  },
+  onMenuNewFile: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:new-file', handler)
+    return () => ipcRenderer.removeListener('menu:new-file', handler)
   },
   onMenuCloseTab: (callback) => {
     const handler = () => callback()
