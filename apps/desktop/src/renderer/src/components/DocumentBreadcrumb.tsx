@@ -1,7 +1,13 @@
 import { useAppStore, type Tab } from '../store/app-store'
 import { basename } from '../lib/path-utils'
 import { Button } from './ui/button'
-import { ArrowsHorizontal, ArrowsInLineHorizontal, CaretRight } from '@phosphor-icons/react'
+import {
+  ArrowsHorizontal,
+  ArrowsInLineHorizontal,
+  CaretRight,
+  Pencil,
+  PencilSimpleSlash,
+} from '@phosphor-icons/react'
 
 interface Props {
   tab: Tab
@@ -10,7 +16,9 @@ interface Props {
 export function DocumentBreadcrumb({ tab }: Props) {
   const wideMode = useAppStore((s) => s.wideMode)
   const toggleWideMode = useAppStore((s) => s.toggleWideMode)
+  const toggleTabMode = useAppStore((s) => s.toggleTabMode)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
+  const editing = tab.mode === 'edit'
 
   const filename = basename(tab.path)
   const segments = parentSegments(tab.path, openFolderPath)
@@ -38,6 +46,17 @@ export function DocumentBreadcrumb({ tab }: Props) {
           {filename}
         </button>
       </nav>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={editing ? 'Stop editing' : 'Edit document'}
+        title={editing ? 'Stop editing (Cmd+E)' : 'Edit (Cmd+E)'}
+        aria-pressed={editing}
+        onClick={() => toggleTabMode(tab.id)}
+        className="text-muted-foreground/70 hover:text-foreground"
+      >
+        {editing ? <PencilSimpleSlash /> : <Pencil />}
+      </Button>
       <Button
         variant="ghost"
         size="icon-xs"
