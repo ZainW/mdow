@@ -8,6 +8,7 @@ type UpdateState =
   | { status: 'downloading'; percent: number }
   | { status: 'ready' }
   | { status: 'up-to-date' }
+  | { status: 'check-failed' }
 
 export function UpdateBanner() {
   const [state, setState] = useState<UpdateState>({ status: 'idle' })
@@ -33,7 +34,8 @@ export function UpdateBanner() {
         }
       }),
       window.api.onUpdateError(() => {
-        // Silent. Already logged in main via electron-log.
+        setState({ status: 'check-failed' })
+        setDismissed(false)
       }),
       window.api.onMenuCheckForUpdates(() => {
         void window.api.checkForUpdates({ manual: true })
@@ -99,6 +101,8 @@ export function UpdateBanner() {
       )}
 
       {state.status === 'up-to-date' && <span>You're on the latest version</span>}
+
+      {state.status === 'check-failed' && <span>Couldn't check for updates — try again later</span>}
 
       <button
         type="button"

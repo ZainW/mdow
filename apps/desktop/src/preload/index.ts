@@ -28,6 +28,7 @@ export interface AppState {
 }
 
 export interface ElectronAPI {
+  platform: NodeJS.Platform
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
   unwatchFile: (path: string) => Promise<void>
@@ -72,6 +73,7 @@ export interface ElectronAPI {
 }
 
 const api: ElectronAPI = {
+  platform: process.platform,
   openFileDialog: () => ipcRenderer.invoke('file:open-dialog'),
   readFile: (path) => ipcRenderer.invoke('file:read', path),
   unwatchFile: (path) => ipcRenderer.invoke('file:unwatch', path),

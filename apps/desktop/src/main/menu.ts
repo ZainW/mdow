@@ -1,8 +1,7 @@
 import { Menu, app, BrowserWindow, shell } from 'electron'
+import { isMac } from './platform'
 
 export function createMenu(getMainWindow: () => BrowserWindow | null): void {
-  const isMac = process.platform === 'darwin'
-
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
@@ -125,7 +124,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Check for Updates…',
           click: () => {
-            if (process.platform === 'darwin') {
+            if (isMac) {
               void shell.openExternal('https://github.com/ZainW/mdow/releases/latest')
             } else {
               getMainWindow()?.webContents.send('menu:check-for-updates')

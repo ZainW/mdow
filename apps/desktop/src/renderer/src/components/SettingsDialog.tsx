@@ -3,7 +3,7 @@ import { Sun, Moon, Desktop } from '@phosphor-icons/react'
 import { useAppStore } from '../store/app-store'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Slider } from './ui/slider'
-import { cn } from '@renderer/lib/utils'
+import { cn, isMac } from '@renderer/lib/utils'
 
 const CONTENT_FONTS = [
   { value: 'inter', label: 'Inter', family: "'Inter', system-ui, -apple-system, sans-serif" },
@@ -62,7 +62,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setTheme = useAppStore((s) => s.setTheme)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
-  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)

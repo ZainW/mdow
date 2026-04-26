@@ -8,9 +8,6 @@ import { seo } from '~/lib/seo'
 const REPO_RELEASES_URL = 'https://github.com/ZainW/mdow/releases'
 
 const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
-  // Edge cache for 10 minutes — GitHub API is rate-limited (60/hr per IP unauth).
-  setResponseHeader('Cache-Control', 'public, max-age=600, s-maxage=600')
-
   const ua = getRequestHeader('user-agent') || ''
   const os: 'mac' | 'windows' | 'linux' = ua.includes('Mac')
     ? 'mac'
@@ -21,6 +18,15 @@ const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
         : 'mac'
 
   const release = await fetchLatestRelease()
+
+  // Cache successes at the edge for 10 minutes (GitHub API is 60/hr per IP
+  // unauth). On failure, cache for only 30s so a transient blip doesn't
+  // pin the "temporarily unavailable" page to every visitor.
+  setResponseHeader(
+    'Cache-Control',
+    release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
+  )
+
   return { os, release }
 })
 

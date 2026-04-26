@@ -7,6 +7,7 @@ import { initAutoUpdater } from './updater'
 import { getWindowBounds, saveWindowBounds, getLastFolder, getAppState } from './store'
 import { scanFolder, watchFolder } from './folder-service'
 import { readFileContent } from './file-service'
+import { isMac, isLinux } from './platform'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -40,7 +41,7 @@ function createWindow(): void {
     minWidth: 600,
     minHeight: 400,
     show: false,
-    ...(process.platform === 'linux' ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
+    ...(isLinux ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -110,7 +111,7 @@ if (!gotTheLock) {
   app.setName('Mdow')
 
   void app.whenReady().then(() => {
-    if (process.platform === 'darwin' && app.dock) {
+    if (isMac && app.dock) {
       app.dock.setIcon(join(__dirname, '../../resources/icon.png'))
     }
     const appState = getAppState()
@@ -130,7 +131,7 @@ if (!gotTheLock) {
   })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (!isMac) app.quit()
   })
 
   app.on('open-file', (event, path) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRelease, type ReleaseInfo } from './github-releases'
+import { parseRelease } from './github-releases'
 
 const sample = {
   tag_name: 'v1.2.3',
@@ -30,7 +30,7 @@ const sample = {
 
 describe('parseRelease', () => {
   it('extracts version, html_url, and platform-keyed assets', () => {
-    const result = parseRelease(sample) as ReleaseInfo
+    const result = parseRelease(sample)!
     expect(result.version).toBe('1.2.3')
     expect(result.htmlUrl).toBe('https://github.com/ZainW/mdow/releases/tag/v1.2.3')
     expect(result.publishedAt).toBe('2026-04-26T10:00:00Z')

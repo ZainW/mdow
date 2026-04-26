@@ -14,8 +14,15 @@ if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
   exit 1
 fi
 
-# Prefer the arm64 dmg as the canonical cask asset.
-ASSET_NAME="Mdow-${VERSION}-arm64.dmg"
+# Discover the canonical arm64 dmg from the published release rather than
+# templating its filename — electron-builder's naming can drift.
+ASSET_NAME="$(gh release view "v${VERSION}" --repo "$REPO" \
+  --json assets --jq '.assets[].name | select(test("arm64\\.dmg$"))' \
+  | head -n1)"
+if [[ -z "$ASSET_NAME" ]]; then
+  echo "no arm64 .dmg asset found on v${VERSION} of ${REPO}" >&2
+  exit 1
+fi
 ASSET_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ASSET_NAME}"
 
 WORKDIR="$(mktemp -d)"

@@ -91,10 +91,10 @@ describe('UpdateBanner', () => {
     expect(screen.getByText(/up to date|latest version/i)).toBeInTheDocument()
   })
 
-  it('does NOT surface errors visibly', () => {
-    const { container } = render(<UpdateBanner />)
+  it('surfaces a brief failure message when an error event fires', () => {
+    render(<UpdateBanner />)
     act(() => listeners.error('boom'))
-    expect(container).toBeEmptyDOMElement()
+    expect(screen.getByText(/couldn't check for updates/i)).toBeInTheDocument()
   })
 
   it('triggers a manual check when the menu signal fires', () => {

@@ -2,6 +2,7 @@ import pkg from 'electron-updater'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log'
 import { isAutoUpdateEnabled } from './store'
+import { isMac } from './platform'
 
 const { autoUpdater } = pkg
 
@@ -12,10 +13,9 @@ autoUpdater.autoInstallOnAppQuit = true
 const STARTUP_DELAY_MS = 30_000
 const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 
-const isMac = process.platform === 'darwin'
-
 let manualCheckPending = false
 let intervalHandle: NodeJS.Timeout | null = null
+let startupHandle: NodeJS.Timeout | null = null
 
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   if (isMac) {
@@ -56,16 +56,22 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void
 
   autoUpdater.on('error', (err) => {
     log.error('Auto-updater error:', err)
-    // Intentionally not forwarded as a UI event — failed background checks
-    // shouldn't surface noise. Manual checks still get their own log line.
+    // Background-check errors stay silent. Manual checks get UI feedback so
+    // the user isn't left wondering whether their click did anything.
+    if (manualCheckPending) {
+      manualCheckPending = false
+      send('updater:error', err.message)
+    }
   })
 
   scheduleAutoChecks()
 }
 
 function scheduleAutoChecks(): void {
+  if (intervalHandle) return
   if (!isAutoUpdateEnabled()) return
-  setTimeout(() => {
+  startupHandle = setTimeout(() => {
+    startupHandle = null
     void autoUpdater.checkForUpdates().catch(() => {})
   }, STARTUP_DELAY_MS)
   intervalHandle = setInterval(() => {
@@ -76,9 +82,7 @@ function scheduleAutoChecks(): void {
 export function checkForUpdates(opts?: { manual?: boolean }): void {
   if (isMac) return
   if (opts?.manual) manualCheckPending = true
-  void autoUpdater.checkForUpdates().catch(() => {
-    manualCheckPending = false
-  })
+  void autoUpdater.checkForUpdates().catch(() => {})
 }
 
 export function downloadUpdate(): void {
@@ -95,8 +99,14 @@ export function setAutoUpdateScheduling(enabled: boolean): void {
   if (isMac) return
   if (enabled && !intervalHandle) {
     scheduleAutoChecks()
-  } else if (!enabled && intervalHandle) {
-    clearInterval(intervalHandle)
-    intervalHandle = null
+  } else if (!enabled) {
+    if (intervalHandle) {
+      clearInterval(intervalHandle)
+      intervalHandle = null
+    }
+    if (startupHandle) {
+      clearTimeout(startupHandle)
+      startupHandle = null
+    }
   }
 }

@@ -3,6 +3,7 @@ import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
+import { isMac } from './platform'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
@@ -98,7 +99,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const win = getMainWindow()
     if (!win) return
     win.setTitle(title)
-    if (process.platform === 'darwin' && filePath) {
+    if (isMac && filePath) {
       win.setRepresentedFilename(filePath)
     }
   })
