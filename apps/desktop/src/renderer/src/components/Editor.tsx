@@ -9,6 +9,7 @@ import { Search } from '../lib/editor/extensions/search'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
 import { SearchBar } from './SearchBar'
+import { ConflictBanner } from './ConflictBanner'
 
 interface EditorProps {
   tab: Tab
@@ -27,6 +28,7 @@ export function Editor({ tab }: EditorProps) {
   const searchOpen = useAppStore((s) => s.searchOpen)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
   const markTabWritten = useAppStore((s) => s.markTabWritten)
+  const conflict = useAppStore((s) => s.tabConflicts[tab.id])
 
   const [searchMatchCount, setSearchMatchCount] = useState(0)
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1)
@@ -223,6 +225,7 @@ export function Editor({ tab }: EditorProps) {
 
   return (
     <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
+      {conflict !== undefined && <ConflictBanner tabId={tab.id} diskContent={conflict} />}
       {searchOpen && (
         <SearchBar
           matchCount={searchMatchCount}

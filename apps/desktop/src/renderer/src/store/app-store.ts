@@ -46,6 +46,9 @@ interface AppStore {
   setTabMode: (tabId: string, mode: 'read' | 'edit') => void
   markTabWritten: (path: string, timestamp: number) => void
 
+  tabConflicts: Record<string, string>
+  setTabConflict: (tabId: string, diskContent: string | null) => void
+
   sidebarOpen: boolean
   sidebarWidth: number
   toggleSidebar: () => void
@@ -157,7 +160,9 @@ export const useAppStore = create<AppStore>((set) => ({
           activeTabId = tabs[tabs.length - 1].id
         }
       }
-      return { tabs, activeTabId }
+      const tabConflicts = { ...state.tabConflicts }
+      delete tabConflicts[tabId]
+      return { tabs, activeTabId, tabConflicts }
     }),
 
   closeOtherTabs: (tabId) =>
@@ -252,6 +257,15 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({
       tabs: state.tabs.map((t) => (t.path === path ? { ...t, lastDiskWriteAt: timestamp } : t)),
     })),
+
+  tabConflicts: {},
+  setTabConflict: (tabId, diskContent) =>
+    set((state) => {
+      const next = { ...state.tabConflicts }
+      if (diskContent === null) delete next[tabId]
+      else next[tabId] = diskContent
+      return { tabConflicts: next }
+    }),
 
   sidebarOpen: true,
   sidebarWidth: 260,

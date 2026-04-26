@@ -110,12 +110,16 @@ function App(): React.JSX.Element {
         void queryClient.invalidateQueries({ queryKey: ['recents'] })
       }),
       window.api.onFileChanged((data) => {
-        const tabs = useAppStore.getState().tabs
-        const tab = tabs.find((t) => t.path === data.path)
-        if (tab?.lastDiskWriteAt && Date.now() - tab.lastDiskWriteAt < 1000) {
+        const state = useAppStore.getState()
+        const tab = state.tabs.find((t) => t.path === data.path)
+        if (!tab) return
+        if (tab.lastDiskWriteAt && Date.now() - tab.lastDiskWriteAt < 1000) return
+        if (tab.mode === 'read') {
+          updateTabContent(data.path, data.content)
           return
         }
-        updateTabContent(data.path, data.content)
+        if (data.content === tab.content) return
+        state.setTabConflict(tab.id, data.content)
       }),
       window.api.onFileDeleted((path) => {
         setTabError(path, { type: 'deleted', path })

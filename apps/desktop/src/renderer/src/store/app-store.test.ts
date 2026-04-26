@@ -238,4 +238,29 @@ describe('app-store', () => {
       expect(useAppStore.getState().tabs[0].lastDiskWriteAt).toBe(12345)
     })
   })
+
+  describe('tab conflicts', () => {
+    beforeEach(() => {
+      useAppStore.setState({ tabs: [], activeTabId: null, tabConflicts: {} })
+    })
+
+    it('setTabConflict stores disk content by tab id', () => {
+      useAppStore.getState().setTabConflict('t1', 'disk text')
+      expect(useAppStore.getState().tabConflicts.t1).toBe('disk text')
+    })
+
+    it('setTabConflict with null clears the entry', () => {
+      useAppStore.getState().setTabConflict('t1', 'x')
+      useAppStore.getState().setTabConflict('t1', null)
+      expect(useAppStore.getState().tabConflicts.t1).toBeUndefined()
+    })
+
+    it('closeTab clears conflict for that tab', () => {
+      useAppStore.getState().openTab({ path: '/x.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setTabConflict(id, 'disk text')
+      useAppStore.getState().closeTab(id)
+      expect(useAppStore.getState().tabConflicts[id]).toBeUndefined()
+    })
+  })
 })
