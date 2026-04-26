@@ -1,7 +1,9 @@
 import { createParse } from 'comark'
+import type { ComarkNode, ComarkPlugin } from 'comark'
 import { renderHTML } from '@comark/html'
 import highlight from 'comark/plugins/highlight'
 import mermaid from 'comark/plugins/mermaid'
+import { detectLanguage } from './language-detect'
 
 import githubLight from 'shiki/themes/github-light.mjs'
 import githubDark from 'shiki/themes/github-dark.mjs'
@@ -76,8 +78,40 @@ const langs = [
   langPhp,
 ]
 
+// Walks the parsed tree, finds fenced code blocks with no language attribute,
+// and asks vscode-languagedetection to guess one. Mutates attrs.language in
+// place so the highlight plugin (which runs after) picks up the guess.
+const detectLanguagesPlugin: ComarkPlugin = {
+  name: 'detect-languages',
+  async post(state) {
+    const candidates: { attrs: Record<string, unknown>; code: string }[] = []
+    const walk = (nodes: ComarkNode[]) => {
+      for (const node of nodes) {
+        if (typeof node === 'string') continue
+        if (!Array.isArray(node) || node.length < 3) continue
+        const [tag, attrs, ...children] = node
+        if (tag === 'pre' && Array.isArray(children[0]) && children[0][0] === 'code') {
+          const codeContent = children[0][2]
+          if (!attrs.language && typeof codeContent === 'string') {
+            candidates.push({ attrs: attrs as Record<string, unknown>, code: codeContent })
+          }
+        }
+        walk(children as ComarkNode[])
+      }
+    }
+    walk(state.tree.nodes)
+    if (candidates.length === 0) return
+    const detected = await Promise.all(candidates.map((c) => detectLanguage(c.code)))
+    for (let i = 0; i < candidates.length; i++) {
+      const lang = detected[i]
+      if (lang) candidates[i].attrs.language = lang
+    }
+  },
+}
+
 const parse = createParse({
   plugins: [
+    detectLanguagesPlugin,
     highlight({
       registerDefaultThemes: false,
       registerDefaultLanguages: false,
