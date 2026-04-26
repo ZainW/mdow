@@ -7,7 +7,6 @@ dist/
 .playwright-mcp/
 .claude/settings.local.json
 .claude/worktrees/
-.worktrees/
 CLAUDE.local.md
 *.log
 *.tsbuildinfo

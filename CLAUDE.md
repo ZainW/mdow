@@ -42,7 +42,7 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - **Main process** (`apps/desktop/src/main/`): Electron window, IPC handlers, file/folder services, chokidar watchers
 - **Preload** (`apps/desktop/src/preload/`): IPC bridge exposing `window.api` — types in `index.d.ts`
 - **Renderer** (`apps/desktop/src/renderer/src/`): React app with Zustand store + TanStack Query
-- Markdown rendering uses Tiptap (ProseMirror) + prosemirror-markdown + Shiki (syntax highlighting) + Mermaid (diagrams)
+- Markdown rendering uses md4x (WASM) + Shiki (syntax highlighting) + Mermaid (diagrams)
 - Path alias: `@renderer/*` maps to `src/renderer/src/*` (within the desktop workspace)
 
 ## Key Patterns

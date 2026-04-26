@@ -26,12 +26,6 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
       label: 'File',
       submenu: [
         {
-          label: 'New',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => getMainWindow()?.webContents.send('menu:new-file'),
-        },
-        { type: 'separator' },
-        {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
           click: () => getMainWindow()?.webContents.send('menu:open-file'),
