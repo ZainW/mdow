@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { useAppStore, type Tab } from '../store/app-store'
 import { editorExtensions } from '../lib/editor/schema'
 import { parseMarkdown } from '../lib/editor/parser'
 import { computeHeadingIds } from '../lib/editor/extensions/heading-ids'
+import { Search } from '../lib/editor/extensions/search'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
+import { SearchBar } from './SearchBar'
 
 interface EditorProps {
   tab: Tab
@@ -21,6 +23,11 @@ export function Editor({ tab }: EditorProps) {
   const lineHeight = useAppStore((s) => s.lineHeight)
   const setDocHeadings = useAppStore((s) => s.setDocHeadings)
   const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
+  const searchOpen = useAppStore((s) => s.searchOpen)
+  const setSearchOpen = useAppStore((s) => s.setSearchOpen)
+
+  const [searchMatchCount, setSearchMatchCount] = useState(0)
+  const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -33,7 +40,7 @@ export function Editor({ tab }: EditorProps) {
 
   const editor = useEditor(
     {
-      extensions: editorExtensions,
+      extensions: [...editorExtensions, Search],
       content: initialContent,
       editable: false,
     },
@@ -155,8 +162,44 @@ export function Editor({ tab }: EditorProps) {
     }
   }, [tab.id, tab.scrollPosition])
 
+  const handleQueryChange = (q: string) => {
+    if (!editor) return
+    editor.commands.setSearchQuery(q)
+    setSearchMatchCount(editor.storage.search.matchCount)
+    setSearchCurrentIndex(editor.storage.search.currentIndex)
+  }
+
+  const handleNext = () => {
+    if (!editor) return
+    editor.commands.nextMatch()
+    setSearchCurrentIndex(editor.storage.search.currentIndex)
+  }
+
+  const handlePrev = () => {
+    if (!editor) return
+    editor.commands.prevMatch()
+    setSearchCurrentIndex(editor.storage.search.currentIndex)
+  }
+
+  const handleCloseSearch = () => {
+    if (editor) editor.commands.setSearchQuery('')
+    setSearchMatchCount(0)
+    setSearchCurrentIndex(-1)
+    setSearchOpen(false)
+  }
+
   return (
     <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
+      {searchOpen && (
+        <SearchBar
+          matchCount={searchMatchCount}
+          currentIndex={searchCurrentIndex}
+          onNext={handleNext}
+          onPrev={handlePrev}
+          onClose={handleCloseSearch}
+          onQueryChange={handleQueryChange}
+        />
+      )}
       <div
         ref={containerRef}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
