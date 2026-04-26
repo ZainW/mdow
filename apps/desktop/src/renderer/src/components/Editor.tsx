@@ -83,11 +83,14 @@ export function Editor({ tab }: EditorProps) {
     }
   }, [editor, tab.content])
 
-  // Auto-save edits (debounced). Convert from Tiptap's schema back to the
-  // parser's schema before serializing, since serializeMarkdown only knows
-  // prosemirror-markdown's node names.
+  // Auto-save edits (debounced). Several safety guards: only writes when
+  // the tab is in edit mode (so opening a doc never triggers a save), and
+  // refuses to write if the new content is suspiciously shorter than what's
+  // on disk (defends against the bridge or a broken parse silently dropping
+  // most of the document and overwriting the user's file).
   useEffect(() => {
     if (!editor) return undefined
+    if (tab.mode !== 'edit') return undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const handler = () => {
       if (timer) clearTimeout(timer)
@@ -95,6 +98,20 @@ export function Editor({ tab }: EditorProps) {
         const pmDoc = fromTiptapJSON(editor.state.doc.toJSON(), parserSchema)
         const markdown = serializeMarkdown(pmDoc)
         if (markdown === tab.content) return
+        // Refuse to overwrite if we'd be discarding more than half the
+        // document. This is a heuristic; real edits delete characters too,
+        // but a 50% size drop in a single auto-save tick is almost certainly
+        // a bug, not the user's intent.
+        if (tab.content.length > 200 && markdown.length < tab.content.length * 0.5) {
+          console.warn(
+            '[Editor] auto-save aborted: would shrink content from',
+            tab.content.length,
+            'to',
+            markdown.length,
+            'bytes',
+          )
+          return
+        }
         void (async () => {
           try {
             await window.api.writeFile(tab.path, markdown)
@@ -110,7 +127,7 @@ export function Editor({ tab }: EditorProps) {
       editor.off('update', handler)
       if (timer) clearTimeout(timer)
     }
-  }, [editor, tab.path, tab.content, markTabWritten])
+  }, [editor, tab.path, tab.content, tab.mode, markTabWritten])
 
   // Update editability when tab mode changes.
   useEffect(() => {
