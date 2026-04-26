@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { useAppStore, type Tab } from '../store/app-store'
 import { editorExtensions } from '../lib/editor/schema'
-import { parseMarkdown } from '../lib/editor/parser'
+import { parseMarkdown, parseMarkdownChecked } from '../lib/editor/parser'
 import { serializeMarkdown } from '../lib/editor/serializer'
 import { computeHeadingIds } from '../lib/editor/extensions/heading-ids'
 import { Search } from '../lib/editor/extensions/search'
@@ -28,6 +28,7 @@ export function Editor({ tab }: EditorProps) {
   const searchOpen = useAppStore((s) => s.searchOpen)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
   const markTabWritten = useAppStore((s) => s.markTabWritten)
+  const setTabEditableSafe = useAppStore((s) => s.setTabEditableSafe)
   const conflict = useAppStore((s) => s.tabConflicts[tab.id])
 
   const [searchMatchCount, setSearchMatchCount] = useState(0)
@@ -39,17 +40,26 @@ export function Editor({ tab }: EditorProps) {
 
   // Parse markdown to ProseMirror JSON (memoized on tab.id — intentionally omits tab.content
   // because useEditor recreates the editor on tab.id change; content changes are handled below).
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  const initialContent = useMemo(() => parseMarkdown(tab.content).toJSON(), [tab.id])
+  /* oxlint-disable react-hooks/exhaustive-deps */
+  const initialContent = useMemo(() => {
+    const result = parseMarkdownChecked(tab.content)
+    return { doc: result.doc.toJSON(), lossy: result.lossy }
+  }, [tab.id])
+  /* oxlint-enable react-hooks/exhaustive-deps */
 
   const editor = useEditor(
     {
       extensions: [...editorExtensions, Search],
-      content: initialContent,
+      content: initialContent.doc,
       editable: tab.mode === 'edit',
     },
     [tab.id],
   )
+
+  // Store editableSafe once per tab after the round-trip check.
+  useEffect(() => {
+    setTabEditableSafe(tab.id, !initialContent.lossy)
+  }, [tab.id, initialContent.lossy, setTabEditableSafe])
 
   // External content change: re-set content if tab.content changed.
   useEffect(() => {

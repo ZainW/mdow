@@ -8,6 +8,7 @@ export interface Tab {
   scrollPosition: number
   mode: 'read' | 'edit'
   lastDiskWriteAt?: number
+  editableSafe: boolean
   error?: FileError | null
 }
 
@@ -44,6 +45,7 @@ interface AppStore {
   clearTabError: (tabId: string) => void
   toggleTabMode: (tabId: string) => void
   setTabMode: (tabId: string, mode: 'read' | 'edit') => void
+  setTabEditableSafe: (tabId: string, safe: boolean) => void
   markTabWritten: (path: string, timestamp: number) => void
 
   tabConflicts: Record<string, string>
@@ -136,6 +138,7 @@ export const useAppStore = create<AppStore>((set) => ({
         content: file.content,
         scrollPosition: 0,
         mode: 'read',
+        editableSafe: true,
       }
       const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId)
       const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
@@ -251,6 +254,11 @@ export const useAppStore = create<AppStore>((set) => ({
   setTabMode: (tabId, mode) =>
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, mode } : t)),
+    })),
+
+  setTabEditableSafe: (tabId, safe) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, editableSafe: safe } : t)),
     })),
 
   markTabWritten: (path, timestamp) =>

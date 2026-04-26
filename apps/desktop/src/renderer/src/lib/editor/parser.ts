@@ -6,6 +6,7 @@ import {
 import { Fragment, Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Transform } from '@tiptap/pm/transform'
 import MarkdownIt from 'markdown-it'
+import { serializeMarkdown } from './serializer'
 
 export const schema: Schema = new Schema({
   nodes: defaultSchema.spec.nodes
@@ -44,6 +45,23 @@ const parser = new MarkdownParser(schema, tokenizer, {
 })
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?(\n)?/
+
+export interface ParseResult {
+  doc: ProseMirrorNode
+  lossy: boolean
+}
+
+export function parseMarkdownChecked(text: string): ParseResult {
+  const doc = parseMarkdown(text)
+  let lossy = false
+  try {
+    const out = serializeMarkdown(doc)
+    lossy = out.trim() !== text.trim()
+  } catch {
+    lossy = true
+  }
+  return { doc, lossy }
+}
 
 export function parseMarkdown(text: string): ProseMirrorNode {
   let input = text

@@ -204,7 +204,10 @@ function App(): React.JSX.Element {
       if (mod && e.key === 'e') {
         e.preventDefault()
         const state = useAppStore.getState()
-        if (state.activeTabId) state.toggleTabMode(state.activeTabId)
+        const tab = state.tabs.find((t) => t.id === state.activeTabId)
+        if (!tab) return
+        if (!tab.editableSafe) return
+        state.toggleTabMode(tab.id)
       }
       // Cmd+Alt+ArrowLeft / ArrowRight cycle tabs (matches macOS browser convention)
       if (mod && e.altKey && e.key === 'ArrowRight') {
