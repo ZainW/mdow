@@ -125,7 +125,7 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
   const rawHtml = await renderHTML(tree, {
     components: {
       mermaid: ([, attrs]) => {
-        const code = String(attrs.content ?? '')
+        const code = typeof attrs.content === 'string' ? attrs.content : ''
         const id = `mermaid-${mermaidCounter++}`
         mermaidBlocks.push({ id, code })
         return `<div class="mermaid" id="${escapeAttr(id)}"></div>`
