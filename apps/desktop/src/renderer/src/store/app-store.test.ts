@@ -208,4 +208,34 @@ describe('app-store', () => {
       expect(useAppStore.getState().tabs).toHaveLength(1)
     })
   })
+
+  describe('tab mode', () => {
+    it('new tabs default to read mode', () => {
+      useAppStore.getState().openTab({ path: '/x.md', content: 'a' })
+      const tab = useAppStore.getState().tabs[0]
+      expect(tab.mode).toBe('read')
+    })
+
+    it('toggleTabMode flips mode', () => {
+      useAppStore.getState().openTab({ path: '/y.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().toggleTabMode(id)
+      expect(useAppStore.getState().tabs[0].mode).toBe('edit')
+      useAppStore.getState().toggleTabMode(id)
+      expect(useAppStore.getState().tabs[0].mode).toBe('read')
+    })
+
+    it('setTabMode sets a specific mode', () => {
+      useAppStore.getState().openTab({ path: '/z.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setTabMode(id, 'edit')
+      expect(useAppStore.getState().tabs[0].mode).toBe('edit')
+    })
+
+    it('markTabWritten records a timestamp by path', () => {
+      useAppStore.getState().openTab({ path: '/w.md', content: 'a' })
+      useAppStore.getState().markTabWritten('/w.md', 12345)
+      expect(useAppStore.getState().tabs[0].lastDiskWriteAt).toBe(12345)
+    })
+  })
 })

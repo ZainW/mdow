@@ -6,6 +6,8 @@ export interface Tab {
   path: string
   content: string
   scrollPosition: number
+  mode: 'read' | 'edit'
+  lastDiskWriteAt?: number
   error?: FileError | null
 }
 
@@ -40,6 +42,9 @@ interface AppStore {
   updateTabScroll: (tabId: string, scrollPosition: number) => void
   setTabError: (path: string, error: FileError) => void
   clearTabError: (tabId: string) => void
+  toggleTabMode: (tabId: string) => void
+  setTabMode: (tabId: string, mode: 'read' | 'edit') => void
+  markTabWritten: (path: string, timestamp: number) => void
 
   sidebarOpen: boolean
   sidebarWidth: number
@@ -127,6 +132,7 @@ export const useAppStore = create<AppStore>((set) => ({
         path: file.path,
         content: file.content,
         scrollPosition: 0,
+        mode: 'read',
       }
       const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId)
       const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
@@ -228,6 +234,23 @@ export const useAppStore = create<AppStore>((set) => ({
   clearTabError: (tabId) =>
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, error: null } : t)),
+    })),
+
+  toggleTabMode: (tabId) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === tabId ? { ...t, mode: t.mode === 'read' ? 'edit' : 'read' } : t,
+      ),
+    })),
+
+  setTabMode: (tabId, mode) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, mode } : t)),
+    })),
+
+  markTabWritten: (path, timestamp) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.path === path ? { ...t, lastDiskWriteAt: timestamp } : t)),
     })),
 
   sidebarOpen: true,
