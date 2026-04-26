@@ -60,6 +60,7 @@ describe('store', () => {
     storeData.set('fontSize', 15.5)
     storeData.set('lineHeight', 1.65)
     storeData.set('theme', 'system')
+    storeData.set('autoUpdateEnabled', true)
   })
 
   describe('recents', () => {
@@ -110,6 +111,7 @@ describe('store', () => {
         fontSize: 15.5,
         lineHeight: 1.65,
         theme: 'system',
+        autoUpdateEnabled: true,
       })
     })
 

@@ -1,4 +1,4 @@
-import { Menu, app, BrowserWindow } from 'electron'
+import { Menu, app, BrowserWindow, shell } from 'electron'
 
 export function createMenu(getMainWindow: () => BrowserWindow | null): void {
   const isMac = process.platform === 'darwin'
@@ -120,6 +120,17 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
           click: () => getMainWindow()?.webContents.send('menu:shortcuts'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            if (process.platform === 'darwin') {
+              void shell.openExternal('https://github.com/ZainW/mdow/releases/latest')
+            } else {
+              getMainWindow()?.webContents.send('menu:check-for-updates')
+            }
+          },
         },
       ],
     },

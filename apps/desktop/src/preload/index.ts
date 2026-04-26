@@ -56,16 +56,18 @@ export interface ElectronAPI {
   onMenuSettings: (callback: () => void) => () => void
   onMenuCloseTab: (callback: () => void) => () => void
 
-  checkForUpdates: () => Promise<void>
+  checkForUpdates: (opts?: { manual?: boolean }) => Promise<void>
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
+  setAutoUpdateScheduling: (enabled: boolean) => Promise<void>
   onUpdateAvailable: (
     callback: (info: { version: string; releaseNotes?: string }) => void,
   ) => () => void
-  onUpdateUpToDate: (callback: () => void) => () => void
+  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => () => void
   onUpdateDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
   onUpdateError: (callback: (message: string) => void) => () => void
+  onMenuCheckForUpdates: (callback: () => void) => () => void
 }
 
 const api: ElectronAPI = {
@@ -145,15 +147,22 @@ const api: ElectronAPI = {
     ipcRenderer.on('menu:settings', handler)
     return () => ipcRenderer.removeListener('menu:settings', handler)
   },
+  onMenuCheckForUpdates: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:check-for-updates', handler)
+    return () => ipcRenderer.removeListener('menu:check-for-updates', handler)
+  },
   onMenuCloseTab: (callback) => {
     const handler = () => callback()
     ipcRenderer.on('menu:close-tab', handler)
     return () => ipcRenderer.removeListener('menu:close-tab', handler)
   },
 
-  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  checkForUpdates: (opts?: { manual?: boolean }) => ipcRenderer.invoke('updater:check', opts),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
+  setAutoUpdateScheduling: (enabled: boolean) =>
+    ipcRenderer.invoke('updater:set-scheduling', enabled),
   onUpdateAvailable: (callback) => {
     const handler = (
       _: Electron.IpcRendererEvent,
@@ -162,8 +171,8 @@ const api: ElectronAPI = {
     ipcRenderer.on('updater:update-available', handler)
     return () => ipcRenderer.removeListener('updater:update-available', handler)
   },
-  onUpdateUpToDate: (callback) => {
-    const handler = () => callback()
+  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, info: { wasManual: boolean }) => callback(info)
     ipcRenderer.on('updater:up-to-date', handler)
     return () => ipcRenderer.removeListener('updater:up-to-date', handler)
   },

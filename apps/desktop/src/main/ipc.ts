@@ -2,7 +2,7 @@ import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
 import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
-import { checkForUpdates, downloadUpdate, installUpdate } from './updater'
+import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
@@ -107,7 +107,10 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     getMainWindow()?.close()
   })
 
-  ipcMain.handle('updater:check', () => checkForUpdates())
+  ipcMain.handle('updater:check', (_event, opts?: { manual?: boolean }) => checkForUpdates(opts))
+  ipcMain.handle('updater:set-scheduling', (_event, enabled: boolean) =>
+    setAutoUpdateScheduling(enabled),
+  )
   ipcMain.handle('updater:download', () => downloadUpdate())
   ipcMain.handle('updater:install', () => installUpdate())
 }

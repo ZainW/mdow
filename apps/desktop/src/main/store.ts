@@ -17,6 +17,7 @@ interface StoreSchema {
   fontSize: number
   lineHeight: number
   theme: string
+  autoUpdateEnabled: boolean
 }
 
 const store = new Store<StoreSchema>({
@@ -33,6 +34,7 @@ const store = new Store<StoreSchema>({
     fontSize: 15.5,
     lineHeight: 1.65,
     theme: 'system',
+    autoUpdateEnabled: true,
   },
 })
 
@@ -61,6 +63,7 @@ export function getAppState() {
     fontSize: store.get('fontSize'),
     lineHeight: store.get('lineHeight'),
     theme: store.get('theme'),
+    autoUpdateEnabled: store.get('autoUpdateEnabled'),
   }
 }
 
@@ -78,6 +81,7 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.fontSize !== undefined) store.set('fontSize', state.fontSize)
   if (state.lineHeight !== undefined) store.set('lineHeight', state.lineHeight)
   if (state.theme !== undefined) store.set('theme', state.theme)
+  if (state.autoUpdateEnabled !== undefined) store.set('autoUpdateEnabled', state.autoUpdateEnabled)
 }
 
 export function getWindowBounds() {
@@ -94,4 +98,8 @@ export function getLastFolder(): string | null {
 
 export function setLastFolder(folder: string | null): void {
   store.set('lastFolder', folder)
+}
+
+export function isAutoUpdateEnabled(): boolean {
+  return store.get('autoUpdateEnabled')
 }
