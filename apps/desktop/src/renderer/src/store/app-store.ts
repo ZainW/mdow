@@ -79,6 +79,9 @@ interface AppStore {
   theme: string
   setTheme: (theme: string) => void
 
+  autoUpdateEnabled: boolean
+  setAutoUpdateEnabled: (enabled: boolean) => void
+
   contentFont: string
   codeFont: string
   fontSize: number
@@ -282,6 +285,13 @@ export const useAppStore = create<AppStore>((set) => ({
   setTheme: (theme) => {
     void window.api.setTheme(theme)
     set({ theme })
+  },
+
+  autoUpdateEnabled: true,
+  setAutoUpdateEnabled: (enabled) => {
+    void window.api.saveAppState({ autoUpdateEnabled: enabled })
+    void window.api.setAutoUpdateScheduling(enabled)
+    set({ autoUpdateEnabled: enabled })
   },
 
   contentFont: 'inter',

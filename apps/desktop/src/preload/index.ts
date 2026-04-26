@@ -24,6 +24,7 @@ export interface AppState {
   fontSize: number
   lineHeight: number
   theme: string
+  autoUpdateEnabled: boolean
 }
 
 export interface ElectronAPI {

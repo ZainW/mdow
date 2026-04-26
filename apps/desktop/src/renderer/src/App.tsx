@@ -50,6 +50,9 @@ function App(): React.JSX.Element {
         useAppStore.setState({ zoomLevel: state.zoomLevel })
       }
       if (state.theme) useAppStore.setState({ theme: state.theme })
+      if (typeof state.autoUpdateEnabled === 'boolean') {
+        useAppStore.setState({ autoUpdateEnabled: state.autoUpdateEnabled })
+      }
       // Restore typography settings
       const typo: Record<string, unknown> = {}
       if (state.contentFont) typo.contentFont = state.contentFont

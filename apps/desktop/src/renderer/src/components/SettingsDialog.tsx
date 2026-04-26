@@ -60,6 +60,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setFontSize = useAppStore((s) => s.setFontSize)
   const setLineHeight = useAppStore((s) => s.setLineHeight)
   const setTheme = useAppStore((s) => s.setTheme)
+  const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
+  const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
@@ -190,6 +193,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             rightHint="Spacious"
           />
         </div>
+
+        {!isMac && (
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">Updates</h3>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">
+                Automatically check for updates in the background
+              </span>
+              <input
+                type="checkbox"
+                checked={autoUpdateEnabled}
+                onChange={(e) => setAutoUpdateEnabled(e.target.checked)}
+                className="size-4 cursor-pointer accent-primary"
+              />
+            </label>
+          </section>
+        )}
       </DialogContent>
     </Dialog>
   )
