@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { useAppStore, type Tab } from '../store/app-store'
 import { editorExtensions } from '../lib/editor/schema'
-import { parseMarkdown, parseMarkdownChecked } from '../lib/editor/parser'
+import { parseMarkdown, parseMarkdownChecked, schema as parserSchema } from '../lib/editor/parser'
 import { serializeMarkdown } from '../lib/editor/serializer'
+import { toTiptapJSON, fromTiptapJSON } from '../lib/editor/tiptap-bridge'
 import { computeHeadingIds } from '../lib/editor/extensions/heading-ids'
 import { Search } from '../lib/editor/extensions/search'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
@@ -43,14 +44,14 @@ export function Editor({ tab }: EditorProps) {
   /* oxlint-disable react-hooks/exhaustive-deps */
   const initialContent = useMemo(() => {
     const result = parseMarkdownChecked(tab.content)
-    return { doc: result.doc.toJSON(), lossy: result.lossy }
+    return { doc: toTiptapJSON(result.doc), lossy: result.lossy }
   }, [tab.id])
   /* oxlint-enable react-hooks/exhaustive-deps */
 
   const editor = useEditor(
     {
       extensions: [...editorExtensions, Search],
-      content: initialContent.doc,
+      content: initialContent.doc as object,
       editable: tab.mode === 'edit',
     },
     [tab.id],
@@ -64,21 +65,24 @@ export function Editor({ tab }: EditorProps) {
   // External content change: re-set content if tab.content changed.
   useEffect(() => {
     if (!editor) return
-    const next = parseMarkdown(tab.content).toJSON()
+    const next = toTiptapJSON(parseMarkdown(tab.content))
     const current = editor.getJSON()
     if (JSON.stringify(current) !== JSON.stringify(next)) {
-      editor.commands.setContent(next, { emitUpdate: false })
+      editor.commands.setContent(next as object, { emitUpdate: false })
     }
   }, [editor, tab.content])
 
-  // Auto-save edits (debounced).
+  // Auto-save edits (debounced). Convert from Tiptap's schema back to the
+  // parser's schema before serializing, since serializeMarkdown only knows
+  // prosemirror-markdown's node names.
   useEffect(() => {
     if (!editor) return undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const handler = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        const markdown = serializeMarkdown(editor.state.doc)
+        const pmDoc = fromTiptapJSON(editor.state.doc.toJSON(), parserSchema)
+        const markdown = serializeMarkdown(pmDoc)
         if (markdown === tab.content) return
         void (async () => {
           try {
