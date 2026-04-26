@@ -1,5 +1,5 @@
 import { dialog, BrowserWindow } from 'electron'
-import { readFile } from 'fs/promises'
+import { readFile, writeFile as fsWriteFile } from 'fs/promises'
 import { watch, type FSWatcher } from 'chokidar'
 
 const fileWatchers = new Map<string, FSWatcher>()
@@ -19,6 +19,10 @@ export async function openFileDialog(win: BrowserWindow) {
 
 export async function readFileContent(path: string): Promise<string> {
   return readFile(path, 'utf-8')
+}
+
+export async function writeFile(path: string, content: string): Promise<void> {
+  await fsWriteFile(path, content, 'utf8')
 }
 
 export type FileWatchEvent = { type: 'changed'; content: string } | { type: 'deleted' }

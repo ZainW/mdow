@@ -29,6 +29,7 @@ export interface AppState {
 export interface ElectronAPI {
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
+  writeFile: (path: string, content: string) => Promise<void>
   unwatchFile: (path: string) => Promise<void>
   openFolderDialog: () => Promise<{ path: string; tree: TreeNode[] } | null>
   readFolderTree: (folderPath: string) => Promise<TreeNode[]>
@@ -71,6 +72,7 @@ export interface ElectronAPI {
 const api: ElectronAPI = {
   openFileDialog: () => ipcRenderer.invoke('file:open-dialog'),
   readFile: (path) => ipcRenderer.invoke('file:read', path),
+  writeFile: (path, content) => ipcRenderer.invoke('file:write', path, content),
   unwatchFile: (path) => ipcRenderer.invoke('file:unwatch', path),
   openFolderDialog: () => ipcRenderer.invoke('folder:open-dialog'),
   readFolderTree: (folderPath) => ipcRenderer.invoke('folder:read-tree', folderPath),

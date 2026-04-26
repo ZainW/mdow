@@ -1,5 +1,5 @@
 import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
-import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
+import { openFileDialog, readFileContent, watchFile, unwatchFile, writeFile } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate } from './updater'
@@ -44,6 +44,10 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
       throw new Error('read-error', { cause: err })
     }
+  })
+
+  ipcMain.handle('file:write', async (_, path: string, content: string) => {
+    await writeFile(path, content)
   })
 
   ipcMain.handle('file:unwatch', (_, path: string) => {
