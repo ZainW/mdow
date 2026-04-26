@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Editor } from '@tiptap/core'
+// oxlint-disable-next-line eslint-plugin-import/no-named-as-default -- StarterKit is the canonical default export
 import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockShiki } from './code-block-shiki'
 

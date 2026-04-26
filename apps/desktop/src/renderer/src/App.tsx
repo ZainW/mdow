@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
 import { MarkdownView } from './components/MarkdownView'
+import { Editor } from './components/Editor'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -237,12 +238,14 @@ function App(): React.JSX.Element {
     [openTab, queryClient],
   )
 
+  const useNewEditor = true
+
   const renderContent = () => {
     if (!activeTab) return <WelcomeView />
     if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
     return (
       <ErrorBoundary tabId={activeTab.id}>
-        <MarkdownView tab={activeTab} />
+        {useNewEditor ? <Editor tab={activeTab} /> : <MarkdownView tab={activeTab} />}
       </ErrorBoundary>
     )
   }

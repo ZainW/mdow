@@ -7,7 +7,11 @@ export const MermaidBlock = Node.create({
   selectable: true,
   addAttributes() {
     return {
-      source: { default: '' },
+      source: {
+        default: '',
+        parseHTML: (e) => e.getAttribute('data-source') ?? '',
+        renderHTML: (attrs) => ({ 'data-source': attrs.source }),
+      },
     }
   },
   parseHTML() {

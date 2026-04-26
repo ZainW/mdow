@@ -125,6 +125,7 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
   const rawHtml = await renderHTML(tree, {
     components: {
       mermaid: ([, attrs]) => {
+        // oxlint-disable-next-line typescript-eslint/no-base-to-string -- attrs.content is string from comark
         const code = String(attrs.content ?? '')
         const id = `mermaid-${mermaidCounter++}`
         mermaidBlocks.push({ id, code })

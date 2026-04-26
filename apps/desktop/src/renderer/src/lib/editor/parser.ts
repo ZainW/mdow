@@ -7,7 +7,7 @@ import { Fragment, Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model
 import { Transform } from '@tiptap/pm/transform'
 import MarkdownIt from 'markdown-it'
 
-export const schema = new Schema({
+export const schema: Schema = new Schema({
   nodes: defaultSchema.spec.nodes
     .addToStart('frontmatter', {
       group: 'block',
