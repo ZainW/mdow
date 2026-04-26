@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn } from '../lib/utils'
-import { FileText, X } from '@phosphor-icons/react'
+import { FileText, X, Pencil } from '@phosphor-icons/react'
 
 interface ContextMenuState {
   tabId: string
@@ -157,6 +157,15 @@ export function TabBar() {
                       isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
                     )}
                   />
+                  {tab.mode === 'edit' && (
+                    <Pencil
+                      weight="regular"
+                      className={cn(
+                        'size-3 shrink-0 opacity-60',
+                        isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
+                      )}
+                    />
+                  )}
                   <span className="truncate">{filename}</span>
                 </button>
                 <button

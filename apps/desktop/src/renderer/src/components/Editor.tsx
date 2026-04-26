@@ -42,7 +42,7 @@ export function Editor({ tab }: EditorProps) {
     {
       extensions: [...editorExtensions, Search],
       content: initialContent,
-      editable: false,
+      editable: tab.mode === 'edit',
     },
     [tab.id],
   )
@@ -56,6 +56,11 @@ export function Editor({ tab }: EditorProps) {
       editor.commands.setContent(next, { emitUpdate: false })
     }
   }, [editor, tab.content])
+
+  // Update editability when tab mode changes.
+  useEffect(() => {
+    if (editor) editor.setEditable(tab.mode === 'edit')
+  }, [editor, tab.mode])
 
   // Heading IDs + initial active heading.
   useEffect(() => {
