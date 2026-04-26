@@ -1,7 +1,7 @@
-* item one
-* item two
-  * nested
-* item three
+- item one
+- item two
+  - nested
+- item three
 
 1. first
 2. second

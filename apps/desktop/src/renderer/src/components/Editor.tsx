@@ -43,8 +43,19 @@ export function Editor({ tab }: EditorProps) {
   // because useEditor recreates the editor on tab.id change; content changes are handled below).
   /* oxlint-disable react-hooks/exhaustive-deps */
   const initialContent = useMemo(() => {
-    const result = parseMarkdownChecked(tab.content)
-    return { doc: toTiptapJSON(result.doc), lossy: result.lossy }
+    try {
+      const result = parseMarkdownChecked(tab.content)
+      const doc = toTiptapJSON(result.doc)
+      console.info('[Editor] parsed content for', tab.path, {
+        contentLen: tab.content.length,
+        nodeCount: (doc as { content?: unknown[] }).content?.length ?? 0,
+        sample: JSON.stringify(doc).slice(0, 200),
+      })
+      return { doc, lossy: result.lossy, error: null as Error | null }
+    } catch (err) {
+      console.error('[Editor] parseMarkdown threw for', tab.path, err)
+      return { doc: { type: 'doc', content: [] }, lossy: true, error: err as Error }
+    }
   }, [tab.id])
   /* oxlint-enable react-hooks/exhaustive-deps */
 
@@ -263,7 +274,24 @@ export function Editor({ tab }: EditorProps) {
           } as React.CSSProperties
         }
       >
+        {!editor && (
+          <pre className="whitespace-pre-wrap text-xs opacity-60">
+            [Editor loading…]{'\n'}
+            tab.path = {tab.path}
+            {'\n'}
+            tab.content.length = {tab.content.length}
+            {initialContent.error ? `\n\nparse error: ${initialContent.error.message}` : ''}
+          </pre>
+        )}
         <EditorContent editor={editor} />
+        {editor && editor.isEmpty && (
+          <pre className="mt-4 whitespace-pre-wrap text-xs opacity-40">
+            [Editor mounted but document is empty.]{'\n'}
+            tab.content.length = {tab.content.length}
+            {'\n'}
+            schema nodes = {Object.keys(editor.schema.nodes).join(', ')}
+          </pre>
+        )}
       </div>
     </div>
   )

@@ -2,7 +2,7 @@
 
 ## Heading 2
 
-A paragraph with **bold** and *italic* and `inline code`.
+A paragraph with **bold** and _italic_ and `inline code`.
 
 > A blockquote.
 
