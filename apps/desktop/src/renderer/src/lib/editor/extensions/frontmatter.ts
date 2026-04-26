@@ -7,13 +7,21 @@ export const Frontmatter = Node.create({
   selectable: true,
   addAttributes() {
     return {
-      source: { default: '' },
+      source: {
+        default: '',
+        parseHTML: (e) => e.getAttribute('data-source') ?? '',
+        renderHTML: (attrs) => ({ 'data-source': attrs.source }),
+      },
     }
   },
   parseHTML() {
-    return [{ tag: 'div[data-type="frontmatter"]' }]
+    return [{ tag: 'pre[data-type="frontmatter"]' }]
   },
-  renderHTML({ HTMLAttributes }) {
-    return ['div', { 'data-type': 'frontmatter', ...HTMLAttributes }]
+  renderHTML({ node, HTMLAttributes }) {
+    return [
+      'pre',
+      { 'data-type': 'frontmatter', class: 'frontmatter-block', ...HTMLAttributes },
+      node.attrs.source as string,
+    ]
   },
 })
