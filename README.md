@@ -7,6 +7,8 @@ Mdow is a fast, native markdown viewer for macOS, Windows, and Linux. Open files
 ## Features
 
 - **Tabbed reading** — open multiple files at once
+- **Editing** — toggle any open document into edit mode with `Cmd+E`, with debounced auto-save
+- **New documents** — create a new markdown file with `Cmd+N`
 - **Folder browsing** — sidebar with full directory tree
 - **Syntax highlighting** — powered by Shiki
 - **Mermaid diagrams** — rendered inline
@@ -56,7 +58,7 @@ npm run build:dist
 - Electron + electron-vite
 - React 19 + Zustand + TanStack Query
 - Tailwind CSS v4
-- md4x (WASM) for markdown parsing
+- Tiptap (ProseMirror) + prosemirror-markdown for parsing and editing
 - Shiki for syntax highlighting
 - Mermaid for diagrams
 
