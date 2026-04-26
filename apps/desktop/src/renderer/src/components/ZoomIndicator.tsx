@@ -54,12 +54,10 @@ export function ZoomIndicator() {
 
   return (
     <div
-      className="absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-xs text-foreground shadow-sm"
+      className="zoom-indicator absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-xs text-foreground shadow-sm"
       style={{
         opacity: visible || persistentlyVisible ? 1 : 0,
         transform: visible || persistentlyVisible ? 'scale(1)' : 'scale(0.95)',
-        transition:
-          'opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1)',
         pointerEvents: visible || persistentlyVisible ? 'auto' : 'none',
       }}
       onTransitionEnd={handleTransitionEnd}
@@ -69,25 +67,30 @@ export function ZoomIndicator() {
       <button
         className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
         onClick={zoomOut}
+        aria-label="Zoom out"
         title="Zoom out"
       >
-        <Minus size={14} weight="bold" />
+        <Minus size={14} weight="bold" aria-hidden />
       </button>
-      <span className="min-w-[3ch] text-center tabular-nums">{zoomLevel}%</span>
+      <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
+        {zoomLevel}%
+      </span>
       <button
         className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
         onClick={zoomIn}
+        aria-label="Zoom in"
         title="Zoom in"
       >
-        <Plus size={14} weight="bold" />
+        <Plus size={14} weight="bold" aria-hidden />
       </button>
       {zoomLevel !== 100 && (
         <button
           className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
           onClick={resetZoom}
+          aria-label="Reset zoom"
           title="Reset zoom"
         >
-          <ArrowCounterClockwise size={14} weight="bold" />
+          <ArrowCounterClockwise size={14} weight="bold" aria-hidden />
         </button>
       )}
     </div>

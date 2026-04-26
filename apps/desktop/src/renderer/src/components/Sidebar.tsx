@@ -105,10 +105,9 @@ export function Sidebar() {
       </div>
 
       <div
-        className="shrink-0 overflow-hidden"
+        className="sidebar-drawer shrink-0 overflow-hidden"
         style={{
           width: sidebarOpen ? DRAWER_WIDTH : 0,
-          transition: 'width 200ms var(--ease-out-ui)',
         }}
       >
         <ShadcnSidebar

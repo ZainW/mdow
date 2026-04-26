@@ -69,26 +69,32 @@ export function SearchBar({
         size="icon-xs"
         onClick={onPrev}
         disabled={matchCount === 0}
+        aria-label="Previous match"
+        title="Previous match (Shift+Enter)"
         className="active:scale-90 transition-transform"
       >
-        <CaretUp className="size-3.5" />
+        <CaretUp className="size-3.5" aria-hidden />
       </Button>
       <Button
         variant="ghost"
         size="icon-xs"
         onClick={onNext}
         disabled={matchCount === 0}
+        aria-label="Next match"
+        title="Next match (Enter)"
         className="active:scale-90 transition-transform"
       >
-        <CaretDown className="size-3.5" />
+        <CaretDown className="size-3.5" aria-hidden />
       </Button>
       <Button
         variant="ghost"
         size="icon-xs"
         onClick={onClose}
+        aria-label="Close search"
+        title="Close (Esc)"
         className="active:scale-90 transition-transform"
       >
-        <X className="size-3.5" />
+        <X className="size-3.5" aria-hidden />
       </Button>
     </div>
   )

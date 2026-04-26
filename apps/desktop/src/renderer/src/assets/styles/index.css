@@ -60,26 +60,6 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
 }
 
 /* Warm neutral light theme — stone/sand tones */
@@ -236,55 +216,11 @@
   --ease-out-ui: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* Chevron rotation — snappy custom ease-out */
-.tree-chevron {
-  transition: transform 150ms var(--ease-out-ui);
-}
-[data-panel-open] > .tree-chevron {
-  transform: rotate(90deg);
-}
-
-/* Folder icon swap on open/close */
-.tree-folder-icon-open {
-  display: none;
-}
-[data-panel-open] > .tree-folder-icon-open {
-  display: block;
-}
-[data-panel-open] > .tree-folder-icon-closed {
-  display: none;
-}
-
-/* Folder button press feedback */
-.tree-folder-btn {
-  transition:
-    transform 160ms var(--ease-out-ui),
-    background-color 150ms ease-out;
-}
-.tree-folder-btn:active {
-  transform: scale(0.98);
-}
-
-/* Smooth collapsible expand/collapse */
-.tree-collapsible-content {
-  overflow: hidden;
-  will-change: height;
-  transition:
-    height 200ms var(--ease-out-ui),
-    opacity 150ms ease-out;
-}
-.tree-collapsible-content[data-closed] {
-  opacity: 0;
-}
-.tree-collapsible-content[data-open] {
-  opacity: 1;
-}
-
-/* Active file — subtle left accent bar + distinct bg */
+/* Active file — subtle left accent bar + distinct bg.
+   No font-weight change: it would shift neighbors when selecting. */
 .tree-file-active {
   position: relative;
   background-color: var(--sidebar-accent) !important;
-  font-weight: 500;
   transition: background-color 120ms ease-out;
 }
 .tree-file-active::before {
@@ -316,11 +252,8 @@
   }
 }
 
-/* prefers-reduced-motion: keep opacity, remove movement */
 @media (prefers-reduced-motion: reduce) {
-  .tree-chevron,
-  .tree-folder-btn,
-  .tree-collapsible-content,
+  .tree-file-active,
   [data-slot='sidebar-menu-sub-button'] {
     transition-duration: 0ms !important;
   }
@@ -517,8 +450,8 @@
   opacity: 0;
   cursor: pointer;
   transition:
-    opacity 150ms,
-    background-color 150ms;
+    opacity 150ms ease-out,
+    background-color 150ms ease-out;
   background: var(--color-muted);
   color: var(--color-muted-foreground);
   border: 1px solid var(--color-border);
@@ -534,15 +467,45 @@
   color: var(--color-accent-foreground);
 }
 
+/* ── Sidebar drawer — width transition, gated by motion prefs ── */
+.sidebar-drawer {
+  transition: width 200ms var(--ease-out-ui);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-drawer {
+    transition-duration: 0ms;
+  }
+}
+
+/* ── Zoom indicator — fade/scale, gated by motion prefs ── */
+.zoom-indicator {
+  transition:
+    opacity 200ms var(--ease-out-ui),
+    transform 200ms var(--ease-out-ui);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoom-indicator {
+    transition-duration: 0ms;
+  }
+}
+
 /* ── Search bar enter animation ──────────────────────────── */
 .search-bar {
-  animation: search-bar-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: search-bar-in 200ms var(--ease-out-ui) both;
 }
 
 @keyframes search-bar-in {
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-bar {
+    animation: none;
   }
 }
 
@@ -554,9 +517,9 @@ mark.search-highlight {
   padding: 0;
   margin: 0;
   transition:
-    background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 150ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1);
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
 mark.search-highlight.search-highlight-active {
