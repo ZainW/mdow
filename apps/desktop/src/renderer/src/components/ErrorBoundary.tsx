@@ -25,6 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidUpdate(prevProps: Props): void {
     if (prevProps.tabId !== this.props.tabId) {
+      // oxlint-disable-next-line no-did-update-set-state -- resetting derived state on tab change is the canonical pattern
       this.setState({ hasError: false, error: null })
     }
   }
