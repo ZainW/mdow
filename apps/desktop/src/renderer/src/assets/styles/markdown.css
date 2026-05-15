@@ -9,7 +9,7 @@
   font-family: var(--md-content-font);
   font-size: var(--md-font-size);
   line-height: var(--md-line-height);
-  color: hsl(var(--foreground));
+  color: var(--foreground);
 }
 
 /* ── Headings ── */
@@ -21,7 +21,7 @@
 .markdown-body h5,
 .markdown-body h6 {
   font-weight: 600;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
 }
 
 .markdown-body h1 {
@@ -57,13 +57,13 @@
   font-weight: 600;
   line-height: 1.4;
   margin: 1.3em 0 0.3em;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 /* ── Links ── */
 
 .markdown-body a {
-  color: hsl(var(--primary));
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -88,7 +88,7 @@
 
 .markdown-body hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--border);
   margin: 2em 0;
 }
 
@@ -97,98 +97,179 @@
 .markdown-body code {
   font-family: var(--md-code-font);
   font-size: 0.875em;
-  background: hsl(var(--muted));
+  background: var(--muted);
   padding: 0.15em 0.4em;
   border-radius: 4px;
 }
 
-/* ── Code Blocks ── */
+/* ── Code Blocks ──
+   Wrapper provides the surface (border + bg + lift); <pre> stays transparent
+   so shiki's per-token colors render on the wrapper. */
 
-.markdown-body pre {
-  background: hsl(var(--muted));
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  padding: 16px 20px;
+.markdown-body .code-block-wrapper {
+  margin: 1.25em 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  box-shadow: 0 1px 0 var(--border-subtle);
+  overflow: hidden;
+}
+
+.markdown-body .code-block-wrapper pre {
+  margin: 0;
+  padding: 14px 18px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   overflow-x: auto;
-  margin: 0 0 1em;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+/* Bare <pre> outside the wrapper (defensive) */
+.markdown-body pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  overflow-x: auto;
+  margin: 1.25em 0;
+  line-height: 1.6;
 }
 
 .markdown-body pre code {
   background: none;
   padding: 0;
   font-size: 13.5px;
+  font-family: var(--md-code-font);
 }
 
 /* ── Shiki Syntax Highlighting ── */
 
-.markdown-body pre.shiki {
-  overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid hsl(var(--border));
-}
-
-.dark .markdown-body pre.shiki {
-  color: var(--shiki-dark) !important;
-  background-color: var(--shiki-dark-bg) !important;
-}
-
+.dark .markdown-body pre.shiki,
 .dark .markdown-body pre.shiki span {
   color: var(--shiki-dark) !important;
+}
+
+.dark .markdown-body .code-block-wrapper {
+  background: var(--shiki-dark-bg);
+  border-color: var(--border);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.3);
 }
 
 /* ── Blockquotes ── */
 
 .markdown-body blockquote {
-  border-left: 3px solid hsl(var(--border));
+  border-left: 3px solid var(--border);
   padding: 0.4em 1em;
   margin: 0 0 1em;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .markdown-body blockquote p:last-child {
   margin-bottom: 0;
 }
 
-/* ── Tables ── */
+/* ── Tables ──
+   Full grid borders (header divider + row + column lines), rounded outer corners.
+   border-collapse: separate keeps the radius clean; we add edges manually. */
 
 .markdown-body table {
   width: 100%;
-  border-collapse: collapse;
-  margin: 0 0 1em;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 1.25em 0;
   font-size: 0.925em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-body thead {
+  background: var(--muted);
 }
 
 .markdown-body th {
   text-align: left;
   font-weight: 600;
-  font-size: 0.85em;
+  font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 8px 12px;
-  border-bottom: 2px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
+  padding: 10px 14px;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
 }
 
 .markdown-body td {
-  padding: 8px 12px;
-  border-bottom: 1px solid hsl(var(--border-subtle));
+  padding: 10px 14px;
 }
 
-/* ── Lists ── */
+.markdown-body tr:not(:last-child) td {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-body th:not(:last-child),
+.markdown-body td:not(:last-child) {
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* ── Lists ──
+   Tailwind v4 preflight strips list-style; restore disc/decimal + nested levels. */
 
 .markdown-body ul,
 .markdown-body ol {
-  padding-left: 1.8em;
+  padding-left: 1.6em;
   margin: 0 0 1em;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+}
+
+.markdown-body ul ul {
+  list-style-type: circle;
+}
+
+.markdown-body ul ul ul {
+  list-style-type: square;
+}
+
+.markdown-body ol ol {
+  list-style-type: lower-alpha;
+}
+
+.markdown-body ol ol ol {
+  list-style-type: lower-roman;
 }
 
 .markdown-body li {
   margin: 0.25em 0;
+  padding-left: 0.25em;
 }
 
 .markdown-body li + li {
   margin-top: 0.35em;
+}
+
+.markdown-body li::marker {
+  color: var(--muted-foreground);
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 0.4em 0 0;
+}
+
+.markdown-body li > p {
+  margin: 0 0 0.5em;
+}
+
+.markdown-body li > p:last-child {
+  margin-bottom: 0;
 }
 
 /* ── Task Lists ── */
@@ -223,11 +304,11 @@
 }
 
 .markdown-body .mermaid-error {
-  color: hsl(var(--destructive));
+  color: var(--destructive);
   font-family: var(--md-code-font);
   font-size: 0.875em;
   white-space: pre-wrap;
   padding: 1em;
-  background: hsl(var(--muted));
+  background: var(--muted);
   border-radius: 8px;
 }

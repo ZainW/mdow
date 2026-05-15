@@ -112,16 +112,18 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     if (!container) return undefined
     const handler = (e: MouseEvent) => {
       if (!(e.target instanceof HTMLElement)) return
-      const btn = e.target.closest('.copy-code-btn')
+      const btn = e.target.closest<HTMLButtonElement>('.copy-code-btn')
       if (!btn) return
       const encoded = btn.getAttribute('data-code')
       if (!encoded) return
       const code = decodeURIComponent(atob(encoded))
       void navigator.clipboard.writeText(code)
-      btn.textContent = 'Copied!'
+      btn.dataset.copied = 'true'
+      btn.setAttribute('aria-label', 'Copied')
       setTimeout(() => {
-        btn.textContent = 'Copy'
-      }, 2000)
+        delete btn.dataset.copied
+        btn.setAttribute('aria-label', 'Copy code')
+      }, 1500)
     }
     container.addEventListener('click', handler)
     return () => container.removeEventListener('click', handler)

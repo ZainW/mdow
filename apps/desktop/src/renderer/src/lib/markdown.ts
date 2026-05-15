@@ -1,4 +1,4 @@
-import { createParse } from 'comark'
+import { createParse, type ComarkPlugin } from 'comark'
 import { renderHTML } from '@comark/html'
 import highlight from 'comark/plugins/highlight'
 import mermaid from 'comark/plugins/mermaid'
@@ -76,6 +76,40 @@ const langs = [
   langPhp,
 ]
 
+// Convert soft line breaks (`\n` inside text nodes) to <br>, GitHub-flavored.
+// Skips <pre>/<code> subtrees so the highlight plugin's line separators stay intact.
+const breaksOutsideCode: ComarkPlugin = {
+  name: 'breaks-outside-code',
+  post(state) {
+    const walk = (node: unknown): void => {
+      if (!Array.isArray(node) || node.length <= 2) return
+      const tag = node[0]
+      if (tag === 'pre' || tag === 'code') return
+      let modified = false
+      const next: unknown[] = []
+      for (let i = 2; i < node.length; i++) {
+        const child = node[i]
+        if (typeof child === 'string' && child.includes('\n')) {
+          modified = true
+          const lines = child.split('\n')
+          for (let li = 0; li < lines.length; li++) {
+            if (lines[li].length > 0) next.push(lines[li])
+            if (li < lines.length - 1) next.push(['br', {}])
+          }
+        } else {
+          next.push(child)
+        }
+      }
+      if (modified) {
+        node.length = 2
+        ;(node as unknown[]).push(...next)
+      }
+      for (let i = 2; i < node.length; i++) walk(node[i])
+    }
+    for (const n of state.tree.nodes) walk(n)
+  },
+}
+
 const parse = createParse({
   plugins: [
     highlight({
@@ -85,6 +119,7 @@ const parse = createParse({
       languages: langs,
     }),
     mermaid(),
+    breaksOutsideCode,
   ],
 })
 
@@ -154,15 +189,23 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
     headings.push({ level: Number(node.tagName.slice(1)), text: headingText, id })
   }
 
+  const copyIconSvg =
+    '<svg class="copy-icon copy-icon-default" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
+  const checkIconSvg =
+    '<svg class="copy-icon copy-icon-done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+
   for (const pre of wrapper.querySelectorAll('pre')) {
     if (pre.parentElement?.classList.contains('code-block-wrapper')) continue
     const code = pre.textContent ?? ''
     const container = document.createElement('div')
-    container.className = 'code-block-wrapper group/code relative'
+    container.className = 'code-block-wrapper relative'
     const copyBtn = document.createElement('button')
     copyBtn.className = 'copy-code-btn'
+    copyBtn.type = 'button'
+    copyBtn.setAttribute('aria-label', 'Copy code')
+    copyBtn.setAttribute('title', 'Copy code')
     copyBtn.setAttribute('data-code', btoa(encodeURIComponent(code)))
-    copyBtn.textContent = 'Copy'
+    copyBtn.innerHTML = copyIconSvg + checkIconSvg
     pre.replaceWith(container)
     container.appendChild(pre)
     container.appendChild(copyBtn)
