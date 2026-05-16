@@ -105,10 +105,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <Field label="Theme">
-          <div
-            role="group"
+          <fieldset
             aria-label="Theme"
-            className="grid grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
+            className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md border-0 bg-muted p-0.5"
           >
             {THEME_OPTIONS.map((opt) => {
               const active = theme === opt.value
@@ -132,7 +131,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </button>
               )
             })}
-          </div>
+          </fieldset>
         </Field>
 
         <Field label="Content font">
@@ -204,6 +203,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 type="checkbox"
                 checked={autoUpdateEnabled}
                 onChange={(e) => setAutoUpdateEnabled(e.target.checked)}
+                aria-label="Automatically check for updates in the background"
                 className="size-4 cursor-pointer accent-primary"
               />
             </label>
@@ -236,13 +236,15 @@ function FontGrid({
   children: React.ReactNode
 }) {
   return (
-    <div
-      role="group"
+    <fieldset
       aria-label={groupLabel}
-      className={cn('grid gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
+      className={cn(
+        'm-0 grid min-w-0 gap-1.5 border-0 p-0',
+        cols === 3 ? 'grid-cols-3' : 'grid-cols-4',
+      )}
     >
       {children}
-    </div>
+    </fieldset>
   )
 }
 

@@ -114,7 +114,7 @@ export function WelcomeView() {
             <p className="font-mono text-[0.6875rem] tracking-[0.18em] text-muted-foreground/70 uppercase">
               Recent
             </p>
-            <ul role="list" className="flex flex-col gap-px">
+            <ul className="flex flex-col gap-px">
               {recents.slice(0, 6).map((path) => (
                 <li key={path}>
                   <button

@@ -47,12 +47,11 @@ export function UpdateBanner() {
   if (state.status === 'idle' || dismissed) return null
 
   return (
-    <div
+    <output
       className={cn(
         'flex items-center gap-2 border-t border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground',
         'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200',
       )}
-      role="status"
       aria-live="polite"
     >
       {state.status === 'available' && (
@@ -112,6 +111,6 @@ export function UpdateBanner() {
       >
         <X className="size-3" aria-hidden />
       </button>
-    </div>
+    </output>
   )
 }

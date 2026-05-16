@@ -78,35 +78,37 @@ const langs = [
 
 // Convert soft line breaks (`\n` inside text nodes) to <br>, GitHub-flavored.
 // Skips <pre>/<code> subtrees so the highlight plugin's line separators stay intact.
+function walkBreaks(node: unknown): void {
+  if (!Array.isArray(node) || node.length <= 2) return
+  const arr = node as unknown[]
+  const tag = arr[0]
+  if (tag === 'pre' || tag === 'code') return
+  let modified = false
+  const next: unknown[] = []
+  for (let i = 2; i < arr.length; i++) {
+    const child = arr[i]
+    if (typeof child === 'string' && child.includes('\n')) {
+      modified = true
+      const lines = child.split('\n')
+      for (let li = 0; li < lines.length; li++) {
+        if (lines[li].length > 0) next.push(lines[li])
+        if (li < lines.length - 1) next.push(['br', {}])
+      }
+    } else {
+      next.push(child)
+    }
+  }
+  if (modified) {
+    arr.length = 2
+    arr.push(...next)
+  }
+  for (let i = 2; i < arr.length; i++) walkBreaks(arr[i])
+}
+
 const breaksOutsideCode: ComarkPlugin = {
   name: 'breaks-outside-code',
   post(state) {
-    const walk = (node: unknown): void => {
-      if (!Array.isArray(node) || node.length <= 2) return
-      const tag = node[0]
-      if (tag === 'pre' || tag === 'code') return
-      let modified = false
-      const next: unknown[] = []
-      for (let i = 2; i < node.length; i++) {
-        const child = node[i]
-        if (typeof child === 'string' && child.includes('\n')) {
-          modified = true
-          const lines = child.split('\n')
-          for (let li = 0; li < lines.length; li++) {
-            if (lines[li].length > 0) next.push(lines[li])
-            if (li < lines.length - 1) next.push(['br', {}])
-          }
-        } else {
-          next.push(child)
-        }
-      }
-      if (modified) {
-        node.length = 2
-        ;(node as unknown[]).push(...next)
-      }
-      for (let i = 2; i < node.length; i++) walk(node[i])
-    }
-    for (const n of state.tree.nodes) walk(n)
+    for (const n of state.tree.nodes) walkBreaks(n)
   },
 }
 

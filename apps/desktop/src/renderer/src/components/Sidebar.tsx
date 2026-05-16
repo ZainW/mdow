@@ -196,7 +196,7 @@ function OutlineList({
   return (
     <SidebarGroup>
       <SidebarGroupContent>
-        <ul role="list" className="flex flex-col gap-px px-1.5 py-1">
+        <ul className="flex flex-col gap-px px-1.5 py-1">
           {headings.map((h) => {
             const isActive = h.id === activeId
             return (

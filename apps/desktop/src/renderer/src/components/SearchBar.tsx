@@ -55,6 +55,7 @@ export function SearchBar({
       <input
         ref={inputRef}
         type="text"
+        aria-label="Search in document"
         className="search-input h-6 w-44 rounded-md border border-border/60 bg-muted/40 px-2 text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.3)]"
         placeholder="Search..."
         value={query}
