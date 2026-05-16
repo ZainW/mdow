@@ -1,10 +1,13 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useEffect, useMemo, useReducer, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { FileTree as FileTreeModel } from '@pierre/trees'
+import type { FileTreeOptions } from '@pierre/trees'
+import { FileTree as FileTreeView } from '@pierre/trees/react'
 import { useAppStore } from '../store/app-store'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
-import { CaretRight, FileText, Folder, FolderOpen } from '@phosphor-icons/react'
 import { Separator } from './ui/separator'
+
+type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
 
 interface TreeNode {
   name: string
@@ -13,42 +16,95 @@ interface TreeNode {
   children?: TreeNode[]
 }
 
-interface FlatNode {
-  node: TreeNode
-  depth: number
+function normalizeRoot(root: string): string {
+  return root.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
-function collectAncestorPaths(nodes: TreeNode[], targetPath: string, result: Set<string>): boolean {
+function toRelative(absPath: string, normalizedRoot: string): string {
+  const a = absPath.replace(/\\/g, '/')
+  if (a === normalizedRoot) return ''
+  if (a.startsWith(normalizedRoot + '/')) return a.slice(normalizedRoot.length + 1)
+  return a
+}
+
+function collectPaths(nodes: TreeNode[], normalizedRoot: string, out: string[]): void {
   for (const node of nodes) {
-    if (node.path === targetPath) return true
-    if (node.isDirectory && node.children) {
-      if (collectAncestorPaths(node.children, targetPath, result)) {
-        result.add(node.path)
-        return true
+    const rel = toRelative(node.path, normalizedRoot)
+    if (!rel) continue
+    if (node.isDirectory) {
+      if (node.children && node.children.length > 0) {
+        collectPaths(node.children, normalizedRoot, out)
+      } else {
+        out.push(rel + '/')
       }
-    }
-  }
-  return false
-}
-
-function flattenVisible(
-  nodes: TreeNode[],
-  expanded: Set<string>,
-  depth: number,
-  result: FlatNode[],
-): void {
-  for (const node of nodes) {
-    result.push({ node, depth })
-    if (node.isDirectory && expanded.has(node.path) && node.children) {
-      flattenVisible(node.children, expanded, depth + 1, result)
+    } else {
+      out.push(rel)
     }
   }
 }
 
-const ROW_HEIGHT = 28
+function ancestorRelPaths(rel: string): string[] {
+  const parts = rel.split('/')
+  const out: string[] = []
+  let acc = ''
+  for (let i = 0; i < parts.length - 1; i++) {
+    acc = acc ? `${acc}/${parts[i]}` : parts[i]
+    out.push(acc)
+  }
+  return out
+}
+
+function relToAbsolute(rel: string, openFolderPath: string): string {
+  const sep = openFolderPath.includes('\\') ? '\\' : '/'
+  const nativeRel = sep === '\\' ? rel.replace(/\//g, '\\') : rel
+  return openFolderPath.replace(/[/\\]$/, '') + sep + nativeRel
+}
+
+// Strict-mode-safe model lifecycle: in StrictMode, React runs mount → unmount → mount
+// on first commit. The library's own useFileTree hook destroys the model on the
+// strict-mode unmount and never recreates it, leaving us with a dead controller whose
+// selection subscription has been torn down. We defer cleanup to a microtask so the
+// immediate strict-mode remount can cancel it.
+function useStableFileTree(buildOptions: () => FileTreeOptions): FileTreeModel {
+  const modelRef = useRef<FileTreeModel | null>(null)
+  const pendingCleanupRef = useRef<{ cancelled: boolean } | null>(null)
+  const [, forceRerender] = useReducer((x: number) => x + 1, 0)
+
+  if (modelRef.current === null) {
+    modelRef.current = new FileTreeModel(buildOptions())
+  }
+
+  useEffect(() => {
+    // Cancel any cleanup left over from a strict-mode unmount that's now being
+    // followed by this remount.
+    const pending = pendingCleanupRef.current
+    if (pending !== null) {
+      pending.cancelled = true
+      pendingCleanupRef.current = null
+    }
+    if (modelRef.current === null) {
+      modelRef.current = new FileTreeModel(buildOptions())
+      forceRerender()
+    }
+    return () => {
+      const token = { cancelled: false }
+      pendingCleanupRef.current = token
+      queueMicrotask(() => {
+        if (token.cancelled) return
+        modelRef.current?.cleanUp()
+        modelRef.current = null
+        pendingCleanupRef.current = null
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return modelRef.current
+}
 
 export function FolderTree() {
   const folderTree = useAppStore((s) => s.folderTree)
+  const folderTreeTruncated = useAppStore((s) => s.folderTreeTruncated)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const activeTab = useAppStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
@@ -57,76 +113,67 @@ export function FolderTree() {
   const openTab = useAppStore((s) => s.openTab)
   const queryClient = useQueryClient()
 
-  // Auto-expand directories containing the active file
-  const autoExpanded = useMemo(() => {
-    const paths = new Set<string>()
-    if (activeTab?.path) {
-      collectAncestorPaths(folderTree, activeTab.path, paths)
-    }
-    return paths
-  }, [folderTree, activeTab?.path])
-
-  const [manualExpanded, setManualExpanded] = useState<Set<string>>(new Set())
-  const [manualCollapsed, setManualCollapsed] = useState<Set<string>>(new Set())
-
-  // Effective expanded = (auto-expanded OR manually expanded) AND NOT manually collapsed
-  const expanded = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of autoExpanded) {
-      if (!manualCollapsed.has(p)) set.add(p)
-    }
-    for (const p of manualExpanded) {
-      if (!manualCollapsed.has(p)) set.add(p)
-    }
-    return set
-  }, [autoExpanded, manualExpanded, manualCollapsed])
-
-  const flatNodes = useMemo(() => {
-    const result: FlatNode[] = []
-    flattenVisible(folderTree, expanded, 0, result)
-    return result
-  }, [folderTree, expanded])
-
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: flatNodes.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 20,
-  })
-
-  const toggleExpand = useCallback(
-    (path: string) => {
-      if (expanded.has(path)) {
-        // Collapse: add to manualCollapsed, remove from manualExpanded
-        setManualCollapsed((prev) => new Set(prev).add(path))
-        setManualExpanded((prev) => {
-          const next = new Set(prev)
-          next.delete(path)
-          return next
-        })
-      } else {
-        // Expand: add to manualExpanded, remove from manualCollapsed
-        setManualExpanded((prev) => new Set(prev).add(path))
-        setManualCollapsed((prev) => {
-          const next = new Set(prev)
-          next.delete(path)
-          return next
-        })
-      }
-    },
-    [expanded],
+  const normalizedRoot = useMemo(
+    () => (openFolderPath ? normalizeRoot(openFolderPath) : ''),
+    [openFolderPath],
   )
 
-  const handleFileClick = useCallback(
-    (path: string) => {
-      void window.api.readFile(path).then((content) => {
-        openTab({ path, content })
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
-      })
-    },
-    [openTab, queryClient],
-  )
+  const paths = useMemo(() => {
+    if (!normalizedRoot) return [] as string[]
+    const out: string[] = []
+    collectPaths(folderTree, normalizedRoot, out)
+    return out
+  }, [folderTree, normalizedRoot])
+
+  const lastSelectionRef = useRef<string | null>(null)
+  const selectionHandlerRef = useRef<(selected: readonly string[]) => void>(() => {})
+
+  const model = useStableFileTree(() => ({
+    paths,
+    initialExpansion: 'closed',
+    onSelectionChange: (selected) => selectionHandlerRef.current(selected),
+  }))
+
+  selectionHandlerRef.current = (selected) => {
+    if (selected.length === 0) return
+    const sel = selected[selected.length - 1]
+    if (!sel || sel === lastSelectionRef.current) return
+    if (sel.endsWith('/')) return
+    const item = model.getItem(sel)
+    if (item && item.isDirectory()) return
+    lastSelectionRef.current = sel
+    if (!openFolderPath) return
+    const abs = relToAbsolute(sel, openFolderPath)
+    void window.api.readFile(abs).then((content) => {
+      openTab({ path: abs, content })
+      void queryClient.invalidateQueries({ queryKey: ['recents'] })
+    })
+  }
+
+  // Keep the model's paths in sync as the user opens different folders or files
+  // are added/removed by the watcher.
+  const previousPathsRef = useRef(paths)
+  useEffect(() => {
+    if (previousPathsRef.current === paths) return
+    previousPathsRef.current = paths
+    model.resetPaths(paths)
+  }, [paths, model])
+
+  useEffect(() => {
+    if (!activeTab?.path || !normalizedRoot) return
+    const rel = toRelative(activeTab.path, normalizedRoot)
+    if (!rel) return
+    for (const ancestor of ancestorRelPaths(rel)) {
+      const handle =
+        getDirectoryHandle(model, ancestor) ?? getDirectoryHandle(model, ancestor + '/')
+      handle?.expand()
+    }
+    const fileHandle = model.getItem(rel)
+    if (fileHandle && !fileHandle.isSelected()) {
+      lastSelectionRef.current = rel
+      fileHandle.select()
+    }
+  }, [activeTab?.path, normalizedRoot, model, paths])
 
   if (!openFolderPath || folderTree.length === 0) return null
 
@@ -143,64 +190,28 @@ export function FolderTree() {
           </span>
         </SidebarGroupLabel>
         <SidebarGroupContent className="flex-1 overflow-hidden">
-          <div ref={scrollRef} className="h-full overflow-y-auto no-scrollbar">
-            <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const { node, depth } = flatNodes[virtualRow.index]
-                const isActive = activeTab?.path === node.path
-                const isExpanded = expanded.has(node.path)
-
-                if (node.isDirectory) {
-                  return (
-                    <button
-                      type="button"
-                      key={node.path}
-                      className="absolute left-0 flex w-full items-center gap-1.5 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/70"
-                      style={{
-                        height: ROW_HEIGHT,
-                        top: virtualRow.start,
-                        paddingLeft: 8 + depth * 12,
-                      }}
-                      onClick={() => toggleExpand(node.path)}
-                    >
-                      <CaretRight
-                        className="size-3.5 shrink-0 opacity-50 transition-transform"
-                        style={{
-                          transform: isExpanded ? 'rotate(90deg)' : undefined,
-                        }}
-                      />
-                      {isExpanded ? (
-                        <FolderOpen className="size-4 shrink-0 text-sidebar-primary/70" />
-                      ) : (
-                        <Folder className="size-4 shrink-0 text-sidebar-primary/70" />
-                      )}
-                      <span className="truncate">{node.name}</span>
-                    </button>
-                  )
-                }
-
-                return (
-                  <button
-                    type="button"
-                    key={node.path}
-                    className={`absolute left-0 flex w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent/70 ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : ''}`}
-                    style={{
-                      height: ROW_HEIGHT,
-                      top: virtualRow.start,
-                      paddingLeft: 8 + depth * 12,
-                    }}
-                    title={node.path}
-                    onClick={() => handleFileClick(node.path)}
-                  >
-                    <FileText className="size-3.5 shrink-0 opacity-40" />
-                    <span className="truncate">{node.name}</span>
-                  </button>
-                )
-              })}
+          {folderTreeTruncated && (
+            <div
+              className="mx-2 mb-1 shrink-0 rounded-md border border-border-subtle bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
+              title="Some files were hidden to keep the app responsive. Open a smaller subfolder to see them."
+            >
+              Large folder — some files hidden
             </div>
+          )}
+          <div className="folder-tree-host h-full">
+            <FileTreeView model={model} style={{ height: '100%' }} />
           </div>
         </SidebarGroupContent>
       </SidebarGroup>
     </>
   )
+}
+
+function isDirectoryHandle(item: ReturnType<FileTreeModel['getItem']>): item is DirectoryHandle {
+  return item != null && item.isDirectory()
+}
+
+function getDirectoryHandle(model: FileTreeModel, path: string): DirectoryHandle | null {
+  const item = model.getItem(path)
+  return isDirectoryHandle(item) ? item : null
 }

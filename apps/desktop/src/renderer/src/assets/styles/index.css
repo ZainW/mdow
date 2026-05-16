@@ -578,3 +578,32 @@ mark.search-highlight.search-highlight-active {
     0 0 0 2px oklch(0.68 0.15 260 / 0.3),
     0 1px 3px oklch(0.68 0.15 260 / 0.2);
 }
+
+/* @pierre/trees integration — map library CSS variables to sidebar tokens */
+.folder-tree-host {
+  --trees-bg-override: transparent;
+  --trees-fg-override: var(--sidebar-foreground);
+  --trees-fg-muted-override: var(--muted-foreground);
+  --trees-bg-muted-override: var(--muted);
+  --trees-selected-bg-override: var(--sidebar-accent);
+  --trees-selected-fg-override: var(--sidebar-accent-foreground);
+  --trees-border-color-override: var(--sidebar-border);
+  --trees-indent-guide-bg-override: var(--border-subtle);
+  --trees-scrollbar-thumb-override: var(--border);
+  --trees-font-family-override: inherit;
+  --trees-font-size-override: 13px;
+  --trees-item-margin-x-override: 4px;
+  --trees-item-padding-x-override: 6px;
+  --trees-padding-inline-override: 4px;
+  --trees-border-radius-override: 6px;
+  --trees-focus-ring-color-override: var(--sidebar-ring);
+  --trees-input-bg-override: var(--muted);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.folder-tree-host > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
