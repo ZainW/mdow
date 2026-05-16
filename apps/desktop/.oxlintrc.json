@@ -45,7 +45,11 @@
     "typescript/no-redundant-type-constituents": "warn",
     "typescript/no-duplicate-type-constituents": "error",
     "typescript/switch-exhaustiveness-check": "warn",
-    "typescript/use-unknown-in-catch-callback-variable": "warn"
+    "typescript/use-unknown-in-catch-callback-variable": "warn",
+    "jsx-a11y/prefer-tag-over-role": "warn",
+    "jsx-a11y/no-redundant-roles": "warn",
+    "jsx-a11y/no-noninteractive-element-interactions": "warn",
+    "jsx-a11y/control-has-associated-label": "warn"
   },
   "ignorePatterns": ["out/**", "dist/**", "node_modules/**", "*.js", "*.mjs"]
 }

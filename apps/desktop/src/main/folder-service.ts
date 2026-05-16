@@ -67,7 +67,20 @@ export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => 
 
   folderWatcher = watch(folderPath, {
     ignoreInitial: true,
-    ignored: /(^|[/\\])\./,
+    ignored: (path) => {
+      const base = path.split(/[/\\]/).pop() ?? ''
+      if (base.startsWith('.')) return true
+      return (
+        base === 'node_modules' ||
+        base === 'dist' ||
+        base === 'out' ||
+        base === 'build' ||
+        base === 'target' ||
+        base === '.next' ||
+        base === '.turbo' ||
+        base === 'coverage'
+      )
+    },
     depth: 10,
   })
 

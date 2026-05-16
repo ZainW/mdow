@@ -13,5 +13,18 @@ export default defineConfig({
       },
     },
     plugins: [tailwindcss(), react()],
+    server: {
+      watch: {
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/out/**',
+          '**/dist/**',
+          '**/.turbo/**',
+          '**/coverage/**',
+          '**/resources/ai/**',
+        ],
+      },
+    },
   },
 })
