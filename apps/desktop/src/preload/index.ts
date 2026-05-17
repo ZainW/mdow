@@ -12,6 +12,11 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
+export interface ScanResult {
+  tree: TreeNode[]
+  truncated: boolean
+}
+
 export interface AppState {
   sidebarWidth: number
   zoomLevel: number
@@ -32,8 +37,8 @@ export interface ElectronAPI {
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
   unwatchFile: (path: string) => Promise<void>
-  openFolderDialog: () => Promise<{ path: string; tree: TreeNode[] } | null>
-  readFolderTree: (folderPath: string) => Promise<TreeNode[]>
+  openFolderDialog: () => Promise<{ path: string; tree: TreeNode[]; truncated: boolean } | null>
+  readFolderTree: (folderPath: string) => Promise<ScanResult>
   getRecents: () => Promise<string[]>
   getAppState: () => Promise<AppState>
   saveAppState: (state: Partial<AppState>) => Promise<void>
@@ -46,7 +51,7 @@ export interface ElectronAPI {
 
   onFileChanged: (callback: (data: { path: string; content: string }) => void) => () => void
   onFileDeleted: (callback: (path: string) => void) => () => void
-  onFolderChanged: (callback: (tree: TreeNode[]) => void) => () => void
+  onFolderChanged: (callback: (scan: ScanResult) => void) => () => void
   onThemeChanged: (callback: (isDark: boolean) => void) => () => void
   onMenuOpenFile: (callback: () => void) => () => void
   onMenuOpenFolder: (callback: () => void) => () => void
@@ -101,7 +106,7 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('file:deleted', handler)
   },
   onFolderChanged: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, tree: TreeNode[]) => callback(tree)
+    const handler = (_: Electron.IpcRendererEvent, scan: ScanResult) => callback(scan)
     ipcRenderer.on('folder:changed', handler)
     return () => ipcRenderer.removeListener('folder:changed', handler)
   },

@@ -61,8 +61,8 @@ function App(): React.JSX.Element {
       if (state.lineHeight) typo.lineHeight = state.lineHeight
       if (Object.keys(typo).length) useAppStore.setState(typo)
       if (state.lastFolder) {
-        void window.api.readFolderTree(state.lastFolder).then((tree) => {
-          setOpenFolder(state.lastFolder!, tree)
+        void window.api.readFolderTree(state.lastFolder).then((scan) => {
+          setOpenFolder(state.lastFolder!, scan.tree, scan.truncated)
         })
       }
 
@@ -104,7 +104,7 @@ function App(): React.JSX.Element {
       window.api.onMenuOpenFolder(() => {
         void window.api.openFolderDialog().then((result) => {
           if (result) {
-            setOpenFolder(result.path, result.tree)
+            setOpenFolder(result.path, result.tree, result.truncated)
           }
         })
       }),

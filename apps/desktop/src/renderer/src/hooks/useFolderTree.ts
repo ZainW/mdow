@@ -10,15 +10,20 @@ interface TreeNode {
   children?: TreeNode[]
 }
 
+interface ScanResult {
+  tree: TreeNode[]
+  truncated: boolean
+}
+
 export function useFolderTree(folderPath: string | null) {
   const queryClient = useQueryClient()
   const setFolderTree = useAppStore((s) => s.setFolderTree)
 
   const handleFolderChanged = useCallback(
-    (tree: TreeNode[]) => {
+    (scan: ScanResult) => {
       if (folderPath) {
-        queryClient.setQueryData(['folder', folderPath], tree)
-        setFolderTree(tree)
+        queryClient.setQueryData(['folder', folderPath], scan)
+        setFolderTree(scan.tree, scan.truncated)
       }
     },
     [folderPath, queryClient, setFolderTree],

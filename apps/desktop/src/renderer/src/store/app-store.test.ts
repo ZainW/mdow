@@ -149,18 +149,20 @@ describe('app-store', () => {
 
     it('sets open folder with path and tree', () => {
       const tree = [{ name: 'readme.md', path: '/docs/readme.md', isDirectory: false }]
-      useAppStore.getState().setOpenFolder('/docs', tree)
+      useAppStore.getState().setOpenFolder('/docs', tree, false)
       expect(useAppStore.getState().openFolderPath).toBe('/docs')
       expect(useAppStore.getState().folderTree).toEqual(tree)
+      expect(useAppStore.getState().folderTreeTruncated).toBe(false)
     })
 
     it('sets folder tree independently', () => {
       const tree1 = [{ name: 'a.md', path: '/a.md', isDirectory: false }]
       const tree2 = [{ name: 'b.md', path: '/b.md', isDirectory: false }]
-      useAppStore.getState().setOpenFolder('/docs', tree1)
-      useAppStore.getState().setFolderTree(tree2)
+      useAppStore.getState().setOpenFolder('/docs', tree1, false)
+      useAppStore.getState().setFolderTree(tree2, true)
       expect(useAppStore.getState().openFolderPath).toBe('/docs')
       expect(useAppStore.getState().folderTree).toEqual(tree2)
+      expect(useAppStore.getState().folderTreeTruncated).toBe(true)
     })
   })
 
@@ -204,7 +206,7 @@ describe('app-store', () => {
 
     it('setting folder does not affect tabs', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'hi' })
-      useAppStore.getState().setOpenFolder('/docs', [])
+      useAppStore.getState().setOpenFolder('/docs', [], false)
       expect(useAppStore.getState().tabs).toHaveLength(1)
     })
   })

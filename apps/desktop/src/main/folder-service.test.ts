@@ -15,9 +15,10 @@ describe('scanFolder', () => {
     await rm(tempDir, { recursive: true, force: true })
   })
 
-  it('returns empty array for empty directory', async () => {
+  it('returns empty tree for empty directory', async () => {
     const result = await scanFolder(tempDir)
-    expect(result).toEqual([])
+    expect(result.tree).toEqual([])
+    expect(result.truncated).toBe(false)
   })
 
   it('finds markdown files', async () => {
@@ -26,8 +27,12 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'doc.mdx'), 'mdx content')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(3)
-    expect(result.map((n) => n.name).toSorted()).toEqual(['doc.mdx', 'notes.markdown', 'readme.md'])
+    expect(result.tree).toHaveLength(3)
+    expect(result.tree.map((n) => n.name).toSorted()).toEqual([
+      'doc.mdx',
+      'notes.markdown',
+      'readme.md',
+    ])
   })
 
   it('ignores non-markdown files', async () => {
@@ -37,8 +42,8 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'data.json'), '{}')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('readme.md')
+    expect(result.tree).toHaveLength(1)
+    expect(result.tree[0].name).toBe('readme.md')
   })
 
   it('ignores hidden files and directories', async () => {
@@ -48,8 +53,20 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'visible.md'), 'visible')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('visible.md')
+    expect(result.tree).toHaveLength(1)
+    expect(result.tree[0].name).toBe('visible.md')
+  })
+
+  it('skips well-known ignored directories like node_modules', async () => {
+    await mkdir(join(tempDir, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(tempDir, 'node_modules', 'pkg', 'readme.md'), 'pkg readme')
+    await mkdir(join(tempDir, 'dist'))
+    await writeFile(join(tempDir, 'dist', 'out.md'), 'built')
+    await writeFile(join(tempDir, 'visible.md'), 'visible')
+
+    const result = await scanFolder(tempDir)
+    expect(result.tree).toHaveLength(1)
+    expect(result.tree[0].name).toBe('visible.md')
   })
 
   it('scans subdirectories recursively', async () => {
@@ -58,18 +75,16 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'readme.md'), 'readme')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(2)
+    expect(result.tree).toHaveLength(2)
 
-    // Directories come first
-    const dir = result[0]
+    const dir = result.tree[0]
     expect(dir.name).toBe('docs')
     expect(dir.isDirectory).toBe(true)
     expect(dir.children).toHaveLength(1)
     expect(dir.children![0].name).toBe('guide.md')
 
-    // Then files
-    expect(result[1].name).toBe('readme.md')
-    expect(result[1].isDirectory).toBe(false)
+    expect(result.tree[1].name).toBe('readme.md')
+    expect(result.tree[1].isDirectory).toBe(false)
   })
 
   it('sorts directories before files', async () => {
@@ -78,10 +93,10 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'alpha', 'file.md'), 'a')
 
     const result = await scanFolder(tempDir)
-    expect(result[0].isDirectory).toBe(true)
-    expect(result[0].name).toBe('alpha')
-    expect(result[1].isDirectory).toBe(false)
-    expect(result[1].name).toBe('zebra.md')
+    expect(result.tree[0].isDirectory).toBe(true)
+    expect(result.tree[0].name).toBe('alpha')
+    expect(result.tree[1].isDirectory).toBe(false)
+    expect(result.tree[1].name).toBe('zebra.md')
   })
 
   it('sorts alphabetically within same type', async () => {
@@ -90,7 +105,7 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'bravo.md'), 'b')
 
     const result = await scanFolder(tempDir)
-    expect(result.map((n) => n.name)).toEqual(['alpha.md', 'bravo.md', 'charlie.md'])
+    expect(result.tree.map((n) => n.name)).toEqual(['alpha.md', 'bravo.md', 'charlie.md'])
   })
 
   it('excludes empty directories (no markdown inside)', async () => {
@@ -99,7 +114,7 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'has-code', 'script.ts'), 'code')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(0)
+    expect(result.tree).toHaveLength(0)
   })
 
   it('includes directories that have nested markdown', async () => {
@@ -108,17 +123,17 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'outer', 'inner', 'deep.md'), 'deep')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('outer')
-    expect(result[0].children![0].name).toBe('inner')
-    expect(result[0].children![0].children![0].name).toBe('deep.md')
+    expect(result.tree).toHaveLength(1)
+    expect(result.tree[0].name).toBe('outer')
+    expect(result.tree[0].children![0].name).toBe('inner')
+    expect(result.tree[0].children![0].children![0].name).toBe('deep.md')
   })
 
   it('sets correct paths on nodes', async () => {
     await writeFile(join(tempDir, 'file.md'), 'content')
 
     const result = await scanFolder(tempDir)
-    expect(result[0].path).toBe(join(tempDir, 'file.md'))
+    expect(result.tree[0].path).toBe(join(tempDir, 'file.md'))
   })
 
   it('handles case-insensitive extensions', async () => {
@@ -126,13 +141,42 @@ describe('scanFolder', () => {
     await writeFile(join(tempDir, 'mixed.Markdown'), 'mixed')
 
     const result = await scanFolder(tempDir)
-    expect(result).toHaveLength(2)
+    expect(result.tree).toHaveLength(2)
   })
 
   it('file nodes have no children property', async () => {
     await writeFile(join(tempDir, 'file.md'), 'content')
 
     const result = await scanFolder(tempDir)
-    expect(result[0].children).toBeUndefined()
+    expect(result.tree[0].children).toBeUndefined()
+  })
+
+  it('does not recurse past the max depth (8)', async () => {
+    // Build a chain 12 levels deep with a markdown file at the bottom.
+    let path = tempDir
+    for (let i = 0; i < 12; i++) {
+      path = join(path, `level${i}`)
+      // oxlint-disable-next-line no-await-in-loop -- test fixture setup
+      await mkdir(path)
+    }
+    await writeFile(join(path, 'deep.md'), 'too deep')
+
+    const result = await scanFolder(tempDir)
+    // No markdown is reachable within the depth cap, so the chain is pruned out.
+    expect(result.tree).toEqual([])
+  })
+
+  it('marks the result as truncated and stops once the file cap is hit', async () => {
+    // Cap is 5000 — write a hair over so we can observe truncation without
+    // making the test painfully slow.
+    const total = 5005
+    await Promise.all(
+      Array.from({ length: total }, (_, i) => writeFile(join(tempDir, `f${i}.md`), '')),
+    )
+
+    const result = await scanFolder(tempDir)
+    expect(result.truncated).toBe(true)
+    expect(result.tree.length).toBeLessThanOrEqual(5000)
+    expect(result.tree.length).toBeGreaterThan(0)
   })
 })

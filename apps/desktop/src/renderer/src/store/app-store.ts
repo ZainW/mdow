@@ -48,8 +48,9 @@ interface AppStore {
 
   openFolderPath: string | null
   folderTree: TreeNode[]
-  setOpenFolder: (path: string, tree: TreeNode[]) => void
-  setFolderTree: (tree: TreeNode[]) => void
+  folderTreeTruncated: boolean
+  setOpenFolder: (path: string, tree: TreeNode[], truncated: boolean) => void
+  setFolderTree: (tree: TreeNode[], truncated: boolean) => void
 
   wideMode: boolean
   toggleWideMode: () => void
@@ -240,8 +241,10 @@ export const useAppStore = create<AppStore>((set) => ({
 
   openFolderPath: null,
   folderTree: [],
-  setOpenFolder: (path, tree) => set({ openFolderPath: path, folderTree: tree }),
-  setFolderTree: (tree) => set({ folderTree: tree }),
+  folderTreeTruncated: false,
+  setOpenFolder: (path, tree, truncated) =>
+    set({ openFolderPath: path, folderTree: tree, folderTreeTruncated: truncated }),
+  setFolderTree: (tree, truncated) => set({ folderTree: tree, folderTreeTruncated: truncated }),
 
   wideMode: false,
   toggleWideMode: () => set((state) => ({ wideMode: !state.wideMode })),

@@ -10,9 +10,28 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
+export interface ScanResult {
+  tree: TreeNode[]
+  truncated: boolean
+}
+
 let folderWatcher: FSWatcher | null = null
 
 const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
+
+const IGNORED_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'out',
+  'build',
+  'target',
+  '.next',
+  '.turbo',
+  'coverage',
+])
+
+const MAX_FILES = 5000
+const MAX_DEPTH = 8
 
 function isMdFile(name: string): boolean {
   const dotIndex = name.lastIndexOf('.')
@@ -21,7 +40,19 @@ function isMdFile(name: string): boolean {
   return MD_EXTENSIONS.has(ext)
 }
 
-export async function scanFolder(folderPath: string): Promise<TreeNode[]> {
+function shouldSkipEntry(name: string): boolean {
+  if (name.startsWith('.')) return true
+  return IGNORED_DIRS.has(name)
+}
+
+interface ScanState {
+  fileCount: number
+  truncated: boolean
+}
+
+async function scanInto(folderPath: string, depth: number, state: ScanState): Promise<TreeNode[]> {
+  if (state.truncated) return []
+
   const entries = await readdir(folderPath, { withFileTypes: true })
   const nodes: TreeNode[] = []
 
@@ -32,22 +63,35 @@ export async function scanFolder(folderPath: string): Promise<TreeNode[]> {
   })
 
   for (const entry of sorted) {
-    if (entry.name.startsWith('.')) continue
+    if (state.truncated) break
+    if (shouldSkipEntry(entry.name)) continue
 
     const fullPath = join(folderPath, entry.name)
 
     if (entry.isDirectory()) {
+      if (depth >= MAX_DEPTH) continue
       // oxlint-disable-next-line no-await-in-loop -- intentional sequential recursive tree walk
-      const children = await scanFolder(fullPath)
+      const children = await scanInto(fullPath, depth + 1, state)
       if (children.length > 0) {
         nodes.push({ name: entry.name, path: fullPath, isDirectory: true, children })
       }
     } else if (isMdFile(entry.name)) {
+      if (state.fileCount >= MAX_FILES) {
+        state.truncated = true
+        break
+      }
+      state.fileCount += 1
       nodes.push({ name: entry.name, path: fullPath, isDirectory: false })
     }
   }
 
   return nodes
+}
+
+export async function scanFolder(folderPath: string): Promise<ScanResult> {
+  const state: ScanState = { fileCount: 0, truncated: false }
+  const tree = await scanInto(folderPath, 0, state)
+  return { tree, truncated: state.truncated }
 }
 
 export async function openFolderDialog(win: BrowserWindow) {
@@ -58,11 +102,11 @@ export async function openFolderDialog(win: BrowserWindow) {
   if (result.canceled || result.filePaths.length === 0) return null
 
   const folderPath = result.filePaths[0]
-  const tree = await scanFolder(folderPath)
-  return { path: folderPath, tree }
+  const { tree, truncated } = await scanFolder(folderPath)
+  return { path: folderPath, tree, truncated }
 }
 
-export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => void): void {
+export function watchFolder(folderPath: string, onChange: (result: ScanResult) => void): void {
   unwatchFolder()
 
   folderWatcher = watch(folderPath, {
@@ -70,18 +114,9 @@ export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => 
     ignored: (path) => {
       const base = path.split(/[/\\]/).pop() ?? ''
       if (base.startsWith('.')) return true
-      return (
-        base === 'node_modules' ||
-        base === 'dist' ||
-        base === 'out' ||
-        base === 'build' ||
-        base === 'target' ||
-        base === '.next' ||
-        base === '.turbo' ||
-        base === 'coverage'
-      )
+      return IGNORED_DIRS.has(base)
     },
-    depth: 10,
+    depth: MAX_DEPTH,
   })
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -90,8 +125,8 @@ export function watchFolder(folderPath: string, onChange: (tree: TreeNode[]) => 
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       void scanFolder(folderPath)
-        .then((tree) => {
-          onChange(tree)
+        .then((result) => {
+          onChange(result)
         })
         .catch(() => {
           // Folder might have been deleted

@@ -25,7 +25,7 @@ export function WelcomeView() {
   const handleOpenFolder = useCallback(async () => {
     const result = await window.api.openFolderDialog()
     if (result) {
-      setOpenFolder(result.path, result.tree)
+      setOpenFolder(result.path, result.tree, result.truncated)
     }
   }, [setOpenFolder])
 

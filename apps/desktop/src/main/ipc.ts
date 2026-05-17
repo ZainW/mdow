@@ -57,8 +57,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await openFolderDialog(win)
     if (result) {
       setLastFolder(result.path)
-      watchFolder(result.path, (tree) => {
-        win.webContents.send('folder:changed', tree)
+      watchFolder(result.path, (scan) => {
+        win.webContents.send('folder:changed', scan)
       })
     }
     return result
@@ -66,14 +66,14 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle('folder:read-tree', async (_, folderPath: string) => {
     const win = getMainWindow()
-    const tree = await scanFolder(folderPath)
+    const result = await scanFolder(folderPath)
     if (win) {
       setLastFolder(folderPath)
-      watchFolder(folderPath, (newTree) => {
-        win.webContents.send('folder:changed', newTree)
+      watchFolder(folderPath, (scan) => {
+        win.webContents.send('folder:changed', scan)
       })
     }
-    return tree
+    return result
   })
 
   ipcMain.handle('store:get-recents', () => getRecents())
