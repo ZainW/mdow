@@ -11,7 +11,8 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from './ui/sidebar'
-import { FileText } from '@phosphor-icons/react'
+import { Clock, FileText } from '@phosphor-icons/react'
+import { EmptyState } from './EmptyState'
 
 export function RecentsList() {
   const { data: recents = [] } = useRecents()
@@ -33,7 +34,14 @@ export function RecentsList() {
   }, [])
 
   if (recents.length === 0) {
-    return null
+    return (
+      <EmptyState
+        size="sm"
+        icon={Clock}
+        title="No recents yet"
+        hint="Files you open will appear here."
+      />
+    )
   }
 
   return (

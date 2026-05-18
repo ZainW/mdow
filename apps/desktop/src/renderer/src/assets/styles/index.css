@@ -272,6 +272,13 @@
   transform: scale(0.92);
 }
 
+/* Drop the button's built-in focus-visible border in the rail — the
+   box-shadow ring is enough. Stacked indicators (border + ring) made the
+   tiny 28px icon feel boxy in focus state. */
+.rail-icon-btn:focus-visible {
+  border-color: transparent !important;
+}
+
 /* Sliding active indicator — single element that moves between mode positions */
 .rail-indicator {
   transition:
@@ -281,6 +288,7 @@
 
 /* Outline panel — animated mode transition + per-link styling */
 .outline-link {
+  position: relative;
   transition:
     color 120ms ease-out,
     background-color 120ms ease-out;
@@ -289,6 +297,19 @@
 .outline-link[data-active='true'] {
   color: var(--foreground);
   background-color: var(--sidebar-accent);
+}
+
+/* Match the file-tree active row treatment — left accent bar instead of a
+   bg-only state so the active heading reads consistently across modes. */
+.outline-link[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--accent);
 }
 
 /* Smooth scroll target offset so anchored headings aren't flush with viewport top */
