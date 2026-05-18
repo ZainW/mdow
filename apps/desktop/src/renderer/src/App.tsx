@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore, selectActiveTab } from './store/app-store'
 import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
+import { useOpenMarkdownFile } from './hooks/useOpenMarkdownFile'
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
@@ -15,6 +16,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
+import { basename, isMarkdownPath } from './lib/path-utils'
 
 function App(): React.JSX.Element {
   const initialized = useAppStore((s) => s.initialized)
@@ -39,6 +41,7 @@ function App(): React.JSX.Element {
   const cycleTab = useAppStore((s) => s.cycleTab)
   const selectTabByIndex = useAppStore((s) => s.selectTabByIndex)
   const queryClient = useQueryClient()
+  const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
   useFolderTree(openFolderPath)
@@ -118,6 +121,8 @@ function App(): React.JSX.Element {
       window.api.onFileDeleted((path) => {
         setTabError(path, { type: 'deleted', path })
       }),
+      window.api.onMenuFind(() => setSearchOpen(true)),
+      window.api.onMenuToggleSidebar(() => toggleSidebar()),
       window.api.onMenuZoomIn(() => zoomIn()),
       window.api.onMenuZoomOut(() => zoomOut()),
       window.api.onMenuZoomReset(() => resetZoom()),
@@ -135,6 +140,8 @@ function App(): React.JSX.Element {
     setOpenFolder,
     updateTabContent,
     setTabError,
+    setSearchOpen,
+    toggleSidebar,
     queryClient,
     zoomIn,
     zoomOut,
@@ -215,8 +222,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     if (activeTab) {
-      const name = activeTab.path.split(/[/\\]/).pop() || 'Mdow'
-      void window.api.setWindowTitle(name, activeTab.path)
+      void window.api.setWindowTitle(basename(activeTab.path), activeTab.path)
     } else {
       void window.api.setWindowTitle('Mdow')
     }
@@ -226,18 +232,13 @@ function App(): React.JSX.Element {
     (e: React.DragEvent) => {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find(
-        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
-      )
+      const mdFile = files.find((f) => isMarkdownPath(f.name))
       if (mdFile) {
         const filePath = window.api.getPathForFile(mdFile)
-        void window.api.readFile(filePath).then((content) => {
-          openTab({ path: filePath, content })
-          void queryClient.invalidateQueries({ queryKey: ['recents'] })
-        })
+        void openMarkdownFile(filePath)
       }
     },
-    [openTab, queryClient],
+    [openMarkdownFile],
   )
 
   const renderContent = () => {

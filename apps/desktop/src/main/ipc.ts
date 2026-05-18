@@ -7,11 +7,20 @@ import { isMac } from './platform'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
+    if (win.isDestroyed()) return
     if (event.type === 'changed') {
       win.webContents.send('file:changed', { path, content: event.content })
     } else if (event.type === 'deleted') {
       win.webContents.send('file:deleted', path)
     }
+  })
+}
+
+function setupFolderWatcher(getMainWindow: () => BrowserWindow | null, path: string): void {
+  watchFolder(path, (scan) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    win.webContents.send('folder:changed', scan)
   })
 }
 
@@ -57,9 +66,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await openFolderDialog(win)
     if (result) {
       setLastFolder(result.path)
-      watchFolder(result.path, (scan) => {
-        win.webContents.send('folder:changed', scan)
-      })
+      setupFolderWatcher(getMainWindow, result.path)
     }
     return result
   })
@@ -69,9 +76,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await scanFolder(folderPath)
     if (win) {
       setLastFolder(folderPath)
-      watchFolder(folderPath, (scan) => {
-        win.webContents.send('folder:changed', scan)
-      })
+      setupFolderWatcher(getMainWindow, folderPath)
     }
     return result
   })

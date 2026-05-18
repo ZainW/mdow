@@ -92,6 +92,24 @@ describe('app-store', () => {
       expect(useAppStore.getState().tabs[0].scrollPosition).toBe(500)
     })
 
+    it('does not recreate a tab for unchanged scroll position', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().updateTabScroll(id, 500)
+      const tab = useAppStore.getState().tabs[0]
+      useAppStore.getState().updateTabScroll(id, 500)
+      expect(useAppStore.getState().tabs[0]).toBe(tab)
+    })
+
+    it('opens an error tab for failed reads', () => {
+      useAppStore.getState().openErrorTab('/missing.md', { type: 'not-found', path: '/missing.md' })
+      const state = useAppStore.getState()
+      expect(state.tabs).toHaveLength(1)
+      expect(state.tabs[0].path).toBe('/missing.md')
+      expect(state.tabs[0].error).toEqual({ type: 'not-found', path: '/missing.md' })
+      expect(state.activeTabId).toBe(state.tabs[0].id)
+    })
+
     it('sets tab error by path', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
       useAppStore.getState().setTabError('/a.md', { type: 'deleted', path: '/a.md' })

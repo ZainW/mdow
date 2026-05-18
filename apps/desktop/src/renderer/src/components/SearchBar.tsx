@@ -24,9 +24,6 @@ export function SearchBar({
 
   useEffect(() => {
     inputRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
     inputRef.current?.select()
   }, [])
 

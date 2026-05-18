@@ -55,6 +55,8 @@ export interface ElectronAPI {
   onThemeChanged: (callback: (isDark: boolean) => void) => () => void
   onMenuOpenFile: (callback: () => void) => () => void
   onMenuOpenFolder: (callback: () => void) => () => void
+  onMenuFind: (callback: () => void) => () => void
+  onMenuToggleSidebar: (callback: () => void) => () => void
   onFileOpened: (callback: (file: FileResult) => void) => () => void
   onMenuZoomIn: (callback: () => void) => () => void
   onMenuZoomOut: (callback: () => void) => () => void
@@ -124,6 +126,16 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('menu:open-folder', handler)
     return () => ipcRenderer.removeListener('menu:open-folder', handler)
+  },
+  onMenuFind: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:find', handler)
+    return () => ipcRenderer.removeListener('menu:find', handler)
+  },
+  onMenuToggleSidebar: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('menu:toggle-sidebar', handler)
+    return () => ipcRenderer.removeListener('menu:toggle-sidebar', handler)
   },
   onFileOpened: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, file: FileResult) => callback(file)

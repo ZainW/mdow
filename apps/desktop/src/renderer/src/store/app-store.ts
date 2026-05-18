@@ -28,6 +28,7 @@ interface AppStore {
   tabs: Tab[]
   activeTabId: string | null
   openTab: (file: { path: string; content: string }) => void
+  openErrorTab: (path: string, error: FileError) => void
   closeTab: (tabId: string) => void
   closeOtherTabs: (tabId: string) => void
   closeTabsToRight: (tabId: string) => void
@@ -139,6 +140,29 @@ export const useAppStore = create<AppStore>((set) => ({
       return { tabs, activeTabId: newTab.id }
     }),
 
+  openErrorTab: (path, error) =>
+    set((state) => {
+      const existing = state.tabs.find((t) => t.path === path)
+      if (existing) {
+        return {
+          activeTabId: existing.id,
+          tabs: state.tabs.map((t) => (t.id === existing.id ? { ...t, error } : t)),
+        }
+      }
+      const newTab: Tab = {
+        id: crypto.randomUUID(),
+        path,
+        content: '',
+        scrollPosition: 0,
+        error,
+      }
+      const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId)
+      const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
+      const tabs = [...state.tabs]
+      tabs.splice(insertIndex, 0, newTab)
+      return { tabs, activeTabId: newTab.id }
+    }),
+
   closeTab: (tabId) =>
     set((state) => {
       const index = state.tabs.findIndex((t) => t.id === tabId)
@@ -221,7 +245,10 @@ export const useAppStore = create<AppStore>((set) => ({
 
   updateTabScroll: (tabId, scrollPosition) =>
     set((state) => ({
-      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, scrollPosition } : t)),
+      tabs: state.tabs.map((t) => {
+        if (t.id !== tabId || t.scrollPosition === scrollPosition) return t
+        return { ...t, scrollPosition }
+      }),
     })),
 
   setTabError: (path, error) =>
@@ -319,9 +346,15 @@ export const useAppStore = create<AppStore>((set) => ({
   },
 }))
 
-// Persist session (open tabs) whenever tabs or active tab change
+function getSessionKey(tabs: Tab[], activeTabId: string | null): string {
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  return JSON.stringify({ paths: tabs.map((t) => t.path), activePath: activeTab?.path ?? null })
+}
+
+// Persist session when tab membership/order or active tab changes. Scroll-only tab
+// updates are intentionally excluded to avoid writing state during document scroll.
 useAppStore.subscribe((state, prev) => {
-  if (state.tabs !== prev.tabs || state.activeTabId !== prev.activeTabId) {
+  if (getSessionKey(state.tabs, state.activeTabId) !== getSessionKey(prev.tabs, prev.activeTabId)) {
     saveSession(state.tabs, state.activeTabId)
   }
 })

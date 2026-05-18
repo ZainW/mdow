@@ -4,29 +4,51 @@ import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { createMenu } from './menu'
 import { initAutoUpdater } from './updater'
-import { getWindowBounds, saveWindowBounds, getLastFolder, getAppState } from './store'
-import { scanFolder, watchFolder } from './folder-service'
-import { readFileContent } from './file-service'
+import { addRecent, getWindowBounds, saveWindowBounds, getAppState } from './store'
+import { unwatchFolder } from './folder-service'
+import { readFileContent, unwatchAllFiles, watchFile } from './file-service'
 import { isMac, isLinux } from './platform'
 
 let mainWindow: BrowserWindow | null = null
+
+const markdownExtensions = ['.md', '.markdown', '.mdx']
 
 function getMainWindow(): BrowserWindow | null {
   return mainWindow
 }
 
+function isMarkdownPath(path: string): boolean {
+  return markdownExtensions.some((extension) => path.toLowerCase().endsWith(extension))
+}
+
+function watchOpenedFile(filePath: string): void {
+  watchFile(filePath, (event) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    if (event.type === 'changed') {
+      win.webContents.send('file:changed', { path: filePath, content: event.content })
+    } else {
+      win.webContents.send('file:deleted', filePath)
+    }
+  })
+}
+
+function openFile(filePath: string): void {
+  void readFileContent(filePath)
+    .then((content) => {
+      addRecent(filePath)
+      watchOpenedFile(filePath)
+      mainWindow?.webContents.send('file:opened', { path: filePath, content })
+    })
+    .catch(() => {
+      // Invalid file path
+    })
+}
+
 function openFileFromArgv(argv: string[]): void {
-  const filePath = argv.find(
-    (arg) => arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.mdx'),
-  )
+  const filePath = argv.find(isMarkdownPath)
   if (filePath) {
-    void readFileContent(filePath)
-      .then((content) => {
-        mainWindow?.webContents.send('file:opened', { path: filePath, content })
-      })
-      .catch(() => {
-        // Invalid file path
-      })
+    openFile(filePath)
   }
 }
 
@@ -60,26 +82,13 @@ function createWindow(): void {
   mainWindow.on('resized', saveBounds)
   mainWindow.on('moved', saveBounds)
 
-  nativeTheme.on('updated', () => {
+  const handleNativeThemeUpdate = () => {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
-  })
+  }
+  nativeTheme.on('updated', handleNativeThemeUpdate)
 
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
-
-    const lastFolder = getLastFolder()
-    if (lastFolder) {
-      void scanFolder(lastFolder)
-        .then((tree) => {
-          mainWindow?.webContents.send('folder:changed', tree)
-          watchFolder(lastFolder, (newTree) => {
-            mainWindow?.webContents.send('folder:changed', newTree)
-          })
-        })
-        .catch(() => {
-          // Folder no longer exists
-        })
-    }
 
     openFileFromArgv(process.argv)
   })
@@ -91,6 +100,9 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => {
+    nativeTheme.off('updated', handleNativeThemeUpdate)
+    unwatchAllFiles()
+    unwatchFolder()
     mainWindow = null
   })
 }
@@ -144,13 +156,12 @@ if (!gotTheLock) {
   app.on('open-file', (event, path) => {
     event.preventDefault()
     if (mainWindow) {
-      void readFileContent(path)
-        .then((content) => {
-          mainWindow?.webContents.send('file:opened', { path, content })
-        })
-        .catch(() => {
-          // Invalid file
-        })
+      openFile(path)
     }
+  })
+
+  app.on('before-quit', () => {
+    unwatchAllFiles()
+    unwatchFolder()
   })
 }

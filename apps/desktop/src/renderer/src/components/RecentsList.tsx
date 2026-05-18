@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useRecents } from '../hooks/useRecents'
 import { useAppStore } from '../store/app-store'
+import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename } from '../lib/path-utils'
 import {
   SidebarGroup,
@@ -15,20 +15,17 @@ import { FileText } from '@phosphor-icons/react'
 
 export function RecentsList() {
   const { data: recents = [] } = useRecents()
-  const openTab = useAppStore((s) => s.openTab)
   const activeTab = useAppStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
     return tab ?? null
   })
-  const queryClient = useQueryClient()
+  const openMarkdownFile = useOpenMarkdownFile()
 
   const handleClick = useCallback(
     async (path: string) => {
-      const content = await window.api.readFile(path)
-      openTab({ path, content })
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
+      await openMarkdownFile(path)
     },
-    [openTab, queryClient],
+    [openMarkdownFile],
   )
 
   const handleContextMenu = useCallback((path: string) => {

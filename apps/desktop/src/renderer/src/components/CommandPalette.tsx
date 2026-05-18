@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
+import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
 import { basename, parentDir } from '../lib/path-utils'
 import {
@@ -35,10 +35,9 @@ function flattenTree(nodes: TreeNode[], result: { path: string; name: string }[]
 export function CommandPalette() {
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const openTab = useAppStore((s) => s.openTab)
   const folderTree = useAppStore((s) => s.folderTree)
   const { data: recents = [] } = useRecents()
-  const queryClient = useQueryClient()
+  const openMarkdownFile = useOpenMarkdownFile()
 
   const allFiles = useMemo(() => {
     const folderFiles = flattenTree(folderTree)
@@ -52,11 +51,9 @@ export function CommandPalette() {
   const selectFile = useCallback(
     async (path: string) => {
       setCommandPaletteOpen(false)
-      const content = await window.api.readFile(path)
-      openTab({ path, content })
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
+      await openMarkdownFile(path)
     },
-    [setCommandPaletteOpen, openTab, queryClient],
+    [setCommandPaletteOpen, openMarkdownFile],
   )
 
   return (

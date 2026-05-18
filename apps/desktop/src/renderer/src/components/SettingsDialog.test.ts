@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
+import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
 
 describe('getContentFontFamily', () => {
   it('returns Inter family for "inter"', () => {
