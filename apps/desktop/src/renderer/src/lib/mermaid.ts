@@ -1,26 +1,47 @@
-import mermaid from 'mermaid'
+type MermaidApi = (typeof import('mermaid'))['default']
+interface MermaidOptions {
+  startOnLoad: false
+  theme: 'default' | 'dark'
+  securityLevel: 'loose'
+}
 
 let mermaidInitialized = false
+let mermaidPromise: Promise<MermaidApi> | null = null
+let mermaidOptions: MermaidOptions = {
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+}
 
-export function initMermaid(isDark: boolean): void {
-  mermaid.initialize({
+function getMermaidOptions(isDark: boolean): MermaidOptions {
+  return {
     startOnLoad: false,
     theme: isDark ? 'dark' : 'default',
     securityLevel: 'loose',
-  })
+  }
+}
+
+async function loadMermaid(): Promise<MermaidApi> {
+  mermaidPromise ??= import('mermaid').then((mod) => mod.default)
+  return mermaidPromise
+}
+
+export function initMermaid(isDark: boolean): void {
+  mermaidOptions = getMermaidOptions(isDark)
   mermaidInitialized = true
 }
 
 export function updateMermaidTheme(isDark: boolean): void {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: isDark ? 'dark' : 'default',
-    securityLevel: 'loose',
-  })
+  mermaidOptions = getMermaidOptions(isDark)
+  if (mermaidPromise) {
+    void mermaidPromise.then((mermaid) => mermaid.initialize(mermaidOptions))
+  }
 }
 
 export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
   if (!mermaidInitialized) return
+  const mermaid = await loadMermaid()
+  mermaid.initialize(mermaidOptions)
 
   for (const block of blocks) {
     const el = document.getElementById(block.id)
