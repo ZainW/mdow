@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
-import { cn } from '../lib/utils'
+import { cn, isMac } from '../lib/utils'
 import { FileText, X } from '@phosphor-icons/react'
 
 interface ContextMenuState {
@@ -65,6 +65,7 @@ export function TabBar() {
     <>
       <div
         ref={containerRef}
+        aria-label="Open documents"
         className="relative flex h-9 shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
         onDragOver={(e) => {
           // Allow drop after the last tab
@@ -141,6 +142,8 @@ export function TabBar() {
                   title={tab.path}
                   aria-label={`${filename} — ${tab.path}`}
                   aria-pressed={isActive}
+                  aria-setsize={tabs.length}
+                  aria-posinset={index + 1}
                   onClick={() => setActiveTab(tab.id)}
                   onMouseDown={(e) => {
                     if (e.button === 1) {
@@ -151,7 +154,7 @@ export function TabBar() {
                   className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit"
                 >
                   <FileText
-                    weight={isActive ? 'fill' : 'regular'}
+                    weight="regular"
                     className={cn(
                       'size-3.5 shrink-0',
                       isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
@@ -164,7 +167,7 @@ export function TabBar() {
                   tabIndex={-1}
                   aria-label={`Close ${filename}`}
                   className={cn(
-                    'tab-close-btn mr-1 flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground',
+                    'tab-close-btn mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground',
                     isActive ? 'opacity-50' : 'opacity-0 group-hover/tab:opacity-50',
                   )}
                   onClick={(e) => {
@@ -218,6 +221,9 @@ interface TabContextMenuProps {
   onRevealInFolder: () => void
 }
 
+const mod = isMac ? '⌘' : 'Ctrl'
+const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
+
 function TabContextMenu({
   x,
   y,
@@ -239,15 +245,47 @@ function TabContextMenu({
       if (!(target instanceof Node)) return
       if (ref.current && !ref.current.contains(target)) onClose()
     }
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
     document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleKey)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleKey)
     }
+  }, [onClose])
+
+  // Roving focus inside the menu — ArrowDown/Up to navigate, Esc to dismiss.
+  // Focus the first enabled item when the menu opens.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const items = () =>
+      Array.from(el.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not([disabled])'))
+    const all = items()
+    all[0]?.focus()
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+        return
+      }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End')
+        return
+      const enabled = items()
+      if (enabled.length === 0) return
+      const currentIndex = enabled.findIndex((b) => b === document.activeElement)
+      let next = currentIndex
+      if (e.key === 'ArrowDown') next = currentIndex < 0 ? 0 : (currentIndex + 1) % enabled.length
+      if (e.key === 'ArrowUp')
+        next =
+          currentIndex < 0
+            ? enabled.length - 1
+            : (currentIndex - 1 + enabled.length) % enabled.length
+      if (e.key === 'Home') next = 0
+      if (e.key === 'End') next = enabled.length - 1
+      e.preventDefault()
+      enabled[next]?.focus()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
 
   // Keep menu within viewport
@@ -266,24 +304,34 @@ function TabContextMenu({
   const hasOthers = tabCount > 1
   const hasRight = tabIndex < tabCount - 1
 
-  const item = (label: string, onClick: () => void, disabled = false, danger = false) => (
+  const item = (
+    label: string,
+    onClick: () => void,
+    opts: { disabled?: boolean; danger?: boolean; shortcut?: string } = {},
+  ) => (
     <button
       type="button"
-      disabled={disabled}
+      role="menuitem"
+      disabled={opts.disabled}
       onClick={() => {
         onClick()
         onClose()
       }}
       className={cn(
-        'tab-menu-item flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-xs',
-        disabled
+        'tab-menu-item flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-xs outline-none focus-visible:bg-muted',
+        opts.disabled
           ? 'text-muted-foreground/40'
-          : danger
+          : opts.danger
             ? 'text-destructive hover:bg-destructive/10 hover:text-destructive'
             : 'text-foreground hover:bg-muted',
       )}
     >
-      {label}
+      <span>{label}</span>
+      {opts.shortcut && (
+        <kbd className="ml-auto font-mono text-[10px] text-muted-foreground/70 tabular-nums">
+          {opts.shortcut}
+        </kbd>
+      )}
     </button>
   )
 
@@ -291,16 +339,16 @@ function TabContextMenu({
     <div
       ref={ref}
       role="menu"
-      className="tab-context-menu fixed z-50 min-w-[180px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+      className="tab-context-menu fixed z-50 min-w-[200px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
       style={{ left: x, top: y }}
     >
-      {item('Close', onCloseTab)}
-      {item('Close Others', onCloseOthers, !hasOthers)}
-      {item('Close to the Right', onCloseRight, !hasRight)}
+      {item('Close', onCloseTab, { shortcut: `${mod} W` })}
+      {item('Close Others', onCloseOthers, { disabled: !hasOthers })}
+      {item('Close to the Right', onCloseRight, { disabled: !hasRight })}
       {item('Close All', onCloseAll)}
       <div className="my-1 h-px bg-border-subtle" />
       {item('Copy Path', onCopyPath)}
-      {item('Reveal in Finder', onRevealInFolder)}
+      {item(revealLabel, onRevealInFolder)}
     </div>
   )
 }
