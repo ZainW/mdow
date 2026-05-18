@@ -453,10 +453,27 @@
   background: transparent;
   color: var(--muted-foreground);
   border: 1px solid transparent;
+  opacity: 0;
   transition:
+    opacity 120ms ease-out,
     background-color 120ms ease-out,
     color 120ms ease-out,
     border-color 120ms ease-out;
+}
+
+/* Reveal on container hover, focus, or right after a copy so the user sees
+   the "Copied" state animate. Touch devices have no hover, so keep it
+   visible there. */
+.code-block-wrapper:hover .copy-code-btn,
+.copy-code-btn:focus-visible,
+.copy-code-btn[data-copied='true'] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .copy-code-btn {
+    opacity: 1;
+  }
 }
 
 .copy-code-btn .copy-icon {
