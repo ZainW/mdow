@@ -1,5 +1,4 @@
-import { createParse, type ComarkPlugin } from 'comark'
-import { renderHTML } from '@comark/html'
+import { createParse, type ComarkElement, type ComarkNode, type ComarkPlugin } from 'comark'
 import highlight from 'comark/plugins/highlight'
 import mermaid from 'comark/plugins/mermaid'
 
@@ -136,7 +135,7 @@ export interface DocHeading {
 }
 
 export interface RenderResult {
-  html: string
+  tree: Awaited<ReturnType<typeof parse>>
   mermaidBlocks: { id: string; code: string }[]
   headings: DocHeading[]
 }
@@ -149,8 +148,37 @@ function slugifyHeading(text: string): string {
     .replace(/\s+/g, '-')
 }
 
-function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+function isElement(node: ComarkNode): node is ComarkElement {
+  return Array.isArray(node) && typeof node[0] === 'string'
+}
+
+function isNode(value: unknown): value is ComarkNode {
+  return typeof value === 'string' || Array.isArray(value)
+}
+
+function getNodeText(node: ComarkNode): string {
+  if (typeof node === 'string') return node
+  if (!isElement(node)) return ''
+  return getChildren(node).map(getNodeText).join('')
+}
+
+function getChildren(node: ComarkElement): ComarkNode[] {
+  const children: ComarkNode[] = []
+  for (let i = 2; i < node.length; i++) {
+    const child = node[i]
+    if (isNode(child)) children.push(child)
+  }
+  return children
+}
+
+function appendClassName(node: ComarkElement, className: string): void {
+  const attrs = node[1]
+  const existing = attrs.class
+  if (typeof existing === 'string' && existing.length > 0) {
+    attrs.class = `${existing} ${className}`
+  } else {
+    attrs.class = className
+  }
 }
 
 export async function renderMarkdown(text: string): Promise<RenderResult> {
@@ -158,60 +186,47 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
 
   const mermaidBlocks: { id: string; code: string }[] = []
   let mermaidCounter = 0
-
-  const rawHtml = await renderHTML(tree, {
-    components: {
-      mermaid: ([, attrs]) => {
-        const code = typeof attrs.content === 'string' ? attrs.content : ''
-        const id = `mermaid-${mermaidCounter++}`
-        mermaidBlocks.push({ id, code })
-        return `<div class="mermaid" id="${escapeAttr(id)}"></div>`
-      },
-    },
-  })
-
-  // Trusted source: local markdown files rendered by comark, not user-submitted web content.
-  const wrapper = document.createElement('div')
-  wrapper.innerHTML = rawHtml
-
   const headings: DocHeading[] = []
   const slugCounts = new Map<string, number>()
-  for (const node of wrapper.querySelectorAll('h1, h2, h3, h4')) {
-    const headingText = (node.textContent ?? '').trim()
-    if (!headingText) continue
-    let id = node.id
-    if (!id) {
-      const base = slugifyHeading(headingText)
-      if (!base) continue
-      const count = slugCounts.get(base) ?? 0
-      slugCounts.set(base, count + 1)
-      id = count === 0 ? base : `${base}-${count}`
-      node.id = id
+
+  function visit(node: ComarkNode): void {
+    if (!isElement(node)) return
+
+    const tag = node[0]
+    const attrs = node[1]
+
+    if (/^h[1-4]$/.test(tag)) {
+      const headingText = getNodeText(node).trim()
+      if (headingText) {
+        let id = typeof attrs.id === 'string' ? attrs.id : ''
+        if (!id) {
+          const base = slugifyHeading(headingText)
+          if (base) {
+            const count = slugCounts.get(base) ?? 0
+            slugCounts.set(base, count + 1)
+            id = count === 0 ? base : `${base}-${count}`
+            attrs.id = id
+          }
+        }
+        if (id) headings.push({ level: Number(tag.slice(1)), text: headingText, id })
+      }
     }
-    headings.push({ level: Number(node.tagName.slice(1)), text: headingText, id })
+
+    if (tag === 'mermaid') {
+      const code = typeof attrs.content === 'string' ? attrs.content : ''
+      const id =
+        typeof attrs.id === 'string' && attrs.id.length > 0
+          ? attrs.id
+          : `mermaid-${mermaidCounter++}`
+      attrs.id = id
+      appendClassName(node, 'mermaid mermaid-container')
+      mermaidBlocks.push({ id, code })
+    }
+
+    for (const child of getChildren(node)) visit(child)
   }
 
-  const copyIconSvg =
-    '<svg class="copy-icon copy-icon-default" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
-  const checkIconSvg =
-    '<svg class="copy-icon copy-icon-done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+  for (const node of tree.nodes) visit(node)
 
-  for (const pre of wrapper.querySelectorAll('pre')) {
-    if (pre.parentElement?.classList.contains('code-block-wrapper')) continue
-    const code = pre.textContent ?? ''
-    const container = document.createElement('div')
-    container.className = 'code-block-wrapper relative'
-    const copyBtn = document.createElement('button')
-    copyBtn.className = 'copy-code-btn'
-    copyBtn.type = 'button'
-    copyBtn.setAttribute('aria-label', 'Copy code')
-    copyBtn.setAttribute('title', 'Copy code')
-    copyBtn.setAttribute('data-code', btoa(encodeURIComponent(code)))
-    copyBtn.innerHTML = copyIconSvg + checkIconSvg
-    pre.replaceWith(container)
-    container.appendChild(pre)
-    container.appendChild(copyBtn)
-  }
-
-  return { html: wrapper.innerHTML, mermaidBlocks, headings }
+  return { tree, mermaidBlocks, headings }
 }

@@ -17,9 +17,6 @@ importers:
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.4.1(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@comark/html':
-        specifier: ^0.3.1
-        version: 0.3.1(katex@0.16.45)(shiki@4.0.2)
       '@comark/react':
         specifier: ^0.3.1
         version: 0.3.1(katex@0.16.45)(react@19.2.6)(shiki@4.0.2)
@@ -453,20 +450,6 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
-
-  '@comark/html@0.3.1':
-    resolution: {integrity: sha512-vlFWZ8TMSaQ/WXwzktnZyPsm8XuE7GWEZ7ag2jXFL88Wf2ibSHvFgsoiDr9gDX9752haT4CU0Biph+5xXJ30Vg==}
-    peerDependencies:
-      beautiful-mermaid: '>=1.0'
-      katex: '>=0.16'
-      shiki: ^4.0.0
-    peerDependenciesMeta:
-      beautiful-mermaid:
-        optional: true
-      katex:
-        optional: true
-      shiki:
-        optional: true
 
   '@comark/react@0.3.1':
     resolution: {integrity: sha512-72u0bZMA8Zq/2M6IC7AU6IQTJ68cAS6C+tV6JLEpbNY4GilPFPIUr1E8Ga7f3MR4jgZq25uGrt5PFFS/JjAodQ==}
@@ -5346,13 +5329,6 @@ snapshots:
 
   '@cloudflare/workerd-windows-64@1.20260515.1':
     optional: true
-
-  '@comark/html@0.3.1(katex@0.16.45)(shiki@4.0.2)':
-    dependencies:
-      comark: 0.3.2(katex@0.16.45)(shiki@4.0.2)
-    optionalDependencies:
-      katex: 0.16.45
-      shiki: 4.0.2
 
   '@comark/react@0.3.1(katex@0.16.45)(react@19.2.6)(shiki@4.0.2)':
     dependencies:

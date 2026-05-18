@@ -27,6 +27,8 @@ export async function renderMermaidBlocks(blocks: { id: string; code: string }[]
     if (!el) continue
 
     try {
+      el.className = 'mermaid mermaid-container'
+      el.replaceChildren()
       // oxlint-disable-next-line no-await-in-loop -- intentional sequential rendering to avoid Mermaid race conditions
       const { svg } = await mermaid.render(`${block.id}-svg`, block.code)
       el.innerHTML = svg

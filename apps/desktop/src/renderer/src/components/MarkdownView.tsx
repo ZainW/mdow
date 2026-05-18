@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ComarkRenderer } from '@comark/react'
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type HTMLAttributes,
+} from 'react'
 import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
@@ -11,10 +20,109 @@ interface MarkdownViewProps {
   tab: Tab
 }
 
+function CopyIcon() {
+  return (
+    <svg
+      className="copy-icon copy-icon-default"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      className="copy-icon copy-icon-done"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function CodeBlock({ children, ...props }: HTMLAttributes<HTMLPreElement>) {
+  const preRef = useRef<HTMLPreElement>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
+  const handleCopy = () => {
+    const code = preRef.current?.textContent ?? ''
+    void navigator.clipboard.writeText(code)
+    setCopied(true)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="code-block-wrapper relative">
+      <pre {...props} ref={preRef}>
+        {children}
+      </pre>
+      <button
+        className="copy-code-btn"
+        type="button"
+        aria-label={copied ? 'Copied' : 'Copy code'}
+        title="Copy code"
+        data-copied={copied ? 'true' : undefined}
+        onClick={handleCopy}
+      >
+        <CopyIcon />
+        <CheckIcon />
+      </button>
+    </div>
+  )
+}
+
+interface MermaidBlockProps extends HTMLAttributes<HTMLDivElement> {
+  content?: string
+}
+
+function MermaidBlock({ content: _content, children: _children, ...props }: MermaidBlockProps) {
+  return <div {...props} />
+}
+
+const markdownComponents = {
+  pre: CodeBlock,
+  mermaid: MermaidBlock,
+}
+
+const MarkdownContent = memo(function MarkdownContent({ result }: { result: RenderResult }) {
+  return <ComarkRenderer tree={result.tree} components={markdownComponents} />
+})
+
+interface RenderState {
+  result: RenderResult
+  version: number
+}
+
 export function MarkdownView({ tab }: MarkdownViewProps) {
   const [ready, setReady] = useState(false)
   const [themeKey, setThemeKey] = useState(0)
-  const mermaidBlocksRef = useRef<RenderResult['mermaidBlocks']>([])
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevTabIdRef = useRef(tab.id)
@@ -32,17 +140,15 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const setDocHeadings = useAppStore((s) => s.setDocHeadings)
   const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
 
-  const [renderResult, setRenderResult] = useState<RenderResult>({
-    html: '',
-    mermaidBlocks: [],
-    headings: [],
-  })
+  const [renderState, setRenderState] = useState<RenderState | null>(null)
+  const renderVersionRef = useRef(0)
   const lastRenderedTabIdRef = useRef(tab.id)
+  const renderResult = renderState?.result ?? null
 
   useEffect(() => {
     if (!ready) return undefined
     if (!tab.content) {
-      setRenderResult({ html: '', mermaidBlocks: [], headings: [] })
+      setRenderState(null)
       return undefined
     }
     // Clear stale content on tab switch to avoid showing the old document briefly.
@@ -50,12 +156,13 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     // previous html until the new render lands to avoid a flash of empty.
     if (lastRenderedTabIdRef.current !== tab.id) {
       lastRenderedTabIdRef.current = tab.id
-      setRenderResult({ html: '', mermaidBlocks: [], headings: [] })
+      setRenderState(null)
     }
     let cancelled = false
     void renderMarkdown(tab.content).then((res) => {
       if (cancelled) return
-      setRenderResult(res)
+      renderVersionRef.current += 1
+      setRenderState({ result: res, version: renderVersionRef.current })
     })
     return () => {
       cancelled = true
@@ -63,18 +170,16 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
   }, [ready, tab.id, tab.content, themeKey])
 
-  const html = renderResult.html
-  mermaidBlocksRef.current = renderResult.mermaidBlocks
-
   useEffect(() => {
-    setDocHeadings(renderResult.headings)
-    setActiveHeadingId(renderResult.headings[0]?.id ?? null)
-  }, [renderResult.headings, setDocHeadings, setActiveHeadingId])
+    const headings = renderResult?.headings ?? []
+    setDocHeadings(headings)
+    setActiveHeadingId(headings[0]?.id ?? null)
+  }, [renderResult, setDocHeadings, setActiveHeadingId])
 
-  const { highlightedHtml, matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
+  const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
     searchOpen ? searchQuery : '',
-    html,
+    renderState?.version ?? 0,
   )
 
   useEffect(() => {
@@ -86,10 +191,10 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   }, [])
 
   useEffect(() => {
-    if (mermaidBlocksRef.current.length > 0) {
-      void renderMermaidBlocks(mermaidBlocksRef.current)
+    if (renderResult?.mermaidBlocks.length) {
+      void renderMermaidBlocks(renderResult.mermaidBlocks)
     }
-  }, [html])
+  }, [renderResult])
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -105,29 +210,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
 
     return () => observer.disconnect()
   }, [])
-
-  // Copy code button handler
-  useEffect(() => {
-    const container = contentRef.current
-    if (!container) return undefined
-    const handler = (e: MouseEvent) => {
-      if (!(e.target instanceof HTMLElement)) return
-      const btn = e.target.closest<HTMLButtonElement>('.copy-code-btn')
-      if (!btn) return
-      const encoded = btn.getAttribute('data-code')
-      if (!encoded) return
-      const code = decodeURIComponent(atob(encoded))
-      void navigator.clipboard.writeText(code)
-      btn.dataset.copied = 'true'
-      btn.setAttribute('aria-label', 'Copied')
-      setTimeout(() => {
-        delete btn.dataset.copied
-        btn.setAttribute('aria-label', 'Copy code')
-      }, 1500)
-    }
-    container.addEventListener('click', handler)
-    return () => container.removeEventListener('click', handler)
-  }, [html])
 
   // Scroll-spy: track which heading is currently in view
   useEffect(() => {
@@ -150,7 +232,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     )
     for (const el of headingEls) observer.observe(el)
     return () => observer.disconnect()
-  }, [html, setActiveHeadingId])
+  }, [renderResult, setActiveHeadingId])
 
   // Scroll position: save on scroll (debounced)
   useEffect(() => {
@@ -192,7 +274,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     clear()
   }
 
-  // Content is from local markdown files rendered by comark — trusted source, not user-generated web content
   return (
     <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
       {searchOpen && (
@@ -215,10 +296,13 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
             '--md-code-font': getCodeFontFamily(codeFont),
             '--md-font-size': `${fontSize * (zoomLevel / 100)}px`,
             '--md-line-height': String(lineHeight),
-          } as React.CSSProperties
+          } as CSSProperties
         }
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      />
+      >
+        {renderState ? (
+          <MarkdownContent key={renderState.version} result={renderState.result} />
+        ) : null}
+      </div>
       <ZoomIndicator />
     </div>
   )
