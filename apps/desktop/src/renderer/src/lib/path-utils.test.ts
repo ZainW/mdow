@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { basename, isMarkdownPath, shortenPath } from './path-utils'
+import { basename, isMarkdownPath, shortenPath, truncatePathMiddle } from './path-utils'
 
 describe('basename', () => {
   it('extracts filename from unix path', () => {
@@ -71,6 +71,36 @@ describe('shortenPath', () => {
     const long = 'C:\\Users\\zain\\projects\\very-long-directory-name\\docs\\readme.md'
     // split on /[\\/]/ produces multiple segments
     expect(shortenPath(long, 20)).toBe('.../docs/readme.md')
+  })
+})
+
+describe('truncatePathMiddle', () => {
+  it('returns short paths unchanged', () => {
+    expect(truncatePathMiddle('/a/b/file.md', 56)).toBe('/a/b/file.md')
+  })
+
+  it('collapses middle segments on a long path', () => {
+    const result = truncatePathMiddle('/Users/zain/projects/mdow/apps/desktop/src/file.md', 32)
+    expect(result.startsWith('Users/')).toBe(true)
+    expect(result.endsWith('/file.md')).toBe(true)
+    expect(result).toContain('…')
+  })
+
+  it('hard-truncates a basename that exceeds maxLen on its own', () => {
+    const long = 'x'.repeat(120)
+    const result = truncatePathMiddle(`/a/${long}`, 24)
+    expect(result.length).toBeLessThanOrEqual(24)
+    expect(result.startsWith('…/')).toBe(true)
+  })
+
+  it('keeps short paths unchanged even when they have two segments', () => {
+    expect(truncatePathMiddle('/foo/bar', 56)).toBe('/foo/bar')
+  })
+
+  it('honours windows separators', () => {
+    const result = truncatePathMiddle('C:\\Users\\zain\\projects\\mdow\\apps\\file.md', 24)
+    expect(result).toContain('\\…\\')
+    expect(result.endsWith('\\file.md')).toBe(true)
   })
 })
 

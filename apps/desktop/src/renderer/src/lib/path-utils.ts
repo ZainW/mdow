@@ -20,3 +20,21 @@ export function parentDir(path: string, segments = 2): string {
   const dirs = parts.slice(0, -1)
   return dirs.slice(-segments).join('/')
 }
+
+// Drop middle segments from a long path so the user still sees the leading
+// folder + filename. Used in the error view's path label.
+export function truncatePathMiddle(path: string, maxLen = 56): string {
+  if (path.length <= maxLen) return path
+  const sep = path.includes('\\') ? '\\' : '/'
+  const parts = path.split(/[/\\]/).filter(Boolean)
+  const last = parts[parts.length - 1] ?? ''
+  const head = `…${sep}`
+  // If the basename alone fits with a short prefix, drop everything else
+  if (parts.length > 2) {
+    const first = parts[0]
+    const collapsed = `${first}${sep}…${sep}${last}`
+    if (collapsed.length <= maxLen) return collapsed
+  }
+  // Basename too long even with no leading folder — hard-truncate the basename
+  return head + last.slice(Math.max(0, last.length - (maxLen - head.length)))
+}
