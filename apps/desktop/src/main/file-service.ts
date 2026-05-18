@@ -2,7 +2,13 @@ import { dialog, BrowserWindow } from 'electron'
 import { readFile } from 'fs/promises'
 import { watch, type FSWatcher } from 'chokidar'
 
-const fileWatchers = new Map<string, FSWatcher>()
+interface FileWatcherState {
+  watcher: FSWatcher
+  debounceTimer: ReturnType<typeof setTimeout> | null
+  onChange: (event: FileWatchEvent) => void
+}
+
+const fileWatchers = new Map<string, FileWatcherState>()
 
 export async function openFileDialog(win: BrowserWindow) {
   const result = await dialog.showOpenDialog(win, {
@@ -24,15 +30,21 @@ export async function readFileContent(path: string): Promise<string> {
 export type FileWatchEvent = { type: 'changed'; content: string } | { type: 'deleted' }
 
 export function watchFile(filePath: string, onChange: (event: FileWatchEvent) => void): void {
-  if (fileWatchers.has(filePath)) return
+  const existing = fileWatchers.get(filePath)
+  if (existing) {
+    existing.onChange = onChange
+    return
+  }
+
   const watcher = watch(filePath, { ignoreInitial: true })
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  const state: FileWatcherState = { watcher, debounceTimer: null, onChange }
 
   watcher.on('change', () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    state.debounceTimer = setTimeout(() => {
+      state.debounceTimer = null
       readFile(filePath, 'utf-8')
-        .then((content) => onChange({ type: 'changed', content }))
+        .then((content) => state.onChange({ type: 'changed', content }))
         .catch(() => {
           // File might be temporarily unavailable during save
         })
@@ -40,23 +52,25 @@ export function watchFile(filePath: string, onChange: (event: FileWatchEvent) =>
   })
 
   watcher.on('unlink', () => {
-    onChange({ type: 'deleted' })
+    state.onChange({ type: 'deleted' })
   })
 
-  fileWatchers.set(filePath, watcher)
+  fileWatchers.set(filePath, state)
 }
 
 export function unwatchFile(filePath: string): void {
-  const watcher = fileWatchers.get(filePath)
-  if (watcher) {
-    void watcher.close()
+  const state = fileWatchers.get(filePath)
+  if (state) {
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    void state.watcher.close()
     fileWatchers.delete(filePath)
   }
 }
 
 export function unwatchAllFiles(): void {
-  for (const watcher of fileWatchers.values()) {
-    void watcher.close()
+  for (const state of fileWatchers.values()) {
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    void state.watcher.close()
   }
   fileWatchers.clear()
 }

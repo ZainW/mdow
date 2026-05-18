@@ -2,6 +2,11 @@ export function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path
 }
 
+export function isMarkdownPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  return lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.mdx')
+}
+
 export function shortenPath(path: string, maxLen = 40): string {
   if (path.length <= maxLen) return path
   const parts = path.split(/[/\\]/)

@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
+import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
-import { basename } from '../lib/path-utils'
+import { basename, isMarkdownPath } from '../lib/path-utils'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { File, FileText, FolderOpen } from '@phosphor-icons/react'
@@ -10,6 +11,7 @@ import { File, FileText, FolderOpen } from '@phosphor-icons/react'
 export function WelcomeView() {
   const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
+  const openMarkdownFile = useOpenMarkdownFile()
   const queryClient = useQueryClient()
   const [isDragOver, setIsDragOver] = useState(false)
   const { data: recents = [] } = useRecents()
@@ -31,11 +33,9 @@ export function WelcomeView() {
 
   const handleOpenRecent = useCallback(
     async (path: string) => {
-      const content = await window.api.readFile(path)
-      openTab({ path, content })
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
+      await openMarkdownFile(path)
     },
-    [openTab, queryClient],
+    [openMarkdownFile],
   )
 
   const handleDrop = useCallback(
@@ -44,18 +44,13 @@ export function WelcomeView() {
       setIsDragOver(false)
 
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find(
-        (f) => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.name.endsWith('.mdx'),
-      )
+      const mdFile = files.find((f) => isMarkdownPath(f.name))
 
       if (mdFile) {
-        void window.api.readFile(mdFile.path).then((content) => {
-          openTab({ path: mdFile.path, content })
-          void queryClient.invalidateQueries({ queryKey: ['recents'] })
-        })
+        void openMarkdownFile(mdFile.path)
       }
     },
-    [openTab, queryClient],
+    [openMarkdownFile],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

@@ -12,7 +12,7 @@ import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
-import { getContentFontFamily, getCodeFontFamily } from './SettingsDialog'
+import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 
@@ -141,6 +141,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
 
   const [renderState, setRenderState] = useState<RenderState | null>(null)
+  const [renderError, setRenderError] = useState(false)
   const renderVersionRef = useRef(0)
   const lastRenderedTabIdRef = useRef(tab.id)
   const renderResult = renderState?.result ?? null
@@ -149,6 +150,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     if (!ready) return undefined
     if (!tab.content) {
       setRenderState(null)
+      setRenderError(false)
       return undefined
     }
     // Clear stale content on tab switch to avoid showing the old document briefly.
@@ -159,11 +161,18 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       setRenderState(null)
     }
     let cancelled = false
-    void renderMarkdown(tab.content).then((res) => {
-      if (cancelled) return
-      renderVersionRef.current += 1
-      setRenderState({ result: res, version: renderVersionRef.current })
-    })
+    setRenderError(false)
+    void renderMarkdown(tab.content)
+      .then((res) => {
+        if (cancelled) return
+        renderVersionRef.current += 1
+        setRenderState({ result: res, version: renderVersionRef.current })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRenderState(null)
+        setRenderError(true)
+      })
     return () => {
       cancelled = true
     }
@@ -299,7 +308,11 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
           } as CSSProperties
         }
       >
-        {renderState ? (
+        {renderError ? (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+            This document could not be rendered.
+          </div>
+        ) : renderState ? (
           <MarkdownContent key={renderState.version} result={renderState.result} />
         ) : null}
       </div>

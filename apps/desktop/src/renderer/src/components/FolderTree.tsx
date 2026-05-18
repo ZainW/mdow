@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useReducer, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { FileTree as FileTreeModel } from '@pierre/trees'
 import type { FileTreeOptions } from '@pierre/trees'
 import { FileTree as FileTreeView } from '@pierre/trees/react'
 import { useAppStore } from '../store/app-store'
+import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
+import { basename } from '../lib/path-utils'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
 import { Separator } from './ui/separator'
 
@@ -110,8 +111,7 @@ export function FolderTree() {
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
     return tab ?? null
   })
-  const openTab = useAppStore((s) => s.openTab)
-  const queryClient = useQueryClient()
+  const openMarkdownFile = useOpenMarkdownFile()
 
   const normalizedRoot = useMemo(
     () => (openFolderPath ? normalizeRoot(openFolderPath) : ''),
@@ -144,10 +144,7 @@ export function FolderTree() {
     lastSelectionRef.current = sel
     if (!openFolderPath) return
     const abs = relToAbsolute(sel, openFolderPath)
-    void window.api.readFile(abs).then((content) => {
-      openTab({ path: abs, content })
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
-    })
+    void openMarkdownFile(abs)
   }
 
   // Keep the model's paths in sync as the user opens different folders or files
@@ -177,7 +174,7 @@ export function FolderTree() {
 
   if (!openFolderPath || folderTree.length === 0) return null
 
-  const folderName = openFolderPath.split(/[/\\]/).pop() || openFolderPath
+  const folderName = basename(openFolderPath)
 
   return (
     <>

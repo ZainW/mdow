@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { basename, shortenPath } from './path-utils'
+import { basename, isMarkdownPath, shortenPath } from './path-utils'
 
 describe('basename', () => {
   it('extracts filename from unix path', () => {
@@ -71,5 +71,18 @@ describe('shortenPath', () => {
     const long = 'C:\\Users\\zain\\projects\\very-long-directory-name\\docs\\readme.md'
     // split on /[\\/]/ produces multiple segments
     expect(shortenPath(long, 20)).toBe('.../docs/readme.md')
+  })
+})
+
+describe('isMarkdownPath', () => {
+  it('accepts supported markdown extensions case-insensitively', () => {
+    expect(isMarkdownPath('readme.md')).toBe(true)
+    expect(isMarkdownPath('notes.Markdown')).toBe(true)
+    expect(isMarkdownPath('doc.MDX')).toBe(true)
+  })
+
+  it('rejects unsupported extensions', () => {
+    expect(isMarkdownPath('readme.txt')).toBe(false)
+    expect(isMarkdownPath('markdown.json')).toBe(false)
   })
 })

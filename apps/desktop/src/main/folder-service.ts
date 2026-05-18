@@ -16,6 +16,7 @@ export interface ScanResult {
 }
 
 let folderWatcher: FSWatcher | null = null
+let folderDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
 
@@ -38,6 +39,10 @@ function isMdFile(name: string): boolean {
   if (dotIndex === -1) return false
   const ext = name.substring(dotIndex).toLowerCase()
   return MD_EXTENSIONS.has(ext)
+}
+
+function isMarkdownPath(path: string): boolean {
+  return isMdFile(path.split(/[/\\]/).pop() ?? '')
 }
 
 function shouldSkipEntry(name: string): boolean {
@@ -119,11 +124,10 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     depth: MAX_DEPTH,
   })
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
   const handleChange = () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
+    if (folderDebounceTimer) clearTimeout(folderDebounceTimer)
+    folderDebounceTimer = setTimeout(() => {
+      folderDebounceTimer = null
       void scanFolder(folderPath)
         .then((result) => {
           onChange(result)
@@ -134,13 +138,21 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     }, 1000)
   }
 
-  folderWatcher.on('add', handleChange)
-  folderWatcher.on('unlink', handleChange)
+  const handleFileChange = (path: string) => {
+    if (isMarkdownPath(path)) handleChange()
+  }
+
+  folderWatcher.on('add', handleFileChange)
+  folderWatcher.on('unlink', handleFileChange)
   folderWatcher.on('addDir', handleChange)
   folderWatcher.on('unlinkDir', handleChange)
 }
 
 export function unwatchFolder(): void {
+  if (folderDebounceTimer) {
+    clearTimeout(folderDebounceTimer)
+    folderDebounceTimer = null
+  }
   if (folderWatcher) {
     void folderWatcher.close()
     folderWatcher = null
