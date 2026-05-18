@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type HTMLAttributes,
 } from 'react'
-import { initMarkdown, renderMarkdown, type RenderResult } from '../lib/markdown'
+import { renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
@@ -121,7 +121,6 @@ interface RenderState {
 }
 
 export function MarkdownView({ tab }: MarkdownViewProps) {
-  const [ready, setReady] = useState(false)
   const [themeKey, setThemeKey] = useState(0)
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -146,7 +145,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const renderResult = renderState?.result ?? null
 
   useEffect(() => {
-    if (!ready) return undefined
     if (!tab.content) {
       setRenderState(null)
       return undefined
@@ -168,7 +166,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
-  }, [ready, tab.id, tab.content, themeKey])
+  }, [tab.id, tab.content, themeKey])
 
   useEffect(() => {
     const headings = renderResult?.headings ?? []
@@ -184,10 +182,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
-    void initMarkdown().then(() => {
-      initMermaid(isDark)
-      setReady(true)
-    })
+    initMermaid(isDark)
   }, [])
 
   useEffect(() => {
@@ -263,10 +258,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       prevTabIdRef.current = tab.id
     }
   }, [tab.id, tab.scrollPosition])
-
-  if (!ready) {
-    return <div className="flex-1 overflow-y-auto px-12 py-8 opacity-50">Loading...</div>
-  }
 
   const handleCloseSearch = () => {
     setSearchOpen(false)
