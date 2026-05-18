@@ -26,14 +26,17 @@ describe('TabBar', () => {
   it('exposes aria-setsize/posinset on each tab', () => {
     seedTabs(['/a/one.md', '/a/two.md', '/a/three.md'])
     render(<TabBar />)
-    // Filter out close buttons (those have aria-label starting with "Close ")
-    const mainTabs = screen
-      .getAllByRole('button')
-      .filter((b) => !(b.getAttribute('aria-label') ?? '').startsWith('Close '))
+    const mainTabs = screen.getAllByRole('tab')
     expect(mainTabs).toHaveLength(3)
     expect(mainTabs[0].getAttribute('aria-setsize')).toBe('3')
     expect(mainTabs[0].getAttribute('aria-posinset')).toBe('1')
     expect(mainTabs[2].getAttribute('aria-posinset')).toBe('3')
+  })
+
+  it('wraps the row in a role=tablist', () => {
+    seedTabs(['/a/one.md'])
+    render(<TabBar />)
+    expect(screen.getByRole('tablist', { name: 'Open documents' })).toBeInTheDocument()
   })
 
   it('opens a role=menu on right-click with menuitem children', () => {

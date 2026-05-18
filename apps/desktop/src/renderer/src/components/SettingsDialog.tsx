@@ -78,9 +78,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <Field label="Theme">
-          <fieldset
+          <div
+            role="radiogroup"
             aria-label="Theme"
-            className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md border-0 bg-muted p-0.5"
+            className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
           >
             {THEME_OPTIONS.map((opt) => {
               const active = theme === opt.value
@@ -88,14 +89,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <button
                   key={opt.value}
                   type="button"
-                  aria-pressed={active}
+                  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled segmented toggle, native radio input would break layout
+                  role="radio"
+                  aria-checked={active}
                   onClick={() => setTheme(opt.value)}
                   className={cn(
                     'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium outline-none',
                     'transition-[background-color,color,box-shadow,transform] duration-150',
                     'active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/50',
                     active
-                      ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/5'
+                      ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/10 dark:ring-foreground/15'
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -104,7 +107,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </button>
               )
             })}
-          </fieldset>
+          </div>
         </Field>
 
         <Field label="Content font">
@@ -209,15 +212,13 @@ function FontGrid({
   children: React.ReactNode
 }) {
   return (
-    <fieldset
+    <div
+      role="radiogroup"
       aria-label={groupLabel}
-      className={cn(
-        'm-0 grid min-w-0 gap-1.5 border-0 p-0',
-        cols === 3 ? 'grid-cols-3' : 'grid-cols-4',
-      )}
+      className={cn('m-0 grid min-w-0 gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
     >
       {children}
-    </fieldset>
+    </div>
   )
 }
 
@@ -239,17 +240,22 @@ function FontTile({
   return (
     <button
       type="button"
-      aria-pressed={active}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled font tile, native radio input would break layout
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
       className={cn(
-        'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 outline-none',
+        'group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 outline-none',
         'transition-[background-color,border-color,box-shadow,transform] duration-150',
         'active:scale-[0.98] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
         active
-          ? 'border-foreground/15 bg-accent/5 ring-1 ring-foreground/5'
+          ? 'border-foreground/25 bg-accent/10 ring-1 ring-foreground/10 dark:border-foreground/30 dark:bg-accent/15 dark:ring-foreground/20'
           : 'border-border-subtle bg-background hover:border-border hover:bg-muted/60',
       )}
     >
+      {active && (
+        <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary" />
+      )}
       <span
         className={cn(
           'leading-none',

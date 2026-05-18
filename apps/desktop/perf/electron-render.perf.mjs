@@ -74,7 +74,7 @@ async function openFileInRunningApp(app, page, filePath) {
     (targetPath) => {
       const fileName = targetPath.split('/').pop() ?? ''
       const activeTabButton = Array.from(
-        document.querySelectorAll('button[aria-pressed="true"]'),
+        document.querySelectorAll('button[aria-selected="true"], button[aria-pressed="true"]'),
       ).find((button) => button.getAttribute('aria-label')?.includes(fileName))
       return Boolean(activeTabButton)
     },

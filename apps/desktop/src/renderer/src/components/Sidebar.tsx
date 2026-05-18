@@ -109,7 +109,7 @@ export function Sidebar() {
           <MagnifyingGlass />
         </RailButton>
         <div className="flex-1" />
-        <div role="group" aria-label="Workspace actions" className="contents">
+        <div aria-label="Workspace actions" className="contents">
           <RailButton onClick={() => void handleOpenFile()} label="Open File">
             <File />
           </RailButton>
@@ -186,7 +186,9 @@ function RailModeIcon({
     <Button
       variant="ghost"
       size="icon"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- the rail is a custom 36px-wide column of icon toggles; native radio inputs would break the layout
       role="radio"
+      tabIndex={0}
       aria-checked={checked}
       aria-label={label}
       title={label}

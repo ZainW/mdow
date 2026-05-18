@@ -65,7 +65,9 @@ export function TabBar() {
     <>
       <div
         ref={containerRef}
+        role="tablist"
         aria-label="Open documents"
+        tabIndex={-1}
         className="relative flex h-9 shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
         onDragOver={(e) => {
           // Allow drop after the last tab
@@ -139,9 +141,10 @@ export function TabBar() {
               >
                 <button
                   type="button"
+                  role="tab"
                   title={tab.path}
                   aria-label={`${filename} — ${tab.path}`}
-                  aria-pressed={isActive}
+                  aria-selected={isActive}
                   aria-setsize={tabs.length}
                   aria-posinset={index + 1}
                   onClick={() => setActiveTab(tab.id)}
@@ -255,7 +258,7 @@ function TabContextMenu({
   // Focus the first enabled item when the menu opens.
   useEffect(() => {
     const el = ref.current
-    if (!el) return
+    if (!el) return undefined
     const items = () =>
       Array.from(el.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not([disabled])'))
     const all = items()
@@ -285,7 +288,9 @@ function TabContextMenu({
       enabled[next]?.focus()
     }
     document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [onClose])
 
   // Keep menu within viewport

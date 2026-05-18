@@ -62,6 +62,14 @@ export function SearchBar({
       <span className="min-w-[4rem] text-center text-[10px] tabular-nums text-muted-foreground">
         {query ? (matchCount > 0 ? `${currentIndex + 1} of ${matchCount}` : 'No results') : ''}
       </span>
+      <span
+        aria-hidden
+        className="hidden items-center gap-1 text-[10px] text-muted-foreground/60 lg:flex"
+        title="Enter: next match · Shift+Enter: previous · Esc: close"
+      >
+        <kbd className="rounded bg-muted px-1 py-px font-mono">↵</kbd>
+        <span>next</span>
+      </span>
       <Button
         variant="ghost"
         size="icon-xs"
