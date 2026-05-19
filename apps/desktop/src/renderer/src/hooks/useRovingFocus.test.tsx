@@ -11,7 +11,8 @@ function Harness({
 }) {
   const { containerRef, onKeyDown } = useRovingFocus({ orientation })
   return (
-    <div ref={containerRef} role="radiogroup" aria-label="test" tabIndex={-1} onKeyDown={onKeyDown}>
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- test harness; focus rests on the active radio inside
+    <div ref={containerRef} role="radiogroup" aria-label="test" onKeyDown={onKeyDown}>
       {[0, 1, 2].map((i) => (
         <button
           key={i}
@@ -82,4 +83,24 @@ describe('useRovingFocus', () => {
     fireEvent.keyDown(first, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(screen.getByTestId('opt-1'))
   })
+
+  it('autoFocusFirst focuses the first enabled item on mount', () => {
+    render(<AutoHarness />)
+    expect(document.activeElement).toBe(screen.getByTestId('m-0'))
+  })
 })
+
+function AutoHarness() {
+  const { containerRef, onKeyDown } = useRovingFocus({ autoFocusFirst: true })
+  return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- test harness; focus rests on the focused menuitem inside
+    <div ref={containerRef} role="menu" aria-label="m" onKeyDown={onKeyDown}>
+      <button type="button" role="menuitem" data-testid="m-0">
+        a
+      </button>
+      <button type="button" role="menuitem" data-testid="m-1">
+        b
+      </button>
+    </div>
+  )
+}

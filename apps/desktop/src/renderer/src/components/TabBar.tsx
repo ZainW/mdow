@@ -65,11 +65,11 @@ export function TabBar() {
 
   return (
     <>
+      {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active tab inside, not the tablist itself */}
       <div
         ref={tablistRoving.containerRef}
         role="tablist"
         aria-label="Open documents"
-        tabIndex={-1}
         onKeyDown={tablistRoving.onKeyDown}
         className="relative flex h-9 shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
         onDragOver={(e) => {
@@ -152,12 +152,6 @@ export function TabBar() {
                   aria-posinset={index + 1}
                   tabIndex={rovingTabIndex(isActive)}
                   onClick={() => setActiveTab(tab.id)}
-                  onFocus={() => {
-                    // When the user arrows into a tab, also make it active so
-                    // the document switch follows focus (matches the WAI-ARIA
-                    // "Tabs with Automatic Activation" pattern).
-                    if (!isActive) setActiveTab(tab.id)
-                  }}
                   onMouseDown={(e) => {
                     if (e.button === 1) {
                       e.preventDefault()
@@ -250,7 +244,11 @@ function TabContextMenu({
   onCopyPath,
   onRevealInFolder,
 }: TabContextMenuProps) {
-  const ref = useRef<HTMLDivElement>(null)
+  const menuRoving = useRovingFocus({
+    orientation: 'vertical',
+    autoFocusFirst: true,
+  })
+  const ref = menuRoving.containerRef
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -258,50 +256,19 @@ function TabContextMenu({
       if (!(target instanceof Node)) return
       if (ref.current && !ref.current.contains(target)) onClose()
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [onClose])
-
-  // Roving focus inside the menu — ArrowDown/Up to navigate, Esc to dismiss.
-  // Focus the first enabled item when the menu opens.
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return undefined
-    const items = () =>
-      Array.from(el.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not([disabled])'))
-    const all = items()
-    all[0]?.focus()
-
-    const handleKey = (e: KeyboardEvent) => {
+    const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
-        return
       }
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End')
-        return
-      const enabled = items()
-      if (enabled.length === 0) return
-      const currentIndex = enabled.findIndex((b) => b === document.activeElement)
-      let next = currentIndex
-      if (e.key === 'ArrowDown') next = currentIndex < 0 ? 0 : (currentIndex + 1) % enabled.length
-      if (e.key === 'ArrowUp')
-        next =
-          currentIndex < 0
-            ? enabled.length - 1
-            : (currentIndex - 1 + enabled.length) % enabled.length
-      if (e.key === 'Home') next = 0
-      if (e.key === 'End') next = enabled.length - 1
-      e.preventDefault()
-      enabled[next]?.focus()
     }
-    document.addEventListener('keydown', handleKey)
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
     return () => {
-      document.removeEventListener('keydown', handleKey)
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
     }
-  }, [onClose])
+  }, [onClose, ref])
 
   // Keep menu within viewport
   useEffect(() => {
@@ -314,7 +281,7 @@ function TabContextMenu({
     if (rect.bottom > window.innerHeight - 8) ny = window.innerHeight - rect.height - 8
     el.style.left = `${nx}px`
     el.style.top = `${ny}px`
-  }, [x, y])
+  }, [x, y, ref])
 
   const hasOthers = tabCount > 1
   const hasRight = tabIndex < tabCount - 1
@@ -351,9 +318,11 @@ function TabContextMenu({
   )
 
   return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the focused menuitem inside, not the menu itself
     <div
       ref={ref}
       role="menu"
+      onKeyDown={menuRoving.onKeyDown}
       className="tab-context-menu fixed z-50 min-w-[200px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
       style={{ left: x, top: y }}
     >

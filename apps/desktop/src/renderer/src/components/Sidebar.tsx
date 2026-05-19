@@ -84,11 +84,11 @@ export function Sidebar() {
             transform: `translateY(${indicatorY(modeIndex)}px)`,
           }}
         />
+        {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself */}
         <div
           ref={railRoving.containerRef}
           role="radiogroup"
           aria-label="Sidebar mode"
-          tabIndex={-1}
           className="flex flex-col gap-0.5"
           onKeyDown={railRoving.onKeyDown}
         >

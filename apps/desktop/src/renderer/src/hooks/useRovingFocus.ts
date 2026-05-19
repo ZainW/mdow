@@ -1,58 +1,51 @@
 import { useCallback, useEffect, useRef } from 'react'
 
+export const ROVING_ITEM_SELECTOR = '[role="radio"], [role="tab"], [role="menuitem"]'
+
 interface UseRovingFocusOptions {
   // Axis the container lays its options out on. 'horizontal' wires
   // ArrowLeft/Right; 'vertical' wires ArrowUp/Down; 'both' wires all four.
   orientation?: 'horizontal' | 'vertical' | 'both'
-  // CSS selector for the focusable option elements inside the container.
-  // Defaults to elements with a role attribute matching radio/tab/menuitem.
-  itemSelector?: string
-  // When the orientation wraps (typical for radiogroup/menu), Arrow at the
-  // boundary cycles to the other end.
-  loop?: boolean
+  // Focus the first non-disabled option as soon as the container mounts.
+  // Useful for popovers/menus that should swallow keyboard focus on open.
+  autoFocusFirst?: boolean
 }
 
 // ARIA roving-tabindex implementation for radiogroups, tablists, and menus.
-//
-// Returns:
-// - containerRef → attach to the wrapping role=radiogroup / tablist / menu
-// - onKeyDown    → spread onto the container, handles Arrow/Home/End
-// - tabIndexFor(isActive) → returns 0 for the active option, -1 for the rest
-//   so only one option is in the tab order; arrow keys do the rest.
-//
-// The hook keeps the container's first paint's "active" option focusable via
-// Tab and rotates focus on Arrow key, so screen-reader users get the canonical
-// radiogroup keyboard contract.
+// Returns { containerRef, onKeyDown } — spread the ref + handler on the
+// container, mark the active option with tabIndex={0} and the rest with -1
+// (helper `rovingTabIndex(active)` does this), and arrow keys do the rest.
 export function useRovingFocus<T extends HTMLElement = HTMLDivElement>({
   orientation = 'both',
-  itemSelector = '[role="radio"], [role="tab"], [role="menuitem"]',
-  loop = true,
+  autoFocusFirst = false,
 }: UseRovingFocusOptions = {}) {
   const containerRef = useRef<T | null>(null)
 
+  const items = useCallback((includeDisabled: boolean): HTMLElement[] => {
+    const container = containerRef.current
+    if (!container) return []
+    const all = Array.from(container.querySelectorAll<HTMLElement>(ROVING_ITEM_SELECTOR))
+    return includeDisabled
+      ? all
+      : all.filter(
+          (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-disabled') !== 'true',
+        )
+  }, [])
+
   const focusItem = useCallback(
     (delta: number, currentEl: Element | null) => {
-      const container = containerRef.current
-      if (!container) return
-      const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector)).filter(
-        (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-disabled') !== 'true',
-      )
-      if (items.length === 0) return
-      const idx = currentEl instanceof HTMLElement ? items.indexOf(currentEl) : -1
-      let next: number
-      if (idx < 0) {
-        next = delta > 0 ? 0 : items.length - 1
-      } else {
-        next = idx + delta
-        if (loop) {
-          next = (next + items.length) % items.length
-        } else {
-          next = Math.max(0, Math.min(items.length - 1, next))
-        }
-      }
-      items[next]?.focus()
+      const enabled = items(false)
+      if (enabled.length === 0) return
+      const idx = currentEl instanceof HTMLElement ? enabled.indexOf(currentEl) : -1
+      const next =
+        idx < 0
+          ? delta > 0
+            ? 0
+            : enabled.length - 1
+          : (idx + delta + enabled.length) % enabled.length
+      enabled[next]?.focus()
     },
-    [itemSelector, loop],
+    [items],
   )
 
   const onKeyDown = useCallback(
@@ -60,8 +53,7 @@ export function useRovingFocus<T extends HTMLElement = HTMLDivElement>({
       const horizontal = orientation === 'horizontal' || orientation === 'both'
       const vertical = orientation === 'vertical' || orientation === 'both'
       const active = e.target instanceof HTMLElement ? e.target : null
-      const isItem = active?.matches(itemSelector)
-      if (!isItem) return
+      if (!active?.matches(ROVING_ITEM_SELECTOR)) return
 
       switch (e.key) {
         case 'ArrowRight':
@@ -84,47 +76,24 @@ export function useRovingFocus<T extends HTMLElement = HTMLDivElement>({
           e.preventDefault()
           focusItem(-1, active)
           return
-        case 'Home': {
+        case 'Home':
           e.preventDefault()
-          const container = containerRef.current
-          if (!container) return
-          const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector))
-          items[0]?.focus()
+          items(false)[0]?.focus()
           return
-        }
         case 'End': {
           e.preventDefault()
-          const container = containerRef.current
-          if (!container) return
-          const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector))
-          items[items.length - 1]?.focus()
+          const enabled = items(false)
+          enabled[enabled.length - 1]?.focus()
           return
         }
-        default:
-          return
       }
     },
-    [orientation, itemSelector, focusItem],
+    [orientation, focusItem, items],
   )
 
-  // Whenever the container mounts, make sure the initially-active item (the
-  // one with tabindex=0) is the only one in the tab order — defensively, in
-  // case the consumer forgot to apply tabIndexFor everywhere.
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector))
-    let hasZero = false
-    for (const item of items) {
-      if (item.getAttribute('tabindex') === '0') {
-        hasZero = true
-        break
-      }
-    }
-    if (!hasZero && items[0]) {
-      items[0].setAttribute('tabindex', '0')
-    }
-  }, [itemSelector])
+    if (autoFocusFirst) items(false)[0]?.focus()
+  }, [autoFocusFirst, items])
 
   return { containerRef, onKeyDown }
 }

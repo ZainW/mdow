@@ -35,10 +35,7 @@ export function DocumentBreadcrumb({ tab }: Props) {
               >
                 {seg.name}
               </button>
-              {/* Chevron after every parent segment — including the last one,
-                  to separate the chain from the filename which lives outside
-                  this <ol>. The filename itself is the visual terminus, so no
-                  chevron after it. */}
+              {/* Filename lives outside this <ol>; the trailing chevron after the last segment is the separator before it. */}
               <CaretRight className="size-2.5 shrink-0 text-muted-foreground/40" aria-hidden />
             </li>
           ))}

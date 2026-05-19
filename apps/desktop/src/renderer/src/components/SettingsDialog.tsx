@@ -171,11 +171,11 @@ function ThemeRadiogroup({
 }) {
   const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
   return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
     <div
       ref={containerRef}
       role="radiogroup"
       aria-label="Theme"
-      tabIndex={-1}
       onKeyDown={onKeyDown}
       className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
     >
@@ -231,11 +231,11 @@ function FontGrid({
 }) {
   const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
   return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
     <div
       ref={containerRef}
       role="radiogroup"
       aria-label={groupLabel}
-      tabIndex={-1}
       onKeyDown={onKeyDown}
       className={cn('m-0 grid min-w-0 gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
     >

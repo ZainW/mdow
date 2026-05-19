@@ -1,31 +1,19 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { DocumentBreadcrumb } from './DocumentBreadcrumb'
 import { useAppStore, type Tab } from '../store/app-store'
+import { stubWindowApi } from '../test/stubWindowApi'
 
 const showInFolder = vi.fn()
-let originalApi: unknown
+
+stubWindowApi(() => ({ showInFolder }))
 
 beforeEach(() => {
   showInFolder.mockClear()
-  originalApi = globalThis.window.api
-  // @ts-expect-error — minimal window.api stub for the test
-  globalThis.window.api = {
-    showInFolder,
-  }
   useAppStore.setState({
     wideMode: false,
     openFolderPath: null,
   })
-})
-
-afterEach(() => {
-  if (originalApi === undefined) {
-    // @ts-expect-error — minimal stub teardown
-    delete globalThis.window.api
-  } else {
-    globalThis.window.api = originalApi as typeof globalThis.window.api
-  }
 })
 
 const tab: Tab = {
@@ -56,14 +44,9 @@ describe('DocumentBreadcrumb', () => {
   })
 
   it('renders one chevron per parent segment (no trailing chevron after the filename)', () => {
-    // /Users/zain/projects/mdow/notes/readme.md with no openFolderPath shows
-    // the last 3 parent dirs: projects/mdow/notes → 3 chevrons in the <ol>.
     const { container } = render(<DocumentBreadcrumb tab={tab} />)
     const ol = container.querySelector('ol')!
-    const chevrons = ol.querySelectorAll('svg')
-    expect(chevrons.length).toBe(3)
-    // The filename lives outside the <ol>, and nothing comes between the
-    // <ol> and the filename — the filename is the immediate next sibling.
+    expect(ol.querySelectorAll('svg').length).toBe(3)
     const filenameBtn = screen.getByText('readme.md').closest('button')!
     expect(ol.nextElementSibling).toBe(filenameBtn)
   })

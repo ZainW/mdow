@@ -421,10 +421,7 @@ await app.close()
 await rm(userDataDir, { recursive: true, force: true })
 
 // ─── Assertion gate ─────────────────────────────────────────────────────
-// Verify the audit fixes are still in place. Each entry is a label + a
-// predicate over the captured probes. Anything that fails turns the script
-// red so the harness becomes a real regression gate, not just a screenshot
-// dumper.
+// Each entry is a label + a predicate over `probes`; any failure exits non-zero.
 const checks = [
   ['tabBar role=tablist + tab', () => probes.tablistSemantics?.hasTablist === true],
   ['tabBar aria-setsize on all tabs', () => probes.tabBar?.setsize?.every?.((v) => v !== null)],

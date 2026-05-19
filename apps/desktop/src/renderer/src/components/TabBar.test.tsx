@@ -82,13 +82,25 @@ describe('TabBar', () => {
     expect(tabs[2].getAttribute('tabindex')).toBe('-1')
   })
 
-  it('ArrowRight moves focus to the next tab and activates it', () => {
+  it('ArrowRight moves focus to the next tab without activating it', () => {
+    // WAI-ARIA "Tabs with Manual Activation" pattern: arrow keys only move
+    // focus; the user has to press Enter/Space (or click) to switch the
+    // document. Auto-activation would re-parse the markdown on every arrow
+    // press, which is expensive for large documents.
     seedTabs(['/a/one.md', '/a/two.md', '/a/three.md'])
     render(<TabBar />)
     const tabs = screen.getAllByRole('tab')
     tabs[0].focus()
     fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
     expect(document.activeElement).toBe(tabs[1])
+    expect(useAppStore.getState().activeTabId).toBe('tab-0')
+  })
+
+  it('clicking a focused tab activates it', () => {
+    seedTabs(['/a/one.md', '/a/two.md'])
+    render(<TabBar />)
+    const tabs = screen.getAllByRole('tab')
+    fireEvent.click(tabs[1])
     expect(useAppStore.getState().activeTabId).toBe('tab-1')
   })
 
@@ -98,13 +110,10 @@ describe('TabBar', () => {
     const tab = screen.getAllByRole('button', { name: /one\.md/ })[0]
     fireEvent.contextMenu(tab.parentElement!.parentElement!, { clientX: 50, clientY: 20 })
     const items = screen.getAllByRole('menuitem')
-    // First item should be focused on open
     expect(document.activeElement).toBe(items[0])
-    fireEvent.keyDown(document, { key: 'ArrowDown' })
-    // Close Others is disabled when only 2 tabs and right-clicked the first?
-    // tabCount=2 so hasOthers=true → enabled
+    fireEvent.keyDown(items[0], { key: 'ArrowDown' })
     expect(document.activeElement).toBe(items[1])
-    fireEvent.keyDown(document, { key: 'ArrowUp' })
+    fireEvent.keyDown(items[1], { key: 'ArrowUp' })
     expect(document.activeElement).toBe(items[0])
   })
 })
