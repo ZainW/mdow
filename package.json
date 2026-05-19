@@ -14,13 +14,5 @@
   "devDependencies": {
     "turbo": "^2.9.14"
   },
-  "packageManager": "pnpm@10.8.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@swc/core",
-      "electron",
-      "electron-winstaller",
-      "esbuild"
-    ]
-  }
+  "packageManager": "pnpm@11.1.3"
 }
