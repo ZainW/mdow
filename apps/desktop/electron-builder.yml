@@ -9,7 +9,7 @@ publish:
 
 mac:
   category: public.app-category.developer-tools
-  identity: null
+  identity: '-'
   target:
     - target: dmg
     - target: zip
