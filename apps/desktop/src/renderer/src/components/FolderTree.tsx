@@ -4,7 +4,7 @@ import type { FileTreeOptions } from '@pierre/trees'
 import { FileTree as FileTreeView } from '@pierre/trees/react'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
-import { basename } from '../lib/path-utils'
+import { basename, detectSep } from '../lib/path-utils'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
 import { Separator } from './ui/separator'
 
@@ -56,7 +56,7 @@ function ancestorRelPaths(rel: string): string[] {
 }
 
 function relToAbsolute(rel: string, openFolderPath: string): string {
-  const sep = openFolderPath.includes('\\') ? '\\' : '/'
+  const sep = detectSep(openFolderPath)
   const nativeRel = sep === '\\' ? rel.replace(/\//g, '\\') : rel
   return openFolderPath.replace(/[/\\]$/, '') + sep + nativeRel
 }

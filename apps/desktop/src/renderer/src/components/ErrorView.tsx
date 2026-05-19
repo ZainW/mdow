@@ -1,5 +1,6 @@
 import { useAppStore, type FileError } from '../store/app-store'
 import { Button } from './ui/button'
+import { truncatePathMiddle } from '../lib/path-utils'
 import { FileX, Trash, ShieldWarning, WarningCircle, FolderOpen } from '@phosphor-icons/react'
 
 const errorMessages: Record<
@@ -39,7 +40,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
   const updateTabContent = useAppStore((s) => s.updateTabContent)
   const msg = errorMessages[error.type]
   const Icon = msg.icon
-  const filename = error.path.split(/[/\\]/).pop() || 'Unknown file'
+  const displayPath = truncatePathMiddle(error.path, 48)
 
   const handleRetry = async () => {
     try {
@@ -65,7 +66,12 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
           <h2 className="text-base font-medium">{msg.title}</h2>
           <p className="text-sm leading-relaxed text-muted-foreground">{msg.body}</p>
         </div>
-        <p className="max-w-full truncate font-mono text-xs text-muted-foreground/60">{filename}</p>
+        <p
+          className="max-w-full truncate font-mono text-xs text-muted-foreground/60"
+          title={error.path}
+        >
+          {displayPath}
+        </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => void handleRetry()}>
             Try again

@@ -75,12 +75,14 @@ export function WelcomeView() {
       <div
         className={cn(
           'grid w-full max-w-3xl gap-10 px-10',
-          recents.length > 0 ? 'grid-cols-[21fr_19fr]' : 'grid-cols-1 place-items-center',
+          recents.length > 0 ? 'grid-cols-[21fr_19fr]' : 'grid-cols-1 justify-items-center',
         )}
       >
-        <div className="flex flex-col gap-3">
+        <div
+          className={cn('flex flex-col gap-3', recents.length === 0 && 'items-center text-center')}
+        >
           <h2 className="text-2xl font-semibold tracking-tight text-foreground">Mdow</h2>
-          <p className="max-w-[40ch] text-pretty text-sm text-muted-foreground">
+          <p className="max-w-[40ch] text-pretty text-[15px] text-muted-foreground">
             A quiet markdown viewer. Drop a file anywhere, or open one below.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -101,7 +103,9 @@ export function WelcomeView() {
                 : 'border-border-subtle text-muted-foreground',
             )}
           >
-            Drop a <span className="font-mono">.md</span> file anywhere on this window.
+            <strong className="font-medium text-foreground/80">Anywhere in this window</strong>
+            {' — drop a '}
+            <span className="font-mono">.md</span> file.
           </div>
         </div>
         {recents.length > 0 && (

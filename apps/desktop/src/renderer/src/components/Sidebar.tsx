@@ -21,6 +21,8 @@ import {
   MagnifyingGlass,
 } from '@phosphor-icons/react'
 import type { DocHeading } from '../lib/markdown'
+import { EmptyState } from './EmptyState'
+import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
 type RailMode = 'recents' | 'folder' | 'outline'
 
@@ -47,6 +49,7 @@ export function Sidebar() {
   const docHeadings = useAppStore((s) => s.docHeadings)
   const activeHeadingId = useAppStore((s) => s.activeHeadingId)
   const hasOpenTab = useAppStore((s) => s.tabs.length > 0)
+  const openFolderPath = useAppStore((s) => s.openFolderPath)
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<RailMode>('recents')
 
@@ -67,6 +70,7 @@ export function Sidebar() {
 
   const drawerTitle = mode === 'recents' ? 'Recents' : mode === 'folder' ? 'Folder' : 'Outline'
   const modeIndex = MODES.indexOf(mode)
+  const railRoving = useRovingFocus({ orientation: 'vertical' })
 
   return (
     <div className="flex h-full shrink-0 border-r border-border-subtle">
@@ -80,28 +84,51 @@ export function Sidebar() {
             transform: `translateY(${indicatorY(modeIndex)}px)`,
           }}
         />
-        <RailIcon active={mode === 'recents'} onClick={() => setMode('recents')} label="Recents">
-          <Clock />
-        </RailIcon>
-        <RailIcon active={mode === 'folder'} onClick={() => setMode('folder')} label="Folder">
-          <Folder />
-        </RailIcon>
-        <RailIcon active={mode === 'outline'} onClick={() => setMode('outline')} label="Outline">
-          <ListBullets />
-        </RailIcon>
-        <RailIcon active={false} onClick={() => setCommandPaletteOpen(true)} label="Quick Open">
+        {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself */}
+        <div
+          ref={railRoving.containerRef}
+          role="radiogroup"
+          aria-label="Sidebar mode"
+          className="flex flex-col gap-0.5"
+          onKeyDown={railRoving.onKeyDown}
+        >
+          <RailModeIcon
+            checked={mode === 'recents'}
+            onSelect={() => setMode('recents')}
+            label="Recents"
+          >
+            <Clock />
+          </RailModeIcon>
+          <RailModeIcon
+            checked={mode === 'folder'}
+            onSelect={() => setMode('folder')}
+            label="Folder"
+          >
+            <Folder />
+          </RailModeIcon>
+          <RailModeIcon
+            checked={mode === 'outline'}
+            onSelect={() => setMode('outline')}
+            label="Outline"
+          >
+            <ListBullets />
+          </RailModeIcon>
+        </div>
+        <RailButton onClick={() => setCommandPaletteOpen(true)} label="Quick Open">
           <MagnifyingGlass />
-        </RailIcon>
+        </RailButton>
         <div className="flex-1" />
-        <RailIcon active={false} onClick={() => void handleOpenFile()} label="Open File">
-          <File />
-        </RailIcon>
-        <RailIcon active={false} onClick={() => void handleOpenFolder()} label="Open Folder">
-          <FolderOpen />
-        </RailIcon>
-        <RailIcon active={false} onClick={() => setSettingsOpen(true)} label="Settings">
-          <GearSix />
-        </RailIcon>
+        <div aria-label="Workspace actions" className="contents">
+          <RailButton onClick={() => void handleOpenFile()} label="Open File">
+            <File />
+          </RailButton>
+          <RailButton onClick={() => void handleOpenFolder()} label="Open Folder">
+            <FolderOpen />
+          </RailButton>
+          <RailButton onClick={() => setSettingsOpen(true)} label="Settings">
+            <GearSix />
+          </RailButton>
+        </div>
       </div>
 
       <div
@@ -124,7 +151,15 @@ export function Sidebar() {
           </SidebarHeader>
           <SidebarContent key={mode} className="drawer-mode">
             {mode === 'recents' && <RecentsList />}
-            {mode === 'folder' && <FolderTree />}
+            {mode === 'folder' && openFolderPath && <FolderTree />}
+            {mode === 'folder' && !openFolderPath && (
+              <EmptyState
+                size="sm"
+                icon={FolderOpen}
+                title="No folder open"
+                hint="Click the Open Folder icon below, or drag a folder onto this window."
+              />
+            )}
             {mode === 'outline' && (
               <OutlineList
                 headings={docHeadings}
@@ -139,13 +174,46 @@ export function Sidebar() {
   )
 }
 
-function RailIcon({
-  active,
+function railClasses(active: boolean): string {
+  return `rail-icon-btn h-7 w-7 hover:bg-transparent ${
+    active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+  }`
+}
+
+function RailModeIcon({
+  checked,
+  onSelect,
+  label,
+  children,
+}: {
+  checked: boolean
+  onSelect: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- the rail is a custom 36px-wide column of icon toggles; native radio inputs would break the layout
+      role="radio"
+      tabIndex={rovingTabIndex(checked)}
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      className={railClasses(checked)}
+      onClick={onSelect}
+    >
+      <span className="[&>svg]:size-4">{children}</span>
+    </Button>
+  )
+}
+
+function RailButton({
   onClick,
   label,
   children,
 }: {
-  active: boolean
   onClick: () => void
   label: string
   children: React.ReactNode
@@ -156,8 +224,7 @@ function RailIcon({
       size="icon"
       aria-label={label}
       title={label}
-      aria-pressed={active}
-      className={`rail-icon-btn h-7 w-7 hover:bg-transparent ${active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+      className={railClasses(false)}
       onClick={onClick}
     >
       <span className="[&>svg]:size-4">{children}</span>

@@ -84,7 +84,7 @@ export function CommandPalette() {
                     <FileText />
                     <span className="min-w-0 truncate">{file.name}</span>
                     {dir && (
-                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
                         {dir}
                       </span>
                     )}
@@ -93,6 +93,14 @@ export function CommandPalette() {
               })}
             </CommandGroup>
           </CommandList>
+          <div className="flex items-center justify-end gap-3 border-t border-border-subtle bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground/80">
+            <span className="flex items-center gap-1">
+              <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px]">↵</kbd> open
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px]">esc</kbd> dismiss
+            </span>
+          </div>
         </Command>
       </DialogContent>
     </Dialog>

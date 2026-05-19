@@ -3,17 +3,40 @@ import { isMac } from '@renderer/lib/utils'
 
 const mod = isMac ? '⌘' : 'Ctrl'
 
-const shortcuts = [
-  { label: 'Open file', keys: `${mod} O` },
-  { label: 'Open folder', keys: `${mod} ⇧ O` },
-  { label: 'Command palette', keys: `${mod} K` },
-  { label: 'Find in document', keys: `${mod} F` },
-  { label: 'Toggle sidebar', keys: `${mod} B` },
-  { label: 'Zoom in', keys: `${mod} +` },
-  { label: 'Zoom out', keys: `${mod} -` },
-  { label: 'Reset zoom', keys: `${mod} 0` },
-  { label: 'Toggle full screen', keys: isMac ? '⌃ ⌘ F' : 'F11' },
-  { label: 'Settings', keys: `${mod} ,` },
+interface ShortcutGroup {
+  heading: string
+  items: { label: string; keys: string }[]
+}
+
+const groups: ShortcutGroup[] = [
+  {
+    heading: 'Files',
+    items: [
+      { label: 'Open file', keys: `${mod} O` },
+      { label: 'Open folder', keys: `${mod} ⇧ O` },
+    ],
+  },
+  {
+    heading: 'Navigation',
+    items: [
+      { label: 'Command palette', keys: `${mod} K` },
+      { label: 'Find in document', keys: `${mod} F` },
+    ],
+  },
+  {
+    heading: 'View',
+    items: [
+      { label: 'Toggle sidebar', keys: `${mod} B` },
+      { label: 'Zoom in', keys: `${mod} +` },
+      { label: 'Zoom out', keys: `${mod} -` },
+      { label: 'Reset zoom', keys: `${mod} 0` },
+      { label: 'Toggle full screen', keys: isMac ? '⌃ ⌘ F' : 'F11' },
+    ],
+  },
+  {
+    heading: 'App',
+    items: [{ label: 'Settings', keys: `${mod} ,` }],
+  },
 ]
 
 interface ShortcutsDialogProps {
@@ -28,14 +51,26 @@ export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
         </DialogHeader>
-        <div className="-mx-4 divide-y divide-border">
-          {shortcuts.map((s) => (
-            <div key={s.label} className="flex items-center justify-between px-4 py-2">
-              <span className="text-sm text-muted-foreground">{s.label}</span>
-              <kbd className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
-                {s.keys}
-              </kbd>
-            </div>
+        <div className="-mx-4 flex flex-col">
+          {groups.map((group, gi) => (
+            <section
+              key={group.heading}
+              className={gi > 0 ? 'mt-1.5 border-t border-border-subtle pt-1.5' : undefined}
+            >
+              <h3 className="px-4 pt-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                {group.heading}
+              </h3>
+              <ul className="flex flex-col">
+                {group.items.map((s) => (
+                  <li key={s.label} className="flex items-center justify-between px-4 py-1.5">
+                    <span className="text-sm text-muted-foreground">{s.label}</span>
+                    <kbd className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                      {s.keys}
+                    </kbd>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
         </div>
       </DialogContent>

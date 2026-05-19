@@ -106,9 +106,21 @@ function MermaidBlock({ content: _content, children: _children, ...props }: Merm
   return <div {...props} />
 }
 
+function TableWrap(props: HTMLAttributes<HTMLTableElement>) {
+  // Wrap tables in a horizontal-scroll container so wide tables don't blow
+  // out the markdown body. The wrapper carries the border + radius so the
+  // table can scroll cleanly inside.
+  return (
+    <div className="table-wrap">
+      <table {...props} />
+    </div>
+  )
+}
+
 const markdownComponents = {
   pre: CodeBlock,
   mermaid: MermaidBlock,
+  table: TableWrap,
 }
 
 const MarkdownContent = memo(function MarkdownContent({ result }: { result: RenderResult }) {
@@ -291,7 +303,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
         style={
           {
-            maxWidth: wideMode ? '100%' : '52rem',
+            maxWidth: wideMode ? '100%' : '48rem',
             '--md-content-font': getContentFontFamily(contentFont),
             '--md-code-font': getCodeFontFamily(codeFont),
             '--md-font-size': `${fontSize * (zoomLevel / 100)}px`,

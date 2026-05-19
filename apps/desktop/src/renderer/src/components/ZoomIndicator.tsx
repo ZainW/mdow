@@ -83,16 +83,19 @@ export function ZoomIndicator() {
       >
         <Plus size={14} weight="bold" aria-hidden />
       </button>
-      {zoomLevel !== 100 && (
-        <button
-          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
-          onClick={resetZoom}
-          aria-label="Reset zoom"
-          title="Reset zoom"
-        >
-          <ArrowCounterClockwise size={14} weight="bold" aria-hidden />
-        </button>
-      )}
+      {/* Always render the reset button so the card width doesn't jump
+          between 2- and 3-button layouts. The native `disabled` attribute
+          gives us pointer-events:none, removes it from the tab order, and
+          marks it for screen readers — no manual style toggles needed. */}
+      <button
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-[opacity,background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.97] disabled:opacity-0"
+        onClick={resetZoom}
+        aria-label="Reset zoom"
+        title="Reset zoom"
+        disabled={zoomLevel === 100}
+      >
+        <ArrowCounterClockwise size={14} weight="bold" aria-hidden />
+      </button>
     </div>
   )
 }
