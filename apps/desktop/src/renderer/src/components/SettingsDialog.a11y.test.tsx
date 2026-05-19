@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { render, screen, fireEvent, within } from '@testing-library/react'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { SettingsDialog } from './SettingsDialog'
 import { useAppStore } from '../store/app-store'
 
@@ -8,8 +8,11 @@ function renderOpen() {
 }
 
 describe('SettingsDialog accessibility', () => {
+  // Track and restore window.api so tests stay isolated from each other.
+  let originalApi: unknown
+
   beforeEach(() => {
-    // Stub the IPC bridge — actions call window.api.setTheme et al.
+    originalApi = globalThis.window.api
     // @ts-expect-error — minimal stub for unit tests
     globalThis.window.api = {
       setTheme: vi.fn(),
@@ -21,6 +24,15 @@ describe('SettingsDialog accessibility', () => {
       contentFont: 'inter',
       codeFont: 'geist-mono',
     })
+  })
+
+  afterEach(() => {
+    if (originalApi === undefined) {
+      // @ts-expect-error — minimal stub teardown
+      delete globalThis.window.api
+    } else {
+      globalThis.window.api = originalApi as typeof globalThis.window.api
+    }
   })
 
   it('exposes a Theme radiogroup with three options', () => {
@@ -51,5 +63,25 @@ describe('SettingsDialog accessibility', () => {
     renderOpen()
     expect(screen.getByRole('radiogroup', { name: 'Content font' })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: 'Code font' })).toBeInTheDocument()
+  })
+
+  it('ArrowRight rotates focus within the Theme radiogroup', () => {
+    renderOpen()
+    const themeGroup = screen.getByRole('radiogroup', { name: 'Theme' })
+    const system = within(themeGroup).getByRole('radio', { name: /System/ })
+    const light = within(themeGroup).getByRole('radio', { name: /Light/ })
+    system.focus()
+    fireEvent.keyDown(system, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(light)
+  })
+
+  it('only the active theme option has tabIndex=0', () => {
+    renderOpen()
+    const group = screen.getByRole('radiogroup', { name: 'Theme' })
+    const radios = Array.from(group.querySelectorAll('[role="radio"]'))
+    // theme=system in beforeEach → System has tabIndex=0
+    expect(radios[0].getAttribute('tabindex')).toBe('0')
+    expect(radios[1].getAttribute('tabindex')).toBe('-1')
+    expect(radios[2].getAttribute('tabindex')).toBe('-1')
   })
 })

@@ -22,6 +22,7 @@ import {
 } from '@phosphor-icons/react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
+import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
 type RailMode = 'recents' | 'folder' | 'outline'
 
@@ -69,6 +70,7 @@ export function Sidebar() {
 
   const drawerTitle = mode === 'recents' ? 'Recents' : mode === 'folder' ? 'Folder' : 'Outline'
   const modeIndex = MODES.indexOf(mode)
+  const railRoving = useRovingFocus({ orientation: 'vertical' })
 
   return (
     <div className="flex h-full shrink-0 border-r border-border-subtle">
@@ -82,7 +84,14 @@ export function Sidebar() {
             transform: `translateY(${indicatorY(modeIndex)}px)`,
           }}
         />
-        <div role="radiogroup" aria-label="Sidebar mode" className="contents">
+        <div
+          ref={railRoving.containerRef}
+          role="radiogroup"
+          aria-label="Sidebar mode"
+          tabIndex={-1}
+          className="flex flex-col gap-0.5"
+          onKeyDown={railRoving.onKeyDown}
+        >
           <RailModeIcon
             checked={mode === 'recents'}
             onSelect={() => setMode('recents')}
@@ -188,7 +197,7 @@ function RailModeIcon({
       size="icon"
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- the rail is a custom 36px-wide column of icon toggles; native radio inputs would break the layout
       role="radio"
-      tabIndex={0}
+      tabIndex={rovingTabIndex(checked)}
       aria-checked={checked}
       aria-label={label}
       title={label}

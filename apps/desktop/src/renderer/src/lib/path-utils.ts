@@ -2,6 +2,13 @@ export function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path
 }
 
+// Pick the path separator. A path that only contains backslashes is Windows;
+// anything else (or a mixed/empty path) is treated as POSIX. Centralized so
+// utilities and components agree on the rule.
+export function detectSep(path: string): '/' | '\\' {
+  return path.includes('\\') && !path.includes('/') ? '\\' : '/'
+}
+
 export function isMarkdownPath(path: string): boolean {
   const lower = path.toLowerCase()
   return lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.mdx')
@@ -25,7 +32,7 @@ export function parentDir(path: string, segments = 2): string {
 // folder + filename. Used in the error view's path label.
 export function truncatePathMiddle(path: string, maxLen = 56): string {
   if (path.length <= maxLen) return path
-  const sep = path.includes('\\') ? '\\' : '/'
+  const sep = detectSep(path)
   const parts = path.split(/[/\\]/).filter(Boolean)
   const last = parts[parts.length - 1] ?? ''
   const head = `…${sep}`

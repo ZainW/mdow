@@ -1,12 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { DocumentBreadcrumb } from './DocumentBreadcrumb'
 import { useAppStore, type Tab } from '../store/app-store'
 
 const showInFolder = vi.fn()
+let originalApi: unknown
 
 beforeEach(() => {
   showInFolder.mockClear()
+  originalApi = globalThis.window.api
   // @ts-expect-error — minimal window.api stub for the test
   globalThis.window.api = {
     showInFolder,
@@ -15,6 +17,15 @@ beforeEach(() => {
     wideMode: false,
     openFolderPath: null,
   })
+})
+
+afterEach(() => {
+  if (originalApi === undefined) {
+    // @ts-expect-error — minimal stub teardown
+    delete globalThis.window.api
+  } else {
+    globalThis.window.api = originalApi as typeof globalThis.window.api
+  }
 })
 
 const tab: Tab = {
@@ -44,15 +55,28 @@ describe('DocumentBreadcrumb', () => {
     expect(showInFolder).toHaveBeenLastCalledWith(tab.path)
   })
 
-  it('does not render a trailing chevron after the filename', () => {
+  it('renders one chevron per parent segment (no trailing chevron after the filename)', () => {
+    // /Users/zain/projects/mdow/notes/readme.md with no openFolderPath shows
+    // the last 3 parent dirs: projects/mdow/notes → 3 chevrons in the <ol>.
     const { container } = render(<DocumentBreadcrumb tab={tab} />)
-    // The chevrons live as <svg> inside the <ol>; the filename lives outside <ol>.
     const ol = container.querySelector('ol')!
     const chevrons = ol.querySelectorAll('svg')
-    // We expect (n - 1) chevrons between segments + 1 chevron before the filename.
-    // Concretely with 3 segments: 2 between + 1 before filename = 3.
-    expect(chevrons.length).toBeGreaterThan(0)
-    // The filename is rendered outside the ol, so the last element of ol must be an svg, not a span with file text.
-    expect(ol.lastElementChild?.tagName.toLowerCase()).toBe('svg')
+    expect(chevrons.length).toBe(3)
+    // The filename lives outside the <ol>, and nothing comes between the
+    // <ol> and the filename — the filename is the immediate next sibling.
+    const filenameBtn = screen.getByText('readme.md').closest('button')!
+    expect(ol.nextElementSibling).toBe(filenameBtn)
+  })
+
+  it('renders zero chevrons when the file has no parent segments to show', () => {
+    const rootTab: Tab = {
+      id: 'tab-root',
+      path: '/readme.md',
+      content: '',
+      scrollPosition: 0,
+    }
+    const { container } = render(<DocumentBreadcrumb tab={rootTab} />)
+    const ol = container.querySelector('ol')!
+    expect(ol.querySelectorAll('svg').length).toBe(0)
   })
 })

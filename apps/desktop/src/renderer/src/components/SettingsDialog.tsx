@@ -10,6 +10,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Slider } from './ui/slider'
 import { cn, isMac } from '@renderer/lib/utils'
+import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
 const THEME_OPTIONS = [
   { value: 'system', label: 'System', Icon: Desktop },
@@ -78,36 +79,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <Field label="Theme">
-          <div
-            role="radiogroup"
-            aria-label="Theme"
-            className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
-          >
-            {THEME_OPTIONS.map((opt) => {
-              const active = theme === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled segmented toggle, native radio input would break layout
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setTheme(opt.value)}
-                  className={cn(
-                    'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium outline-none',
-                    'transition-[background-color,color,box-shadow,transform] duration-150',
-                    'active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/50',
-                    active
-                      ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/10 dark:ring-foreground/15'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <opt.Icon weight={active ? 'fill' : 'regular'} className="size-3.5" />
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
+          <ThemeRadiogroup theme={theme} onChange={setTheme} />
         </Field>
 
         <Field label="Content font">
@@ -190,6 +162,52 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   )
 }
 
+function ThemeRadiogroup({
+  theme,
+  onChange,
+}: {
+  theme: string
+  onChange: (value: 'system' | 'light' | 'dark') => void
+}) {
+  const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
+  return (
+    <div
+      ref={containerRef}
+      role="radiogroup"
+      aria-label="Theme"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
+    >
+      {THEME_OPTIONS.map((opt) => {
+        const active = theme === opt.value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled segmented toggle, native radio input would break layout
+            role="radio"
+            tabIndex={rovingTabIndex(active)}
+            aria-checked={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium outline-none',
+              'transition-[background-color,color,box-shadow,transform] duration-150',
+              'active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/50',
+              active
+                ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/10 dark:ring-foreground/15'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <opt.Icon weight={active ? 'fill' : 'regular'} className="size-3.5" />
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   const id = useId()
   return (
@@ -211,10 +229,14 @@ function FontGrid({
   cols: 3 | 4
   children: React.ReactNode
 }) {
+  const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
   return (
     <div
+      ref={containerRef}
       role="radiogroup"
       aria-label={groupLabel}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
       className={cn('m-0 grid min-w-0 gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
     >
       {children}
@@ -242,6 +264,7 @@ function FontTile({
       type="button"
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled font tile, native radio input would break layout
       role="radio"
+      tabIndex={rovingTabIndex(active)}
       aria-checked={active}
       onClick={onClick}
       className={cn(

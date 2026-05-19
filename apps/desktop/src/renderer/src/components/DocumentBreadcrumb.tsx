@@ -1,5 +1,5 @@
 import { useAppStore, type Tab } from '../store/app-store'
-import { basename } from '../lib/path-utils'
+import { basename, detectSep } from '../lib/path-utils'
 import { Button } from './ui/button'
 import { ArrowsHorizontal, ArrowsInLineHorizontal, CaretRight } from '@phosphor-icons/react'
 
@@ -22,7 +22,7 @@ export function DocumentBreadcrumb({ tab }: Props) {
         className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
       >
         <ol className="flex min-w-0 items-center gap-0.5">
-          {segments.map((seg, i) => (
+          {segments.map((seg) => (
             <li
               key={seg.absolutePath}
               className="flex shrink-0 items-center gap-0.5 last:min-w-0 last:shrink"
@@ -35,16 +35,13 @@ export function DocumentBreadcrumb({ tab }: Props) {
               >
                 {seg.name}
               </button>
-              {i < segments.length - 1 && (
-                <CaretRight className="size-2.5 shrink-0 text-muted-foreground/40" aria-hidden />
-              )}
+              {/* Chevron after every parent segment — including the last one,
+                  to separate the chain from the filename which lives outside
+                  this <ol>. The filename itself is the visual terminus, so no
+                  chevron after it. */}
+              <CaretRight className="size-2.5 shrink-0 text-muted-foreground/40" aria-hidden />
             </li>
           ))}
-          {/* Chevron before the filename when there's at least one parent segment.
-              The filename is the visual terminus, so no chevron after it. */}
-          {segments.length > 0 && (
-            <CaretRight className="size-2.5 shrink-0 text-muted-foreground/40" aria-hidden />
-          )}
         </ol>
         <button
           type="button"
@@ -78,7 +75,7 @@ interface Segment {
 // Build a list of parent segments paired with their absolute path so each
 // is independently revealable in the system file browser.
 function parentSegmentsWithPaths(filePath: string, rootPath: string | null): Segment[] {
-  const sep = filePath.includes('\\') && !filePath.includes('/') ? '\\' : '/'
+  const sep = detectSep(filePath)
   const parts = filePath.split(/[/\\]/).filter(Boolean)
   // Drop the filename
   const dirs = parts.slice(0, -1)

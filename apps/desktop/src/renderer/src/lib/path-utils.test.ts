@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { basename, isMarkdownPath, shortenPath, truncatePathMiddle } from './path-utils'
+import { basename, detectSep, isMarkdownPath, shortenPath, truncatePathMiddle } from './path-utils'
 
 describe('basename', () => {
   it('extracts filename from unix path', () => {
@@ -71,6 +71,24 @@ describe('shortenPath', () => {
     const long = 'C:\\Users\\zain\\projects\\very-long-directory-name\\docs\\readme.md'
     // split on /[\\/]/ produces multiple segments
     expect(shortenPath(long, 20)).toBe('.../docs/readme.md')
+  })
+})
+
+describe('detectSep', () => {
+  it('picks backslash only when the path contains backslashes but no forward slashes', () => {
+    expect(detectSep('C:\\Users\\zain\\readme.md')).toBe('\\')
+  })
+
+  it('falls back to forward slash for POSIX paths', () => {
+    expect(detectSep('/Users/zain/readme.md')).toBe('/')
+  })
+
+  it('uses forward slash for mixed-separator paths (defensive)', () => {
+    expect(detectSep('/Users/zain\\readme.md')).toBe('/')
+  })
+
+  it('uses forward slash for empty input', () => {
+    expect(detectSep('')).toBe('/')
   })
 })
 

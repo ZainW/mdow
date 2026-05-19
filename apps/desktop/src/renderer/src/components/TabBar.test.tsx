@@ -72,6 +72,26 @@ describe('TabBar', () => {
     expect(closeItem.querySelector('kbd')).not.toBeNull()
   })
 
+  it('marks only the active tab as tabIndex=0', () => {
+    seedTabs(['/a/one.md', '/a/two.md', '/a/three.md'])
+    // active is tab-0 from seedTabs
+    render(<TabBar />)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0].getAttribute('tabindex')).toBe('0')
+    expect(tabs[1].getAttribute('tabindex')).toBe('-1')
+    expect(tabs[2].getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('ArrowRight moves focus to the next tab and activates it', () => {
+    seedTabs(['/a/one.md', '/a/two.md', '/a/three.md'])
+    render(<TabBar />)
+    const tabs = screen.getAllByRole('tab')
+    tabs[0].focus()
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(tabs[1])
+    expect(useAppStore.getState().activeTabId).toBe('tab-1')
+  })
+
   it('navigates menu items with ArrowDown/ArrowUp', () => {
     seedTabs(['/a/one.md', '/a/two.md'])
     render(<TabBar />)

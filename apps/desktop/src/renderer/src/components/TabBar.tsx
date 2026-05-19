@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn, isMac } from '../lib/utils'
 import { FileText, X } from '@phosphor-icons/react'
+import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
 interface ContextMenuState {
   tabId: string
@@ -22,8 +23,9 @@ export function TabBar() {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const activeTabRef = useRef<HTMLDivElement>(null)
+  // ArrowLeft/Right moves focus between tabs in the tablist.
+  const tablistRoving = useRovingFocus({ orientation: 'horizontal' })
 
   // Keep the active tab visible when it changes (e.g. via Cmd+1..9, cycle, programmatic switch)
   useEffect(() => {
@@ -64,10 +66,11 @@ export function TabBar() {
   return (
     <>
       <div
-        ref={containerRef}
+        ref={tablistRoving.containerRef}
         role="tablist"
         aria-label="Open documents"
         tabIndex={-1}
+        onKeyDown={tablistRoving.onKeyDown}
         className="relative flex h-9 shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
         onDragOver={(e) => {
           // Allow drop after the last tab
@@ -147,7 +150,14 @@ export function TabBar() {
                   aria-selected={isActive}
                   aria-setsize={tabs.length}
                   aria-posinset={index + 1}
+                  tabIndex={rovingTabIndex(isActive)}
                   onClick={() => setActiveTab(tab.id)}
+                  onFocus={() => {
+                    // When the user arrows into a tab, also make it active so
+                    // the document switch follows focus (matches the WAI-ARIA
+                    // "Tabs with Automatic Activation" pattern).
+                    if (!isActive) setActiveTab(tab.id)
+                  }}
                   onMouseDown={(e) => {
                     if (e.button === 1) {
                       e.preventDefault()

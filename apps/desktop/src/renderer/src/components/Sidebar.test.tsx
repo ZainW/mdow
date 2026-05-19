@@ -70,4 +70,22 @@ describe('Sidebar', () => {
     renderSidebar()
     expect(screen.getByText('No recents yet')).toBeInTheDocument()
   })
+
+  it('ArrowDown rotates focus between sidebar mode options', () => {
+    renderSidebar()
+    const recents = screen.getByRole('radio', { name: 'Recents' })
+    const folder = screen.getByRole('radio', { name: 'Folder' })
+    recents.focus()
+    fireEvent.keyDown(recents, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(folder)
+  })
+
+  it('marks only the active sidebar mode as tabIndex=0', () => {
+    renderSidebar()
+    const radios = screen.getAllByRole('radio')
+    // Initial mode is recents → it's tabIndex=0, others are -1
+    expect(radios[0].getAttribute('tabindex')).toBe('0')
+    expect(radios[1].getAttribute('tabindex')).toBe('-1')
+    expect(radios[2].getAttribute('tabindex')).toBe('-1')
+  })
 })

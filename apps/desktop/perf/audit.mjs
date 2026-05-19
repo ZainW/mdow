@@ -419,4 +419,79 @@ await writeFile(join(outDir, 'probes.json'), JSON.stringify(probes, null, 2))
 
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })
-console.log('Audit complete. Output:', outDir)
+
+// ─── Assertion gate ─────────────────────────────────────────────────────
+// Verify the audit fixes are still in place. Each entry is a label + a
+// predicate over the captured probes. Anything that fails turns the script
+// red so the harness becomes a real regression gate, not just a screenshot
+// dumper.
+const checks = [
+  ['tabBar role=tablist + tab', () => probes.tablistSemantics?.hasTablist === true],
+  ['tabBar aria-setsize on all tabs', () => probes.tabBar?.setsize?.every?.((v) => v !== null)],
+  ['tab close hit target is at least 20px', () => (probes.tabCloseHitTarget ?? 0) >= 20],
+  [
+    'copy-code button hidden at rest',
+    () => probes.copyCodeBtnHidden?.opacity === '0' || probes.copyCodeBtnHidden?.error,
+  ],
+  [
+    'sidebar mode is a radiogroup with 3 options',
+    () =>
+      probes.sidebarRadiogroup?.hasGroup === true && probes.sidebarRadiogroup?.labels?.length === 3,
+  ],
+  ['command palette opens with footer hint', () => probes.commandPalette?.hasFooterHint === true],
+  [
+    'zoom indicator width is stable across zoom changes',
+    () => probes.zoomWidth && probes.zoomWidth.afterOne === probes.zoomWidth.afterThree,
+  ],
+  [
+    'zoom reset button is hidden at 100% via opacity:0',
+    () => probes.zoomIndicatorReset?.opacity === '1' || probes.zoomIndicatorReset == null,
+  ],
+  [
+    'settings exposes three radiogroups',
+    () =>
+      probes.settingsRadiogroup?.theme === 'DIV' &&
+      probes.settingsRadiogroup?.contentFont === 'DIV' &&
+      probes.settingsRadiogroup?.codeFont === 'DIV',
+  ],
+  [
+    'shortcuts grouped Files/Navigation/View/App',
+    () =>
+      JSON.stringify(probes.shortcutsGrouping?.headings ?? []) ===
+      JSON.stringify(['Files', 'Navigation', 'View', 'App']),
+  ],
+  [
+    'context menu has 6 menuitems with first focused and a kbd',
+    () =>
+      probes.contextMenu?.hasMenu === true &&
+      probes.contextMenu?.itemCount === 6 &&
+      probes.contextMenu?.firstItemFocused === true &&
+      probes.contextMenu?.hasKbd === true,
+  ],
+  [
+    'error view shows a truncated path',
+    () =>
+      probes.errorView?.title === 'File moved or deleted' &&
+      typeof probes.errorView?.pathSpan === 'string' &&
+      probes.errorView.pathSpan.includes('…'),
+  ],
+  ['reduced-motion rule coverage preserved', () => (probes.reducedMotionRules?.count ?? 0) >= 7],
+]
+
+const failures = checks.filter(([, fn]) => {
+  try {
+    return !fn()
+  } catch {
+    return true
+  }
+})
+
+if (failures.length > 0) {
+  console.error('\nAudit gate FAILED:')
+  for (const [label] of failures) console.error('  ✗', label)
+  console.error(`\nProbes: ${join(outDir, 'probes.json')}`)
+  console.error(`Screenshots: ${outDir}`)
+  process.exit(1)
+}
+
+console.log(`Audit complete. ${checks.length} checks passed. Output: ${outDir}`)
