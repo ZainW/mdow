@@ -117,7 +117,7 @@ export function IconLab() {
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <section className="mb-8">
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Settings theme — outline vs filled (14px, stroke 2)
+            Settings theme: outline vs filled (14px, stroke 2)
           </h2>
           <div className="flex gap-4">
             {(

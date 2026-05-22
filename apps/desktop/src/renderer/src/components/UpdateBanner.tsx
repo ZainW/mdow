@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { Download, RefreshCw, X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { iconStroke } from '../lib/icons'
@@ -11,32 +11,72 @@ type UpdateState =
   | { status: 'up-to-date' }
   | { status: 'check-failed' }
 
+interface BannerUi {
+  update: UpdateState
+  dismissed: boolean
+}
+
+type BannerAction =
+  | { type: 'set-update'; update: UpdateState; resetDismissed?: boolean }
+  | { type: 'dismiss' }
+
+function bannerReducer(state: BannerUi, action: BannerAction): BannerUi {
+  switch (action.type) {
+    case 'set-update':
+      return {
+        update: action.update,
+        dismissed: action.resetDismissed ? false : state.dismissed,
+      }
+    case 'dismiss':
+      return { ...state, dismissed: true }
+    default:
+      return state
+  }
+}
+
 export function UpdateBanner() {
-  const [state, setState] = useState<UpdateState>({ status: 'idle' })
-  const [dismissed, setDismissed] = useState(false)
+  const [{ update: state, dismissed }, dispatch] = useReducer(bannerReducer, {
+    update: { status: 'idle' },
+    dismissed: false,
+  })
 
   useEffect(() => {
     const unsubs = [
       window.api.onUpdateAvailable((info) => {
-        setState({ status: 'available', version: info.version })
-        setDismissed(false)
+        dispatch({
+          type: 'set-update',
+          update: { status: 'available', version: info.version },
+          resetDismissed: true,
+        })
       }),
       window.api.onUpdateDownloadProgress((progress) => {
-        setState({ status: 'downloading', percent: progress.percent })
+        dispatch({
+          type: 'set-update',
+          update: { status: 'downloading', percent: progress.percent },
+        })
       }),
       window.api.onUpdateDownloaded(() => {
-        setState({ status: 'ready' })
-        setDismissed(false)
+        dispatch({
+          type: 'set-update',
+          update: { status: 'ready' },
+          resetDismissed: true,
+        })
       }),
       window.api.onUpdateUpToDate((info) => {
         if (info.wasManual) {
-          setState({ status: 'up-to-date' })
-          setDismissed(false)
+          dispatch({
+            type: 'set-update',
+            update: { status: 'up-to-date' },
+            resetDismissed: true,
+          })
         }
       }),
       window.api.onUpdateError(() => {
-        setState({ status: 'check-failed' })
-        setDismissed(false)
+        dispatch({
+          type: 'set-update',
+          update: { status: 'check-failed' },
+          resetDismissed: true,
+        })
       }),
       window.api.onMenuCheckForUpdates(() => {
         void window.api.checkForUpdates({ manual: true })
@@ -88,7 +128,7 @@ export function UpdateBanner() {
 
       {state.status === 'ready' && (
         <>
-          <span>Update ready — restart to apply</span>
+          <span>Update ready. Restart to apply.</span>
           <button
             type="button"
             onClick={() => void window.api.installUpdate()}
@@ -102,11 +142,13 @@ export function UpdateBanner() {
 
       {state.status === 'up-to-date' && <span>You're on the latest version</span>}
 
-      {state.status === 'check-failed' && <span>Couldn't check for updates — try again later</span>}
+      {state.status === 'check-failed' && (
+        <span>Couldn&apos;t check for updates. Try again later.</span>
+      )}
 
       <button
         type="button"
-        onClick={() => setDismissed(true)}
+        onClick={() => dispatch({ type: 'dismiss' })}
         className="ml-auto rounded p-1 transition-colors duration-150 ease-out hover:bg-muted"
         aria-label="Dismiss update notification"
       >

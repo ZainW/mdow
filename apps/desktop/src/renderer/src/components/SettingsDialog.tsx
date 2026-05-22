@@ -65,7 +65,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             className="mt-1.5 text-foreground/85"
             style={{ fontSize: `${fontSize}px`, lineHeight }}
           >
-            Words on the page settle into their rhythm — and{' '}
+            Words on the page settle into their rhythm, and{' '}
             <code
               className="rounded bg-muted px-1 py-px text-foreground"
               style={{

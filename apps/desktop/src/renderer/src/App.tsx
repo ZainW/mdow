@@ -1,9 +1,9 @@
 import { useCallback, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useAppStore, selectActiveTab } from './store/app-store'
+import { useAppStore, selectActiveTab, type Tab } from './store/app-store'
 import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
 import { useOpenMarkdownFile } from './hooks/useOpenMarkdownFile'
+import { useAppKeyboardShortcuts, useAppMenuBindings } from './hooks/useAppBindings'
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
@@ -29,58 +29,58 @@ function App(): React.JSX.Element {
   return <MainApp />
 }
 
+function MainContent({ activeTab }: { activeTab: Tab | null }): React.JSX.Element {
+  if (!activeTab) return <WelcomeView />
+  if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
+  return (
+    <ErrorBoundary tabId={activeTab.id}>
+      <MarkdownView tab={activeTab} />
+    </ErrorBoundary>
+  )
+}
+
 function MainApp(): React.JSX.Element {
   const initialized = useAppStore((s) => s.initialized)
   const activeTab = useAppStore(selectActiveTab)
-  const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
-  const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
-  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const setSearchOpen = useAppStore((s) => s.setSearchOpen)
-  const updateTabContent = useAppStore((s) => s.updateTabContent)
-  const setTabError = useAppStore((s) => s.setTabError)
-  const zoomIn = useAppStore((s) => s.zoomIn)
-  const zoomOut = useAppStore((s) => s.zoomOut)
-  const resetZoom = useAppStore((s) => s.resetZoom)
   const shortcutsDialogOpen = useAppStore((s) => s.shortcutsDialogOpen)
   const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
-  const closeTab = useAppStore((s) => s.closeTab)
-  const cycleTab = useAppStore((s) => s.cycleTab)
-  const selectTabByIndex = useAppStore((s) => s.selectTabByIndex)
-  const queryClient = useQueryClient()
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
   useFolderTree(openFolderPath)
+  useAppMenuBindings()
+  useAppKeyboardShortcuts()
 
   useEffect(() => {
     void window.api.getAppState().then(async (state) => {
-      if (state.sidebarWidth) setSidebarWidth(state.sidebarWidth)
-      if (state.zoomLevel && state.zoomLevel !== 100) {
-        useAppStore.setState({ zoomLevel: state.zoomLevel })
-      }
-      if (state.theme) useAppStore.setState({ theme: state.theme })
+      const patch: Record<string, unknown> = {}
+
+      if (state.sidebarWidth) patch.sidebarWidth = state.sidebarWidth
+      if (state.zoomLevel && state.zoomLevel !== 100) patch.zoomLevel = state.zoomLevel
+      if (state.theme) patch.theme = state.theme
       if (typeof state.autoUpdateEnabled === 'boolean') {
-        useAppStore.setState({ autoUpdateEnabled: state.autoUpdateEnabled })
+        patch.autoUpdateEnabled = state.autoUpdateEnabled
       }
-      // Restore typography settings
-      const typo: Record<string, unknown> = {}
-      if (state.contentFont) typo.contentFont = state.contentFont
-      if (state.codeFont) typo.codeFont = state.codeFont
-      if (state.fontSize) typo.fontSize = state.fontSize
-      if (state.lineHeight) typo.lineHeight = state.lineHeight
-      if (Object.keys(typo).length) useAppStore.setState(typo)
+      if (state.contentFont) patch.contentFont = state.contentFont
+      if (state.codeFont) patch.codeFont = state.codeFont
+      if (state.fontSize) patch.fontSize = state.fontSize
+      if (state.lineHeight) patch.lineHeight = state.lineHeight
+
+      if (Object.keys(patch).length > 0) {
+        useAppStore.setState(patch)
+      }
+
       if (state.lastFolder) {
         void window.api.readFolderTree(state.lastFolder).then((scan) => {
           setOpenFolder(state.lastFolder!, scan.tree, scan.truncated)
         })
       }
 
-      // Restore session tabs
       if (state.sessionTabs?.length) {
         const results = await Promise.all(
           state.sessionTabs.map((tab) =>
@@ -93,143 +93,18 @@ function MainApp(): React.JSX.Element {
         for (const result of results) {
           if (result) openTab(result)
         }
-        // Set the previously active tab
         if (state.sessionActiveTabPath) {
           const tabs = useAppStore.getState().tabs
           const active = tabs.find((t) => t.path === state.sessionActiveTabPath)
-          if (active) useAppStore.setState({ activeTabId: active.id })
+          if (active) {
+            useAppStore.setState({ activeTabId: active.id })
+          }
         }
       }
 
       useAppStore.setState({ initialized: true })
     })
-  }, [setSidebarWidth, setOpenFolder, openTab])
-
-  useEffect(() => {
-    const unsubs = [
-      window.api.onMenuOpenFile(() => {
-        void window.api.openFileDialog().then((result) => {
-          if (result) {
-            openTab(result)
-            void queryClient.invalidateQueries({ queryKey: ['recents'] })
-          }
-        })
-      }),
-      window.api.onMenuOpenFolder(() => {
-        void window.api.openFolderDialog().then((result) => {
-          if (result) {
-            setOpenFolder(result.path, result.tree, result.truncated)
-          }
-        })
-      }),
-      window.api.onFileOpened((file) => {
-        openTab(file)
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
-      }),
-      window.api.onFileChanged((data) => {
-        updateTabContent(data.path, data.content)
-      }),
-      window.api.onFileDeleted((path) => {
-        setTabError(path, { type: 'deleted', path })
-      }),
-      window.api.onMenuFind(() => setSearchOpen(true)),
-      window.api.onMenuToggleSidebar(() => toggleSidebar()),
-      window.api.onMenuZoomIn(() => zoomIn()),
-      window.api.onMenuZoomOut(() => zoomOut()),
-      window.api.onMenuZoomReset(() => resetZoom()),
-      window.api.onMenuShortcuts(() => setShortcutsDialogOpen(true)),
-      window.api.onMenuSettings(() => setSettingsOpen(true)),
-      window.api.onMenuCloseTab(() => {
-        const state = useAppStore.getState()
-        if (state.activeTabId) closeTab(state.activeTabId)
-        else void window.api.closeWindow()
-      }),
-    ]
-    return () => unsubs.forEach((fn) => fn())
-  }, [
-    openTab,
-    setOpenFolder,
-    updateTabContent,
-    setTabError,
-    setSearchOpen,
-    toggleSidebar,
-    queryClient,
-    zoomIn,
-    zoomOut,
-    resetZoom,
-    setShortcutsDialogOpen,
-    setSettingsOpen,
-    closeTab,
-  ])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key === 'k') {
-        e.preventDefault()
-        setCommandPaletteOpen(true)
-      }
-      if (mod && e.key === 'b') {
-        e.preventDefault()
-        toggleSidebar()
-      }
-      if (mod && e.key === 'f') {
-        e.preventDefault()
-        setSearchOpen(true)
-      }
-      if (mod && (e.key === '=' || e.key === '+')) {
-        e.preventDefault()
-        zoomIn()
-      }
-      if (mod && e.key === '-') {
-        e.preventDefault()
-        zoomOut()
-      }
-      if (mod && e.key === '0') {
-        e.preventDefault()
-        resetZoom()
-      }
-      if (mod && e.key === '/') {
-        e.preventDefault()
-        setShortcutsDialogOpen(true)
-      }
-      if (mod && e.key === ',') {
-        e.preventDefault()
-        setSettingsOpen(true)
-      }
-      // Cmd+Alt+ArrowLeft / ArrowRight cycle tabs (matches macOS browser convention)
-      if (mod && e.altKey && e.key === 'ArrowRight') {
-        e.preventDefault()
-        cycleTab(1)
-      }
-      if (mod && e.altKey && e.key === 'ArrowLeft') {
-        e.preventDefault()
-        cycleTab(-1)
-      }
-      // Cmd+1..9 jump to tab N (Cmd+9 is "last tab" by browser convention)
-      if (mod && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-        const tabs = useAppStore.getState().tabs
-        if (tabs.length === 0) return
-        e.preventDefault()
-        const n = Number(e.key)
-        if (n === 9) selectTabByIndex(tabs.length - 1)
-        else selectTabByIndex(n - 1)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [
-    setCommandPaletteOpen,
-    setSearchOpen,
-    toggleSidebar,
-    zoomIn,
-    zoomOut,
-    resetZoom,
-    setShortcutsDialogOpen,
-    setSettingsOpen,
-    cycleTab,
-    selectTabByIndex,
-  ])
+  }, [setOpenFolder, openTab])
 
   useEffect(() => {
     if (activeTab) {
@@ -252,16 +127,6 @@ function MainApp(): React.JSX.Element {
     [openMarkdownFile],
   )
 
-  const renderContent = () => {
-    if (!activeTab) return <WelcomeView />
-    if (activeTab.error) return <ErrorView error={activeTab.error} tabId={activeTab.id} />
-    return (
-      <ErrorBoundary tabId={activeTab.id}>
-        <MarkdownView tab={activeTab} />
-      </ErrorBoundary>
-    )
-  }
-
   if (!initialized) {
     return (
       <div className="flex h-screen w-screen flex-col bg-background">
@@ -283,7 +148,7 @@ function MainApp(): React.JSX.Element {
           <div className="flex flex-1 flex-col overflow-hidden">
             <TabBar />
             {activeTab && <DocumentBreadcrumb tab={activeTab} />}
-            {renderContent()}
+            <MainContent activeTab={activeTab} />
             <UpdateBanner />
           </div>
           <CommandPalette />

@@ -3,6 +3,7 @@ import {
   memo,
   useEffect,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -100,9 +101,34 @@ const MarkdownContent = memo(function MarkdownContent({ result }: { result: Rend
   return <ComarkRenderer tree={result.tree} components={markdownComponents} />
 })
 
-interface RenderState {
-  result: RenderResult
+interface RenderUi {
+  result: RenderResult | null
   version: number
+  error: boolean
+}
+
+type RenderAction =
+  | { type: 'reset' }
+  | { type: 'clear-tab' }
+  | { type: 'start' }
+  | { type: 'ready'; result: RenderResult; version: number }
+  | { type: 'error' }
+
+function renderReducer(state: RenderUi, action: RenderAction): RenderUi {
+  switch (action.type) {
+    case 'reset':
+      return { result: null, version: 0, error: false }
+    case 'clear-tab':
+      return { result: null, version: state.version, error: false }
+    case 'start':
+      return { ...state, error: false }
+    case 'ready':
+      return { result: action.result, version: action.version, error: false }
+    case 'error':
+      return { result: null, version: state.version, error: true }
+    default:
+      return state
+  }
 }
 
 export function MarkdownView({ tab }: MarkdownViewProps) {
@@ -120,41 +146,41 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const fontSize = useAppStore((s) => s.fontSize)
   const lineHeight = useAppStore((s) => s.lineHeight)
 
-  const setDocHeadings = useAppStore((s) => s.setDocHeadings)
-  const setActiveHeadingId = useAppStore((s) => s.setActiveHeadingId)
-
-  const [renderState, setRenderState] = useState<RenderState | null>(null)
-  const [renderError, setRenderError] = useState(false)
+  const [renderUi, dispatchRender] = useReducer(renderReducer, {
+    result: null,
+    version: 0,
+    error: false,
+  })
   const renderVersionRef = useRef(0)
   const lastRenderedTabIdRef = useRef(tab.id)
   const mermaidBlocksRef = useRef<RenderResult['mermaidBlocks']>([])
-  const renderResult = renderState?.result ?? null
+  const renderResult = renderUi.result
+  const renderError = renderUi.error
 
   useEffect(() => {
     if (!tab.content) {
-      setRenderState(null)
-      setRenderError(false)
+      dispatchRender({ type: 'reset' })
       return undefined
     }
-    // Clear stale content on tab switch to avoid showing the old document briefly.
-    // For same-tab re-renders (theme change, content edit), keep showing the
-    // previous html until the new render lands to avoid a flash of empty.
     if (lastRenderedTabIdRef.current !== tab.id) {
       lastRenderedTabIdRef.current = tab.id
-      setRenderState(null)
+      dispatchRender({ type: 'clear-tab' })
     }
     let cancelled = false
-    setRenderError(false)
+    dispatchRender({ type: 'start' })
     void renderMarkdown(tab.content)
       .then((res) => {
         if (cancelled) return
         renderVersionRef.current += 1
-        setRenderState({ result: res, version: renderVersionRef.current })
+        dispatchRender({
+          type: 'ready',
+          result: res,
+          version: renderVersionRef.current,
+        })
       })
       .catch(() => {
         if (cancelled) return
-        setRenderState(null)
-        setRenderError(true)
+        dispatchRender({ type: 'error' })
       })
     return () => {
       cancelled = true
@@ -163,14 +189,16 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
 
   useEffect(() => {
     const headings = renderResult?.headings ?? []
-    setDocHeadings(headings)
-    setActiveHeadingId(headings[0]?.id ?? null)
-  }, [renderResult, setDocHeadings, setActiveHeadingId])
+    useAppStore.setState({
+      docHeadings: headings,
+      activeHeadingId: headings[0]?.id ?? null,
+    })
+  }, [renderResult])
 
   const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
     searchOpen ? searchQuery : '',
-    renderState?.version ?? 0,
+    renderUi.version ?? 0,
   )
 
   useEffect(() => {
@@ -217,14 +245,14 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
           .filter((e) => e.isIntersecting)
           .toSorted((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
         if (visible[0]) {
-          setActiveHeadingId(visible[0].target.id)
+          useAppStore.getState().setActiveHeadingId(visible[0].target.id)
         }
       },
       { root, rootMargin: '0px 0px -75% 0px', threshold: 0 },
     )
     for (const el of headingEls) observer.observe(el)
     return () => observer.disconnect()
-  }, [renderResult, setActiveHeadingId])
+  }, [renderResult])
 
   // Scroll position: save on scroll (debounced)
   useEffect(() => {
@@ -291,8 +319,8 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
           <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
             This document could not be rendered.
           </div>
-        ) : renderState ? (
-          <MarkdownContent key={renderState.version} result={renderState.result} />
+        ) : renderUi.result ? (
+          <MarkdownContent key={renderUi.version} result={renderUi.result} />
         ) : null}
       </div>
       <ZoomIndicator />

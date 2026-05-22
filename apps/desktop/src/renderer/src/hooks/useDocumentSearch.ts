@@ -1,68 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useReducer, useRef, type RefObject } from 'react'
+import { applySearchHighlights, removeSearchHighlights } from '../lib/search-highlight'
 
-function removeHighlights(container: HTMLElement): void {
-  for (const mark of container.querySelectorAll('mark.search-highlight')) {
-    const parent = mark.parentNode
-    if (!parent) continue
-    parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark)
-    parent.normalize()
-  }
+interface SearchState {
+  matchCount: number
+  currentIndex: number
 }
 
-function shouldSkipTextNode(node: Text): boolean {
-  const parent = node.parentElement
-  return (
-    !parent || Boolean(parent.closest('mark.search-highlight, .copy-code-btn, .mermaid-container'))
-  )
-}
+type SearchAction =
+  | { type: 'set-results'; matchCount: number }
+  | { type: 'set-index'; currentIndex: number }
+  | { type: 'clear' }
 
-function applyHighlights(container: HTMLElement, query: string): number {
-  if (!query) return 0
-
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      return node instanceof Text && !shouldSkipTextNode(node)
-        ? NodeFilter.FILTER_ACCEPT
-        : NodeFilter.FILTER_REJECT
-    },
-  })
-
-  const textNodes: Text[] = []
-  while (walker.nextNode()) {
-    const node = walker.currentNode
-    if (node instanceof Text) textNodes.push(node)
-  }
-
-  const lowerQuery = query.toLowerCase()
-  let matchIndex = 0
-
-  for (const node of textNodes) {
-    const text = node.textContent || ''
-    const lowerText = text.toLowerCase()
-    let pos = lowerText.indexOf(lowerQuery)
-    if (pos === -1) continue
-
-    const fragment = document.createDocumentFragment()
-    let lastEnd = 0
-    while (pos !== -1) {
-      if (pos > lastEnd) {
-        fragment.appendChild(document.createTextNode(text.slice(lastEnd, pos)))
+function searchReducer(state: SearchState, action: SearchAction): SearchState {
+  switch (action.type) {
+    case 'set-results':
+      return {
+        matchCount: action.matchCount,
+        currentIndex: action.matchCount > 0 ? 0 : -1,
       }
-      const mark = document.createElement('mark')
-      mark.className = 'search-highlight'
-      mark.setAttribute('data-match-index', String(matchIndex++))
-      mark.textContent = text.slice(pos, pos + query.length)
-      fragment.appendChild(mark)
-      lastEnd = pos + query.length
-      pos = lowerText.indexOf(lowerQuery, lastEnd)
-    }
-    if (lastEnd < text.length) {
-      fragment.appendChild(document.createTextNode(text.slice(lastEnd)))
-    }
-    node.parentNode!.replaceChild(fragment, node)
+    case 'set-index':
+      return { ...state, currentIndex: action.currentIndex }
+    case 'clear':
+      return { matchCount: 0, currentIndex: -1 }
+    default:
+      return state
   }
-
-  return matchIndex
 }
 
 export function useDocumentSearch(
@@ -70,8 +32,10 @@ export function useDocumentSearch(
   query: string,
   renderKey: unknown,
 ) {
-  const [currentIndex, setCurrentIndex] = useState(-1)
-  const [matchCount, setMatchCount] = useState(0)
+  const [{ matchCount, currentIndex }, dispatch] = useReducer(searchReducer, {
+    matchCount: 0,
+    currentIndex: -1,
+  })
   const activeMarkRef = useRef<Element | null>(null)
 
   useEffect(() => {
@@ -79,17 +43,15 @@ export function useDocumentSearch(
     if (!container) return undefined
 
     const timer = setTimeout(() => {
-      removeHighlights(container)
+      removeSearchHighlights(container)
       activeMarkRef.current = null
-
-      const count = applyHighlights(container, query)
-      setMatchCount(count)
-      setCurrentIndex(count > 0 ? 0 : -1)
+      const count = applySearchHighlights(container, query)
+      dispatch({ type: 'set-results', matchCount: count })
     }, 120)
 
     return () => {
       clearTimeout(timer)
-      removeHighlights(container)
+      removeSearchHighlights(container)
     }
   }, [containerRef, query, renderKey])
 
@@ -114,21 +76,26 @@ export function useDocumentSearch(
 
   const next = useCallback(() => {
     if (matchCount > 0) {
-      setCurrentIndex((i) => (i + 1) % matchCount)
+      dispatch({
+        type: 'set-index',
+        currentIndex: (currentIndex + 1) % matchCount,
+      })
     }
-  }, [matchCount])
+  }, [matchCount, currentIndex])
 
   const prev = useCallback(() => {
     if (matchCount > 0) {
-      setCurrentIndex((i) => (i - 1 + matchCount) % matchCount)
+      dispatch({
+        type: 'set-index',
+        currentIndex: (currentIndex - 1 + matchCount) % matchCount,
+      })
     }
-  }, [matchCount])
+  }, [matchCount, currentIndex])
 
   const clear = useCallback(() => {
     const container = containerRef.current
-    if (container) removeHighlights(container)
-    setMatchCount(0)
-    setCurrentIndex(-1)
+    if (container) removeSearchHighlights(container)
+    dispatch({ type: 'clear' })
     activeMarkRef.current = null
   }, [containerRef])
 
