@@ -12,7 +12,7 @@ import {
   CommandItem,
 } from './ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
-import { FileText } from '@phosphor-icons/react'
+import { FileText } from 'lucide-react'
 
 interface TreeNode {
   name: string

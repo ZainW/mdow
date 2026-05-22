@@ -11,7 +11,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from './ui/sidebar'
-import { Clock, FileText } from '@phosphor-icons/react'
+import { Clock, FileText } from 'lucide-react'
 import { EmptyState } from './EmptyState'
 
 export function RecentsList() {

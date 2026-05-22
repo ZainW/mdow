@@ -8,55 +8,18 @@ import {
   type CSSProperties,
   type HTMLAttributes,
 } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
 import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
+import { iconSize, iconStroke } from '../lib/icons'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 
 interface MarkdownViewProps {
   tab: Tab
-}
-
-function CopyIcon() {
-  return (
-    <svg
-      className="copy-icon copy-icon-default"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-    </svg>
-  )
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      className="copy-icon copy-icon-done"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  )
 }
 
 function CodeBlock({ children, ...props }: HTMLAttributes<HTMLPreElement>) {
@@ -91,8 +54,18 @@ function CodeBlock({ children, ...props }: HTMLAttributes<HTMLPreElement>) {
         data-copied={copied ? 'true' : undefined}
         onClick={handleCopy}
       >
-        <CopyIcon />
-        <CheckIcon />
+        <Copy
+          className="copy-icon copy-icon-default"
+          size={iconSize.md}
+          strokeWidth={iconStroke.default}
+          aria-hidden
+        />
+        <Check
+          className="copy-icon copy-icon-done"
+          size={iconSize.md}
+          strokeWidth={iconStroke.emphasis}
+          aria-hidden
+        />
       </button>
     </div>
   )

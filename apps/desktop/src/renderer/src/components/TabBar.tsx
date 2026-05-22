@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn, isMac } from '../lib/utils'
-import { FileText, X } from '@phosphor-icons/react'
+import { FileText, X } from 'lucide-react'
+import { iconStroke } from '../lib/icons'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
 interface ContextMenuState {
@@ -161,11 +162,11 @@ export function TabBar() {
                   className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit"
                 >
                   <FileText
-                    weight="regular"
                     className={cn(
                       'size-3.5 shrink-0',
                       isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
                     )}
+                    strokeWidth={iconStroke.default}
                   />
                   <span className="truncate">{filename}</span>
                 </button>
@@ -183,7 +184,7 @@ export function TabBar() {
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
-                  <X className="size-3" />
+                  <X className="size-3" strokeWidth={iconStroke.emphasis} />
                 </button>
               </div>
             </div>

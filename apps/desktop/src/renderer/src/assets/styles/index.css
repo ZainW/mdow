@@ -102,6 +102,13 @@
     --sidebar-accent-foreground: oklch(0.13 0.02 50);
     --sidebar-border: oklch(0.93 0.008 70);
     --sidebar-ring: oklch(0.55 0.17 260);
+
+    --icon-size-xs: 10px;
+    --icon-size-sm: 12px;
+    --icon-size-md: 14px;
+    --icon-size-lg: 16px;
+    --icon-stroke: 2;
+    --icon-stroke-emphasis: 2.5;
   }
 
   /* Neutral dark theme — pure gray, no warmth */

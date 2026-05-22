@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
-import { Minus, Plus, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { iconSize, iconStroke } from '../lib/icons'
 
 export function ZoomIndicator() {
   const zoomLevel = useAppStore((s) => s.zoomLevel)
@@ -70,7 +71,7 @@ export function ZoomIndicator() {
         aria-label="Zoom out"
         title="Zoom out"
       >
-        <Minus size={14} weight="bold" aria-hidden />
+        <Minus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
       </button>
       <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
         {zoomLevel}%
@@ -81,7 +82,7 @@ export function ZoomIndicator() {
         aria-label="Zoom in"
         title="Zoom in"
       >
-        <Plus size={14} weight="bold" aria-hidden />
+        <Plus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
       </button>
       {/* Always render the reset button so the card width doesn't jump
           between 2- and 3-button layouts. The native `disabled` attribute
@@ -94,7 +95,7 @@ export function ZoomIndicator() {
         title="Reset zoom"
         disabled={zoomLevel === 100}
       >
-        <ArrowCounterClockwise size={14} weight="bold" aria-hidden />
+        <RotateCcw size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
       </button>
     </div>
   )

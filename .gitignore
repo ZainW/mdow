@@ -5,6 +5,8 @@ dist/
 .superpowers/
 .agents/
 .playwright-mcp/
+apps/desktop/perf/output/
+.pnpm-store/
 .claude/settings.local.json
 .claude/worktrees/
 CLAUDE.local.md

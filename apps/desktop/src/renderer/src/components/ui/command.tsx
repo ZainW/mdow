@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@renderer/components/ui/dialog'
 import { InputGroup, InputGroupAddon } from '@renderer/components/ui/input-group'
-import { MagnifyingGlass, Check } from '@phosphor-icons/react'
+import { Search, Check } from 'lucide-react'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
@@ -73,7 +73,7 @@ function CommandInput({
           {...props}
         />
         <InputGroupAddon>
-          <MagnifyingGlass className="size-4 shrink-0 opacity-50" />
+          <Search className="size-4 shrink-0 opacity-50" />
         </InputGroupAddon>
       </InputGroup>
     </div>

@@ -6,7 +6,8 @@ import { useRecents } from '../hooks/useRecents'
 import { basename, isMarkdownPath } from '../lib/path-utils'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
-import { File, FileText, FolderOpen } from '@phosphor-icons/react'
+import { Logo } from './Logo'
+import { File, FileText, FolderOpen } from 'lucide-react'
 
 export function WelcomeView() {
   const openTab = useAppStore((s) => s.openTab)
@@ -81,6 +82,12 @@ export function WelcomeView() {
         <div
           className={cn('flex flex-col gap-3', recents.length === 0 && 'items-center text-center')}
         >
+          <Logo
+            className={cn(
+              'h-12 w-12 rounded-[22%] shadow-sm ring-1 ring-border/40',
+              recents.length === 0 && 'mb-1',
+            )}
+          />
           <h2 className="text-2xl font-semibold tracking-tight text-foreground">Mdow</h2>
           <p className="max-w-[40ch] text-pretty text-[15px] text-muted-foreground">
             A quiet markdown viewer. Drop a file anywhere, or open one below.

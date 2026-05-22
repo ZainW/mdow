@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { Sun, Moon, Desktop } from '@phosphor-icons/react'
+import { Sun, Moon, Monitor } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
 import {
   CODE_FONTS,
@@ -11,9 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Slider } from './ui/slider'
 import { cn, isMac } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
+import { iconActiveProps } from '../lib/icons'
 
 const THEME_OPTIONS = [
-  { value: 'system', label: 'System', Icon: Desktop },
+  { value: 'system', label: 'System', Icon: Monitor },
   { value: 'light', label: 'Light', Icon: Sun },
   { value: 'dark', label: 'Dark', Icon: Moon },
 ] as const
@@ -199,7 +200,7 @@ function ThemeRadiogroup({
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <opt.Icon weight={active ? 'fill' : 'regular'} className="size-3.5" />
+            <opt.Icon className="size-3.5" {...iconActiveProps(active)} />
             {opt.label}
           </button>
         )

@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "A quiet place to read markdown",
   "repository": {
@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:electron:perf": "electron-vite build && node perf/electron-render.perf.mjs",
+    "test:icons:visual": "VITE_ICON_LAB=true electron-vite build && node perf/icon-visual-compare.mjs",
     "build:dist": "electron-vite build && electron-builder",
     "publish": "electron-vite build && electron-builder --publish always",
     "release:homebrew": "bash scripts/update-homebrew-cask.sh",
@@ -33,7 +34,6 @@
     "@comark/react": "^0.3.1",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "@phosphor-icons/react": "^2.1.10",
     "@pierre/trees": "^1.0.0-beta.3",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.100.10",
@@ -46,6 +46,7 @@
     "electron-log": "^5.4.4",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3",
+    "lucide-react": "^1.16.0",
     "mermaid": "^11.15.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

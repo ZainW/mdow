@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from './ui/button'
-import { CaretUp, CaretDown, X } from '@phosphor-icons/react'
+import { ChevronUp, ChevronDown, X } from 'lucide-react'
 
 interface SearchBarProps {
   matchCount: number
@@ -79,7 +79,7 @@ export function SearchBar({
         title="Previous match (Shift+Enter)"
         className="active:scale-90 transition-transform"
       >
-        <CaretUp className="size-3.5" aria-hidden />
+        <ChevronUp className="size-3.5" aria-hidden />
       </Button>
       <Button
         variant="ghost"
@@ -90,7 +90,7 @@ export function SearchBar({
         title="Next match (Enter)"
         className="active:scale-90 transition-transform"
       >
-        <CaretDown className="size-3.5" aria-hidden />
+        <ChevronDown className="size-3.5" aria-hidden />
       </Button>
       <Button
         variant="ghost"

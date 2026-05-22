@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { Logo } from './logo'
 import { ThemeToggle } from './theme-toggle'
 
 export function SiteHeader() {
@@ -6,7 +7,8 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link to="/" className="text-lg font-semibold tracking-tight">
+          <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <Logo className="h-6 w-6" />
             Mdow
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex">

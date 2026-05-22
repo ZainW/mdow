@@ -11,15 +11,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
 } from './ui/sidebar'
-import {
-  Clock,
-  File,
-  Folder,
-  FolderOpen,
-  GearSix,
-  ListBullets,
-  MagnifyingGlass,
-} from '@phosphor-icons/react'
+import { Clock, File, Folder, FolderOpen, List, Search, Settings } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
@@ -111,11 +103,11 @@ export function Sidebar() {
             onSelect={() => setMode('outline')}
             label="Outline"
           >
-            <ListBullets />
+            <List />
           </RailModeIcon>
         </div>
         <RailButton onClick={() => setCommandPaletteOpen(true)} label="Quick Open">
-          <MagnifyingGlass />
+          <Search />
         </RailButton>
         <div className="flex-1" />
         <div aria-label="Workspace actions" className="contents">
@@ -126,7 +118,7 @@ export function Sidebar() {
             <FolderOpen />
           </RailButton>
           <RailButton onClick={() => setSettingsOpen(true)} label="Settings">
-            <GearSix />
+            <Settings />
           </RailButton>
         </div>
       </div>

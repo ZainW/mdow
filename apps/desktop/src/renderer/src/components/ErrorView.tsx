@@ -1,33 +1,33 @@
 import { useAppStore, type FileError } from '../store/app-store'
 import { Button } from './ui/button'
 import { truncatePathMiddle } from '../lib/path-utils'
-import { FileX, Trash, ShieldWarning, WarningCircle, FolderOpen } from '@phosphor-icons/react'
+import { AlertCircle, FileX, FolderOpen, ShieldAlert, Trash2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { iconStroke } from '../lib/icons'
 
-const errorMessages: Record<
-  FileError['type'],
-  { title: string; body: string; icon: typeof FileX }
-> = {
-  'not-found': {
-    title: 'File not found',
-    body: 'This file seems to have wandered off. It may have been moved or renamed.',
-    icon: FileX,
-  },
-  deleted: {
-    title: 'File moved or deleted',
-    body: 'This file was here a moment ago. Someone (or something) must have moved it.',
-    icon: Trash,
-  },
-  'permission-denied': {
-    title: 'Access denied',
-    body: "You don't have permission to read this file. Check the file permissions and try again.",
-    icon: ShieldWarning,
-  },
-  'read-error': {
-    title: "Couldn't read file",
-    body: 'Something went wrong trying to read this file. It might be corrupted or locked by another process.',
-    icon: WarningCircle,
-  },
-}
+const errorMessages: Record<FileError['type'], { title: string; body: string; icon: LucideIcon }> =
+  {
+    'not-found': {
+      title: 'File not found',
+      body: 'This file seems to have wandered off. It may have been moved or renamed.',
+      icon: FileX,
+    },
+    deleted: {
+      title: 'File moved or deleted',
+      body: 'This file was here a moment ago. Someone (or something) must have moved it.',
+      icon: Trash2,
+    },
+    'permission-denied': {
+      title: 'Access denied',
+      body: "You don't have permission to read this file. Check the file permissions and try again.",
+      icon: ShieldAlert,
+    },
+    'read-error': {
+      title: "Couldn't read file",
+      body: 'Something went wrong trying to read this file. It might be corrupted or locked by another process.',
+      icon: AlertCircle,
+    },
+  }
 
 interface ErrorViewProps {
   error: FileError
@@ -60,7 +60,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
     <div className="flex flex-1 items-center justify-center">
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-          <Icon className="size-6 text-muted-foreground" />
+          <Icon className="size-6 text-muted-foreground" strokeWidth={iconStroke.default} />
         </div>
         <div className="space-y-1.5">
           <h2 className="text-base font-medium">{msg.title}</h2>
@@ -78,7 +78,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
           </Button>
           {error.type !== 'permission-denied' && (
             <Button variant="ghost" size="sm" onClick={handleShowInFolder}>
-              <FolderOpen className="mr-1.5 size-3.5" />
+              <FolderOpen className="mr-1.5 size-3.5" strokeWidth={iconStroke.default} />
               Show in folder
             </Button>
           )}

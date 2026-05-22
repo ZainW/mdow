@@ -18,8 +18,18 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 import { basename, isMarkdownPath } from './lib/path-utils'
 import { TitlebarInset } from './components/TitlebarInset'
+import { IconLab } from './dev/IconLab'
+
+const isIconLab = import.meta.env.VITE_ICON_LAB === 'true'
 
 function App(): React.JSX.Element {
+  if (isIconLab) {
+    return <IconLab />
+  }
+  return <MainApp />
+}
+
+function MainApp(): React.JSX.Element {
   const initialized = useAppStore((s) => s.initialized)
   const activeTab = useAppStore(selectActiveTab)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)

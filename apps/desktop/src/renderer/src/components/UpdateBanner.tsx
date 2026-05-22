@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowsClockwise, DownloadSimple, X } from '@phosphor-icons/react'
+import { Download, RefreshCw, X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
+import { iconStroke } from '../lib/icons'
 
 type UpdateState =
   | { status: 'idle' }
@@ -64,7 +65,7 @@ export function UpdateBanner() {
             onClick={() => void window.api.downloadUpdate()}
             className="ml-1 inline-flex min-h-[28px] items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground transition-colors duration-150 ease-out hover:bg-primary/90"
           >
-            <DownloadSimple weight="bold" className="size-3" aria-hidden />
+            <Download strokeWidth={iconStroke.emphasis} className="size-3" aria-hidden />
             Download
           </button>
         </>
@@ -72,7 +73,7 @@ export function UpdateBanner() {
 
       {state.status === 'downloading' && (
         <>
-          <ArrowsClockwise className="size-3 motion-safe:animate-spin" aria-hidden />
+          <RefreshCw className="size-3 motion-safe:animate-spin" aria-hidden />
           <span>
             Downloading update… <span className="tabular-nums">{state.percent}</span>%
           </span>
@@ -93,7 +94,7 @@ export function UpdateBanner() {
             onClick={() => void window.api.installUpdate()}
             className="ml-1 inline-flex min-h-[28px] items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground transition-colors duration-150 ease-out hover:bg-primary/90"
           >
-            <ArrowsClockwise weight="bold" className="size-3" aria-hidden />
+            <RefreshCw strokeWidth={iconStroke.emphasis} className="size-3" aria-hidden />
             Restart
           </button>
         </>
@@ -109,7 +110,7 @@ export function UpdateBanner() {
         className="ml-auto rounded p-1 transition-colors duration-150 ease-out hover:bg-muted"
         aria-label="Dismiss update notification"
       >
-        <X className="size-3" aria-hidden />
+        <X className="size-3" strokeWidth={iconStroke.emphasis} aria-hidden />
       </button>
     </output>
   )

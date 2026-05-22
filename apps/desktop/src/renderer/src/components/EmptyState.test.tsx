@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { Clock } from '@phosphor-icons/react'
+import { Clock } from 'lucide-react'
 import { EmptyState } from './EmptyState'
 
 describe('EmptyState', () => {
