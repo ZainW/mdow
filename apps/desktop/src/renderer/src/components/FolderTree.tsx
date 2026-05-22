@@ -192,7 +192,7 @@ export function FolderTree() {
               className="mx-2 mb-1 shrink-0 rounded-md border border-border-subtle bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
               title="Some files were hidden to keep the app responsive. Open a smaller subfolder to see them."
             >
-              Large folder — some files hidden
+              Large folder: some files hidden
             </div>
           )}
           <div className="folder-tree-host h-full">

@@ -1,4 +1,5 @@
 import { dialog, BrowserWindow } from 'electron'
+import type { Dirent } from 'node:fs'
 import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { watch, type FSWatcher } from 'chokidar'
@@ -55,6 +56,50 @@ interface ScanState {
   truncated: boolean
 }
 
+async function appendEntry(
+  nodes: TreeNode[],
+  entry: Dirent,
+  folderPath: string,
+  depth: number,
+  state: ScanState,
+): Promise<void> {
+  if (state.truncated) return
+  if (shouldSkipEntry(entry.name)) return
+
+  const fullPath = join(folderPath, entry.name)
+
+  if (entry.isDirectory()) {
+    if (depth >= MAX_DEPTH) return
+    const children = await scanInto(fullPath, depth + 1, state)
+    if (children.length > 0) {
+      nodes.push({ name: entry.name, path: fullPath, isDirectory: true, children })
+    }
+    return
+  }
+
+  if (isMdFile(entry.name)) {
+    if (state.fileCount >= MAX_FILES) {
+      state.truncated = true
+      return
+    }
+    state.fileCount += 1
+    nodes.push({ name: entry.name, path: fullPath, isDirectory: false })
+  }
+}
+
+async function scanEntriesAt(
+  sorted: Dirent[],
+  index: number,
+  folderPath: string,
+  depth: number,
+  state: ScanState,
+  nodes: TreeNode[],
+): Promise<void> {
+  if (index >= sorted.length || state.truncated) return
+  await appendEntry(nodes, sorted[index], folderPath, depth, state)
+  await scanEntriesAt(sorted, index + 1, folderPath, depth, state, nodes)
+}
+
 async function scanInto(folderPath: string, depth: number, state: ScanState): Promise<TreeNode[]> {
   if (state.truncated) return []
 
@@ -67,28 +112,7 @@ async function scanInto(folderPath: string, depth: number, state: ScanState): Pr
     return a.name.localeCompare(b.name)
   })
 
-  for (const entry of sorted) {
-    if (state.truncated) break
-    if (shouldSkipEntry(entry.name)) continue
-
-    const fullPath = join(folderPath, entry.name)
-
-    if (entry.isDirectory()) {
-      if (depth >= MAX_DEPTH) continue
-      // oxlint-disable-next-line no-await-in-loop -- intentional sequential recursive tree walk
-      const children = await scanInto(fullPath, depth + 1, state)
-      if (children.length > 0) {
-        nodes.push({ name: entry.name, path: fullPath, isDirectory: true, children })
-      }
-    } else if (isMdFile(entry.name)) {
-      if (state.fileCount >= MAX_FILES) {
-        state.truncated = true
-        break
-      }
-      state.fileCount += 1
-      nodes.push({ name: entry.name, path: fullPath, isDirectory: false })
-    }
-  }
+  await scanEntriesAt(sorted, 0, folderPath, depth, state, nodes)
 
   return nodes
 }

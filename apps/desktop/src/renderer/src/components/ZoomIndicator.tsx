@@ -1,15 +1,43 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
 import { iconSize, iconStroke } from '../lib/icons'
+
+interface IndicatorState {
+  mounted: boolean
+  visible: boolean
+}
+
+type IndicatorAction =
+  | { type: 'show' }
+  | { type: 'hide' }
+  | { type: 'unmount' }
+  | { type: 'reveal' }
+
+function indicatorReducer(state: IndicatorState, action: IndicatorAction): IndicatorState {
+  switch (action.type) {
+    case 'show':
+      return { mounted: true, visible: false }
+    case 'hide':
+      return { ...state, visible: false }
+    case 'unmount':
+      return { mounted: false, visible: false }
+    case 'reveal':
+      return { ...state, visible: true }
+    default:
+      return state
+  }
+}
 
 export function ZoomIndicator() {
   const zoomLevel = useAppStore((s) => s.zoomLevel)
   const zoomIn = useAppStore((s) => s.zoomIn)
   const zoomOut = useAppStore((s) => s.zoomOut)
   const resetZoom = useAppStore((s) => s.resetZoom)
-  const [visible, setVisible] = useState(false)
-  const [mounted, setMounted] = useState(false)
+  const [{ mounted, visible }, dispatch] = useReducer(indicatorReducer, {
+    mounted: false,
+    visible: false,
+  })
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const prevZoom = useRef(zoomLevel)
 
@@ -17,40 +45,34 @@ export function ZoomIndicator() {
     if (zoomLevel === prevZoom.current) return undefined
     prevZoom.current = zoomLevel
 
-    // Show indicator on any zoom change
-    setMounted(true)
-    // Defer to next frame so the mount renders before the enter animation
-    requestAnimationFrame(() => setVisible(true))
+    dispatch({ type: 'show' })
+    requestAnimationFrame(() => dispatch({ type: 'reveal' }))
 
-    // Auto-hide after 2s (unless zoom is not 100%)
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
-      setVisible(false)
+      dispatch({ type: 'hide' })
     }, 2000)
 
     return () => clearTimeout(hideTimer.current)
   }, [zoomLevel])
 
-  // Keep mounted through exit animation, then unmount
   const handleTransitionEnd = () => {
-    if (!visible) setMounted(false)
+    if (!visible) dispatch({ type: 'unmount' })
   }
 
-  // Also show persistently on hover (re-show if fading out)
   const handleMouseEnter = () => {
     clearTimeout(hideTimer.current)
-    setVisible(true)
+    dispatch({ type: 'reveal' })
   }
 
   const handleMouseLeave = () => {
     hideTimer.current = setTimeout(() => {
-      setVisible(false)
+      dispatch({ type: 'hide' })
     }, 1000)
   }
 
   if (!mounted && zoomLevel === 100) return null
 
-  // Always show if zoom is not 100% (persistent, but faded)
   const persistentlyVisible = zoomLevel !== 100
 
   return (
@@ -84,10 +106,6 @@ export function ZoomIndicator() {
       >
         <Plus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
       </button>
-      {/* Always render the reset button so the card width doesn't jump
-          between 2- and 3-button layouts. The native `disabled` attribute
-          gives us pointer-events:none, removes it from the tab order, and
-          marks it for screen readers — no manual style toggles needed. */}
       <button
         className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-[opacity,background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.97] disabled:opacity-0"
         onClick={resetZoom}

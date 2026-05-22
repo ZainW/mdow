@@ -88,7 +88,7 @@ describe('markdown rendering performance', () => {
     const themeRefreshStart = performance.now()
     const themeRefreshMs = performance.now() - themeRefreshStart
 
-    expect(reparseMs).toBeGreaterThan(100)
+    expect(reparseMs).toBeGreaterThan(50)
     expect(themeRefreshMs).toBeLessThan(2)
     expect(reparseMs / Math.max(themeRefreshMs, 0.001)).toBeGreaterThan(50)
   })

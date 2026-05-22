@@ -86,7 +86,7 @@ function walkBreaks(node: unknown): void {
   const next: unknown[] = []
   for (let i = 2; i < arr.length; i++) {
     const child = arr[i]
-    if (typeof child === 'string' && child.includes('\n')) {
+    if (typeof child === 'string' && /\n/.test(child)) {
       modified = true
       const lines = child.split('\n')
       for (let li = 0; li < lines.length; li++) {

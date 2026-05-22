@@ -42,9 +42,12 @@ export function CommandPalette() {
   const allFiles = useMemo(() => {
     const folderFiles = flattenTree(folderTree)
     const folderPaths = new Set(folderFiles.map((f) => f.path))
-    const recentFiles = recents
-      .filter((path) => !folderPaths.has(path))
-      .map((path) => ({ path, name: basename(path) }))
+    const recentFiles: { path: string; name: string }[] = []
+    for (const path of recents) {
+      if (!folderPaths.has(path)) {
+        recentFiles.push({ path, name: basename(path) })
+      }
+    }
     return [...folderFiles, ...recentFiles]
   }, [folderTree, recents])
 

@@ -38,26 +38,34 @@ export function updateMermaidTheme(isDark: boolean): void {
   }
 }
 
+async function renderMermaidBlock(
+  mermaid: MermaidApi,
+  block: { id: string; code: string },
+): Promise<void> {
+  const el = document.getElementById(block.id)
+  if (!el) return
+
+  try {
+    el.className = 'mermaid mermaid-container'
+    el.replaceChildren()
+    const { svg } = await mermaid.render(`${block.id}-svg`, block.code)
+    el.innerHTML = svg
+  } catch (e) {
+    el.className = 'mermaid-error'
+    el.textContent = `Mermaid diagram error: ${e instanceof Error ? e.message : String(e)}`
+    const errorSvg = document.getElementById(`d${block.id}-svg`)
+    if (errorSvg) errorSvg.remove()
+  }
+}
+
 export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
   if (!mermaidInitialized) return
   const mermaid = await loadMermaid()
   mermaid.initialize(mermaidOptions)
 
-  for (const block of blocks) {
-    const el = document.getElementById(block.id)
-    if (!el) continue
-
-    try {
-      el.className = 'mermaid mermaid-container'
-      el.replaceChildren()
-      // oxlint-disable-next-line no-await-in-loop -- intentional sequential rendering to avoid Mermaid race conditions
-      const { svg } = await mermaid.render(`${block.id}-svg`, block.code)
-      el.innerHTML = svg
-    } catch (e) {
-      el.className = 'mermaid-error'
-      el.textContent = `Mermaid diagram error: ${e instanceof Error ? e.message : String(e)}`
-      const errorSvg = document.getElementById(`d${block.id}-svg`)
-      if (errorSvg) errorSvg.remove()
-    }
-  }
+  // Sequential: Mermaid races when multiple diagrams render concurrently.
+  await blocks.reduce(
+    (chain, block) => chain.then(() => renderMermaidBlock(mermaid, block)),
+    Promise.resolve(),
+  )
 }

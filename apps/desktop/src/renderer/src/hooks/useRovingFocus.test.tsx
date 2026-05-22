@@ -2,6 +2,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { rovingTabIndex, useRovingFocus } from './useRovingFocus'
 
+const ROVING_OPTIONS = ['opt-a', 'opt-b', 'opt-c'] as const
+
 function Harness({
   active,
   orientation = 'both',
@@ -13,9 +15,9 @@ function Harness({
   return (
     // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- test harness; focus rests on the active radio inside
     <div ref={containerRef} role="radiogroup" aria-label="test" onKeyDown={onKeyDown}>
-      {[0, 1, 2].map((i) => (
+      {ROVING_OPTIONS.map((id, i) => (
         <button
-          key={i}
+          key={id}
           type="button"
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- harness for custom-styled radios
           role="radio"

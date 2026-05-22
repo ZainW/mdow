@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn, isMac } from '../lib/utils'
 import { FileText, X } from 'lucide-react'
@@ -250,17 +250,18 @@ function TabContextMenu({
     autoFocusFirst: true,
   })
   const ref = menuRoving.containerRef
+  const onCloseEvent = useEffectEvent(onClose)
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target
       if (!(target instanceof Node)) return
-      if (ref.current && !ref.current.contains(target)) onClose()
+      if (ref.current && !ref.current.contains(target)) onCloseEvent()
     }
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onCloseEvent()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -269,7 +270,7 @@ function TabContextMenu({
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [onClose, ref])
+  }, [ref])
 
   // Keep menu within viewport
   useEffect(() => {
@@ -280,8 +281,7 @@ function TabContextMenu({
     let ny = y
     if (rect.right > window.innerWidth - 8) nx = window.innerWidth - rect.width - 8
     if (rect.bottom > window.innerHeight - 8) ny = window.innerHeight - rect.height - 8
-    el.style.left = `${nx}px`
-    el.style.top = `${ny}px`
+    el.style.cssText = `left:${nx}px;top:${ny}px;`
   }, [x, y, ref])
 
   const hasOthers = tabCount > 1
