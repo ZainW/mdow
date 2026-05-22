@@ -65,7 +65,13 @@ function createWindow(): void {
     minHeight: 400,
     show: false,
     ...getWindowChromeOptions(),
-    ...(isLinux ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
+    ...(isLinux
+      ? {
+          icon: is.dev
+            ? join(__dirname, '../../resources/icon.png')
+            : join(process.resourcesPath, 'icon.png'),
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -133,9 +139,6 @@ if (!gotTheLock) {
   }
 
   void app.whenReady().then(() => {
-    if (isMac && app.dock) {
-      app.dock.setIcon(join(__dirname, '../../resources/icon.png'))
-    }
     const appState = getAppState()
     const validThemes: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
     const theme = validThemes.find((v) => v === appState.theme)

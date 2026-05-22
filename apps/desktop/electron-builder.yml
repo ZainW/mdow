@@ -4,6 +4,10 @@ directories:
   buildResources: resources
   output: dist
 
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+
 publish:
   provider: github
 
