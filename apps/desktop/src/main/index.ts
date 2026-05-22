@@ -8,6 +8,7 @@ import { addRecent, getWindowBounds, saveWindowBounds, getAppState } from './sto
 import { unwatchFolder } from './folder-service'
 import { readFileContent, unwatchAllFiles, watchFile } from './file-service'
 import { isMac, isLinux } from './platform'
+import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -63,6 +64,7 @@ function createWindow(): void {
     minWidth: 600,
     minHeight: 400,
     show: false,
+    ...getWindowChromeOptions(),
     ...(isLinux ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -83,6 +85,7 @@ function createWindow(): void {
   mainWindow.on('moved', saveBounds)
 
   const handleNativeThemeUpdate = () => {
+    if (mainWindow) applyWindowChrome(mainWindow)
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
   }
   nativeTheme.on('updated', handleNativeThemeUpdate)

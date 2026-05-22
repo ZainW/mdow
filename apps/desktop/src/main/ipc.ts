@@ -4,6 +4,7 @@ import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 import { isMac } from './platform'
+import { applyWindowChrome } from './window-chrome'
 
 function setupFileWatcher(win: BrowserWindow, path: string): void {
   watchFile(path, (event) => {
@@ -94,6 +95,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     if (!source) return
     nativeTheme.themeSource = source
     saveAppState({ theme: source })
+    const win = getMainWindow()
+    if (win) applyWindowChrome(win)
   })
 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {

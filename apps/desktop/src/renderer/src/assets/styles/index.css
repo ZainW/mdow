@@ -168,6 +168,12 @@
     -webkit-font-smoothing: antialiased;
     font-size: 13px;
   }
+
+  .titlebar-drag {
+    height: 28px;
+    background: var(--background);
+    -webkit-app-region: drag;
+  }
 }
 
 /* ── Scrollbar styling ───────────────────────────────────── */

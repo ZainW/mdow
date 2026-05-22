@@ -17,6 +17,7 @@ import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 import { basename, isMarkdownPath } from './lib/path-utils'
+import { TitlebarInset } from './components/TitlebarInset'
 
 function App(): React.JSX.Element {
   const initialized = useAppStore((s) => s.initialized)
@@ -252,26 +253,33 @@ function App(): React.JSX.Element {
   }
 
   if (!initialized) {
-    return <div className="h-screen w-screen bg-background" />
+    return (
+      <div className="flex h-screen w-screen flex-col bg-background">
+        <TitlebarInset />
+      </div>
+    )
   }
 
   return (
     <SidebarProvider>
       <div
-        className="flex h-screen w-screen overflow-hidden bg-background text-foreground"
+        className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
-        <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <TabBar />
-          {activeTab && <DocumentBreadcrumb tab={activeTab} />}
-          {renderContent()}
-          <UpdateBanner />
+        <TitlebarInset />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <TabBar />
+            {activeTab && <DocumentBreadcrumb tab={activeTab} />}
+            {renderContent()}
+            <UpdateBanner />
+          </div>
+          <CommandPalette />
+          <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
+          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>
-        <CommandPalette />
-        <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </div>
     </SidebarProvider>
   )
