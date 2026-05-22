@@ -106,7 +106,6 @@ interface RenderState {
 }
 
 export function MarkdownView({ tab }: MarkdownViewProps) {
-  const [themeKey, setThemeKey] = useState(0)
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevTabIdRef = useRef(tab.id)
@@ -128,6 +127,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const [renderError, setRenderError] = useState(false)
   const renderVersionRef = useRef(0)
   const lastRenderedTabIdRef = useRef(tab.id)
+  const mermaidBlocksRef = useRef<RenderResult['mermaidBlocks']>([])
   const renderResult = renderState?.result ?? null
 
   useEffect(() => {
@@ -159,8 +159,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- themeKey forces re-render on theme change
-  }, [tab.id, tab.content, themeKey])
+  }, [tab.id, tab.content])
 
   useEffect(() => {
     const headings = renderResult?.headings ?? []
@@ -180,6 +179,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   }, [])
 
   useEffect(() => {
+    mermaidBlocksRef.current = renderResult?.mermaidBlocks ?? []
     if (renderResult?.mermaidBlocks.length) {
       void renderMermaidBlocks(renderResult.mermaidBlocks)
     }
@@ -189,7 +189,10 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     const observer = new MutationObserver(() => {
       const isDark = document.documentElement.classList.contains('dark')
       updateMermaidTheme(isDark)
-      setThemeKey((k) => k + 1)
+      const blocks = mermaidBlocksRef.current
+      if (blocks.length > 0) {
+        void renderMermaidBlocks(blocks)
+      }
     })
 
     observer.observe(document.documentElement, {

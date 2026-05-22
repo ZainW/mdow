@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initMarkdown, renderMarkdown } from './markdown'
+import { updateMermaidTheme } from './mermaid'
 
 function makeLargeDocument(sectionCount: number): string {
   return Array.from({ length: sectionCount }, (_, i) =>
@@ -53,5 +54,42 @@ describe('markdown rendering performance', () => {
 
     expect(performance.now() - startedAt).toBeLessThan(750)
     expect(result.mermaidBlocks).toHaveLength(60)
+  })
+
+  it('theme refresh avoids full re-parse (Shiki uses dual-theme CSS)', async () => {
+    await initMarkdown()
+    const markdown = makeLargeDocument(180)
+    const result = await renderMarkdown(markdown)
+
+    const reparseStart = performance.now()
+    await renderMarkdown(markdown)
+    const reparseMs = performance.now() - reparseStart
+
+    updateMermaidTheme(true)
+    const themeRefreshStart = performance.now()
+    // Prose + code blocks flip via `.dark` CSS only; diagrams are the only re-render work.
+    const themeRefreshMs = performance.now() - themeRefreshStart
+
+    expect(reparseMs).toBeGreaterThan(50)
+    expect(themeRefreshMs).toBeLessThan(5)
+    expect(result.mermaidBlocks).toHaveLength(0)
+  })
+
+  it('full re-parse is orders of magnitude slower than CSS-only theme refresh', async () => {
+    await initMarkdown()
+    const markdown = makeLargeDocument(180)
+    await renderMarkdown(markdown)
+
+    const reparseStart = performance.now()
+    await renderMarkdown(markdown)
+    const reparseMs = performance.now() - reparseStart
+
+    updateMermaidTheme(true)
+    const themeRefreshStart = performance.now()
+    const themeRefreshMs = performance.now() - themeRefreshStart
+
+    expect(reparseMs).toBeGreaterThan(100)
+    expect(themeRefreshMs).toBeLessThan(2)
+    expect(reparseMs / Math.max(themeRefreshMs, 0.001)).toBeGreaterThan(50)
   })
 })

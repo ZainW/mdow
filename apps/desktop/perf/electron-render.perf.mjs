@@ -16,6 +16,7 @@ const budgets = {
   inAppOpenMs: 1_000,
   superFirstContentMs: 3_500,
   superMermaidReadyMs: 8_000,
+  themeToggleStableMs: 32,
   scrollP95FrameMs: 35,
   scrollLongFrames: 8,
 }
@@ -85,6 +86,31 @@ async function openFileInRunningApp(app, page, filePath) {
   return performance.now() - startedAt
 }
 
+async function measureThemeToggle(page) {
+  return page.evaluate(async () => {
+    const body = document.querySelector('.markdown-body')
+    if (!body) throw new Error('Missing markdown body')
+    const childCount = body.childElementCount
+    if (childCount === 0) throw new Error('Markdown body is empty')
+
+    const startedAt = performance.now()
+    document.documentElement.classList.toggle('dark')
+
+    await new Promise((resolve) => {
+      function frame() {
+        if (body.childElementCount >= childCount) {
+          resolve()
+          return
+        }
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
+    })
+
+    return performance.now() - startedAt
+  })
+}
+
 async function measureScroll(page) {
   return page.evaluate(async () => {
     const scroller = document.querySelector('.group\\/content')
@@ -145,6 +171,9 @@ function printResult(label, result) {
       result.scroll == null ? null : `longFrames=${result.scroll.longFrames}`,
       result.scroll == null ? null : `frames=${result.scroll.frames}`,
       result.scroll == null ? null : `scrollHeight=${result.scroll.scrollHeight}`,
+      result.themeToggleStableMs == null
+        ? null
+        : `themeToggle=${result.themeToggleStableMs.toFixed(1)}ms`,
     ]
       .filter(Boolean)
       .join(' '),
@@ -179,11 +208,17 @@ try {
     const superResult = {
       firstContentMs: superRun.firstContentMs,
       mermaidReadyMs: await waitForMermaid(superRun.page),
+      themeToggleStableMs: await measureThemeToggle(superRun.page),
       scroll: await measureScroll(superRun.page),
     }
     printResult('super', superResult)
     assertBudget('super first content', superResult.firstContentMs, budgets.superFirstContentMs)
     assertBudget('super Mermaid ready', superResult.mermaidReadyMs, budgets.superMermaidReadyMs)
+    assertBudget(
+      'super theme toggle stable',
+      superResult.themeToggleStableMs,
+      budgets.themeToggleStableMs,
+    )
     assertBudget('super scroll p95 frame', superResult.scroll.p95FrameMs, budgets.scrollP95FrameMs)
     if (superResult.scroll.longFrames > budgets.scrollLongFrames) {
       throw new Error(

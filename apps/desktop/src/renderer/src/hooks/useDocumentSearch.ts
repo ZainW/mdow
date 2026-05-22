@@ -78,14 +78,19 @@ export function useDocumentSearch(
     const container = containerRef.current
     if (!container) return undefined
 
-    removeHighlights(container)
-    activeMarkRef.current = null
+    const timer = setTimeout(() => {
+      removeHighlights(container)
+      activeMarkRef.current = null
 
-    const count = applyHighlights(container, query)
-    setMatchCount(count)
-    setCurrentIndex(count > 0 ? 0 : -1)
+      const count = applyHighlights(container, query)
+      setMatchCount(count)
+      setCurrentIndex(count > 0 ? 0 : -1)
+    }, 120)
 
-    return () => removeHighlights(container)
+    return () => {
+      clearTimeout(timer)
+      removeHighlights(container)
+    }
   }, [containerRef, query, renderKey])
 
   useEffect(() => {
