@@ -16,6 +16,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
+import { isTauri } from './lib/is-tauri'
 import { basename, isMarkdownPath } from './lib/path-utils'
 import { TitlebarInset } from './components/TitlebarInset'
 import { IconLab } from './dev/IconLab'
@@ -135,12 +136,14 @@ function MainApp(): React.JSX.Element {
     )
   }
 
+  const htmlDragDropEnabled = !isTauri()
+
   return (
     <SidebarProvider>
       <div
         className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
+        onDrop={htmlDragDropEnabled ? handleDrop : undefined}
+        onDragOver={htmlDragDropEnabled ? (e) => e.preventDefault() : undefined}
       >
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">

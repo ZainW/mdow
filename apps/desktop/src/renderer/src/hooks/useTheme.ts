@@ -1,15 +1,35 @@
 import { useCallback, useEffect } from 'react'
+import { useAppStore } from '../store/app-store'
+
+function applyDarkClass(isDark: boolean): void {
+  document.documentElement.classList.toggle('dark', isDark)
+}
 
 export function useTheme(): void {
+  const theme = useAppStore((s) => s.theme)
+
+  useEffect(() => {
+    if (theme === 'light') {
+      applyDarkClass(false)
+      return
+    }
+    if (theme === 'dark') {
+      applyDarkClass(true)
+      return
+    }
+
+    // System: matchMedia is a reasonable initial value until onThemeChanged fires.
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    applyDarkClass(mq.matches)
+  }, [theme])
+
   const handleThemeChanged = useCallback((isDark: boolean) => {
-    document.documentElement.classList.toggle('dark', isDark)
+    if (useAppStore.getState().theme === 'system') {
+      applyDarkClass(isDark)
+    }
   }, [])
 
   useEffect(() => {
-    // Set initial theme from OS preference (reflects nativeTheme in Electron)
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    document.documentElement.classList.toggle('dark', mq.matches)
-
     const unsubscribe = window.api.onThemeChanged(handleThemeChanged)
     return unsubscribe
   }, [handleThemeChanged])

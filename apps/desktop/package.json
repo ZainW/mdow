@@ -27,6 +27,11 @@
     "build:dist": "electron-vite build && electron-builder",
     "publish": "electron-vite build && electron-builder --publish always",
     "release:homebrew": "bash scripts/update-homebrew-cask.sh",
+    "tauri:vite:dev": "vite --config vite.config.tauri.ts",
+    "tauri:vite:build": "vite build --config vite.config.tauri.ts",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "cargo:check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "postinstall": "electron-builder install-app-deps && bash scripts/patch-electron-name.sh"
   },
   "dependencies": {
@@ -38,6 +43,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.100.10",
     "@tanstack/react-virtual": "^3.13.24",
+    "@tauri-apps/api": "^2.11.0",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -57,6 +63,7 @@
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
+import { isTauri } from '../lib/is-tauri'
 import { basename, isMarkdownPath } from '../lib/path-utils'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
@@ -16,6 +17,7 @@ export function WelcomeView() {
   const queryClient = useQueryClient()
   const [isDragOver, setIsDragOver] = useState(false)
   const { data: recents = [] } = useRecents()
+  const htmlDragDropEnabled = !isTauri()
 
   const handleOpenFile = useCallback(async () => {
     const result = await window.api.openFileDialog()
@@ -69,9 +71,9 @@ export function WelcomeView() {
         'flex flex-1 flex-col items-center justify-center text-muted-foreground transition-colors duration-150',
         isDragOver && 'bg-primary/[0.03]',
       )}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
+      onDrop={htmlDragDropEnabled ? handleDrop : undefined}
+      onDragOver={htmlDragDropEnabled ? handleDragOver : undefined}
+      onDragLeave={htmlDragDropEnabled ? handleDragLeave : undefined}
     >
       <div
         className={cn(

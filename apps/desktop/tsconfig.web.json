@@ -1,6 +1,11 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
-  "include": ["src/renderer/src/env.d.ts", "src/renderer/src/**/*", "src/preload/env.d.ts"],
+  "include": [
+    "src/renderer/src/env.d.ts",
+    "src/renderer/src/**/*",
+    "src/preload/env.d.ts",
+    "src/shared/**/*"
+  ],
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
