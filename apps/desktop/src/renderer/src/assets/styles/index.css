@@ -342,11 +342,23 @@
   }
 }
 
+/* Document content — fade in when markdown render completes */
+.document-content-in {
+  animation: document-content-in 200ms var(--ease-out-ui) both;
+}
+
+@keyframes document-content-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rail-icon-btn,
   .rail-indicator,
   .outline-link,
-  .drawer-mode {
+  .drawer-mode,
+  .document-content-in {
     transition-duration: 0ms !important;
     animation: none !important;
   }

@@ -18,6 +18,7 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 import { basename, isMarkdownPath } from './lib/path-utils'
 import { TitlebarInset } from './components/TitlebarInset'
+import { DocumentSkeleton } from './components/DocumentSkeleton'
 import { IconLab } from './dev/IconLab'
 
 const isIconLab = import.meta.env.VITE_ICON_LAB === 'true'
@@ -131,6 +132,11 @@ function MainApp(): React.JSX.Element {
     return (
       <div className="flex h-screen w-screen flex-col bg-background">
         <TitlebarInset />
+        <div className="flex flex-1 justify-center px-12 py-8">
+          <div className="w-full max-w-3xl">
+            <DocumentSkeleton />
+          </div>
+        </div>
       </div>
     )
   }

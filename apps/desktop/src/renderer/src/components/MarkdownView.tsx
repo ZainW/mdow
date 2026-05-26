@@ -18,6 +18,7 @@ import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
 import { iconSize, iconStroke } from '../lib/icons'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
+import { DocumentSkeleton } from './DocumentSkeleton'
 
 interface MarkdownViewProps {
   tab: Tab
@@ -156,6 +157,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
   const mermaidBlocksRef = useRef<RenderResult['mermaidBlocks']>([])
   const renderResult = renderUi.result
   const renderError = renderUi.error
+  const isRendering = Boolean(tab.content) && !renderResult && !renderError
 
   useEffect(() => {
     if (!tab.content) {
@@ -304,6 +306,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       )}
       <div
         ref={contentRef}
+        aria-busy={isRendering}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
         style={
           {
@@ -320,7 +323,11 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
             This document could not be rendered.
           </div>
         ) : renderUi.result ? (
-          <MarkdownContent key={renderUi.version} result={renderUi.result} />
+          <div key={renderUi.version} className="document-content-in">
+            <MarkdownContent result={renderUi.result} />
+          </div>
+        ) : isRendering ? (
+          <DocumentSkeleton />
         ) : null}
       </div>
       <ZoomIndicator />
