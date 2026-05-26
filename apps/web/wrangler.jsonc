@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mdow-web",
-  "compatibility_date": "2026-04-03",
+  "name": "mdow",
+  "compatibility_date": "2026-05-25",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
   "observability": {

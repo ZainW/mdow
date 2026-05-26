@@ -10,12 +10,15 @@
       "inputs": [
         "src/**",
         "content/**",
+        "public/**",
+        "scripts/**",
         "tsconfig*.json",
         "vite.config.*",
+        "wrangler.jsonc",
         "electron.vite.config.*",
         "package.json"
       ],
-      "outputs": ["out/**", ".output/**"]
+      "outputs": ["out/**", ".output/**", "dist/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
