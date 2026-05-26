@@ -46,3 +46,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Push version + sha256 to ZainW/homebrew-mdow (needs cross-repo write access).
+      - run: pnpm run --filter desktop release:homebrew
+        if: matrix.platform == 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

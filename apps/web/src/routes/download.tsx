@@ -8,7 +8,8 @@ import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { seo } from '~/lib/seo'
 
 const REPO_RELEASES_URL = 'https://github.com/ZainW/mdow/releases'
-const HOMEBREW_INSTALL = 'brew install --cask zainw/mdow/mdow'
+const SHOW_HOMEBREW = false
+const HOMEBREW_INSTALL = 'brew tap zainw/mdow && brew install --cask mdow'
 
 const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
   const ua = getRequestHeader('user-agent') || ''
@@ -94,15 +95,17 @@ function DownloadPage() {
           />
         ))}
       </div>
-      <div className="mt-10 rounded-xl border border-border bg-surface p-6 text-center shadow-soft">
-        <h2 className="text-lg font-semibold">Install via Homebrew</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          macOS only — keeps mdow up to date with brew.
-        </p>
-        <code className="mt-4 inline-block rounded-md bg-muted px-4 py-2 font-mono text-sm">
-          {HOMEBREW_INSTALL}
-        </code>
-      </div>
+      {SHOW_HOMEBREW && (
+        <div className="mt-10 rounded-xl border border-border bg-surface p-6 text-center shadow-soft">
+          <h2 className="text-lg font-semibold">Install via Homebrew</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            macOS only — keeps mdow up to date with brew.
+          </p>
+          <code className="mt-4 inline-block rounded-md bg-muted px-4 py-2 font-mono text-sm">
+            {HOMEBREW_INSTALL}
+          </code>
+        </div>
+      )}
       <p className="mt-8 text-center text-sm text-muted-foreground">
         <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
           View all releases on GitHub
@@ -147,7 +150,7 @@ function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
       platform: 'macOS',
       icon: '\u{1F4BB}',
       formats: macFormats,
-      note: HOMEBREW_INSTALL,
+      note: SHOW_HOMEBREW ? HOMEBREW_INSTALL : undefined,
     },
     {
       id: 'windows',

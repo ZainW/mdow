@@ -52,7 +52,7 @@ Users then install with:
 
 ```bash
 brew tap zainw/mdow      # one-time
-brew install --cask mdow  # or: brew install --cask zainw/mdow/mdow
+brew install --cask mdow # or: brew install --cask zainw/mdow/mdow (auto-taps)
 ```
 
 And update with:

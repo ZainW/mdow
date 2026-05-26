@@ -15,12 +15,6 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
 
-**Homebrew:**
-
-```bash
-brew install --cask zainw/mdow/mdow
-```
-
 ## Windows
 
 Download and run the installer (`.exe`). Mdow will be added to your Start menu and can be set as the default app for markdown files.
@@ -38,8 +32,4 @@ AppImage requires no system installation — run it directly from your Downloads
 
 ## Updates
 
-On Windows and Linux, mdow checks for updates automatically and can download them in-app. On macOS, use the in-app menu to open the latest release on GitHub, or update via Homebrew:
-
-```bash
-brew upgrade --cask mdow
-```
+On Windows and Linux, mdow checks for updates automatically and can download them in-app. On macOS, use the in-app menu to open the latest release on GitHub.
