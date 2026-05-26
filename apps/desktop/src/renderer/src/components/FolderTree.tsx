@@ -7,6 +7,8 @@ import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename, detectSep } from '../lib/path-utils'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
 import { Separator } from './ui/separator'
+import { Loader2 } from 'lucide-react'
+import { cn, isMac } from '../lib/utils'
 
 type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
 
@@ -107,11 +109,13 @@ export function FolderTree() {
   const folderTree = useAppStore((s) => s.folderTree)
   const folderTreeTruncated = useAppStore((s) => s.folderTreeTruncated)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
+  const openingPath = useAppStore((s) => s.openingPath)
   const activeTab = useAppStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId)
     return tab ?? null
   })
   const openMarkdownFile = useOpenMarkdownFile()
+  const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 
   const normalizedRoot = useMemo(
     () => (openFolderPath ? normalizeRoot(openFolderPath) : ''),
@@ -172,6 +176,16 @@ export function FolderTree() {
     }
   }, [activeTab?.path, normalizedRoot, model, paths])
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const sel = lastSelectionRef.current
+    if (!sel || !openFolderPath) return
+    const abs = sel.endsWith('/')
+      ? relToAbsolute(sel.slice(0, -1), openFolderPath)
+      : relToAbsolute(sel, openFolderPath)
+    void window.api.showInFolder(abs)
+  }
+
   if (!openFolderPath || folderTree.length === 0) return null
 
   const folderName = basename(openFolderPath)
@@ -195,8 +209,23 @@ export function FolderTree() {
               Large folder: some files hidden
             </div>
           )}
-          <div className="folder-tree-host h-full">
-            <FileTreeView model={model} style={{ height: '100%' }} />
+          <div
+            className="folder-tree-host relative h-full"
+            onContextMenu={handleContextMenu}
+            title={`Right-click to ${revealLabel.toLowerCase()}`}
+          >
+            {openingPath && (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-1.5 bg-sidebar/90 px-2 py-1 text-[11px] text-muted-foreground"
+                aria-live="polite"
+              >
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+                Opening…
+              </div>
+            )}
+            <div className={cn('h-full', openingPath && 'opacity-60')}>
+              <FileTreeView model={model} style={{ height: '100%' }} />
+            </div>
           </div>
         </SidebarGroupContent>
       </SidebarGroup>

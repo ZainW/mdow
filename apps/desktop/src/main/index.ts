@@ -1,49 +1,103 @@
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeTheme, protocol, net, shell } from 'electron'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'mdow-local',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
+])
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { createMenu } from './menu'
 import { initAutoUpdater } from './updater'
 import { addRecent, getWindowBounds, saveWindowBounds, getAppState } from './store'
 import { unwatchFolder } from './folder-service'
-import { readFileContent, unwatchAllFiles, watchFile } from './file-service'
+import { readFileContent, unwatchAllFiles, attachFileWatcher } from './file-service'
 import { isMac, isLinux } from './platform'
 import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
+import { isMarkdownPath, validateMarkdownPath } from './path-validation'
+import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
 
 let mainWindow: BrowserWindow | null = null
-
-const markdownExtensions = ['.md', '.markdown', '.mdx']
+let windowReady = false
+let pendingOpenPath: string | null = null
 
 function getMainWindow(): BrowserWindow | null {
   return mainWindow
 }
 
-function isMarkdownPath(path: string): boolean {
-  return markdownExtensions.some((extension) => path.toLowerCase().endsWith(extension))
+function registerLocalProtocol(): void {
+  protocol.handle('mdow-local', (request) => {
+    const url = new URL(request.url)
+    const encoded = url.pathname.replace(/^\//, '')
+    const filePath = decodeURIComponent(encoded)
+
+    if (!isPathAllowed(filePath)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+
+    return net.fetch(pathToFileURL(filePath).toString())
+  })
 }
 
-function watchOpenedFile(filePath: string): void {
-  watchFile(filePath, (event) => {
-    const win = getMainWindow()
-    if (!win || win.isDestroyed()) return
-    if (event.type === 'changed') {
-      win.webContents.send('file:changed', { path: filePath, content: event.content })
-    } else {
-      win.webContents.send('file:deleted', filePath)
+function setupWebContentsSecurity(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
+
+  win.webContents.on('will-navigate', (event, url) => {
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    if (is.dev && devUrl && url.startsWith(devUrl)) {
+      return
+    }
+    if (url.startsWith('file://')) {
+      return
+    }
+    event.preventDefault()
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url)
     }
   })
 }
 
 function openFile(filePath: string): void {
-  void readFileContent(filePath)
-    .then((content) => {
-      addRecent(filePath)
-      watchOpenedFile(filePath)
-      mainWindow?.webContents.send('file:opened', { path: filePath, content })
-    })
-    .catch(() => {
+  if (!mainWindow || !windowReady) {
+    pendingOpenPath = filePath
+    return
+  }
+
+  void (async () => {
+    try {
+      const resolved = validateMarkdownPath(filePath)
+      const content = await readFileContent(resolved)
+      addRecent(resolved)
+      registerAllowedFile(resolved)
+      if (isMac) {
+        app.addRecentDocument(resolved)
+      }
+      attachFileWatcher(getMainWindow, resolved)
+      mainWindow?.webContents.send('file:opened', { path: resolved, content })
+    } catch {
       // Invalid file path
-    })
+    }
+  })()
+}
+
+function flushPendingOpen(): void {
+  if (pendingOpenPath) {
+    const path = pendingOpenPath
+    pendingOpenPath = null
+    openFile(path)
+  }
 }
 
 function openFileFromArgv(argv: string[]): void {
@@ -75,20 +129,32 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   })
 
+  if (savedBounds?.isMaximized) {
+    mainWindow.maximize()
+  }
+
+  setupWebContentsSecurity(mainWindow)
+
   mainWindow.on('ready-to-show', () => {
+    windowReady = true
     mainWindow!.show()
+    flushPendingOpen()
   })
 
   const saveBounds = () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      saveWindowBounds(mainWindow.getBounds())
+      saveWindowBounds(mainWindow.getBounds(), mainWindow.isMaximized())
     }
   }
   mainWindow.on('resized', saveBounds)
   mainWindow.on('moved', saveBounds)
+  mainWindow.on('maximize', saveBounds)
+  mainWindow.on('unmaximize', saveBounds)
 
   const handleNativeThemeUpdate = () => {
     if (mainWindow) applyWindowChrome(mainWindow)
@@ -98,7 +164,6 @@ function createWindow(): void {
 
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
-
     openFileFromArgv(process.argv)
   })
 
@@ -112,7 +177,9 @@ function createWindow(): void {
     nativeTheme.off('updated', handleNativeThemeUpdate)
     unwatchAllFiles()
     unwatchFolder()
+    clearAllowedPaths()
     mainWindow = null
+    windowReady = false
   })
 }
 
@@ -139,6 +206,8 @@ if (!gotTheLock) {
   }
 
   void app.whenReady().then(() => {
+    registerLocalProtocol()
+
     const appState = getAppState()
     const validThemes: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
     const theme = validThemes.find((v) => v === appState.theme)
@@ -161,9 +230,7 @@ if (!gotTheLock) {
 
   app.on('open-file', (event, path) => {
     event.preventDefault()
-    if (mainWindow) {
-      openFile(path)
-    }
+    openFile(path)
   })
 
   app.on('before-quit', () => {

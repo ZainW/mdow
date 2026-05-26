@@ -40,18 +40,32 @@ export function WelcomeView() {
   )
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragOver(false)
 
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find((f) => isMarkdownPath(f.name))
+      if (files.length === 0) return
 
-      if (mdFile) {
-        void openMarkdownFile(mdFile.path)
+      const paths = files.map((f) => window.api.getPathForFile(f))
+      const mdPaths = paths.filter((p) => isMarkdownPath(p))
+
+      if (mdPaths.length > 0) {
+        await Promise.all(mdPaths.map((path) => openMarkdownFile(path)))
+        return
+      }
+
+      if (files.length === 1) {
+        const folderPath = paths[0]
+        try {
+          const scan = await window.api.readFolderTree(folderPath)
+          setOpenFolder(folderPath, scan.tree, scan.truncated)
+        } catch {
+          // Not a directory — ignore.
+        }
       }
     },
-    [openMarkdownFile],
+    [openMarkdownFile, setOpenFolder],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -69,7 +83,7 @@ export function WelcomeView() {
         'flex flex-1 flex-col items-center justify-center text-muted-foreground transition-colors duration-150',
         isDragOver && 'bg-primary/[0.03]',
       )}
-      onDrop={handleDrop}
+      onDrop={(e) => void handleDrop(e)}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
@@ -111,8 +125,8 @@ export function WelcomeView() {
             )}
           >
             <strong className="font-medium text-foreground/80">Anywhere in this window</strong>
-            {' — drop a '}
-            <span className="font-mono">.md</span> file.
+            {' — drop '}
+            <span className="font-mono">.md</span> files or a folder.
           </div>
         </div>
         {recents.length > 0 && (

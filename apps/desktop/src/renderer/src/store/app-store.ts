@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DocHeading } from '../lib/markdown'
+import type { DocHeading, RenderResult } from '../lib/markdown'
 
 export interface Tab {
   id: string
@@ -23,10 +23,14 @@ export interface FileError {
   path: string
 }
 
+export type SidebarMode = 'recents' | 'folder' | 'outline'
+
 interface AppStore {
   initialized: boolean
   tabs: Tab[]
   activeTabId: string | null
+  openingPath: string | null
+  renderCache: Map<string, RenderResult>
   openTab: (file: { path: string; content: string }) => void
   openErrorTab: (path: string, error: FileError) => void
   closeTab: (tabId: string) => void
@@ -41,11 +45,13 @@ interface AppStore {
   updateTabScroll: (tabId: string, scrollPosition: number) => void
   setTabError: (path: string, error: FileError) => void
   clearTabError: (tabId: string) => void
+  setOpeningPath: (path: string | null) => void
+  setRenderCache: (tabId: string, result: RenderResult | null) => void
 
   sidebarOpen: boolean
-  sidebarWidth: number
+  sidebarMode: SidebarMode
   toggleSidebar: () => void
-  setSidebarWidth: (width: number) => void
+  setSidebarMode: (mode: SidebarMode) => void
 
   openFolderPath: string | null
   folderTree: TreeNode[]
@@ -111,10 +117,21 @@ function unwatchPath(path: string): void {
   void window.api.unwatchFile(path)
 }
 
+function withoutRenderCache(
+  renderCache: Map<string, RenderResult>,
+  tabIds: string[],
+): Map<string, RenderResult> {
+  const next = new Map(renderCache)
+  for (const tabId of tabIds) next.delete(tabId)
+  return next
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   initialized: false,
   tabs: [],
   activeTabId: null,
+  openingPath: null,
+  renderCache: new Map(),
 
   openTab: (file) =>
     set((state) => {
@@ -179,7 +196,11 @@ export const useAppStore = create<AppStore>((set) => ({
           activeTabId = tabs[tabs.length - 1].id
         }
       }
-      return { tabs, activeTabId }
+      return {
+        tabs,
+        activeTabId,
+        renderCache: withoutRenderCache(state.renderCache, [tabId]),
+      }
     }),
 
   closeOtherTabs: (tabId) =>
@@ -189,7 +210,12 @@ export const useAppStore = create<AppStore>((set) => ({
       for (const t of state.tabs) {
         if (t.id !== tabId) unwatchPath(t.path)
       }
-      return { tabs: [keep], activeTabId: tabId }
+      const removedIds = state.tabs.filter((t) => t.id !== tabId).map((t) => t.id)
+      return {
+        tabs: [keep],
+        activeTabId: tabId,
+        renderCache: withoutRenderCache(state.renderCache, removedIds),
+      }
     }),
 
   closeTabsToRight: (tabId) =>
@@ -197,17 +223,25 @@ export const useAppStore = create<AppStore>((set) => ({
       const index = state.tabs.findIndex((t) => t.id === tabId)
       if (index === -1) return state
       const tabs = state.tabs.slice(0, index + 1)
-      for (const t of state.tabs.slice(index + 1)) {
+      const removed = state.tabs.slice(index + 1)
+      for (const t of removed) {
         unwatchPath(t.path)
       }
       const stillActive = tabs.some((t) => t.id === state.activeTabId)
-      return { tabs, activeTabId: stillActive ? state.activeTabId : tabId }
+      return {
+        tabs,
+        activeTabId: stillActive ? state.activeTabId : tabId,
+        renderCache: withoutRenderCache(
+          state.renderCache,
+          removed.map((t) => t.id),
+        ),
+      }
     }),
 
   closeAllTabs: () =>
     set((state) => {
       for (const t of state.tabs) unwatchPath(t.path)
-      return { tabs: [], activeTabId: null }
+      return { tabs: [], activeTabId: null, renderCache: new Map() }
     }),
 
   reorderTabs: (fromIndex, toIndex) =>
@@ -239,9 +273,14 @@ export const useAppStore = create<AppStore>((set) => ({
   setActiveTab: (tabId) => set({ activeTabId: tabId }),
 
   updateTabContent: (path, content) =>
-    set((state) => ({
-      tabs: state.tabs.map((t) => (t.path === path ? { ...t, content } : t)),
-    })),
+    set((state) => {
+      const tab = state.tabs.find((t) => t.path === path)
+      const renderCache = tab ? withoutRenderCache(state.renderCache, [tab.id]) : state.renderCache
+      return {
+        tabs: state.tabs.map((t) => (t.path === path ? { ...t, content } : t)),
+        renderCache,
+      }
+    }),
 
   updateTabScroll: (tabId, scrollPosition) =>
     set((state) => ({
@@ -261,10 +300,25 @@ export const useAppStore = create<AppStore>((set) => ({
       tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, error: null } : t)),
     })),
 
+  setOpeningPath: (path) => set({ openingPath: path }),
+
+  setRenderCache: (tabId, result) =>
+    set((state) => {
+      const renderCache = new Map(state.renderCache)
+      if (result === null) renderCache.delete(tabId)
+      else renderCache.set(tabId, result)
+      return { renderCache }
+    }),
+
   sidebarOpen: true,
-  sidebarWidth: 260,
+  sidebarMode: 'recents',
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  setSidebarWidth: (width) => set({ sidebarWidth: width }),
+  setSidebarMode: (mode) => {
+    if (typeof window !== 'undefined' && window.api) {
+      void window.api.saveAppState({ sidebarMode: mode })
+    }
+    set({ sidebarMode: mode })
+  },
 
   openFolderPath: null,
   folderTree: [],
@@ -274,7 +328,14 @@ export const useAppStore = create<AppStore>((set) => ({
   setFolderTree: (tree, truncated) => set({ folderTree: tree, folderTreeTruncated: truncated }),
 
   wideMode: false,
-  toggleWideMode: () => set((state) => ({ wideMode: !state.wideMode })),
+  toggleWideMode: () =>
+    set((state) => {
+      const wideMode = !state.wideMode
+      if (typeof window !== 'undefined' && window.api) {
+        void window.api.saveAppState({ wideMode })
+      }
+      return { wideMode }
+    }),
 
   docHeadings: [],
   activeHeadingId: null,

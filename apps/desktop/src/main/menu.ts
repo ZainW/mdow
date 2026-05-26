@@ -1,5 +1,30 @@
 import { Menu, app, BrowserWindow, shell } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import { isMac } from './platform'
+import { getRecents } from './store'
+
+function buildRecentSubmenu(
+  getMainWindow: () => BrowserWindow | null,
+): Electron.MenuItemConstructorOptions[] {
+  const recents = getRecents()
+  if (recents.length === 0) {
+    return [{ label: 'No Recent Files', enabled: false }]
+  }
+  return recents.map((path) => ({
+    label: path.split(/[/\\]/).pop() ?? path,
+    click: () => getMainWindow()?.webContents.send('menu:open-recent', path),
+  }))
+}
+
+function buildDevToolsItems(): Electron.MenuItemConstructorOptions[] {
+  if (!is.dev) return []
+  return [
+    { role: 'reload' },
+    { role: 'forceReload' },
+    { role: 'toggleDevTools' },
+    { type: 'separator' },
+  ]
+}
 
 export function createMenu(getMainWindow: () => BrowserWindow | null): void {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -34,16 +59,17 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => getMainWindow()?.webContents.send('menu:open-folder'),
         },
+        {
+          label: 'Open Recent',
+          submenu: buildRecentSubmenu(getMainWindow),
+        },
         { type: 'separator' },
-        ...(isMac
-          ? [
-              {
-                label: 'Close Tab',
-                accelerator: 'CmdOrCtrl+W',
-                click: () => getMainWindow()?.webContents.send('menu:close-tab'),
-              },
-            ]
-          : [{ role: 'quit' as const }]),
+        {
+          label: 'Close Tab',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => getMainWindow()?.webContents.send('menu:close-tab'),
+        },
+        ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }]),
       ],
     },
     {
@@ -79,10 +105,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
           click: () => getMainWindow()?.webContents.send('menu:settings'),
         },
         { type: 'separator' },
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
+        ...buildDevToolsItems(),
         {
           label: 'Actual Size',
           accelerator: 'CmdOrCtrl+0',
@@ -137,4 +160,8 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
 
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
+}
+
+export function rebuildMenu(getMainWindow: () => BrowserWindow | null): void {
+  createMenu(getMainWindow)
 }

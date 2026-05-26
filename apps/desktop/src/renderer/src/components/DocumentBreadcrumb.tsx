@@ -2,17 +2,23 @@ import { useAppStore, type Tab } from '../store/app-store'
 import { basename, detectSep } from '../lib/path-utils'
 import { Button } from './ui/button'
 import { ArrowLeftRight, ChevronRight, FoldHorizontal } from 'lucide-react'
+import { isMac } from '../lib/utils'
 
 interface Props {
   tab: Tab
+  frontmatter?: Record<string, unknown> | null
 }
 
-export function DocumentBreadcrumb({ tab }: Props) {
+const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
+
+export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
   const wideMode = useAppStore((s) => s.wideMode)
   const toggleWideMode = useAppStore((s) => s.toggleWideMode)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
 
   const filename = basename(tab.path)
+  const displayTitle =
+    frontmatter && typeof frontmatter.title === 'string' ? frontmatter.title : filename
   const segments = parentSegmentsWithPaths(tab.path, openFolderPath)
 
   return (
@@ -29,7 +35,8 @@ export function DocumentBreadcrumb({ tab }: Props) {
             >
               <button
                 type="button"
-                title={`Reveal ${seg.absolutePath} in folder`}
+                aria-label={seg.name}
+                title={`${revealLabel}: ${seg.absolutePath}`}
                 onClick={() => void window.api.showInFolder(seg.absolutePath)}
                 className="breadcrumb-file truncate rounded px-0.5 hover:bg-muted hover:text-foreground"
               >
@@ -42,12 +49,16 @@ export function DocumentBreadcrumb({ tab }: Props) {
         </ol>
         <button
           type="button"
-          title="Reveal in Finder"
+          aria-label={displayTitle}
+          title={revealLabel}
           onClick={() => void window.api.showInFolder(tab.path)}
           className="breadcrumb-file ml-0.5 truncate rounded px-1 py-0.5 font-medium text-foreground/85 hover:bg-muted hover:text-foreground"
         >
-          {filename}
+          {displayTitle}
         </button>
+        {displayTitle !== filename && (
+          <span className="ml-1 truncate text-[10px] text-muted-foreground/60">{filename}</span>
+        )}
       </nav>
       <Button
         variant="ghost"

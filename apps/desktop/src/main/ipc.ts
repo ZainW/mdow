@@ -1,21 +1,27 @@
-import { ipcMain, shell, BrowserWindow, nativeTheme } from 'electron'
-import { openFileDialog, readFileContent, watchFile, unwatchFile } from './file-service'
+import { ipcMain, shell, BrowserWindow, nativeTheme, app } from 'electron'
+import { stat } from 'fs/promises'
+import {
+  openFileDialog,
+  readFileContent,
+  unwatchFile,
+  attachFileWatcher,
+  setActiveFileWatch,
+} from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
-import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
+import {
+  getRecents,
+  addRecent,
+  getAppState,
+  saveAppState,
+  setLastFolder,
+  pruneRecents,
+} from './store'
 import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 import { isMac } from './platform'
 import { applyWindowChrome } from './window-chrome'
-
-function setupFileWatcher(win: BrowserWindow, path: string): void {
-  watchFile(path, (event) => {
-    if (win.isDestroyed()) return
-    if (event.type === 'changed') {
-      win.webContents.send('file:changed', { path, content: event.content })
-    } else if (event.type === 'deleted') {
-      win.webContents.send('file:deleted', path)
-    }
-  })
-}
+import { validatePath, validateMarkdownPath, isAllowedExternalUrl } from './path-validation'
+import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
+import { rebuildMenu } from './menu'
 
 function setupFolderWatcher(getMainWindow: () => BrowserWindow | null, path: string): void {
   watchFolder(path, (scan) => {
@@ -25,40 +31,91 @@ function setupFolderWatcher(getMainWindow: () => BrowserWindow | null, path: str
   })
 }
 
+function trackRecentFile(getMainWindow: () => BrowserWindow | null, filePath: string): void {
+  addRecent(filePath)
+  registerAllowedFile(filePath)
+  if (isMac) {
+    app.addRecentDocument(filePath)
+  }
+  rebuildMenu(getMainWindow)
+}
+
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle('file:open-dialog', async () => {
     const win = getMainWindow()
     if (!win) return null
     const result = await openFileDialog(win)
     if (result) {
-      addRecent(result.path)
-      setupFileWatcher(win, result.path)
+      trackRecentFile(getMainWindow, result.path)
+      attachFileWatcher(getMainWindow, result.path)
     }
     return result
   })
 
   ipcMain.handle('file:read', async (_, path: string) => {
     try {
-      const content = await readFileContent(path)
-      const win = getMainWindow()
-      if (win) {
-        addRecent(path)
-        setupFileWatcher(win, path)
-      }
+      const resolved = validateMarkdownPath(path)
+      const content = await readFileContent(resolved)
+      trackRecentFile(getMainWindow, resolved)
+      attachFileWatcher(getMainWindow, resolved)
       return content
     } catch (err: unknown) {
-      let code: unknown
-      if (err instanceof Error && 'code' in err) {
-        code = err.code
+      if (err instanceof Error) {
+        if (err.message === 'invalid-path' || err.message === 'path-traversal') {
+          throw new Error('invalid-path', { cause: err })
+        }
+        if (err.message === 'invalid-extension') {
+          throw new Error('invalid-extension', { cause: err })
+        }
+        let code: unknown
+        if ('code' in err) {
+          code = err.code
+        }
+        if (code === 'ENOENT') throw new Error('not-found', { cause: err })
+        if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
       }
-      if (code === 'ENOENT') throw new Error('not-found', { cause: err })
-      if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
       throw new Error('read-error', { cause: err })
     }
   })
 
+  ipcMain.handle('file:stat', async (_, path: string) => {
+    try {
+      const resolved = validatePath(path)
+      const stats = await stat(resolved)
+      return {
+        exists: true,
+        isFile: stats.isFile(),
+        isDirectory: stats.isDirectory(),
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'invalid-path') {
+        throw new Error('invalid-path', { cause: err })
+      }
+      return { exists: false, isFile: false, isDirectory: false }
+    }
+  })
+
   ipcMain.handle('file:unwatch', (_, path: string) => {
-    unwatchFile(path)
+    try {
+      const resolved = validatePath(path)
+      unwatchFile(resolved)
+    } catch {
+      // Ignore invalid paths on unwatch
+    }
+  })
+
+  ipcMain.handle('file:set-active-watch', (_, path: string | null) => {
+    if (path === null) {
+      setActiveFileWatch(getMainWindow, null)
+      return
+    }
+    try {
+      const resolved = validateMarkdownPath(path)
+      registerAllowedFile(resolved)
+      setActiveFileWatch(getMainWindow, resolved)
+    } catch {
+      setActiveFileWatch(getMainWindow, null)
+    }
   })
 
   ipcMain.handle('folder:open-dialog', async () => {
@@ -67,27 +124,76 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await openFolderDialog(win)
     if (result) {
       setLastFolder(result.path)
+      registerAllowedPath(result.path)
       setupFolderWatcher(getMainWindow, result.path)
     }
     return result
   })
 
-  ipcMain.handle('folder:read-tree', async (_, folderPath: string) => {
-    const win = getMainWindow()
-    const result = await scanFolder(folderPath)
-    if (win) {
-      setLastFolder(folderPath)
-      setupFolderWatcher(getMainWindow, folderPath)
+  ipcMain.handle('folder:open-path', async (_, folderPath: string) => {
+    try {
+      const resolved = validatePath(folderPath)
+      const stats = await stat(resolved)
+      if (!stats.isDirectory()) {
+        throw new Error('not-a-directory')
+      }
+      const result = await scanFolder(resolved)
+      setLastFolder(resolved)
+      registerAllowedPath(resolved)
+      setupFolderWatcher(getMainWindow, resolved)
+      return { path: resolved, ...result }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.message === 'invalid-path' || err.message === 'path-traversal') {
+          throw new Error('invalid-path', { cause: err })
+        }
+        if (err.message === 'not-a-directory') {
+          throw new Error('not-a-directory', { cause: err })
+        }
+        let code: unknown
+        if ('code' in err) {
+          code = err.code
+        }
+        if (code === 'ENOENT') throw new Error('not-found', { cause: err })
+        if (code === 'EACCES') throw new Error('permission-denied', { cause: err })
+      }
+      throw new Error('read-error', { cause: err })
     }
-    return result
+  })
+
+  ipcMain.handle('folder:read-tree', async (_, folderPath: string) => {
+    try {
+      const resolved = validatePath(folderPath)
+      const result = await scanFolder(resolved)
+      setLastFolder(resolved)
+      registerAllowedPath(resolved)
+      setupFolderWatcher(getMainWindow, resolved)
+      return result
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        (err.message === 'invalid-path' || err.message === 'path-traversal')
+      ) {
+        throw new Error('invalid-path', { cause: err })
+      }
+      throw err
+    }
   })
 
   ipcMain.handle('store:get-recents', () => getRecents())
+  ipcMain.handle('store:prune-recents', () => pruneRecents())
   ipcMain.handle('store:get-state', () => getAppState())
   ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) =>
     saveAppState(state as Parameters<typeof saveAppState>[0]),
   )
-  ipcMain.handle('store:add-recent', (_, filePath: string) => addRecent(filePath))
+  ipcMain.handle('store:add-recent', (_, filePath: string) => {
+    try {
+      const resolved = validateMarkdownPath(filePath)
+      trackRecentFile(getMainWindow, resolved)
+    } catch {
+      // Ignore invalid paths
+    }
+  })
 
   ipcMain.handle('theme:set', (_, theme: string) => {
     const valid: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
@@ -100,7 +206,32 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   })
 
   ipcMain.handle('shell:show-in-folder', (_, filePath: string) => {
-    shell.showItemInFolder(filePath)
+    try {
+      const resolved = validatePath(filePath)
+      shell.showItemInFolder(resolved)
+    } catch {
+      // Ignore invalid paths
+    }
+  })
+
+  ipcMain.handle('shell:open-external', (_, url: string) => {
+    if (typeof url !== 'string' || !isAllowedExternalUrl(url)) {
+      return false
+    }
+    void shell.openExternal(url)
+    return true
+  })
+
+  ipcMain.handle('url:resolve-local', (_, filePath: string) => {
+    try {
+      const resolved = validatePath(filePath)
+      if (!isPathAllowed(resolved)) {
+        throw new Error('forbidden')
+      }
+      return `mdow-local://local/${encodeURIComponent(resolved)}`
+    } catch {
+      return ''
+    }
   })
 
   ipcMain.handle('window:set-title', (_, title: string, filePath?: string) => {
@@ -108,7 +239,11 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     if (!win) return
     win.setTitle(title)
     if (isMac && filePath) {
-      win.setRepresentedFilename(filePath)
+      try {
+        win.setRepresentedFilename(validatePath(filePath))
+      } catch {
+        // Ignore invalid paths for represented filename
+      }
     }
   })
 

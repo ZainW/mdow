@@ -1,69 +1,78 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import {
+  IPC,
+  type AppState,
+  type FileResult,
+  type FolderOpenResult,
+  type ScanResult,
+  type TreeNode,
+} from '../shared/types'
 
-export interface FileResult {
-  path: string
-  content: string
-}
+export type {
+  AppState,
+  ErrorType,
+  FileError,
+  FileResult,
+  ScanResult,
+  TreeNode,
+} from '../shared/types'
+export { isMarkdownPath, MD_EXTENSIONS } from '../shared/types'
 
-export interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
-}
+type Unsubscribe = () => void
 
-export interface ScanResult {
-  tree: TreeNode[]
-  truncated: boolean
-}
-
-export interface AppState {
-  sidebarWidth: number
-  zoomLevel: number
-  lastFolder: string | null
-  windowBounds: { x: number; y: number; width: number; height: number } | null
-  sessionTabs: { path: string }[]
-  sessionActiveTabPath: string | null
-  contentFont: string
-  codeFont: string
-  fontSize: number
-  lineHeight: number
-  theme: string
-  autoUpdateEnabled: boolean
+function createIpcListener(channel: string, callback: () => void): Unsubscribe
+function createIpcListener<T>(channel: string, callback: (payload: T) => void): Unsubscribe
+function createIpcListener<T>(
+  channel: string,
+  callback: ((payload: T) => void) | (() => void),
+): Unsubscribe {
+  const handler = (_: Electron.IpcRendererEvent, payload?: T) => {
+    if (payload === undefined) {
+      ;(callback as () => void)()
+    } else {
+      ;(callback as (payload: T) => void)(payload)
+    }
+  }
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
 }
 
 export interface ElectronAPI {
   platform: NodeJS.Platform
   openFileDialog: () => Promise<FileResult | null>
   readFile: (path: string) => Promise<string>
+  statFile: (path: string) => Promise<{ exists: boolean; isFile: boolean; isDirectory: boolean }>
   unwatchFile: (path: string) => Promise<void>
+  setActiveFileWatch: (path: string | null) => Promise<void>
   openFolderDialog: () => Promise<{ path: string; tree: TreeNode[]; truncated: boolean } | null>
+  openFolderPath: (path: string) => Promise<FolderOpenResult>
   readFolderTree: (folderPath: string) => Promise<ScanResult>
   getRecents: () => Promise<string[]>
   getAppState: () => Promise<AppState>
   saveAppState: (state: Partial<AppState>) => Promise<void>
-  addRecent: (filePath: string) => Promise<void>
   showInFolder: (filePath: string) => Promise<void>
+  openExternal: (url: string) => Promise<void>
+  resolveLocalUrl: (path: string) => Promise<string>
   setWindowTitle: (title: string, filePath?: string) => Promise<void>
   closeWindow: () => Promise<void>
   setTheme: (theme: string) => Promise<void>
   getPathForFile: (file: File) => string
 
-  onFileChanged: (callback: (data: { path: string; content: string }) => void) => () => void
-  onFileDeleted: (callback: (path: string) => void) => () => void
-  onFolderChanged: (callback: (scan: ScanResult) => void) => () => void
-  onThemeChanged: (callback: (isDark: boolean) => void) => () => void
-  onMenuOpenFile: (callback: () => void) => () => void
-  onMenuOpenFolder: (callback: () => void) => () => void
-  onMenuFind: (callback: () => void) => () => void
-  onMenuToggleSidebar: (callback: () => void) => () => void
-  onFileOpened: (callback: (file: FileResult) => void) => () => void
-  onMenuZoomIn: (callback: () => void) => () => void
-  onMenuZoomOut: (callback: () => void) => () => void
-  onMenuZoomReset: (callback: () => void) => () => void
-  onMenuShortcuts: (callback: () => void) => () => void
-  onMenuSettings: (callback: () => void) => () => void
-  onMenuCloseTab: (callback: () => void) => () => void
+  onFileChanged: (callback: (data: { path: string; content: string }) => void) => Unsubscribe
+  onFileDeleted: (callback: (path: string) => void) => Unsubscribe
+  onFolderChanged: (callback: (scan: ScanResult) => void) => Unsubscribe
+  onThemeChanged: (callback: (isDark: boolean) => void) => Unsubscribe
+  onMenuOpenFile: (callback: () => void) => Unsubscribe
+  onMenuOpenFolder: (callback: () => void) => Unsubscribe
+  onMenuFind: (callback: () => void) => Unsubscribe
+  onMenuToggleSidebar: (callback: () => void) => Unsubscribe
+  onFileOpened: (callback: (file: FileResult) => void) => Unsubscribe
+  onMenuZoomIn: (callback: () => void) => Unsubscribe
+  onMenuZoomOut: (callback: () => void) => Unsubscribe
+  onMenuZoomReset: (callback: () => void) => Unsubscribe
+  onMenuShortcuts: (callback: () => void) => Unsubscribe
+  onMenuSettings: (callback: () => void) => Unsubscribe
+  onMenuCloseTab: (callback: () => void) => Unsubscribe
 
   checkForUpdates: (opts?: { manual?: boolean }) => Promise<void>
   downloadUpdate: () => Promise<void>
@@ -71,147 +80,63 @@ export interface ElectronAPI {
   setAutoUpdateScheduling: (enabled: boolean) => Promise<void>
   onUpdateAvailable: (
     callback: (info: { version: string; releaseNotes?: string }) => void,
-  ) => () => void
-  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => () => void
-  onUpdateDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void
-  onUpdateDownloaded: (callback: () => void) => () => void
-  onUpdateError: (callback: (message: string) => void) => () => void
-  onMenuCheckForUpdates: (callback: () => void) => () => void
+  ) => Unsubscribe
+  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => Unsubscribe
+  onUpdateDownloadProgress: (callback: (progress: { percent: number }) => void) => Unsubscribe
+  onUpdateDownloaded: (callback: () => void) => Unsubscribe
+  onUpdateError: (callback: (message: string) => void) => Unsubscribe
+  onMenuCheckForUpdates: (callback: () => void) => Unsubscribe
 }
 
 const api: ElectronAPI = {
   platform: process.platform,
-  openFileDialog: () => ipcRenderer.invoke('file:open-dialog'),
-  readFile: (path) => ipcRenderer.invoke('file:read', path),
-  unwatchFile: (path) => ipcRenderer.invoke('file:unwatch', path),
-  openFolderDialog: () => ipcRenderer.invoke('folder:open-dialog'),
-  readFolderTree: (folderPath) => ipcRenderer.invoke('folder:read-tree', folderPath),
-  getRecents: () => ipcRenderer.invoke('store:get-recents'),
-  getAppState: () => ipcRenderer.invoke('store:get-state'),
-  saveAppState: (state) => ipcRenderer.invoke('store:save-state', state),
-  addRecent: (filePath) => ipcRenderer.invoke('store:add-recent', filePath),
-  showInFolder: (filePath) => ipcRenderer.invoke('shell:show-in-folder', filePath),
-  setWindowTitle: (title, filePath) => ipcRenderer.invoke('window:set-title', title, filePath),
-  closeWindow: () => ipcRenderer.invoke('window:close'),
-  setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
+  openFileDialog: () => ipcRenderer.invoke(IPC.FILE_OPEN_DIALOG),
+  readFile: (path) => ipcRenderer.invoke(IPC.FILE_READ, path),
+  statFile: (path) => ipcRenderer.invoke(IPC.FILE_STAT, path),
+  unwatchFile: (path) => ipcRenderer.invoke(IPC.FILE_UNWATCH, path),
+  setActiveFileWatch: (path) => ipcRenderer.invoke(IPC.FILE_SET_ACTIVE_WATCH, path),
+  openFolderDialog: () => ipcRenderer.invoke(IPC.FOLDER_OPEN_DIALOG),
+  openFolderPath: (path) => ipcRenderer.invoke(IPC.FOLDER_OPEN_PATH, path),
+  readFolderTree: (folderPath) => ipcRenderer.invoke(IPC.FOLDER_READ_TREE, folderPath),
+  getRecents: () => ipcRenderer.invoke(IPC.STORE_GET_RECENTS),
+  getAppState: () => ipcRenderer.invoke(IPC.STORE_GET_STATE),
+  saveAppState: (state) => ipcRenderer.invoke(IPC.STORE_SAVE_STATE, state),
+  showInFolder: (filePath) => ipcRenderer.invoke(IPC.SHELL_SHOW_IN_FOLDER, filePath),
+  openExternal: (url) => ipcRenderer.invoke(IPC.SHELL_OPEN_EXTERNAL, url),
+  resolveLocalUrl: (path) => ipcRenderer.invoke(IPC.URL_RESOLVE_LOCAL, path),
+  setWindowTitle: (title, filePath) => ipcRenderer.invoke(IPC.WINDOW_SET_TITLE, title, filePath),
+  closeWindow: () => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
+  setTheme: (theme) => ipcRenderer.invoke(IPC.THEME_SET, theme),
   getPathForFile: (file) => webUtils.getPathForFile(file),
 
-  onFileChanged: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, data: { path: string; content: string }) =>
-      callback(data)
-    ipcRenderer.on('file:changed', handler)
-    return () => ipcRenderer.removeListener('file:changed', handler)
-  },
-  onFileDeleted: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, path: string) => callback(path)
-    ipcRenderer.on('file:deleted', handler)
-    return () => ipcRenderer.removeListener('file:deleted', handler)
-  },
-  onFolderChanged: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, scan: ScanResult) => callback(scan)
-    ipcRenderer.on('folder:changed', handler)
-    return () => ipcRenderer.removeListener('folder:changed', handler)
-  },
-  onThemeChanged: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, isDark: boolean) => callback(isDark)
-    ipcRenderer.on('theme:changed', handler)
-    return () => ipcRenderer.removeListener('theme:changed', handler)
-  },
-  onMenuOpenFile: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:open-file', handler)
-    return () => ipcRenderer.removeListener('menu:open-file', handler)
-  },
-  onMenuOpenFolder: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:open-folder', handler)
-    return () => ipcRenderer.removeListener('menu:open-folder', handler)
-  },
-  onMenuFind: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:find', handler)
-    return () => ipcRenderer.removeListener('menu:find', handler)
-  },
-  onMenuToggleSidebar: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:toggle-sidebar', handler)
-    return () => ipcRenderer.removeListener('menu:toggle-sidebar', handler)
-  },
-  onFileOpened: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, file: FileResult) => callback(file)
-    ipcRenderer.on('file:opened', handler)
-    return () => ipcRenderer.removeListener('file:opened', handler)
-  },
-  onMenuZoomIn: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:zoom-in', handler)
-    return () => ipcRenderer.removeListener('menu:zoom-in', handler)
-  },
-  onMenuZoomOut: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:zoom-out', handler)
-    return () => ipcRenderer.removeListener('menu:zoom-out', handler)
-  },
-  onMenuZoomReset: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:zoom-reset', handler)
-    return () => ipcRenderer.removeListener('menu:zoom-reset', handler)
-  },
-  onMenuShortcuts: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:shortcuts', handler)
-    return () => ipcRenderer.removeListener('menu:shortcuts', handler)
-  },
-  onMenuSettings: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:settings', handler)
-    return () => ipcRenderer.removeListener('menu:settings', handler)
-  },
-  onMenuCheckForUpdates: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:check-for-updates', handler)
-    return () => ipcRenderer.removeListener('menu:check-for-updates', handler)
-  },
-  onMenuCloseTab: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('menu:close-tab', handler)
-    return () => ipcRenderer.removeListener('menu:close-tab', handler)
-  },
+  onFileChanged: (callback) => createIpcListener(IPC.FILE_CHANGED, callback),
+  onFileDeleted: (callback) => createIpcListener(IPC.FILE_DELETED, callback),
+  onFolderChanged: (callback) => createIpcListener(IPC.FOLDER_CHANGED, callback),
+  onThemeChanged: (callback) => createIpcListener(IPC.THEME_CHANGED, callback),
+  onMenuOpenFile: (callback) => createIpcListener(IPC.MENU_OPEN_FILE, callback),
+  onMenuOpenFolder: (callback) => createIpcListener(IPC.MENU_OPEN_FOLDER, callback),
+  onMenuFind: (callback) => createIpcListener(IPC.MENU_FIND, callback),
+  onMenuToggleSidebar: (callback) => createIpcListener(IPC.MENU_TOGGLE_SIDEBAR, callback),
+  onFileOpened: (callback) => createIpcListener(IPC.FILE_OPENED, callback),
+  onMenuZoomIn: (callback) => createIpcListener(IPC.MENU_ZOOM_IN, callback),
+  onMenuZoomOut: (callback) => createIpcListener(IPC.MENU_ZOOM_OUT, callback),
+  onMenuZoomReset: (callback) => createIpcListener(IPC.MENU_ZOOM_RESET, callback),
+  onMenuShortcuts: (callback) => createIpcListener(IPC.MENU_SHORTCUTS, callback),
+  onMenuSettings: (callback) => createIpcListener(IPC.MENU_SETTINGS, callback),
+  onMenuCloseTab: (callback) => createIpcListener(IPC.MENU_CLOSE_TAB, callback),
+  onMenuCheckForUpdates: (callback) => createIpcListener(IPC.MENU_CHECK_FOR_UPDATES, callback),
 
-  checkForUpdates: (opts?: { manual?: boolean }) => ipcRenderer.invoke('updater:check', opts),
-  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
-  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  checkForUpdates: (opts?: { manual?: boolean }) => ipcRenderer.invoke(IPC.UPDATER_CHECK, opts),
+  downloadUpdate: () => ipcRenderer.invoke(IPC.UPDATER_DOWNLOAD),
+  installUpdate: () => ipcRenderer.invoke(IPC.UPDATER_INSTALL),
   setAutoUpdateScheduling: (enabled: boolean) =>
-    ipcRenderer.invoke('updater:set-scheduling', enabled),
-  onUpdateAvailable: (callback) => {
-    const handler = (
-      _: Electron.IpcRendererEvent,
-      info: { version: string; releaseNotes?: string },
-    ) => callback(info)
-    ipcRenderer.on('updater:update-available', handler)
-    return () => ipcRenderer.removeListener('updater:update-available', handler)
-  },
-  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, info: { wasManual: boolean }) => callback(info)
-    ipcRenderer.on('updater:up-to-date', handler)
-    return () => ipcRenderer.removeListener('updater:up-to-date', handler)
-  },
-  onUpdateDownloadProgress: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, progress: { percent: number }) =>
-      callback(progress)
-    ipcRenderer.on('updater:download-progress', handler)
-    return () => ipcRenderer.removeListener('updater:download-progress', handler)
-  },
-  onUpdateDownloaded: (callback) => {
-    const handler = () => callback()
-    ipcRenderer.on('updater:update-downloaded', handler)
-    return () => ipcRenderer.removeListener('updater:update-downloaded', handler)
-  },
-  onUpdateError: (callback) => {
-    const handler = (_: Electron.IpcRendererEvent, message: string) => callback(message)
-    ipcRenderer.on('updater:error', handler)
-    return () => ipcRenderer.removeListener('updater:error', handler)
-  },
+    ipcRenderer.invoke(IPC.UPDATER_SET_SCHEDULING, enabled),
+  onUpdateAvailable: (callback) => createIpcListener(IPC.UPDATER_UPDATE_AVAILABLE, callback),
+  onUpdateUpToDate: (callback) => createIpcListener(IPC.UPDATER_UP_TO_DATE, callback),
+  onUpdateDownloadProgress: (callback) =>
+    createIpcListener(IPC.UPDATER_DOWNLOAD_PROGRESS, callback),
+  onUpdateDownloaded: (callback) => createIpcListener(IPC.UPDATER_UPDATE_DOWNLOADED, callback),
+  onUpdateError: (callback) => createIpcListener(IPC.UPDATER_ERROR, callback),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -1,4 +1,17 @@
-import { afterEach, beforeEach } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+
+export function createMinimalWindowApi(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    saveAppState: vi.fn().mockResolvedValue(undefined),
+    unwatchFile: vi.fn().mockResolvedValue(undefined),
+    setTheme: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn(),
+    showInFolder: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  }
+}
 
 // Install a partial window.api stub for the duration of the surrounding
 // describe block, then restore whatever was there before (typically

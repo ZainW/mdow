@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
 import { basename, parentDir } from '../lib/path-utils'
+import { fuzzySearch } from '../lib/fuzzy-search'
 import {
   Command,
   CommandInput,
@@ -32,24 +33,41 @@ function flattenTree(nodes: TreeNode[], result: { path: string; name: string }[]
   return result
 }
 
+function buildAllFiles(
+  folderTree: TreeNode[],
+  recents: string[],
+): { path: string; name: string }[] {
+  const folderFiles = flattenTree(folderTree)
+  const folderPaths = new Set(folderFiles.map((f) => f.path))
+  const recentFiles: { path: string; name: string }[] = []
+  for (const path of recents) {
+    if (!folderPaths.has(path)) {
+      recentFiles.push({ path, name: basename(path) })
+    }
+  }
+  return [...folderFiles, ...recentFiles]
+}
+
 export function CommandPalette() {
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
   const folderTree = useAppStore((s) => s.folderTree)
   const { data: recents = [] } = useRecents()
   const openMarkdownFile = useOpenMarkdownFile()
-
+  const [query, setQuery] = useState('')
   const allFiles = useMemo(() => {
-    const folderFiles = flattenTree(folderTree)
-    const folderPaths = new Set(folderFiles.map((f) => f.path))
-    const recentFiles: { path: string; name: string }[] = []
-    for (const path of recents) {
-      if (!folderPaths.has(path)) {
-        recentFiles.push({ path, name: basename(path) })
-      }
-    }
-    return [...folderFiles, ...recentFiles]
-  }, [folderTree, recents])
+    if (!commandPaletteOpen) return null
+    return buildAllFiles(folderTree, recents)
+  }, [commandPaletteOpen, folderTree, recents])
+
+  useEffect(() => {
+    if (!commandPaletteOpen) setQuery('')
+  }, [commandPaletteOpen])
+
+  const results = useMemo(() => {
+    if (!allFiles) return []
+    return fuzzySearch(query, allFiles, 50)
+  }, [query, allFiles])
 
   const selectFile = useCallback(
     async (path: string) => {
@@ -70,12 +88,12 @@ export function CommandPalette() {
           <DialogTitle>Quick Open</DialogTitle>
           <DialogDescription>Search for files to open</DialogDescription>
         </DialogHeader>
-        <Command>
+        <Command shouldFilter={false} value={query} onValueChange={setQuery}>
           <CommandInput placeholder="Search files..." />
           <CommandList>
             <CommandEmpty>No matching files</CommandEmpty>
             <CommandGroup heading="Files">
-              {allFiles.map((file) => {
+              {results.map((file) => {
                 const dir = parentDir(file.path)
                 return (
                   <CommandItem

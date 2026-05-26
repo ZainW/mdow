@@ -1,15 +1,25 @@
 import Store from 'electron-store'
+import { existsSync } from 'fs'
 
 interface SessionTab {
   path: string
 }
 
+interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+  isMaximized?: boolean
+}
+
+type SidebarMode = 'recents' | 'folder' | 'outline'
+
 interface StoreSchema {
   recents: string[]
   lastFolder: string | null
-  sidebarWidth: number
   zoomLevel: number
-  windowBounds: { x: number; y: number; width: number; height: number } | null
+  windowBounds: WindowBounds | null
   sessionTabs: SessionTab[]
   sessionActiveTabPath: string | null
   contentFont: string
@@ -18,13 +28,14 @@ interface StoreSchema {
   lineHeight: number
   theme: string
   autoUpdateEnabled: boolean
+  wideMode: boolean
+  sidebarMode: SidebarMode
 }
 
 const store = new Store<StoreSchema>({
   defaults: {
     recents: [],
     lastFolder: null,
-    sidebarWidth: 260,
     zoomLevel: 100,
     windowBounds: null,
     sessionTabs: [],
@@ -35,13 +46,32 @@ const store = new Store<StoreSchema>({
     lineHeight: 1.65,
     theme: 'system',
     autoUpdateEnabled: true,
+    wideMode: false,
+    sidebarMode: 'recents',
   },
 })
 
 const MAX_RECENTS = 20
 
+function filterExistingRecents(recents: string[]): string[] {
+  return recents.filter((path) => existsSync(path))
+}
+
+function pruneRecentsList(): string[] {
+  const recents = store.get('recents')
+  const existing = filterExistingRecents(recents)
+  if (existing.length !== recents.length) {
+    store.set('recents', existing)
+  }
+  return existing
+}
+
 export function getRecents(): string[] {
-  return store.get('recents')
+  return pruneRecentsList()
+}
+
+export function pruneRecents(): string[] {
+  return pruneRecentsList()
 }
 
 export function addRecent(filePath: string): void {
@@ -52,7 +82,6 @@ export function addRecent(filePath: string): void {
 
 export function getAppState() {
   return {
-    sidebarWidth: store.get('sidebarWidth'),
     zoomLevel: store.get('zoomLevel'),
     lastFolder: store.get('lastFolder'),
     windowBounds: store.get('windowBounds'),
@@ -64,11 +93,12 @@ export function getAppState() {
     lineHeight: store.get('lineHeight'),
     theme: store.get('theme'),
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
+    wideMode: store.get('wideMode'),
+    sidebarMode: store.get('sidebarMode'),
   }
 }
 
 export function saveAppState(state: Partial<StoreSchema>): void {
-  if (state.sidebarWidth !== undefined) store.set('sidebarWidth', state.sidebarWidth)
   if (state.zoomLevel !== undefined) store.set('zoomLevel', state.zoomLevel)
   if (state.lastFolder !== undefined) store.set('lastFolder', state.lastFolder)
   if (state.windowBounds !== undefined) store.set('windowBounds', state.windowBounds)
@@ -82,14 +112,19 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.lineHeight !== undefined) store.set('lineHeight', state.lineHeight)
   if (state.theme !== undefined) store.set('theme', state.theme)
   if (state.autoUpdateEnabled !== undefined) store.set('autoUpdateEnabled', state.autoUpdateEnabled)
+  if (state.wideMode !== undefined) store.set('wideMode', state.wideMode)
+  if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
 }
 
-export function getWindowBounds() {
+export function getWindowBounds(): WindowBounds | null {
   return store.get('windowBounds')
 }
 
-export function saveWindowBounds(bounds: { x: number; y: number; width: number; height: number }) {
-  store.set('windowBounds', bounds)
+export function saveWindowBounds(
+  bounds: { x: number; y: number; width: number; height: number },
+  isMaximized?: boolean,
+) {
+  store.set('windowBounds', { ...bounds, isMaximized: isMaximized ?? false })
 }
 
 export function getLastFolder(): string | null {

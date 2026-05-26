@@ -3,6 +3,7 @@ import { useAppStore, selectActiveTab, type Tab } from './store/app-store'
 import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
 import { useOpenMarkdownFile } from './hooks/useOpenMarkdownFile'
+import { useAppInit } from './hooks/useAppInit'
 import { useAppKeyboardShortcuts, useAppMenuBindings } from './hooks/useAppBindings'
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
@@ -18,7 +19,7 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { SidebarProvider } from './components/ui/sidebar'
 import { basename, isMarkdownPath } from './lib/path-utils'
 import { TitlebarInset } from './components/TitlebarInset'
-import { DocumentSkeleton } from './components/DocumentSkeleton'
+import { Logo } from './components/Logo'
 import { IconLab } from './dev/IconLab'
 
 const isIconLab = import.meta.env.VITE_ICON_LAB === 'true'
@@ -40,10 +41,21 @@ function MainContent({ activeTab }: { activeTab: Tab | null }): React.JSX.Elemen
   )
 }
 
+function StartupSplash(): React.JSX.Element {
+  return (
+    <div className="flex h-screen w-screen flex-col bg-background">
+      <TitlebarInset />
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+        <Logo className="h-12 w-12 rounded-[22%] shadow-sm ring-1 ring-border/40" />
+        <p className="text-sm text-muted-foreground/80">Loading…</p>
+      </div>
+    </div>
+  )
+}
+
 function MainApp(): React.JSX.Element {
   const initialized = useAppStore((s) => s.initialized)
   const activeTab = useAppStore(selectActiveTab)
-  const openTab = useAppStore((s) => s.openTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const shortcutsDialogOpen = useAppStore((s) => s.shortcutsDialogOpen)
@@ -53,59 +65,10 @@ function MainApp(): React.JSX.Element {
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
+  useAppInit()
   useFolderTree(openFolderPath)
   useAppMenuBindings()
   useAppKeyboardShortcuts()
-
-  useEffect(() => {
-    void window.api.getAppState().then(async (state) => {
-      const patch: Record<string, unknown> = {}
-
-      if (state.sidebarWidth) patch.sidebarWidth = state.sidebarWidth
-      if (state.zoomLevel && state.zoomLevel !== 100) patch.zoomLevel = state.zoomLevel
-      if (state.theme) patch.theme = state.theme
-      if (typeof state.autoUpdateEnabled === 'boolean') {
-        patch.autoUpdateEnabled = state.autoUpdateEnabled
-      }
-      if (state.contentFont) patch.contentFont = state.contentFont
-      if (state.codeFont) patch.codeFont = state.codeFont
-      if (state.fontSize) patch.fontSize = state.fontSize
-      if (state.lineHeight) patch.lineHeight = state.lineHeight
-
-      if (Object.keys(patch).length > 0) {
-        useAppStore.setState(patch)
-      }
-
-      if (state.lastFolder) {
-        void window.api.readFolderTree(state.lastFolder).then((scan) => {
-          setOpenFolder(state.lastFolder!, scan.tree, scan.truncated)
-        })
-      }
-
-      if (state.sessionTabs?.length) {
-        const results = await Promise.all(
-          state.sessionTabs.map((tab) =>
-            window.api
-              .readFile(tab.path)
-              .then((content) => ({ path: tab.path, content }))
-              .catch(() => null),
-          ),
-        )
-        for (const result of results) {
-          if (result) openTab(result)
-        }
-        if (state.sessionActiveTabPath) {
-          const tabs = useAppStore.getState().tabs
-          const active = tabs.find((t) => t.path === state.sessionActiveTabPath)
-          if (active) {
-            useAppStore.setState({ activeTabId: active.id })
-          }
-        }
-      }
-
-      useAppStore.setState({ initialized: true })
-    })
-  }, [setOpenFolder, openTab])
 
   useEffect(() => {
     if (activeTab) {
@@ -116,47 +79,62 @@ function MainApp(): React.JSX.Element {
   }, [activeTab])
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
-      const mdFile = files.find((f) => isMarkdownPath(f.name))
-      if (mdFile) {
-        const filePath = window.api.getPathForFile(mdFile)
-        void openMarkdownFile(filePath)
+
+      for (const file of files) {
+        const filePath = window.api.getPathForFile(file)
+        if (isMarkdownPath(file.name)) {
+          void openMarkdownFile(filePath)
+        }
+      }
+
+      if (files.length === 1) {
+        const filePath = window.api.getPathForFile(files[0])
+        try {
+          const stat = await window.api.statFile(filePath)
+          if (stat.exists && stat.isDirectory) {
+            const result = await window.api.openFolderPath(filePath)
+            setOpenFolder(result.path, result.tree, result.truncated)
+          }
+        } catch {
+          // Not a folder or inaccessible
+        }
       }
     },
-    [openMarkdownFile],
+    [openMarkdownFile, setOpenFolder],
   )
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ path: string }>).detail
+      if (detail?.path) void openMarkdownFile(detail.path)
+    }
+    window.addEventListener('mdow:open-markdown-link', handler)
+    return () => window.removeEventListener('mdow:open-markdown-link', handler)
+  }, [openMarkdownFile])
+
   if (!initialized) {
-    return (
-      <div className="flex h-screen w-screen flex-col bg-background">
-        <TitlebarInset />
-        <div className="flex flex-1 justify-center px-12 py-8">
-          <div className="w-full max-w-3xl">
-            <DocumentSkeleton />
-          </div>
-        </div>
-      </div>
-    )
+    return <StartupSplash />
   }
 
   return (
     <SidebarProvider>
       <div
         className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
-        onDrop={handleDrop}
+        onDrop={(e) => void handleDrop(e)}
         onDragOver={(e) => e.preventDefault()}
       >
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
             <TabBar />
             {activeTab && <DocumentBreadcrumb tab={activeTab} />}
             <MainContent activeTab={activeTab} />
             <UpdateBanner />
-          </div>
+          </main>
           <CommandPalette />
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

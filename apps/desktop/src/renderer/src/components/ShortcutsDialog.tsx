@@ -21,12 +21,15 @@ const groups: ShortcutGroup[] = [
     items: [
       { label: 'Command palette', keys: `${mod} K` },
       { label: 'Find in document', keys: `${mod} F` },
+      { label: 'Switch tab (1–9)', keys: `${mod} 1–9` },
+      { label: 'Close tab', keys: `${mod} W` },
     ],
   },
   {
     heading: 'View',
     items: [
       { label: 'Toggle sidebar', keys: `${mod} B` },
+      { label: 'Keyboard shortcuts', keys: `${mod} /` },
       { label: 'Zoom in', keys: `${mod} +` },
       { label: 'Zoom out', keys: `${mod} -` },
       { label: 'Reset zoom', keys: `${mod} 0` },

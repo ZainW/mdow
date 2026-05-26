@@ -1,5 +1,6 @@
 import { createParse, type ComarkElement, type ComarkNode, type ComarkPlugin } from 'comark'
 import highlight from 'comark/plugins/highlight'
+import math from 'comark/plugins/math'
 import mermaid from 'comark/plugins/mermaid'
 
 import githubLight from 'shiki/themes/github-light.mjs'
@@ -119,6 +120,7 @@ const parse = createParse({
       themes: { light: githubLight, dark: githubDark },
       languages: langs,
     }),
+    math({ throwOnError: false }),
     mermaid(),
     breaksOutsideCode,
   ],
@@ -126,6 +128,7 @@ const parse = createParse({
 
 export async function initMarkdown(): Promise<void> {
   await parse('```ts\n//\n```')
+  await parse('Inline $x^2$ math')
 }
 
 export interface DocHeading {
@@ -138,6 +141,17 @@ export interface RenderResult {
   tree: Awaited<ReturnType<typeof parse>>
   mermaidBlocks: { id: string; code: string }[]
   headings: DocHeading[]
+  frontmatter: Record<string, unknown>
+}
+
+const contentRenderCache = new Map<string, RenderResult>()
+
+export function getCachedMarkdownRender(content: string): RenderResult | undefined {
+  return contentRenderCache.get(content)
+}
+
+export function clearMarkdownRenderCache(): void {
+  contentRenderCache.clear()
 }
 
 function slugifyHeading(text: string): string {
@@ -181,7 +195,15 @@ function appendClassName(node: ComarkElement, className: string): void {
   }
 }
 
-export async function renderMarkdown(text: string): Promise<RenderResult> {
+export async function renderMarkdown(
+  text: string,
+  options?: { bypassCache?: boolean },
+): Promise<RenderResult> {
+  if (!options?.bypassCache) {
+    const cached = contentRenderCache.get(text)
+    if (cached) return cached
+  }
+
   const tree = await parse(text)
 
   const mermaidBlocks: { id: string; code: string }[] = []
@@ -195,7 +217,7 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
     const tag = node[0]
     const attrs = node[1]
 
-    if (/^h[1-4]$/.test(tag)) {
+    if (/^h[1-6]$/.test(tag)) {
       const headingText = getNodeText(node).trim()
       if (headingText) {
         let id = typeof attrs.id === 'string' ? attrs.id : ''
@@ -228,5 +250,12 @@ export async function renderMarkdown(text: string): Promise<RenderResult> {
 
   for (const node of tree.nodes) visit(node)
 
-  return { tree, mermaidBlocks, headings }
+  const result: RenderResult = {
+    tree,
+    mermaidBlocks,
+    headings,
+    frontmatter: tree.frontmatter ?? {},
+  }
+  contentRenderCache.set(text, result)
+  return result
 }

@@ -19,7 +19,7 @@ importers:
         version: 1.4.1(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@comark/react':
         specifier: ^0.3.1
-        version: 0.3.1(katex@0.16.45)(react@19.2.6)(shiki@4.0.2)
+        version: 0.3.1(katex@0.17.0)(react@19.2.6)(shiki@4.0.2)
       '@electron-toolkit/preload':
         specifier: ^3.0.2
         version: 3.0.2(electron@42.1.0)
@@ -52,7 +52,7 @@ importers:
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       comark:
         specifier: ^0.3.2
-        version: 0.3.2(katex@0.16.45)(shiki@4.0.2)
+        version: 0.3.2(katex@0.17.0)(shiki@4.0.2)
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -62,6 +62,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      katex:
+        specifier: ^0.17.0
+        version: 0.17.0
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -3810,6 +3813,10 @@ packages:
     resolution: {integrity: sha512-pQpZbdBu7wCTmQUh7ufPmLr0pFoObnGUoL/yhtwJDgmmQpbkg/0HSVti25Fu4rmd1oCR6NGWe9vqTWuWv3GcNA==}
     hasBin: true
 
+  katex@0.17.0:
+    resolution: {integrity: sha512-Vdw0ATsQ9V+LuegM/BTwQqV/6cTl5lbGcIrU+BCgLxyf6bo38ybOr372tuSIxir3CN720flu1meYR6XzNMwQnw==}
+    hasBin: true
+
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
@@ -5308,12 +5315,12 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260515.1':
     optional: true
 
-  '@comark/react@0.3.1(katex@0.16.45)(react@19.2.6)(shiki@4.0.2)':
+  '@comark/react@0.3.1(katex@0.17.0)(react@19.2.6)(shiki@4.0.2)':
     dependencies:
-      comark: 0.3.2(katex@0.16.45)(shiki@4.0.2)
+      comark: 0.3.2(katex@0.17.0)(shiki@4.0.2)
       react: 19.2.6
     optionalDependencies:
-      katex: 0.16.45
+      katex: 0.17.0
       shiki: 4.0.2
 
   '@cspotcode/source-map-support@0.8.1':
@@ -7402,14 +7409,14 @@ snapshots:
 
   color-name@1.1.4: {}
 
-  comark@0.3.2(katex@0.16.45)(shiki@4.0.2):
+  comark@0.3.2(katex@0.17.0)(shiki@4.0.2):
     dependencies:
       entities: 8.0.0
       htmlparser2: 12.0.0
       js-yaml: 4.1.1
       markdown-exit: 1.0.0-beta.9
     optionalDependencies:
-      katex: 0.16.45
+      katex: 0.17.0
       shiki: 4.0.2
 
   combined-stream@1.0.8:
@@ -8455,6 +8462,10 @@ snapshots:
       graceful-fs: 4.2.11
 
   katex@0.16.45:
+    dependencies:
+      commander: 8.3.0
+
+  katex@0.17.0:
     dependencies:
       commander: 8.3.0
 

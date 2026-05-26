@@ -1,11 +1,50 @@
-import { useEffect, useEffectEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import { useAppStore } from '../store/app-store'
+import { invalidateRecents } from '../lib/query-keys'
+import { useOpenFileDialog } from './useOpenFileDialog'
+import { useOpenFolderDialog } from './useOpenFolderDialog'
+import { useQueryClient } from '@tanstack/react-query'
+
+function hashContent(content: string): string {
+  let hash = 0
+  for (let i = 0; i < content.length; i++) {
+    hash = (hash << 5) - hash + content.charCodeAt(i)
+    hash |= 0
+  }
+  return String(hash)
+}
+
+function useActiveTabWatch(): void {
+  const watchedPathRef = useRef<string | null>(null)
+
+  const syncActiveTabWatch = useEffectEvent(() => {
+    const state = useAppStore.getState()
+    const activeTab = state.tabs.find((t) => t.id === state.activeTabId)
+    const nextPath = activeTab && !activeTab.error ? activeTab.path : null
+
+    if (watchedPathRef.current !== nextPath) {
+      void window.api.setActiveFileWatch(nextPath)
+      watchedPathRef.current = nextPath
+    }
+  })
+
+  useEffect(() => {
+    syncActiveTabWatch()
+    return useAppStore.subscribe((state, prev) => {
+      if (state.activeTabId !== prev.activeTabId) {
+        syncActiveTabWatch()
+      }
+    })
+  }, [])
+}
 
 export function useAppMenuBindings(): void {
+  useActiveTabWatch()
+
   const queryClient = useQueryClient()
+  const openFileDialog = useOpenFileDialog()
+  const openFolderDialog = useOpenFolderDialog()
   const openTab = useAppStore((s) => s.openTab)
-  const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const updateTabContent = useAppStore((s) => s.updateTabContent)
   const setTabError = useAppStore((s) => s.setTabError)
   const setSearchOpen = useAppStore((s) => s.setSearchOpen)
@@ -18,28 +57,21 @@ export function useAppMenuBindings(): void {
   const closeTab = useAppStore((s) => s.closeTab)
 
   const onMenuOpenFile = useEffectEvent(() => {
-    void window.api.openFileDialog().then((result) => {
-      if (result) {
-        openTab(result)
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
-      }
-    })
+    void openFileDialog()
   })
 
   const onMenuOpenFolder = useEffectEvent(() => {
-    void window.api.openFolderDialog().then((result) => {
-      if (result) {
-        setOpenFolder(result.path, result.tree, result.truncated)
-      }
-    })
+    void openFolderDialog()
   })
 
   const onFileOpened = useEffectEvent((file: { path: string; content: string }) => {
     openTab(file)
-    void queryClient.invalidateQueries({ queryKey: ['recents'] })
+    invalidateRecents(queryClient)
   })
 
   const onFileChanged = useEffectEvent((data: { path: string; content: string }) => {
+    const tab = useAppStore.getState().tabs.find((t) => t.path === data.path)
+    if (!tab || hashContent(tab.content) === hashContent(data.content)) return
     updateTabContent(data.path, data.content)
   })
 

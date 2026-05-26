@@ -1,5 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useIpcEvent } from './useIpcEvent'
 import { useAppStore } from '../store/app-store'
 
@@ -16,25 +15,25 @@ interface ScanResult {
 }
 
 export function useFolderTree(folderPath: string | null) {
-  const queryClient = useQueryClient()
   const setFolderTree = useAppStore((s) => s.setFolderTree)
+
+  useEffect(() => {
+    if (!folderPath) return
+    let cancelled = false
+    void window.api.readFolderTree(folderPath).then((scan) => {
+      if (!cancelled) setFolderTree(scan.tree, scan.truncated)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [folderPath, setFolderTree])
 
   const handleFolderChanged = useCallback(
     (scan: ScanResult) => {
-      if (folderPath) {
-        queryClient.setQueryData(['folder', folderPath], scan)
-        setFolderTree(scan.tree, scan.truncated)
-      }
+      if (folderPath) setFolderTree(scan.tree, scan.truncated)
     },
-    [folderPath, queryClient, setFolderTree],
+    [folderPath, setFolderTree],
   )
 
   useIpcEvent(window.api.onFolderChanged, handleFolderChanged)
-
-  return useQuery({
-    queryKey: ['folder', folderPath],
-    queryFn: () => window.api.readFolderTree(folderPath!),
-    enabled: !!folderPath,
-    staleTime: Infinity,
-  })
 }

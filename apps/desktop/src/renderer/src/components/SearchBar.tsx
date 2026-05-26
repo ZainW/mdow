@@ -59,7 +59,11 @@ export function SearchBar({
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <span className="min-w-[4rem] text-center text-[10px] tabular-nums text-muted-foreground">
+      <span
+        aria-live="polite"
+        aria-atomic="true"
+        className="min-w-[4rem] text-center text-[10px] tabular-nums text-muted-foreground"
+      >
         {query ? (matchCount > 0 ? `${currentIndex + 1} of ${matchCount}` : 'No results') : ''}
       </span>
       <span

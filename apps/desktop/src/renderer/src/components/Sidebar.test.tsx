@@ -39,6 +39,7 @@ describe('Sidebar', () => {
       openFolderPath: null,
       folderTree: [],
       docHeadings: [],
+      sidebarMode: 'recents',
     })
   })
 

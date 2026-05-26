@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAppStore } from '../store/app-store'
+import { useAppStore, type SidebarMode } from '../store/app-store'
 import { RecentsList } from './RecentsList'
 import { FolderTree } from './FolderTree'
 import { Button } from './ui/button'
@@ -15,11 +15,11 @@ import { Clock, File, Folder, FolderOpen, List, Search, Settings } from 'lucide-
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
+import { isMac } from '../lib/utils'
 
-type RailMode = 'recents' | 'folder' | 'outline'
-
-const MODES: RailMode[] = ['recents', 'folder', 'outline']
+const MODES: SidebarMode[] = ['recents', 'folder', 'outline']
 const DRAWER_WIDTH = 244
+const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 
 // Rail layout — keep in sync with the JSX (icons are h-7 with gap-0.5, py-1.5 padding)
 const ICON_HEIGHT = 28
@@ -42,8 +42,9 @@ export function Sidebar() {
   const activeHeadingId = useAppStore((s) => s.activeHeadingId)
   const hasOpenTab = useAppStore((s) => s.tabs.length > 0)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
+  const mode = useAppStore((s) => s.sidebarMode)
+  const setSidebarMode = useAppStore((s) => s.setSidebarMode)
   const queryClient = useQueryClient()
-  const [mode, setMode] = useState<RailMode>('recents')
 
   const handleOpenFile = useCallback(async () => {
     const result = await window.api.openFileDialog()
@@ -86,21 +87,21 @@ export function Sidebar() {
         >
           <RailModeIcon
             checked={mode === 'recents'}
-            onSelect={() => setMode('recents')}
+            onSelect={() => setSidebarMode('recents')}
             label="Recents"
           >
             <Clock />
           </RailModeIcon>
           <RailModeIcon
             checked={mode === 'folder'}
-            onSelect={() => setMode('folder')}
+            onSelect={() => setSidebarMode('folder')}
             label="Folder"
           >
             <Folder />
           </RailModeIcon>
           <RailModeIcon
             checked={mode === 'outline'}
-            onSelect={() => setMode('outline')}
+            onSelect={() => setSidebarMode('outline')}
             label="Outline"
           >
             <List />
@@ -128,6 +129,8 @@ export function Sidebar() {
         style={{
           width: sidebarOpen ? DRAWER_WIDTH : 0,
         }}
+        aria-hidden={!sidebarOpen}
+        inert={!sidebarOpen ? true : undefined}
       >
         <ShadcnSidebar
           collapsible="none"
@@ -149,7 +152,7 @@ export function Sidebar() {
                 size="sm"
                 icon={FolderOpen}
                 title="No folder open"
-                hint="Click the Open Folder icon below, or drag a folder onto this window."
+                hint={`Click Open Folder below, or drag a folder onto this window. Right-click a file to ${revealLabel.toLowerCase()}.`}
               />
             )}
             {mode === 'outline' && (
@@ -243,13 +246,16 @@ function OutlineList({
 
   if (headings.length === 0) {
     return (
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <p className="px-3 py-2 text-xs text-muted-foreground/70">
-            {hasActiveDoc ? 'No headings in this document.' : 'Open a document to see its outline.'}
-          </p>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      <EmptyState
+        size="sm"
+        icon={List}
+        title={hasActiveDoc ? 'No headings' : 'No document open'}
+        hint={
+          hasActiveDoc
+            ? 'This document has no headings to show.'
+            : 'Open a document to see its outline.'
+        }
+      />
     )
   }
   return (

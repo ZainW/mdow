@@ -9,24 +9,5 @@ interface File {
 
 type UpdaterUnsubscribe = () => void
 
-// Updater-related contract surfaced by this PR. The full window.api surface
-// is typed via `ElectronAPI` in apps/desktop/src/preload/env.d.ts — this
-// interface is kept as a documented reference for the updater methods rather
-// than a competing Window.api declaration (which would conflict with the
-// preload-driven typing).
-interface MdowApi {
-  checkForUpdates: (opts?: { manual?: boolean }) => Promise<void>
-  downloadUpdate: () => Promise<void>
-  installUpdate: () => Promise<void>
-  setAutoUpdateScheduling: (enabled: boolean) => Promise<void>
-  onUpdateAvailable: (
-    callback: (info: { version: string; releaseNotes?: string }) => void,
-  ) => UpdaterUnsubscribe
-  onUpdateUpToDate: (callback: (info: { wasManual: boolean }) => void) => UpdaterUnsubscribe
-  onUpdateDownloadProgress: (
-    callback: (progress: { percent: number }) => void,
-  ) => UpdaterUnsubscribe
-  onUpdateDownloaded: (callback: () => void) => UpdaterUnsubscribe
-  onUpdateError: (callback: (message: string) => void) => UpdaterUnsubscribe
-  onMenuCheckForUpdates: (callback: () => void) => UpdaterUnsubscribe
-}
+// Shared domain types live in src/shared/types.ts (included via tsconfig.web.json).
+// window.api is typed via apps/desktop/src/preload/env.d.ts → ElectronAPI.

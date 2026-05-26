@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn, isMac } from '../lib/utils'
-import { FileText, X } from 'lucide-react'
+import { FileText, X, AlertCircle } from 'lucide-react'
 import { iconStroke } from '../lib/icons'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 
@@ -30,8 +30,9 @@ export function TabBar() {
 
   // Keep the active tab visible when it changes (e.g. via Cmd+1..9, cycle, programmatic switch)
   useEffect(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     activeTabRef.current?.scrollIntoView({
-      behavior: 'smooth',
+      behavior: reduceMotion ? 'auto' : 'smooth',
       block: 'nearest',
       inline: 'nearest',
     })
@@ -147,12 +148,19 @@ export function TabBar() {
                   type="button"
                   role="tab"
                   title={tab.path}
-                  aria-label={`${filename} — ${tab.path}`}
+                  aria-label={`${filename}${tab.error ? ' — error' : ''} — ${tab.path}`}
                   aria-selected={isActive}
+                  aria-controls={`tabpanel-${tab.id}`}
                   aria-setsize={tabs.length}
                   aria-posinset={index + 1}
                   tabIndex={rovingTabIndex(isActive)}
                   onClick={() => setActiveTab(tab.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setActiveTab(tab.id)
+                    }
+                  }}
                   onMouseDown={(e) => {
                     if (e.button === 1) {
                       e.preventDefault()
@@ -161,13 +169,17 @@ export function TabBar() {
                   }}
                   className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit"
                 >
-                  <FileText
-                    className={cn(
-                      'size-3.5 shrink-0',
-                      isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
-                    )}
-                    strokeWidth={iconStroke.default}
-                  />
+                  {tab.error ? (
+                    <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+                  ) : (
+                    <FileText
+                      className={cn(
+                        'size-3.5 shrink-0',
+                        isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
+                      )}
+                      strokeWidth={iconStroke.default}
+                    />
+                  )}
                   <span className="truncate">{filename}</span>
                 </button>
                 <button

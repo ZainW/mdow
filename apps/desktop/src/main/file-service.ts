@@ -9,6 +9,7 @@ interface FileWatcherState {
 }
 
 const fileWatchers = new Map<string, FileWatcherState>()
+let activeWatchPath: string | null = null
 
 export async function openFileDialog(win: BrowserWindow) {
   const result = await dialog.showOpenDialog(win, {
@@ -62,8 +63,12 @@ export function unwatchFile(filePath: string): void {
   const state = fileWatchers.get(filePath)
   if (state) {
     if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    state.onChange = () => {}
     void state.watcher.close()
     fileWatchers.delete(filePath)
+  }
+  if (activeWatchPath === filePath) {
+    activeWatchPath = null
   }
 }
 
@@ -73,4 +78,36 @@ export function unwatchAllFiles(): void {
     void state.watcher.close()
   }
   fileWatchers.clear()
+  activeWatchPath = null
+}
+
+export function getActiveWatchPath(): string | null {
+  return activeWatchPath
+}
+
+export function setActiveFileWatch(
+  getMainWindow: () => BrowserWindow | null,
+  filePath: string | null,
+): void {
+  if (activeWatchPath && activeWatchPath !== filePath) {
+    unwatchFile(activeWatchPath)
+  }
+
+  activeWatchPath = filePath
+
+  if (!filePath) return
+
+  watchFile(filePath, (event) => {
+    const win = getMainWindow()
+    if (!win || win.isDestroyed()) return
+    if (event.type === 'changed') {
+      win.webContents.send('file:changed', { path: filePath, content: event.content })
+    } else if (event.type === 'deleted') {
+      win.webContents.send('file:deleted', filePath)
+    }
+  })
+}
+
+export function attachFileWatcher(getMainWindow: () => BrowserWindow | null, path: string): void {
+  setActiveFileWatch(getMainWindow, path)
 }

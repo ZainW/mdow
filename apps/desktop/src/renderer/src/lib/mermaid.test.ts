@@ -21,7 +21,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mermaidMock.loadCount = 0
   mermaidMock.render.mockResolvedValue({ svg: '<svg><text>ok</text></svg>' })
-  document.body.innerHTML = ''
+  document.body.replaceChildren()
 })
 
 describe('mermaid renderer', () => {
@@ -47,5 +47,22 @@ describe('mermaid renderer', () => {
     expect(mermaidMock.initialize).toHaveBeenCalled()
     expect(mermaidMock.render).toHaveBeenCalledWith('diagram-1-svg', 'flowchart TD\n  A --> B')
     expect(el.querySelector('svg')).toBeInTheDocument()
+    expect(el.getAttribute('role')).toBe('img')
+  })
+
+  it('reuses cached SVG output for repeated renders', async () => {
+    const { clearMermaidSvgCache, getMermaidSvgCacheSize, initMermaid, renderMermaidBlock } =
+      await import('./mermaid')
+    clearMermaidSvgCache()
+    const el = document.createElement('div')
+    el.id = 'diagram-2'
+    document.body.append(el)
+
+    initMermaid(false)
+    await renderMermaidBlock({ id: 'diagram-2', code: 'flowchart TD\n  C --> D' })
+    await renderMermaidBlock({ id: 'diagram-2', code: 'flowchart TD\n  C --> D' })
+
+    expect(mermaidMock.render).toHaveBeenCalledTimes(1)
+    expect(getMermaidSvgCacheSize()).toBe(1)
   })
 })

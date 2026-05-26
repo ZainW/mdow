@@ -1,0 +1,165 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { BrowserWindow } from 'electron'
+
+const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
+
+const mockReadFileContent = vi.hoisted(() => vi.fn())
+const mockUnwatchFile = vi.hoisted(() => vi.fn())
+const mockAttachFileWatcher = vi.hoisted(() => vi.fn())
+const mockSetActiveFileWatch = vi.hoisted(() => vi.fn())
+const mockSaveAppState = vi.hoisted(() => vi.fn())
+const mockNativeTheme = vi.hoisted(() => ({ themeSource: 'system' as string }))
+const mockApplyWindowChrome = vi.hoisted(() => vi.fn())
+const mockGetMainWindow = vi.hoisted(() =>
+  vi.fn(() => ({
+    isDestroyed: () => false,
+    webContents: { send: vi.fn() },
+  })),
+)
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (channel: string, handler: (...args: unknown[]) => unknown) => {
+      handlers.set(channel, handler)
+    },
+  },
+  shell: { showItemInFolder: vi.fn(), openExternal: vi.fn() },
+  BrowserWindow: vi.fn(),
+  nativeTheme: mockNativeTheme,
+  app: { addRecentDocument: vi.fn() },
+}))
+
+vi.mock('./file-service', () => ({
+  openFileDialog: vi.fn(),
+  readFileContent: mockReadFileContent,
+  watchFile: vi.fn(),
+  unwatchFile: mockUnwatchFile,
+  attachFileWatcher: mockAttachFileWatcher,
+  setActiveFileWatch: mockSetActiveFileWatch,
+}))
+
+vi.mock('./folder-service', () => ({
+  openFolderDialog: vi.fn(),
+  scanFolder: vi.fn(),
+  watchFolder: vi.fn(),
+}))
+
+vi.mock('./store', () => ({
+  getRecents: vi.fn(() => []),
+  addRecent: vi.fn(),
+  pruneRecents: vi.fn(() => []),
+  getAppState: vi.fn(),
+  saveAppState: mockSaveAppState,
+  setLastFolder: vi.fn(),
+}))
+
+vi.mock('./updater', () => ({
+  checkForUpdates: vi.fn(),
+  downloadUpdate: vi.fn(),
+  installUpdate: vi.fn(),
+  setAutoUpdateScheduling: vi.fn(),
+}))
+
+vi.mock('./platform', () => ({ isMac: false }))
+vi.mock('./window-chrome', () => ({ applyWindowChrome: mockApplyWindowChrome }))
+vi.mock('./allowed-paths', () => ({
+  registerAllowedFile: vi.fn(),
+  registerAllowedPath: vi.fn(),
+}))
+vi.mock('./menu', () => ({ rebuildMenu: vi.fn() }))
+
+import { registerIpcHandlers } from './ipc'
+
+describe('ipc handlers', () => {
+  beforeEach(() => {
+    handlers.clear()
+    vi.clearAllMocks()
+    mockNativeTheme.themeSource = 'system'
+    registerIpcHandlers(mockGetMainWindow as unknown as () => BrowserWindow | null)
+  })
+
+  describe('file:read', () => {
+    it('maps ENOENT to not-found', async () => {
+      const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      mockReadFileContent.mockRejectedValue(err)
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/missing.md')).rejects.toMatchObject({ message: 'not-found' })
+    })
+
+    it('maps EACCES to permission-denied', async () => {
+      const err = Object.assign(new Error('EACCES'), { code: 'EACCES' })
+      mockReadFileContent.mockRejectedValue(err)
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/secret.md')).rejects.toMatchObject({
+        message: 'permission-denied',
+      })
+    })
+
+    it('maps other errors to read-error', async () => {
+      mockReadFileContent.mockRejectedValue(new Error('boom'))
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/bad.md')).rejects.toMatchObject({ message: 'read-error' })
+    })
+
+    it('returns content on success', async () => {
+      mockReadFileContent.mockResolvedValue('# Hello')
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/readme.md')).resolves.toBe('# Hello')
+    })
+
+    it('rejects path traversal', async () => {
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '../etc/passwd.md')).rejects.toMatchObject({
+        message: 'invalid-path',
+      })
+    })
+
+    it('rejects non-markdown extensions', async () => {
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/readme.txt')).rejects.toMatchObject({
+        message: 'invalid-extension',
+      })
+    })
+  })
+
+  describe('shell:open-external', () => {
+    it('allows http and https URLs', async () => {
+      const handler = handlers.get('shell:open-external')!
+      await expect(Promise.resolve(handler({}, 'https://example.com'))).resolves.toBe(true)
+    })
+
+    it('rejects non-http URLs', async () => {
+      const handler = handlers.get('shell:open-external')!
+      await expect(Promise.resolve(handler({}, 'file:///etc/passwd'))).resolves.toBe(false)
+    })
+  })
+
+  describe('theme:set', () => {
+    it('applies valid theme sources', async () => {
+      const handler = handlers.get('theme:set')!
+      await handler({}, 'dark')
+      expect(mockNativeTheme.themeSource).toBe('dark')
+      expect(mockSaveAppState).toHaveBeenCalledWith({ theme: 'dark' })
+      expect(mockApplyWindowChrome).toHaveBeenCalled()
+    })
+
+    it('accepts light and system themes', async () => {
+      const handler = handlers.get('theme:set')!
+      await handler({}, 'light')
+      expect(mockNativeTheme.themeSource).toBe('light')
+      mockSaveAppState.mockClear()
+      await handler({}, 'system')
+      expect(mockNativeTheme.themeSource).toBe('system')
+      expect(mockSaveAppState).toHaveBeenCalledWith({ theme: 'system' })
+    })
+
+    it('ignores invalid theme values', async () => {
+      const handler = handlers.get('theme:set')!
+      mockNativeTheme.themeSource = 'system'
+      await handler({}, 'neon')
+      expect(mockNativeTheme.themeSource).toBe('system')
+      expect(mockSaveAppState).not.toHaveBeenCalled()
+      expect(mockApplyWindowChrome).not.toHaveBeenCalled()
+    })
+  })
+})

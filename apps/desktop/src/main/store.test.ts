@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
+vi.mock('fs', () => ({
+  existsSync: vi.fn(() => true),
+}))
+
 // Mock electron-store before importing the module
 vi.mock('electron-store', () => {
   const storeData = new Map<string, unknown>()
@@ -32,6 +36,7 @@ vi.mock('electron-store', () => {
 import {
   getRecents,
   addRecent,
+  pruneRecents,
   getAppState,
   saveAppState,
   getWindowBounds,
@@ -39,6 +44,7 @@ import {
   getLastFolder,
   setLastFolder,
 } from './store'
+import { existsSync } from 'fs'
 
 // Get reference to the mock's internal data for resetting
 // eslint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- accessing mock internals
@@ -50,7 +56,6 @@ describe('store', () => {
   beforeEach(() => {
     storeData.set('recents', [])
     storeData.set('lastFolder', null)
-    storeData.set('sidebarWidth', 260)
     storeData.set('zoomLevel', 100)
     storeData.set('windowBounds', null)
     storeData.set('sessionTabs', [])
@@ -61,6 +66,8 @@ describe('store', () => {
     storeData.set('lineHeight', 1.65)
     storeData.set('theme', 'system')
     storeData.set('autoUpdateEnabled', true)
+    storeData.set('wideMode', false)
+    storeData.set('sidebarMode', 'recents')
   })
 
   describe('recents', () => {
@@ -94,13 +101,27 @@ describe('store', () => {
       expect(getRecents()).toHaveLength(20)
       expect(getRecents()[0]).toBe('/file24.md')
     })
+
+    it('prunes non-existent files on getRecents', () => {
+      vi.mocked(existsSync).mockImplementation((path) => path === '/exists.md')
+      addRecent('/exists.md')
+      addRecent('/missing.md')
+      expect(getRecents()).toEqual(['/exists.md'])
+    })
+
+    it('pruneRecents filters and persists existing files', () => {
+      vi.mocked(existsSync).mockImplementation((path) => path === '/keep.md')
+      addRecent('/keep.md')
+      addRecent('/gone.md')
+      expect(pruneRecents()).toEqual(['/keep.md'])
+      expect(getRecents()).toEqual(['/keep.md'])
+    })
   })
 
   describe('appState', () => {
     it('returns default state', () => {
       const state = getAppState()
       expect(state).toEqual({
-        sidebarWidth: 260,
         zoomLevel: 100,
         lastFolder: null,
         windowBounds: null,
@@ -112,19 +133,21 @@ describe('store', () => {
         lineHeight: 1.65,
         theme: 'system',
         autoUpdateEnabled: true,
+        wideMode: false,
+        sidebarMode: 'recents',
       })
     })
 
     it('saves partial state', () => {
-      saveAppState({ sidebarWidth: 300 })
-      expect(getAppState().sidebarWidth).toBe(300)
+      saveAppState({ wideMode: true })
+      expect(getAppState().wideMode).toBe(true)
       expect(getAppState().lastFolder).toBeNull()
     })
 
     it('saves multiple fields at once', () => {
-      saveAppState({ sidebarWidth: 400, lastFolder: '/docs' })
+      saveAppState({ wideMode: true, lastFolder: '/docs' })
       const state = getAppState()
-      expect(state.sidebarWidth).toBe(400)
+      expect(state.wideMode).toBe(true)
       expect(state.lastFolder).toBe('/docs')
     })
   })
@@ -137,7 +160,13 @@ describe('store', () => {
     it('saves and retrieves bounds', () => {
       const bounds = { x: 100, y: 200, width: 800, height: 600 }
       saveWindowBounds(bounds)
-      expect(getWindowBounds()).toEqual(bounds)
+      expect(getWindowBounds()).toEqual({ ...bounds, isMaximized: false })
+    })
+
+    it('saves isMaximized state', () => {
+      const bounds = { x: 100, y: 200, width: 800, height: 600 }
+      saveWindowBounds(bounds, true)
+      expect(getWindowBounds()?.isMaximized).toBe(true)
     })
   })
 

@@ -1,4 +1,4 @@
-import { useAppStore, type FileError } from '../store/app-store'
+import { useAppStore, type FileError, type ErrorType } from '../store/app-store'
 import { Button } from './ui/button'
 import { truncatePathMiddle } from '../lib/path-utils'
 import { AlertCircle, FileX, FolderOpen, ShieldAlert, Trash2 } from 'lucide-react'
@@ -34,10 +34,19 @@ interface ErrorViewProps {
   tabId: string
 }
 
+function getReadErrorType(error: unknown): ErrorType {
+  if (error instanceof Error) {
+    if (error.message === 'not-found') return 'not-found'
+    if (error.message === 'permission-denied') return 'permission-denied'
+  }
+  return 'read-error'
+}
+
 export function ErrorView({ error, tabId }: ErrorViewProps) {
   const clearTabError = useAppStore((s) => s.clearTabError)
   const closeTab = useAppStore((s) => s.closeTab)
   const updateTabContent = useAppStore((s) => s.updateTabContent)
+  const setTabError = useAppStore((s) => s.setTabError)
   const msg = errorMessages[error.type]
   const Icon = msg.icon
   const displayPath = truncatePathMiddle(error.path, 48)
@@ -47,8 +56,8 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
       const content = await window.api.readFile(error.path)
       updateTabContent(error.path, content)
       clearTabError(tabId)
-    } catch {
-      // Error will be re-thrown by the IPC handler
+    } catch (err) {
+      setTabError(error.path, { type: getReadErrorType(err), path: error.path })
     }
   }
 
@@ -57,7 +66,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center">
+    <div className="flex flex-1 items-center justify-center" role="alert">
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-muted">
           <Icon className="size-6 text-muted-foreground" strokeWidth={iconStroke.default} />

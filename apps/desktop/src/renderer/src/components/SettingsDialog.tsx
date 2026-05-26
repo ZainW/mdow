@@ -9,9 +9,19 @@ import {
 } from '../lib/typography'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Slider } from './ui/slider'
+import { Button } from './ui/button'
 import { cn, isMac } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
+
+const DEFAULTS = {
+  theme: 'system' as const,
+  contentFont: 'inter',
+  codeFont: 'geist-mono',
+  fontSize: 15.5,
+  lineHeight: 1.65,
+  autoUpdateEnabled: true,
+}
 
 const THEME_OPTIONS = [
   { value: 'system', label: 'System', Icon: Monitor },
@@ -40,6 +50,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
+
+  const handleResetDefaults = () => {
+    setTheme(DEFAULTS.theme)
+    setContentFont(DEFAULTS.contentFont)
+    setCodeFont(DEFAULTS.codeFont)
+    setFontSize(DEFAULTS.fontSize)
+    setLineHeight(DEFAULTS.lineHeight)
+    if (!isMac) setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,22 +163,63 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         {!isMac && (
           <section className="space-y-2">
             <h3 className="text-sm font-medium">Updates</h3>
-            <label className="flex items-center justify-between gap-3 text-sm">
+            <div className="flex items-center justify-between gap-3 text-sm">
               <span className="text-muted-foreground">
                 Automatically check for updates in the background
               </span>
-              <input
-                type="checkbox"
+              <ToggleSwitch
                 checked={autoUpdateEnabled}
-                onChange={(e) => setAutoUpdateEnabled(e.target.checked)}
-                aria-label="Automatically check for updates in the background"
-                className="size-4 cursor-pointer accent-primary"
+                onCheckedChange={setAutoUpdateEnabled}
+                label="Automatically check for updates in the background"
               />
-            </label>
+            </div>
           </section>
         )}
+
+        <p className="text-[11px] leading-snug text-muted-foreground/70">
+          Wide mode is toggled from the document toolbar and saved across sessions.
+        </p>
+
+        <div className="flex justify-end border-t border-border-subtle pt-3">
+          <Button variant="outline" size="sm" onClick={handleResetDefaults}>
+            Reset to defaults
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ToggleSwitch({
+  checked,
+  onCheckedChange,
+  label,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+        checked ? 'bg-primary' : 'bg-muted',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none block size-4 rounded-full bg-background shadow-sm transition-transform duration-150',
+          checked ? 'translate-x-4' : 'translate-x-0',
+        )}
+      />
+    </button>
   )
 }
 

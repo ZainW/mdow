@@ -28,6 +28,27 @@ export function parentDir(path: string, segments = 2): string {
   return dirs.slice(-segments).join('/')
 }
 
+export function resolveRelativePath(fromPath: string, relativePath: string): string {
+  const sep = detectSep(fromPath)
+  if (/^[/\\]|^[A-Za-z]:[/\\]/.test(relativePath)) {
+    return relativePath.replace(/[/\\]/g, sep)
+  }
+
+  const baseParts = fromPath.split(/[/\\]/).filter(Boolean)
+  if (baseParts.length > 0) baseParts.pop()
+
+  for (const part of relativePath.split(/[/\\]/).filter(Boolean)) {
+    if (part === '.') continue
+    if (part === '..') baseParts.pop()
+    else baseParts.push(part)
+  }
+
+  const isWindowsAbsolute = /^[A-Za-z]:/.test(fromPath)
+  if (isWindowsAbsolute) return `${baseParts[0]}${sep}${baseParts.slice(1).join(sep)}`
+  if (fromPath.startsWith('/')) return `${sep}${baseParts.join(sep)}`
+  return baseParts.join(sep)
+}
+
 // Drop middle segments from a long path so the user still sees the leading
 // folder + filename. Used in the error view's path label.
 export function truncatePathMiddle(path: string, maxLen = 56): string {

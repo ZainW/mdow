@@ -11,11 +11,12 @@ const markdownMock = vi.hoisted(() => ({
 vi.mock('../lib/markdown', () => ({
   initMarkdown: markdownMock.initMarkdown,
   renderMarkdown: markdownMock.renderMarkdown,
+  getCachedMarkdownRender: vi.fn(() => undefined),
 }))
 
 vi.mock('../lib/mermaid', () => ({
   initMermaid: vi.fn(),
-  renderMermaidBlocks: vi.fn(),
+  renderMermaidBlock: vi.fn(),
   updateMermaidTheme: vi.fn(),
 }))
 
@@ -39,6 +40,10 @@ vi.mock('@comark/react', () => ({
       )}
     </>
   ),
+}))
+
+vi.mock('@comark/react/components/Math', () => ({
+  Math: () => null,
 }))
 
 class MockIntersectionObserver {
@@ -69,6 +74,7 @@ beforeEach(() => {
     tree: { nodes: [['h1', { id: 'startup' }, 'Startup']] },
     mermaidBlocks: [],
     headings: [{ level: 1, text: 'Startup', id: 'startup' }],
+    frontmatter: {},
   })
 })
 

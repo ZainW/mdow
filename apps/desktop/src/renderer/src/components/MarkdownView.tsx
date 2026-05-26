@@ -1,60 +1,101 @@
 import { ComarkRenderer } from '@comark/react'
+import { Math as ComarkMath } from '@comark/react/components/Math'
 import {
   memo,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
+  type AnchorHTMLAttributes,
   type CSSProperties,
   type HTMLAttributes,
+  type ImgHTMLAttributes,
+  type InputHTMLAttributes,
 } from 'react'
 import { Check, Copy } from 'lucide-react'
-import { renderMarkdown, type RenderResult } from '../lib/markdown'
-import { initMermaid, renderMermaidBlocks, updateMermaidTheme } from '../lib/mermaid'
+import { useShallow } from 'zustand/react/shallow'
+import { getCachedMarkdownRender, renderMarkdown, type RenderResult } from '../lib/markdown'
+import { initMermaid, renderMermaidBlock, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
+import { detectSep, isMarkdownPath } from '../lib/path-utils'
 import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
 import { iconSize, iconStroke } from '../lib/icons'
+import { cn } from '../lib/utils'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
 
 interface MarkdownViewProps {
   tab: Tab
+  onOpenMarkdownLink?: (path: string) => void
 }
 
-function CodeBlock({ children, ...props }: HTMLAttributes<HTMLPreElement>) {
-  const preRef = useRef<HTMLPreElement>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [copied, setCopied] = useState(false)
+function getTabRenderFromStore(tabId: string): RenderResult | undefined {
+  return useAppStore.getState().renderCache.get(tabId)
+}
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    }
-  }, [])
+function setTabRenderInStore(tabId: string, result: RenderResult): void {
+  useAppStore.getState().setRenderCache(tabId, result)
+}
 
-  const handleCopy = () => {
-    const code = preRef.current?.textContent ?? ''
-    void navigator.clipboard.writeText(code)
-    setCopied(true)
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    timeoutRef.current = setTimeout(() => setCopied(false), 1500)
+function resolveRelativePath(href: string, docPath: string): string {
+  const sep = detectSep(docPath)
+  const dirParts = docPath.split(/[/\\]/).slice(0, -1)
+  for (const segment of href.split(/[/\\]/)) {
+    if (segment === '..') dirParts.pop()
+    else if (segment === '.' || segment === '') continue
+    else dirParts.push(segment)
   }
+  return dirParts.join(sep)
+}
 
+function rewriteImageSrc(src: string, docPath: string): string {
+  if (/^(https?:|data:|mdow-local:|blob:)/i.test(src)) return src
+  const resolved = resolveRelativePath(src, docPath)
+  return `mdow-local://local/${encodeURIComponent(resolved)}`
+}
+
+const ALERT_TYPES = ['tip', 'note', 'important', 'warning', 'caution'] as const
+
+function AlertCallout({
+  type,
+  children,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { type: string }) {
+  return (
+    <div
+      className={cn('markdown-alert', `markdown-alert-${type}`, className)}
+      role="note"
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
+
+function CodeBlock({
+  children,
+  language,
+  ...props
+}: HTMLAttributes<HTMLPreElement> & { language?: string; class?: string }) {
+  const className = props.class
+  const { class: _class, ...preProps } = props
   return (
     <div className="code-block-wrapper relative">
-      <pre {...props} ref={preRef}>
+      {language ? <span className="code-lang-badge">{language}</span> : null}
+      <pre className={className} {...preProps}>
         {children}
       </pre>
       <button
         className="copy-code-btn"
         type="button"
-        aria-label={copied ? 'Copied' : 'Copy code'}
+        data-copy-code
+        aria-label="Copy code"
         title="Copy code"
-        data-copied={copied ? 'true' : undefined}
-        onClick={handleCopy}
       >
         <Copy
           className="copy-icon copy-icon-default"
@@ -77,14 +118,43 @@ interface MermaidBlockProps extends HTMLAttributes<HTMLDivElement> {
   content?: string
 }
 
-function MermaidBlock({ content: _content, children: _children, ...props }: MermaidBlockProps) {
-  return <div {...props} />
+function MermaidBlock({ content, id, className, ...props }: MermaidBlockProps) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [ariaLabel, setAriaLabel] = useState('Mermaid diagram loading')
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !content) return undefined
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return
+        observer.disconnect()
+        const blockId = el.id
+        if (!blockId) return
+        void renderMermaidBlock({ id: blockId, code: content }).then(() => {
+          setAriaLabel('Mermaid diagram')
+        })
+      },
+      { rootMargin: '200px 0px' },
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [content, id])
+
+  return (
+    <div
+      ref={ref}
+      id={id}
+      className={cn('mermaid mermaid-container', className)}
+      aria-label={ariaLabel}
+      {...props}
+    />
+  )
 }
 
 function TableWrap(props: HTMLAttributes<HTMLTableElement>) {
-  // Wrap tables in a horizontal-scroll container so wide tables don't blow
-  // out the markdown body. The wrapper carries the border + radius so the
-  // table can scroll cleanly inside.
   return (
     <div className="table-wrap">
       <table {...props} />
@@ -92,14 +162,66 @@ function TableWrap(props: HTMLAttributes<HTMLTableElement>) {
   )
 }
 
-const markdownComponents = {
-  pre: CodeBlock,
-  mermaid: MermaidBlock,
-  table: TableWrap,
+function TaskCheckbox({
+  type,
+  class: className,
+  checked,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { class?: string }) {
+  if (type === 'checkbox' && className?.includes('task-list-item-checkbox')) {
+    return (
+      <input
+        type="checkbox"
+        className={className}
+        checked={Boolean(checked)}
+        disabled
+        readOnly
+        aria-disabled
+        {...props}
+      />
+    )
+  }
+  return <input type={type} className={className} checked={checked} {...props} />
 }
 
-const MarkdownContent = memo(function MarkdownContent({ result }: { result: RenderResult }) {
-  return <ComarkRenderer tree={result.tree} components={markdownComponents} />
+function createMarkdownComponents(docPath: string) {
+  const alertComponents = Object.fromEntries(
+    ALERT_TYPES.map((type) => [
+      type,
+      (props: HTMLAttributes<HTMLDivElement>) => <AlertCallout type={type} {...props} />,
+    ]),
+  )
+
+  return {
+    pre: CodeBlock,
+    mermaid: MermaidBlock,
+    math: ComarkMath,
+    table: TableWrap,
+    input: TaskCheckbox,
+    img: ({ src, alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) => (
+      <img
+        src={src ? rewriteImageSrc(src, docPath) : src}
+        alt={alt ?? ''}
+        loading="lazy"
+        {...props}
+      />
+    ),
+    a: ({ children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => (
+      <a {...props}>{children ?? props.href}</a>
+    ),
+    ...alertComponents,
+  }
+}
+
+const MarkdownContent = memo(function MarkdownContent({
+  result,
+  docPath,
+}: {
+  result: RenderResult
+  docPath: string
+}) {
+  const components = useMemo(() => createMarkdownComponents(docPath), [docPath])
+  return <ComarkRenderer tree={result.tree} components={components} />
 })
 
 interface RenderUi {
@@ -132,20 +254,31 @@ function renderReducer(state: RenderUi, action: RenderAction): RenderUi {
   }
 }
 
-export function MarkdownView({ tab }: MarkdownViewProps) {
+export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevTabIdRef = useRef(tab.id)
   const [searchQuery, setSearchQuery] = useState('')
-  const wideMode = useAppStore((s) => s.wideMode)
-  const zoomLevel = useAppStore((s) => s.zoomLevel)
-  const updateTabScroll = useAppStore((s) => s.updateTabScroll)
-  const searchOpen = useAppStore((s) => s.searchOpen)
-  const setSearchOpen = useAppStore((s) => s.setSearchOpen)
-  const contentFont = useAppStore((s) => s.contentFont)
-  const codeFont = useAppStore((s) => s.codeFont)
-  const fontSize = useAppStore((s) => s.fontSize)
-  const lineHeight = useAppStore((s) => s.lineHeight)
+  const [retryKey, setRetryKey] = useState(0)
+
+  const { wideMode, zoomLevel, contentFont, codeFont, fontSize, lineHeight } = useAppStore(
+    useShallow((s) => ({
+      wideMode: s.wideMode,
+      zoomLevel: s.zoomLevel,
+      contentFont: s.contentFont,
+      codeFont: s.codeFont,
+      fontSize: s.fontSize,
+      lineHeight: s.lineHeight,
+    })),
+  )
+
+  const { searchOpen, setSearchOpen, updateTabScroll } = useAppStore(
+    useShallow((s) => ({
+      searchOpen: s.searchOpen,
+      setSearchOpen: s.setSearchOpen,
+      updateTabScroll: s.updateTabScroll,
+    })),
+  )
 
   const [renderUi, dispatchRender] = useReducer(renderReducer, {
     result: null,
@@ -168,11 +301,24 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       lastRenderedTabIdRef.current = tab.id
       dispatchRender({ type: 'clear-tab' })
     }
+
+    const cached = getTabRenderFromStore(tab.id) ?? getCachedMarkdownRender(tab.content)
+    if (cached) {
+      renderVersionRef.current += 1
+      dispatchRender({
+        type: 'ready',
+        result: cached,
+        version: renderVersionRef.current,
+      })
+      return undefined
+    }
+
     let cancelled = false
     dispatchRender({ type: 'start' })
     void renderMarkdown(tab.content)
       .then((res) => {
         if (cancelled) return
+        setTabRenderInStore(tab.id, res)
         renderVersionRef.current += 1
         dispatchRender({
           type: 'ready',
@@ -187,7 +333,7 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     return () => {
       cancelled = true
     }
-  }, [tab.id, tab.content])
+  }, [tab.id, tab.content, retryKey])
 
   useEffect(() => {
     const headings = renderResult?.headings ?? []
@@ -210,9 +356,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
 
   useEffect(() => {
     mermaidBlocksRef.current = renderResult?.mermaidBlocks ?? []
-    if (renderResult?.mermaidBlocks.length) {
-      void renderMermaidBlocks(renderResult.mermaidBlocks)
-    }
   }, [renderResult])
 
   useEffect(() => {
@@ -220,8 +363,11 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       const isDark = document.documentElement.classList.contains('dark')
       updateMermaidTheme(isDark)
       const blocks = mermaidBlocksRef.current
-      if (blocks.length > 0) {
-        void renderMermaidBlocks(blocks)
+      for (const block of blocks) {
+        const el = document.getElementById(block.id)
+        if (el?.querySelector('svg')) {
+          void renderMermaidBlock(block, isDark)
+        }
       }
     })
 
@@ -233,12 +379,13 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     return () => observer.disconnect()
   }, [])
 
-  // Scroll-spy: track which heading is currently in view
   useEffect(() => {
     const root = scrollRef.current
     const container = contentRef.current
     if (!root || !container) return undefined
-    const headingEls = container.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id], h4[id]')
+    const headingEls = container.querySelectorAll<HTMLElement>(
+      'h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]',
+    )
     if (headingEls.length === 0) return undefined
 
     const observer = new IntersectionObserver(
@@ -256,7 +403,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     return () => observer.disconnect()
   }, [renderResult])
 
-  // Scroll position: save on scroll (debounced)
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return undefined
@@ -274,8 +420,6 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     }
   }, [tab.id, updateTabScroll])
 
-  // Scroll position: restore on tab switch — useLayoutEffect runs before paint,
-  // so the browser never renders an intermediate frame at the wrong scroll position
   useLayoutEffect(() => {
     if (prevTabIdRef.current !== tab.id) {
       const el = scrollRef.current
@@ -286,10 +430,71 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
     }
   }, [tab.id, tab.scrollPosition])
 
+  useEffect(() => {
+    const container = contentRef.current
+    if (!container) return undefined
+
+    const handleCopyClick = (event: MouseEvent) => {
+      const btn = (event.target as Element).closest<HTMLButtonElement>('[data-copy-code]')
+      if (!btn || !container.contains(btn)) return
+      const wrapper = btn.closest('.code-block-wrapper')
+      const code = wrapper?.querySelector('pre')?.textContent ?? ''
+      void navigator.clipboard.writeText(code).then(() => {
+        btn.setAttribute('data-copied', 'true')
+        btn.setAttribute('aria-label', 'Copied')
+        window.setTimeout(() => {
+          btn.removeAttribute('data-copied')
+          btn.setAttribute('aria-label', 'Copy code')
+        }, 1500)
+      })
+    }
+
+    const handleLinkClick = (event: MouseEvent) => {
+      const anchor = (event.target as Element).closest('a')
+      if (!anchor || !container.contains(anchor)) return
+      const href = anchor.getAttribute('href')
+      if (!href) return
+
+      if (href.startsWith('#')) {
+        event.preventDefault()
+        const id = decodeURIComponent(href.slice(1))
+        const target = container.querySelector(`#${CSS.escape(id)}`) ?? document.getElementById(id)
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+
+      if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href) && !href.startsWith('mdow-local:')) {
+        event.preventDefault()
+        void window.api.openExternal(href)
+        return
+      }
+
+      const resolved = resolveRelativePath(href, tab.path)
+      if (isMarkdownPath(resolved)) {
+        event.preventDefault()
+        window.dispatchEvent(
+          new CustomEvent('mdow:open-markdown-link', { detail: { path: resolved } }),
+        )
+        onOpenMarkdownLink?.(resolved)
+      }
+    }
+
+    container.addEventListener('click', handleCopyClick)
+    container.addEventListener('click', handleLinkClick)
+    return () => {
+      container.removeEventListener('click', handleCopyClick)
+      container.removeEventListener('click', handleLinkClick)
+    }
+  }, [tab.path, renderResult, onOpenMarkdownLink])
+
   const handleCloseSearch = () => {
     setSearchOpen(false)
     setSearchQuery('')
     clear()
+  }
+
+  const handleRetry = () => {
+    setRetryKey((key) => key + 1)
   }
 
   return (
@@ -306,6 +511,9 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
       )}
       <div
         ref={contentRef}
+        id={`tabpanel-${tab.id}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${tab.id}`}
         aria-busy={isRendering}
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
         style={
@@ -319,12 +527,19 @@ export function MarkdownView({ tab }: MarkdownViewProps) {
         }
       >
         {renderError ? (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
-            This document could not be rendered.
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm">
+            <p className="text-destructive">This document could not be rendered.</p>
+            <button
+              type="button"
+              className="mt-3 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              onClick={handleRetry}
+            >
+              Try again
+            </button>
           </div>
         ) : renderUi.result ? (
           <div key={renderUi.version} className="document-content-in">
-            <MarkdownContent result={renderUi.result} />
+            <MarkdownContent result={renderUi.result} docPath={tab.path} />
           </div>
         ) : isRendering ? (
           <DocumentSkeleton />

@@ -1,0 +1,102 @@
+export interface TreeNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  children?: TreeNode[]
+}
+
+export interface ScanResult {
+  tree: TreeNode[]
+  truncated: boolean
+}
+
+export interface FileResult {
+  path: string
+  content: string
+}
+
+export type ErrorType = 'not-found' | 'permission-denied' | 'deleted' | 'read-error'
+
+export interface FileError {
+  type: ErrorType
+  path: string
+}
+
+export type SidebarMode = 'recents' | 'folder' | 'outline'
+
+export interface AppState {
+  recents?: string[]
+  zoomLevel: number
+  lastFolder: string | null
+  windowBounds: { x: number; y: number; width: number; height: number } | null
+  sessionTabs: { path: string }[]
+  sessionActiveTabPath: string | null
+  contentFont: string
+  codeFont: string
+  fontSize: number
+  lineHeight: number
+  theme: string
+  autoUpdateEnabled: boolean
+  wideMode: boolean
+  sidebarMode: SidebarMode
+}
+
+export interface FolderOpenResult extends ScanResult {
+  path: string
+}
+
+export const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
+
+export function isMarkdownPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  for (const ext of MD_EXTENSIONS) {
+    if (lower.endsWith(ext)) return true
+  }
+  return false
+}
+
+export const IPC = {
+  FILE_OPEN_DIALOG: 'file:open-dialog',
+  FILE_READ: 'file:read',
+  FILE_UNWATCH: 'file:unwatch',
+  FILE_SET_ACTIVE_WATCH: 'file:set-active-watch',
+  FILE_STAT: 'file:stat',
+  FILE_CHANGED: 'file:changed',
+  FILE_DELETED: 'file:deleted',
+  FILE_OPENED: 'file:opened',
+  FOLDER_OPEN_DIALOG: 'folder:open-dialog',
+  FOLDER_OPEN_PATH: 'folder:open-path',
+  FOLDER_READ_TREE: 'folder:read-tree',
+  FOLDER_CHANGED: 'folder:changed',
+  STORE_GET_RECENTS: 'store:get-recents',
+  STORE_GET_STATE: 'store:get-state',
+  STORE_SAVE_STATE: 'store:save-state',
+  STORE_PRUNE_RECENTS: 'store:prune-recents',
+  SHELL_SHOW_IN_FOLDER: 'shell:show-in-folder',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+  URL_RESOLVE_LOCAL: 'url:resolve-local',
+  WINDOW_SET_TITLE: 'window:set-title',
+  WINDOW_CLOSE: 'window:close',
+  THEME_SET: 'theme:set',
+  THEME_CHANGED: 'theme:changed',
+  MENU_OPEN_FILE: 'menu:open-file',
+  MENU_OPEN_FOLDER: 'menu:open-folder',
+  MENU_FIND: 'menu:find',
+  MENU_TOGGLE_SIDEBAR: 'menu:toggle-sidebar',
+  MENU_ZOOM_IN: 'menu:zoom-in',
+  MENU_ZOOM_OUT: 'menu:zoom-out',
+  MENU_ZOOM_RESET: 'menu:zoom-reset',
+  MENU_SHORTCUTS: 'menu:shortcuts',
+  MENU_SETTINGS: 'menu:settings',
+  MENU_CLOSE_TAB: 'menu:close-tab',
+  MENU_CHECK_FOR_UPDATES: 'menu:check-for-updates',
+  UPDATER_CHECK: 'updater:check',
+  UPDATER_SET_SCHEDULING: 'updater:set-scheduling',
+  UPDATER_DOWNLOAD: 'updater:download',
+  UPDATER_INSTALL: 'updater:install',
+  UPDATER_UPDATE_AVAILABLE: 'updater:update-available',
+  UPDATER_UP_TO_DATE: 'updater:up-to-date',
+  UPDATER_DOWNLOAD_PROGRESS: 'updater:download-progress',
+  UPDATER_UPDATE_DOWNLOADED: 'updater:update-downloaded',
+  UPDATER_ERROR: 'updater:error',
+} as const

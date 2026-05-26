@@ -1,13 +1,23 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import type { RenderResult } from '../lib/markdown'
 import { useAppStore, selectActiveTab } from './app-store'
 
 describe('app-store', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'api', {
+      value: {
+        saveAppState: vi.fn().mockResolvedValue(undefined),
+        unwatchFile: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+    })
     useAppStore.setState({
       tabs: [],
       activeTabId: null,
+      openingPath: null,
+      renderCache: new Map(),
       sidebarOpen: true,
-      sidebarWidth: 260,
+      sidebarMode: 'recents',
       openFolderPath: null,
       folderTree: [],
       wideMode: false,
@@ -43,7 +53,6 @@ describe('app-store', () => {
     it('inserts new tab after active tab', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
       useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
-      // Active is now /b.md (index 1). Switch to /a.md, then open /c.md
       const aId = useAppStore.getState().tabs[0].id
       useAppStore.getState().setActiveTab(aId)
       useAppStore.getState().openTab({ path: '/c.md', content: 'c' })
@@ -123,6 +132,32 @@ describe('app-store', () => {
       useAppStore.getState().clearTabError(id)
       expect(useAppStore.getState().tabs[0].error).toBeNull()
     })
+
+    it('clears render cache when a tab closes', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setRenderCache(id, {
+        tree: {} as RenderResult['tree'],
+        mermaidBlocks: [],
+        headings: [],
+        frontmatter: {},
+      })
+      useAppStore.getState().closeTab(id)
+      expect(useAppStore.getState().renderCache.has(id)).toBe(false)
+    })
+  })
+
+  describe('openingPath', () => {
+    it('starts as null', () => {
+      expect(useAppStore.getState().openingPath).toBeNull()
+    })
+
+    it('tracks the path being opened', () => {
+      useAppStore.getState().setOpeningPath('/a.md')
+      expect(useAppStore.getState().openingPath).toBe('/a.md')
+      useAppStore.getState().setOpeningPath(null)
+      expect(useAppStore.getState().openingPath).toBeNull()
+    })
   })
 
   describe('selectActiveTab', () => {
@@ -149,13 +184,14 @@ describe('app-store', () => {
       expect(useAppStore.getState().sidebarOpen).toBe(true)
     })
 
-    it('starts with default width of 260', () => {
-      expect(useAppStore.getState().sidebarWidth).toBe(260)
+    it('starts in recents mode', () => {
+      expect(useAppStore.getState().sidebarMode).toBe('recents')
     })
 
-    it('sets sidebar width', () => {
-      useAppStore.getState().setSidebarWidth(300)
-      expect(useAppStore.getState().sidebarWidth).toBe(300)
+    it('sets sidebar mode and persists it', () => {
+      useAppStore.getState().setSidebarMode('outline')
+      expect(useAppStore.getState().sidebarMode).toBe('outline')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ sidebarMode: 'outline' })
     })
   })
 
@@ -189,11 +225,13 @@ describe('app-store', () => {
       expect(useAppStore.getState().wideMode).toBe(false)
     })
 
-    it('toggles wide mode', () => {
+    it('toggles wide mode and persists it', () => {
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(true)
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: true })
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(false)
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: false })
     })
   })
 
