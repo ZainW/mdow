@@ -8,23 +8,23 @@ export function LandingProductPreview() {
         Built for long reading sessions
       </h2>
       <p className="mx-auto mt-4 max-w-xl text-balance text-muted-foreground">
-        Whether you're skimming notes or diving into a long document, mdow keeps things comfortable,
-        no matter the time of day.
+        Whether you're skimming notes or diving into a long document, mdow keeps things comfortable
+        at any time of day — with tabs, outline navigation, and typography tuned for reading.
       </p>
       <div className="relative mx-auto mt-14 max-w-5xl">
         <div className="grid gap-6 md:grid-cols-2 md:gap-4">
           <div className="md:translate-y-4">
             <Screenshot
               name="reading-light"
-              alt="Mdow in light mode"
-              className="rounded-xl shadow-soft-lg"
+              alt="Mdow in light mode with warm stone tones"
+              className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
             />
           </div>
           <div className="md:-translate-y-4">
             <Screenshot
-              name="reading-dark"
-              alt="Mdow in dark mode"
-              className="rounded-xl shadow-soft-lg"
+              name="sidebar-dark"
+              alt="Mdow in dark mode with folder sidebar and tabbed documents"
+              className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
             />
           </div>
         </div>

@@ -27,7 +27,15 @@ function ChangelogPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16">
-      {/* Content is trusted — rendered from our own changelog.md by md4x server-side */}
+      <div className="not-prose mb-8 flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">Follow updates via RSS</p>
+        <a
+          href="/changelog/rss.xml"
+          className="text-sm text-primary underline underline-offset-2 hover:text-primary/80"
+        >
+          Subscribe to RSS
+        </a>
+      </div>
       <article
         className="prose prose-neutral dark:prose-invert max-w-none"
         dangerouslySetInnerHTML={{ __html: html }}

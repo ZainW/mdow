@@ -27,9 +27,9 @@ export function DocsSidebar({ docs, currentSlug }: DocsSidebarProps) {
                     to="/docs/$"
                     params={{ _splat: doc.slug }}
                     className={cn(
-                      'relative block rounded-md px-3 py-1.5 transition-colors',
+                      'relative block rounded-md px-3 py-1.5 transition-[background-color,color] duration-150 ease',
                       active
-                        ? 'bg-surface font-medium text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-primary'
+                        ? 'bg-surface text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-primary'
                         : 'text-muted-foreground hover:bg-surface/60 hover:text-foreground',
                     )}
                   >

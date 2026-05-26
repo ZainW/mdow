@@ -24,6 +24,7 @@
     "test:watch": "vitest",
     "test:electron:perf": "electron-vite build && node perf/electron-render.perf.mjs",
     "test:icons:visual": "VITE_ICON_LAB=true electron-vite build && node perf/icon-visual-compare.mjs",
+    "screenshots:web": "electron-vite build && node scripts/capture-website-screenshots.mjs",
     "build:dist": "electron-vite build && electron-builder",
     "publish": "electron-vite build && electron-builder --publish always",
     "release:homebrew": "bash scripts/update-homebrew-cask.sh",

@@ -1,6 +1,12 @@
 import { cn } from '~/lib/utils'
 
-type ScreenshotName = 'reading-light' | 'reading-dark' | 'empty-light' | 'empty-dark'
+export type ScreenshotName =
+  | 'reading-light'
+  | 'reading-dark'
+  | 'empty-light'
+  | 'empty-dark'
+  | 'sidebar-light'
+  | 'sidebar-dark'
 
 interface ScreenshotProps {
   name: ScreenshotName
@@ -10,8 +16,6 @@ interface ScreenshotProps {
   priority?: boolean
 }
 
-// Intrinsic dimensions of the source captures (1999 × 1361). React uses these
-// for aspect-ratio reservation while the image loads, preventing layout shift.
 const WIDTH = 1999
 const HEIGHT = 1361
 

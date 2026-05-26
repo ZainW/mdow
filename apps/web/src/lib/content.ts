@@ -52,10 +52,6 @@ function slugFromPath(path: string): string {
   return file.replace(/\.md$/, '')
 }
 
-export async function getDocSlugs(): Promise<string[]> {
-  return Object.keys(docFiles).map(slugFromPath)
-}
-
 export async function getDoc(slug: string): Promise<DocEntry | null> {
   const entry = Object.entries(docFiles).find(([path]) => slugFromPath(path) === slug)
   if (!entry) return null
@@ -87,6 +83,23 @@ export async function getAllDocs(): Promise<DocMeta[]> {
   }
 
   return docs.sort((a, b) => a.order - b.order)
+}
+
+export async function getDocSlugs(): Promise<string[]> {
+  return Object.keys(docFiles).map(slugFromPath)
+}
+
+/** Return the raw markdown file contents (including frontmatter) for a doc slug. */
+export function getDocRaw(slug: string): string | null {
+  const entry = Object.entries(docFiles).find(([path]) => slugFromPath(path) === slug)
+  return entry ? entry[1] : null
+}
+
+export function getDocBody(slug: string): string | null {
+  const raw = getDocRaw(slug)
+  if (!raw) return null
+  const { body } = parseFrontmatter(raw)
+  return body
 }
 
 export function groupByCategory(docs: DocMeta[]): { category: string; docs: DocMeta[] }[] {

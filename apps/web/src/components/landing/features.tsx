@@ -5,7 +5,10 @@ import { Screenshot } from './screenshot'
 
 function CodeMockup() {
   return (
-    <BrowserFrame title="example.ts">
+    <BrowserFrame
+      title="example.ts"
+      ariaLabel="Illustration of TypeScript syntax highlighting in a code block"
+    >
       <div className="px-5 py-4 font-mono text-xs leading-relaxed">
         <div>
           <span className="text-[oklch(0.55_0.17_260)]">import</span>{' '}
@@ -20,7 +23,7 @@ function CodeMockup() {
           <span className="text-[oklch(0.62_0.16_55)]">render</span>(
           <span className="text-[oklch(0.6_0.15_160)]">'# Hello'</span>)
         </div>
-        <div className="mt-2 text-muted-foreground">// Beautifully highlighted</div>
+        <div className="mt-2 text-muted-foreground">// Editor-quality highlighting via Shiki</div>
       </div>
     </BrowserFrame>
   )
@@ -28,7 +31,10 @@ function CodeMockup() {
 
 function MermaidMockup() {
   return (
-    <BrowserFrame title="diagram.md">
+    <BrowserFrame
+      title="diagram.md"
+      ariaLabel="Illustration of an inline Mermaid flowchart with Idea, Draft, and Publish steps"
+    >
       <div className="px-6 py-6">
         <div className="flex items-center justify-center gap-3 text-xs">
           <div className="rounded-md border border-border bg-surface px-3 py-2 shadow-soft">
@@ -54,9 +60,13 @@ function ThemeMockup() {
       <Screenshot
         name="reading-light"
         alt="Mdow in light mode"
-        className="rounded-lg shadow-soft"
+        className="rounded-lg shadow-soft ring-1 ring-border/40"
       />
-      <Screenshot name="reading-dark" alt="Mdow in dark mode" className="rounded-lg shadow-soft" />
+      <Screenshot
+        name="reading-dark"
+        alt="Mdow in dark mode"
+        className="rounded-lg shadow-soft ring-1 ring-border/40"
+      />
     </div>
   )
 }
@@ -65,8 +75,18 @@ function DropFileMockup() {
   return (
     <Screenshot
       name="empty-light"
-      alt="Mdow empty state showing the drop zone"
-      className="rounded-xl shadow-soft-lg"
+      alt="Mdow welcome screen with open file and open folder actions"
+      className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
+    />
+  )
+}
+
+function SidebarMockup() {
+  return (
+    <Screenshot
+      name="sidebar-light"
+      alt="Mdow folder sidebar with a file tree and tabbed documents"
+      className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
     />
   )
 }
@@ -82,23 +102,30 @@ export function LandingFeatures() {
         <DropFileMockup />
       </FeatureRow>
       <FeatureRow
+        title="Browse folders like a project"
+        description="Open a directory and navigate your markdown files in a collapsible tree. Switch between Recents, Outline, and Folder views from the sidebar."
+        align="right"
+      >
+        <SidebarMockup />
+      </FeatureRow>
+      <FeatureRow
         title="Editor-quality syntax highlighting"
         description="Powered by Shiki — the same engine VS Code uses. 30+ languages, themed for both light and dark mode out of the box."
-        align="right"
+        align="left"
       >
         <CodeMockup />
       </FeatureRow>
       <FeatureRow
         title="Mermaid diagrams, rendered inline"
         description="Flowcharts, sequence diagrams, state machines — write them in plain text and watch them render where you'd expect."
-        align="left"
+        align="right"
       >
         <MermaidMockup />
       </FeatureRow>
       <FeatureRow
         title="Light and dark, just right"
         description="Warm stone tones in light mode, pure neutrals in dark. Follows your system, switches instantly, never fights your eyes."
-        align="right"
+        align="left"
       >
         <ThemeMockup />
       </FeatureRow>

@@ -2,26 +2,19 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadCard } from '~/components/download-card'
+import { DownloadButton } from '~/components/download-button'
+import { detectPlatform } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { seo } from '~/lib/seo'
 
 const REPO_RELEASES_URL = 'https://github.com/ZainW/mdow/releases'
+const HOMEBREW_INSTALL = 'brew install --cask zainw/mdow/mdow'
 
 const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
   const ua = getRequestHeader('user-agent') || ''
-  const os: 'mac' | 'windows' | 'linux' = ua.includes('Mac')
-    ? 'mac'
-    : ua.includes('Windows')
-      ? 'windows'
-      : ua.includes('Linux')
-        ? 'linux'
-        : 'mac'
-
+  const os = detectPlatform(ua)
   const release = await fetchLatestRelease()
 
-  // Cache successes at the edge for 10 minutes (GitHub API is 60/hr per IP
-  // unauth). On failure, cache for only 30s so a transient blip doesn't
-  // pin the "temporarily unavailable" page to every visitor.
   setResponseHeader(
     'Cache-Control',
     release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
@@ -35,7 +28,9 @@ export const Route = createFileRoute('/download')({
   head: () => ({
     meta: seo({
       title: 'Download Mdow',
-      description: 'Download Mdow for Mac, Windows, or Linux.',
+      description:
+        'Download Mdow for Mac, Windows, or Linux. Free markdown viewer with syntax highlighting and Mermaid support.',
+      image: '/og-image.png',
     }),
   }),
   component: DownloadPage,
@@ -54,7 +49,7 @@ function DownloadPage() {
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Download Mdow</h1>
           <p className="mt-3 text-muted-foreground">
             Downloads are temporarily unavailable.{' '}
-            <a className="underline" href={REPO_RELEASES_URL}>
+            <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
               Browse all releases on GitHub
             </a>
             .
@@ -66,6 +61,8 @@ function DownloadPage() {
 
   const platforms = buildPlatforms(release)
   const sorted = [...platforms].sort((a, b) => (a.id === os ? -1 : b.id === os ? 1 : 0))
+  const recommended = sorted.find((p) => p.id === os)
+  const primaryUrl = recommended?.formats[0]?.url
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
@@ -79,6 +76,11 @@ function DownloadPage() {
             day: 'numeric',
           })}
         </p>
+        {primaryUrl && (
+          <DownloadButton href={primaryUrl} size="lg" className="mt-6">
+            Download for {recommended?.platform ?? 'your platform'}
+          </DownloadButton>
+        )}
       </div>
       <div className="grid gap-6 sm:grid-cols-3">
         {sorted.map((p) => (
@@ -92,9 +94,27 @@ function DownloadPage() {
           />
         ))}
       </div>
+      <div className="mt-10 rounded-xl border border-border bg-surface p-6 text-center shadow-soft">
+        <h2 className="text-lg font-semibold">Install via Homebrew</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          macOS only — keeps mdow up to date with brew.
+        </p>
+        <code className="mt-4 inline-block rounded-md bg-muted px-4 py-2 font-mono text-sm">
+          {HOMEBREW_INSTALL}
+        </code>
+      </div>
       <p className="mt-8 text-center text-sm text-muted-foreground">
         <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
-          View all releases
+          View all releases on GitHub
+        </a>
+        {' · '}
+        <a
+          className="underline hover:text-foreground"
+          href="https://github.com/ZainW/mdow"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Source code
         </a>
       </p>
     </div>
@@ -127,14 +147,14 @@ function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
       platform: 'macOS',
       icon: '\u{1F4BB}',
       formats: macFormats,
-      note: 'brew install --cask zainw/mdow/mdow',
+      note: HOMEBREW_INSTALL,
     },
     {
       id: 'windows',
       platform: 'Windows',
       icon: '\u{1FAA9}',
       formats: release.assets.windows.exe
-        ? [{ label: 'Download Installer', url: release.assets.windows.exe }]
+        ? [{ label: 'Download installer (.exe)', url: release.assets.windows.exe }]
         : [],
     },
     {

@@ -108,7 +108,7 @@ export function DocsSearch({ docs }: DocsSearchProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
+    <div className="fixed inset-0 z-modal flex items-start justify-center pt-[15vh]">
       <div
         className="fixed inset-0 bg-background/70 backdrop-blur-md"
         onClick={() => setOpen(false)}

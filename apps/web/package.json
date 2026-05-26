@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "node scripts/generate-rss.mjs && node scripts/sync-docs-md.mjs && vite build",
+    "generate:static": "node scripts/generate-rss.mjs && node scripts/sync-docs-md.mjs",
+    "generate:og": "node scripts/generate-og-image.mjs",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler deploy",
     "typecheck": "tsc --noEmit",

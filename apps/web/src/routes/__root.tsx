@@ -17,6 +17,7 @@ export const Route = createRootRoute({
         title: 'Mdow — A quiet place to read markdown',
         description:
           'A beautiful, fast markdown viewer for Mac, Windows, and Linux. Syntax highlighting, Mermaid diagrams, and a distraction-free reading experience.',
+        image: '/og-image.png',
       }),
     ],
     links: [
@@ -25,6 +26,18 @@ export const Route = createRootRoute({
       { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
       { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
       { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+      {
+        rel: 'preload',
+        as: 'image',
+        href: '/screenshots/reading-dark.avif',
+        type: 'image/avif',
+      },
+      {
+        rel: 'alternate',
+        type: 'application/rss+xml',
+        title: 'Mdow Changelog',
+        href: '/changelog/rss.xml',
+      },
     ],
     scripts: [{ children: THEME_SCRIPT }],
   }),

@@ -2,10 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { getDoc, getAllDocs } from '~/lib/content'
+import { getDoc, getAllDocs, getDocBody } from '~/lib/content'
 import { extractHeadings } from '~/lib/extract-headings'
 import { DocsLayout } from '~/components/docs-layout'
 import { DocsNav } from '~/components/docs-nav'
+import { DocsCopyMarkdown } from '~/components/docs-copy-markdown'
 import { CopyButton } from '~/components/copy-button'
 import { useCodeBlockCopy } from '~/hooks/use-code-block-copy'
 import { seo } from '~/lib/seo'
@@ -20,7 +21,8 @@ const fetchDoc = createServerFn({ method: 'GET' })
       text: h.text,
       level: h.level,
     }))
-    return { doc, allDocs, headings }
+    const markdown = getDocBody(slug) ?? ''
+    return { doc, allDocs, headings, markdown }
   })
 
 export const Route = createFileRoute('/docs/$')({
@@ -40,13 +42,14 @@ export const Route = createFileRoute('/docs/$')({
 })
 
 function DocPage() {
-  const { doc, allDocs, headings } = Route.useLoaderData()
+  const { doc, allDocs, headings, markdown } = Route.useLoaderData()
   const articleRef = useRef<HTMLDivElement>(null)
   const codeBlocks = useCodeBlockCopy(articleRef, doc.meta.slug)
 
   // Content is trusted — rendered from our own .md files by md4x server-side
   return (
     <DocsLayout docs={allDocs} currentSlug={doc.meta.slug} headings={headings}>
+      <DocsCopyMarkdown markdown={markdown} slug={doc.meta.slug} />
       <div ref={articleRef} dangerouslySetInnerHTML={{ __html: doc.html }} />
       {codeBlocks.map((target, i) =>
         createPortal(<CopyButton value={target.code} />, target.host, `copy-${i}`),

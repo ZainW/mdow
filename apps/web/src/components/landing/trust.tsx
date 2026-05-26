@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { GradientSection } from '~/components/gradient-section'
 
 const formats = ['.md', '.markdown', '.mdx']
@@ -6,6 +7,8 @@ const platforms = [
   { name: 'Windows', icon: '🪟' },
   { name: 'Linux', icon: '🐧' },
 ]
+
+const GITHUB_URL = 'https://github.com/ZainW/mdow'
 
 export function LandingTrust() {
   return (
@@ -32,6 +35,25 @@ export function LandingTrust() {
             <span>{p.name}</span>
           </div>
         ))}
+      </div>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-sm">
+        <Link
+          to="/download"
+          className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+        >
+          Get the latest release
+        </Link>
+        <span className="hidden text-muted-foreground sm:inline" aria-hidden>
+          ·
+        </span>
+        <a
+          href={GITHUB_URL}
+          className="text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Star on GitHub
+        </a>
       </div>
     </GradientSection>
   )

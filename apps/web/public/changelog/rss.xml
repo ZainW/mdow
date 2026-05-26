@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Mdow Changelog</title>
+    <link>https://mdow.app/changelog</link>
+    <description>What's new in Mdow</description>
+    <language>en-us</language>
+    <item>
+      <title></title>
+      <link>https://mdow.app/changelog#</link>
+      <guid isPermaLink="false"></guid>
+      <pubDate>Mon, 01 Jan 2026 00:00:00 GMT</pubDate>
+      <description># Changelog</description>
+    </item>
+    <item>
+      <title>v1.0.5</title>
+      <link>https://mdow.app/changelog#v1-0-5</link>
+      <guid isPermaLink="false">v1.0.5</guid>
+      <pubDate>Mon, 26 May 2026 00:00:00 GMT</pubDate>
+      <description>Latest release.
+
+- Improved tab bar accessibility and keyboard navigation
+- Zoom indicator with stable layout across zoom levels
+- Refined sidebar modes (Recents, Outline, Folder)
+- Command palette and search polish
+- Settings for theme, content font, and code font</description>
+    </item>
+    <item>
+      <title>v1.0.0</title>
+      <link>https://mdow.app/changelog#v1-0-0</link>
+      <guid isPermaLink="false">v1.0.0</guid>
+      <pubDate>Mon, 01 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Initial release.
+
+- Markdown rendering with md4x (WASM)
+- Syntax highlighting for 30+ languages via Shiki
+- Mermaid diagram support
+- Light and dark themes
+- File tree sidebar with folder browsing
+- Tabbed reading for multiple documents
+- Drag-and-drop file opening
+- Command palette (`Cmd+K`) and find in document (`Cmd+F`)
+- Available for macOS, Windows, and Linux</description>
+    </item>
+  </channel>
+</rss>

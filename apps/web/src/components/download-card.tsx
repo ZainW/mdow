@@ -40,7 +40,7 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
               key={f.label}
               href={f.url}
               className={cn(
-                'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150 ease-out',
+                'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-[background-color,border-color,color] duration-150 ease',
                 recommended
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                   : 'border hover:bg-muted',
@@ -57,7 +57,7 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
           <button
             type="button"
             onClick={() => void handleCopy()}
-            className="shrink-0 rounded px-2 py-1 text-xs text-muted-foreground transition-colors duration-150 ease-out hover:bg-muted"
+            className="shrink-0 rounded px-2 py-1 text-xs text-muted-foreground transition-[background-color,color] duration-150 ease hover:bg-muted"
             aria-label="Copy install command"
           >
             {copied ? 'Copied' : 'Copy'}

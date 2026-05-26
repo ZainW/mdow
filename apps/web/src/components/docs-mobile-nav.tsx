@@ -49,7 +49,7 @@ export function DocsMobileNav({ docs, currentSlug }: DocsMobileNavProps) {
         Menu
       </button>
       {open && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-modal">
           <div
             className="absolute inset-0 bg-background/70 backdrop-blur-sm"
             onClick={() => setOpen(false)}
