@@ -5,6 +5,7 @@ import { FileTree as FileTreeView } from '@pierre/trees/react'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename, detectSep } from '../lib/path-utils'
+import { fileTreeIcons } from '../lib/file-tree-icons'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
 import { Separator } from './ui/separator'
 import { Loader2 } from 'lucide-react'
@@ -135,6 +136,7 @@ export function FolderTree() {
   const model = useStableFileTree(() => ({
     paths,
     initialExpansion: 'closed',
+    icons: fileTreeIcons,
     onSelectionChange: (selected) => selectionHandlerRef.current(selected),
   }))
 

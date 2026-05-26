@@ -655,6 +655,7 @@ mark.search-highlight.search-highlight-active {
   --trees-scrollbar-thumb-override: var(--border);
   --trees-font-family-override: inherit;
   --trees-font-size-override: 13px;
+  --trees-icon-width-override: 14px;
   --trees-item-margin-x-override: 4px;
   --trees-item-padding-x-override: 6px;
   --trees-padding-inline-override: 4px;
