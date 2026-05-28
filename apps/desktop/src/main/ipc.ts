@@ -41,23 +41,24 @@ function trackRecentFile(getMainWindow: () => BrowserWindow | null, filePath: st
 }
 
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
-  ipcMain.handle('file:open-dialog', async () => {
-    const win = getMainWindow()
+  ipcMain.handle('file:open-dialog', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
     const result = await openFileDialog(win)
     if (result) {
-      trackRecentFile(getMainWindow, result.path)
-      attachFileWatcher(getMainWindow, result.path)
+      trackRecentFile(() => win, result.path)
+      attachFileWatcher(() => win, result.path)
     }
     return result
   })
 
-  ipcMain.handle('file:read', async (_, path: string) => {
+  ipcMain.handle('file:read', async (event, path: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
     try {
       const resolved = validateMarkdownPath(path)
       const content = await readFileContent(resolved)
-      trackRecentFile(getMainWindow, resolved)
-      attachFileWatcher(getMainWindow, resolved)
+      trackRecentFile(() => win, resolved)
+      attachFileWatcher(() => win, resolved)
       return content
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -104,33 +105,36 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     }
   })
 
-  ipcMain.handle('file:set-active-watch', (_, path: string | null) => {
+  ipcMain.handle('file:set-active-watch', (event, path: string | null) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
     if (path === null) {
-      setActiveFileWatch(getMainWindow, null)
+      setActiveFileWatch(() => win, null)
       return
     }
     try {
       const resolved = validateMarkdownPath(path)
       registerAllowedFile(resolved)
-      setActiveFileWatch(getMainWindow, resolved)
+      setActiveFileWatch(() => win, resolved)
     } catch {
-      setActiveFileWatch(getMainWindow, null)
+      setActiveFileWatch(() => win, null)
     }
   })
 
-  ipcMain.handle('folder:open-dialog', async () => {
-    const win = getMainWindow()
+  ipcMain.handle('folder:open-dialog', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
     const result = await openFolderDialog(win)
     if (result) {
       setLastFolder(result.path)
       registerAllowedPath(result.path)
-      setupFolderWatcher(getMainWindow, result.path)
+      setupFolderWatcher(() => win, result.path)
     }
     return result
   })
 
-  ipcMain.handle('folder:open-path', async (_, folderPath: string) => {
+  ipcMain.handle('folder:open-path', async (event, folderPath: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('no-window')
     try {
       const resolved = validatePath(folderPath)
       const stats = await stat(resolved)
@@ -140,7 +144,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       const result = await scanFolder(resolved)
       setLastFolder(resolved)
       registerAllowedPath(resolved)
-      setupFolderWatcher(getMainWindow, resolved)
+      setupFolderWatcher(() => win, resolved)
       return { path: resolved, ...result }
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -161,13 +165,15 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     }
   })
 
-  ipcMain.handle('folder:read-tree', async (_, folderPath: string) => {
+  ipcMain.handle('folder:read-tree', async (event, folderPath: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('no-window')
     try {
       const resolved = validatePath(folderPath)
       const result = await scanFolder(resolved)
       setLastFolder(resolved)
       registerAllowedPath(resolved)
-      setupFolderWatcher(getMainWindow, resolved)
+      setupFolderWatcher(() => win, resolved)
       return result
     } catch (err: unknown) {
       if (

@@ -86,7 +86,7 @@ export function getActiveWatchPath(): string | null {
 }
 
 export function setActiveFileWatch(
-  getMainWindow: () => BrowserWindow | null,
+  _getMainWindow: () => BrowserWindow | null,
   filePath: string | null,
 ): void {
   if (activeWatchPath && activeWatchPath !== filePath) {
@@ -98,12 +98,15 @@ export function setActiveFileWatch(
   if (!filePath) return
 
   watchFile(filePath, (event) => {
-    const win = getMainWindow()
-    if (!win || win.isDestroyed()) return
-    if (event.type === 'changed') {
-      win.webContents.send('file:changed', { path: filePath, content: event.content })
-    } else if (event.type === 'deleted') {
-      win.webContents.send('file:deleted', filePath)
+    // Broadcast to all windows
+    const allWindows = BrowserWindow.getAllWindows()
+    for (const win of allWindows) {
+      if (win.isDestroyed()) continue
+      if (event.type === 'changed') {
+        win.webContents.send('file:changed', { path: filePath, content: event.content })
+      } else if (event.type === 'deleted') {
+        win.webContents.send('file:deleted', filePath)
+      }
     }
   })
 }
