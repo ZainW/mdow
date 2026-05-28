@@ -21,15 +21,21 @@ import { unwatchFolder } from './folder-service'
 import { readFileContent, unwatchAllFiles, attachFileWatcher } from './file-service'
 import { isMac, isLinux } from './platform'
 import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
-import { isMarkdownPath, validateMarkdownPath } from './path-validation'
+import { isMarkdownPath, validateMarkdownPath, validatePath } from './path-validation'
 import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
 
-let mainWindow: BrowserWindow | null = null
-let windowReady = false
-let pendingOpenPath: string | null = null
+const windows = new Set<BrowserWindow>()
+const windowPaths = new Map<BrowserWindow, string>()
 
 function getMainWindow(): BrowserWindow | null {
-  return mainWindow
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused && windows.has(focused)) {
+    return focused
+  }
+  if (windows.size > 0) {
+    return Array.from(windows)[0]
+  }
+  return null
 }
 
 function registerLocalProtocol(): void {
@@ -70,11 +76,6 @@ function setupWebContentsSecurity(win: BrowserWindow): void {
 }
 
 function openFile(filePath: string): void {
-  if (!mainWindow || !windowReady) {
-    pendingOpenPath = filePath
-    return
-  }
-
   void (async () => {
     try {
       const resolved = validateMarkdownPath(filePath)
@@ -84,33 +85,30 @@ function openFile(filePath: string): void {
       if (isMac) {
         app.addRecentDocument(resolved)
       }
-      attachFileWatcher(getMainWindow, resolved)
-      mainWindow?.webContents.send('file:opened', { path: resolved, content })
+      attachFileWatcher(() => null, resolved)
+      const allWindows = BrowserWindow.getAllWindows()
+      for (const win of allWindows) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('file:opened', { path: resolved, content })
+        }
+      }
     } catch {
       // Invalid file path
     }
   })()
 }
 
-function flushPendingOpen(): void {
-  if (pendingOpenPath) {
-    const path = pendingOpenPath
-    pendingOpenPath = null
-    openFile(path)
-  }
-}
-
-function openFileFromArgv(argv: string[]): void {
+function openFileFromArgv(argv: string[], _win: BrowserWindow): void {
   const filePath = argv.find(isMarkdownPath)
   if (filePath) {
     openFile(filePath)
   }
 }
 
-function createWindow(): void {
+function createWindow(targetPath?: string): void {
   const savedBounds = getWindowBounds()
 
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: savedBounds?.width ?? 1000,
     height: savedBounds?.height ?? 700,
     x: savedBounds?.x,
@@ -134,52 +132,68 @@ function createWindow(): void {
     },
   })
 
-  if (savedBounds?.isMaximized) {
-    mainWindow.maximize()
+  windows.add(win)
+  if (targetPath) {
+    windowPaths.set(win, validatePath(targetPath))
   }
 
-  setupWebContentsSecurity(mainWindow)
+  if (savedBounds?.isMaximized && windows.size === 1) {
+    win.maximize()
+  }
 
-  mainWindow.on('ready-to-show', () => {
-    windowReady = true
-    mainWindow!.show()
-    flushPendingOpen()
+  setupWebContentsSecurity(win)
+
+  win.on('ready-to-show', () => {
+    win.show()
   })
 
   const saveBounds = () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      saveWindowBounds(mainWindow.getBounds(), mainWindow.isMaximized())
+    if (win && !win.isDestroyed()) {
+      saveWindowBounds(win.getBounds(), win.isMaximized())
     }
   }
-  mainWindow.on('resized', saveBounds)
-  mainWindow.on('moved', saveBounds)
-  mainWindow.on('maximize', saveBounds)
-  mainWindow.on('unmaximize', saveBounds)
+  win.on('resized', saveBounds)
+  win.on('moved', saveBounds)
+  win.on('maximize', saveBounds)
+  win.on('unmaximize', saveBounds)
 
   const handleNativeThemeUpdate = () => {
-    if (mainWindow) applyWindowChrome(mainWindow)
-    mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
+    if (win && !win.isDestroyed()) {
+      applyWindowChrome(win)
+      win.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
+    }
   }
   nativeTheme.on('updated', handleNativeThemeUpdate)
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow?.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
-    openFileFromArgv(process.argv)
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
+    if (!targetPath && windows.size === 1) {
+      openFileFromArgv(process.argv, win)
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const url = process.env['ELECTRON_RENDERER_URL']
+    const queryStr = targetPath ? `?openPath=${encodeURIComponent(targetPath)}` : ''
+    void win.loadURL(url + queryStr)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    const htmlPath = join(__dirname, '../renderer/index.html')
+    void win.loadFile(htmlPath, { query: targetPath ? { openPath: targetPath } : undefined })
   }
 
-  mainWindow.on('closed', () => {
+  win.on('closed', () => {
     nativeTheme.off('updated', handleNativeThemeUpdate)
-    unwatchAllFiles()
-    unwatchFolder()
-    clearAllowedPaths()
-    mainWindow = null
-    windowReady = false
+    const folder = windowPaths.get(win)
+    if (folder) unwatchFolder(folder)
+    windowPaths.delete(win)
+    windows.delete(win)
+
+    if (windows.size === 0) {
+      unwatchAllFiles()
+      unwatchFolder()
+      clearAllowedPaths()
+      if (!isMac) app.quit()
+    }
   })
 }
 
@@ -189,10 +203,37 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', (_event, argv) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-      openFileFromArgv(argv)
+    const targetPath = argv.find((arg) => {
+      try {
+        const resolved = validatePath(arg)
+        return resolved && !arg.startsWith('-')
+      } catch {
+        return false
+      }
+    })
+
+    if (targetPath) {
+      const resolved = validatePath(targetPath)
+      let existingWin: BrowserWindow | null = null
+      for (const [win, path] of windowPaths.entries()) {
+        if (path === resolved) {
+          existingWin = win
+          break
+        }
+      }
+
+      if (existingWin) {
+        if (existingWin.isMinimized()) existingWin.restore()
+        existingWin.focus()
+      } else {
+        createWindow(resolved)
+      }
+    } else {
+      const win = getMainWindow()
+      if (win) {
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
     }
   })
 
