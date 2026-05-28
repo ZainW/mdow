@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
     },
   },
   shell: { showItemInFolder: vi.fn(), openExternal: vi.fn() },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: Object.assign(vi.fn(), { fromWebContents: vi.fn(() => mockGetMainWindow()), getAllWindows: vi.fn(() => [mockGetMainWindow()]) }),
   nativeTheme: mockNativeTheme,
   app: { addRecentDocument: vi.fn() },
 }))

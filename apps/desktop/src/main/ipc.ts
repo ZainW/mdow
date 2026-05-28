@@ -54,6 +54,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle('file:read', async (event, path: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('no-window')
     try {
       const resolved = validateMarkdownPath(path)
       const content = await readFileContent(resolved)
