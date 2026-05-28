@@ -16,8 +16,12 @@ export interface ScanResult {
   truncated: boolean
 }
 
-let folderWatcher: FSWatcher | null = null
-let folderDebounceTimer: ReturnType<typeof setTimeout> | null = null
+interface FolderWatchState {
+  watcher: FSWatcher
+  debounceTimer: ReturnType<typeof setTimeout> | null
+}
+
+const activeFolderWatchers = new Map<string, FolderWatchState>()
 
 const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
 
@@ -136,9 +140,10 @@ export async function openFolderDialog(win: BrowserWindow) {
 }
 
 export function watchFolder(folderPath: string, onChange: (result: ScanResult) => void): void {
-  unwatchFolder()
+  // Clean up any existing watcher for this specific path first
+  unwatchFolder(folderPath)
 
-  folderWatcher = watch(folderPath, {
+  const watcher = watch(folderPath, {
     ignoreInitial: true,
     ignored: (path) => {
       const base = path.split(/[/\\]/).pop() ?? ''
@@ -148,10 +153,15 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     depth: MAX_DEPTH,
   })
 
+  const watchState: FolderWatchState = {
+    watcher,
+    debounceTimer: null,
+  }
+
   const handleChange = () => {
-    if (folderDebounceTimer) clearTimeout(folderDebounceTimer)
-    folderDebounceTimer = setTimeout(() => {
-      folderDebounceTimer = null
+    if (watchState.debounceTimer) clearTimeout(watchState.debounceTimer)
+    watchState.debounceTimer = setTimeout(() => {
+      watchState.debounceTimer = null
       void scanFolder(folderPath)
         .then((result) => {
           onChange(result)
@@ -166,19 +176,27 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     if (isMarkdownPath(path)) handleChange()
   }
 
-  folderWatcher.on('add', handleFileChange)
-  folderWatcher.on('unlink', handleFileChange)
-  folderWatcher.on('addDir', handleChange)
-  folderWatcher.on('unlinkDir', handleChange)
+  watcher.on('add', handleFileChange)
+  watcher.on('unlink', handleFileChange)
+  watcher.on('addDir', handleChange)
+  watcher.on('unlinkDir', handleChange)
+
+  activeFolderWatchers.set(folderPath, watchState)
 }
 
-export function unwatchFolder(): void {
-  if (folderDebounceTimer) {
-    clearTimeout(folderDebounceTimer)
-    folderDebounceTimer = null
-  }
-  if (folderWatcher) {
-    void folderWatcher.close()
-    folderWatcher = null
+export function unwatchFolder(folderPath?: string): void {
+  if (folderPath) {
+    const state = activeFolderWatchers.get(folderPath)
+    if (state) {
+      if (state.debounceTimer) clearTimeout(state.debounceTimer)
+      void state.watcher.close()
+      activeFolderWatchers.delete(folderPath)
+    }
+  } else {
+    for (const state of activeFolderWatchers.values()) {
+      if (state.debounceTimer) clearTimeout(state.debounceTimer)
+      void state.watcher.close()
+    }
+    activeFolderWatchers.clear()
   }
 }
