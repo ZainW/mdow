@@ -2,6 +2,9 @@ import { useEffect, useReducer } from 'react'
 import { Download, RefreshCw, X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { iconStroke } from '../lib/icons'
+import { Alert, AlertAction } from './ui/alert'
+import { Button } from './ui/button'
+import { Progress, ProgressIndicator, ProgressTrack } from './ui/progress'
 
 type UpdateState =
   | { status: 'idle' }
@@ -88,9 +91,9 @@ export function UpdateBanner() {
   if (state.status === 'idle' || dismissed) return null
 
   return (
-    <output
+    <Alert
       className={cn(
-        'flex items-center gap-2 border-t border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground',
+        'flex items-center gap-2 rounded-none border-x-0 border-b-0 bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground',
         'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-200',
       )}
       aria-live="polite"
@@ -100,14 +103,10 @@ export function UpdateBanner() {
           <span>
             Mdow <strong>{state.version}</strong> is available
           </span>
-          <button
-            type="button"
-            onClick={() => void window.api.downloadUpdate()}
-            className="ml-1 inline-flex min-h-[28px] items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground transition-colors duration-150 ease-out hover:bg-primary/90"
-          >
+          <Button size="xs" onClick={() => void window.api.downloadUpdate()} className="ml-1">
             <Download strokeWidth={iconStroke.emphasis} className="size-3" aria-hidden />
             Download
-          </button>
+          </Button>
         </>
       )}
 
@@ -117,26 +116,21 @@ export function UpdateBanner() {
           <span>
             Downloading update… <span className="tabular-nums">{state.percent}</span>%
           </span>
-          <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-150 ease-out"
-              style={{ width: `${state.percent}%` }}
-            />
-          </div>
+          <Progress value={state.percent} className="w-24 gap-0">
+            <ProgressTrack className="h-1">
+              <ProgressIndicator />
+            </ProgressTrack>
+          </Progress>
         </>
       )}
 
       {state.status === 'ready' && (
         <>
           <span>Update ready. Restart to apply.</span>
-          <button
-            type="button"
-            onClick={() => void window.api.installUpdate()}
-            className="ml-1 inline-flex min-h-[28px] items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground transition-colors duration-150 ease-out hover:bg-primary/90"
-          >
+          <Button size="xs" onClick={() => void window.api.installUpdate()} className="ml-1">
             <RefreshCw strokeWidth={iconStroke.emphasis} className="size-3" aria-hidden />
             Restart
-          </button>
+          </Button>
         </>
       )}
 
@@ -146,14 +140,16 @@ export function UpdateBanner() {
         <span>Couldn&apos;t check for updates. Try again later.</span>
       )}
 
-      <button
-        type="button"
-        onClick={() => dispatch({ type: 'dismiss' })}
-        className="ml-auto rounded p-1 transition-colors duration-150 ease-out hover:bg-muted"
-        aria-label="Dismiss update notification"
-      >
-        <X className="size-3" strokeWidth={iconStroke.emphasis} aria-hidden />
-      </button>
-    </output>
+      <AlertAction>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => dispatch({ type: 'dismiss' })}
+          aria-label="Dismiss update notification"
+        >
+          <X className="size-3" strokeWidth={iconStroke.emphasis} aria-hidden />
+        </Button>
+      </AlertAction>
+    </Alert>
   )
 }

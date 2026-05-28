@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
+import { Kbd } from './ui/kbd'
 import { ChevronUp, ChevronDown, X } from 'lucide-react'
 
 interface SearchBarProps {
@@ -49,11 +51,11 @@ export function SearchBar({
 
   return (
     <div className="search-bar sticky top-0 z-20 ml-auto flex w-fit items-center gap-1.5 rounded-bl-xl border-b border-l border-border/50 bg-background/90 px-3 py-2 shadow-md backdrop-blur-md">
-      <input
+      <Input
         ref={inputRef}
         type="text"
         aria-label="Search in document"
-        className="search-input h-6 w-44 rounded-md border border-border/60 bg-muted/40 px-2 text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-ring focus:shadow-[0_0_0_1px_hsl(var(--ring)/0.3)]"
+        className="h-6 w-44 px-2 text-xs"
         placeholder="Search..."
         value={query}
         onChange={(e) => handleChange(e.target.value)}
@@ -71,7 +73,7 @@ export function SearchBar({
         className="hidden items-center gap-1 text-[10px] text-muted-foreground/60 lg:flex"
         title="Enter: next match · Shift+Enter: previous · Esc: close"
       >
-        <kbd className="rounded bg-muted px-1 py-px font-mono">↵</kbd>
+        <Kbd>↵</Kbd>
         <span>next</span>
       </span>
       <Button

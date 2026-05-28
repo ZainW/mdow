@@ -10,6 +10,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Slider } from './ui/slider'
 import { Button } from './ui/button'
+import { Label } from './ui/label'
+import { Switch } from './ui/switch'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { cn, isMac } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
@@ -167,10 +170,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <span className="text-muted-foreground">
                 Automatically check for updates in the background
               </span>
-              <ToggleSwitch
+              <Switch
                 checked={autoUpdateEnabled}
                 onCheckedChange={setAutoUpdateEnabled}
-                label="Automatically check for updates in the background"
+                aria-label="Automatically check for updates in the background"
               />
             </div>
           </section>
@@ -190,39 +193,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   )
 }
 
-function ToggleSwitch({
-  checked,
-  onCheckedChange,
-  label,
-}: {
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onCheckedChange(!checked)}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        checked ? 'bg-primary' : 'bg-muted',
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          'pointer-events-none block size-4 rounded-full bg-background shadow-sm transition-transform duration-150',
-          checked ? 'translate-x-4' : 'translate-x-0',
-        )}
-      />
-    </button>
-  )
-}
-
 function ThemeRadiogroup({
   theme,
   onChange,
@@ -230,42 +200,32 @@ function ThemeRadiogroup({
   theme: string
   onChange: (value: 'system' | 'light' | 'dark') => void
 }) {
-  const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
   return (
-    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
-    <div
-      ref={containerRef}
-      role="radiogroup"
+    <ToggleGroup
       aria-label="Theme"
-      onKeyDown={onKeyDown}
-      className="m-0 grid min-w-0 grid-cols-3 gap-1 rounded-md bg-muted p-0.5"
+      value={[theme]}
+      onValueChange={(value) => {
+        const next = value[0]
+        if (next) onChange(next as 'system' | 'light' | 'dark')
+      }}
+      variant="outline"
+      spacing={0}
+      className="grid w-full grid-cols-3 rounded-md bg-muted p-0.5"
     >
-      {THEME_OPTIONS.map((opt) => {
-        const active = theme === opt.value
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled segmented toggle, native radio input would break layout
-            role="radio"
-            tabIndex={rovingTabIndex(active)}
-            aria-checked={active}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] text-xs font-medium outline-none',
-              'transition-[background-color,color,box-shadow,transform] duration-150',
-              'active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-ring/50',
-              active
-                ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/10 dark:ring-foreground/15'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <opt.Icon className="size-3.5" {...iconActiveProps(active)} />
-            {opt.label}
-          </button>
-        )
-      })}
-    </div>
+      {THEME_OPTIONS.map((opt) => (
+        <ToggleGroupItem
+          key={opt.value}
+          value={opt.value}
+          aria-label={opt.label}
+          className={cn(
+            'h-7 flex-1 gap-1.5 rounded-[5px] text-xs data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15',
+          )}
+        >
+          <opt.Icon className="size-3.5" {...iconActiveProps(theme === opt.value)} />
+          {opt.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   )
 }
 
@@ -273,9 +233,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   const id = useId()
   return (
     <div className="flex flex-col gap-1.5">
-      <div id={id} className="text-xs font-medium text-muted-foreground">
+      <Label id={id} className="text-xs font-medium text-muted-foreground">
         {label}
-      </div>
+      </Label>
       {children}
     </div>
   )
@@ -395,9 +355,9 @@ function SliderField({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
-        <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+        <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
           {label}
-        </label>
+        </Label>
         <span className="text-xs tabular-nums text-foreground">{valueLabel}</span>
       </div>
       <div className="flex items-center gap-3">

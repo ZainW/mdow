@@ -6,8 +6,12 @@ import { useRecents } from '../hooks/useRecents'
 import { basename, isMarkdownPath } from '../lib/path-utils'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
+import { Card, CardContent } from './ui/card'
 import { Logo } from './Logo'
-import { File, FileText, FolderOpen } from 'lucide-react'
+import { File, FileText, FolderOpen, FlaskConical } from 'lucide-react'
+import { openDevWorkspace } from '../dev/open-dev-workspace'
+
+const isDev = import.meta.env.DEV
 
 export function WelcomeView() {
   const openTab = useAppStore((s) => s.openTab)
@@ -103,31 +107,43 @@ export function WelcomeView() {
             )}
           />
           <h2 className="text-2xl font-semibold tracking-tight text-foreground">Mdow</h2>
-          <p className="max-w-[40ch] text-pretty text-[15px] text-muted-foreground">
+          <p className="max-w-[40ch] text-pretty text-sm/relaxed text-muted-foreground">
             A quiet markdown viewer. Drop a file anywhere, or open one below.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void handleOpenFile()}>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void handleOpenFile()}>
               <File data-icon="inline-start" />
               Open File
             </Button>
-            <Button variant="outline" onClick={() => void handleOpenFolder()}>
+            <Button variant="outline" size="sm" onClick={() => void handleOpenFolder()}>
               <FolderOpen data-icon="inline-start" />
               Open Folder
             </Button>
+            {isDev && (
+              <Button variant="secondary" size="sm" onClick={openDevWorkspace}>
+                <FlaskConical data-icon="inline-start" />
+                Dev samples
+              </Button>
+            )}
           </div>
-          <div
+          <Card
+            size="sm"
             className={cn(
-              'mt-4 rounded-lg border border-dashed px-4 py-3 text-xs transition-colors duration-150 ease-out',
+              'mt-3 w-full max-w-md ring-1 transition-colors duration-150',
               isDragOver
-                ? 'border-primary bg-primary/5 text-foreground'
-                : 'border-border-subtle text-muted-foreground',
+                ? 'bg-primary/5 ring-primary/30'
+                : 'ring-dashed ring-border/70 bg-muted/20',
             )}
           >
-            <strong className="font-medium text-foreground/80">Anywhere in this window</strong>
-            {' — drop '}
-            <span className="font-mono">.md</span> files or a folder.
-          </div>
+            <CardContent className="py-3 text-xs text-muted-foreground">
+              <strong className="font-medium text-foreground/90">Anywhere in this window</strong>
+              {' — drop '}
+              <code className="rounded-sm bg-muted px-1 py-px font-mono text-[0.6875rem] text-foreground/80">
+                .md
+              </code>{' '}
+              files or a folder.
+            </CardContent>
+          </Card>
         </div>
         {recents.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -137,15 +153,16 @@ export function WelcomeView() {
             <ul className="flex flex-col gap-px">
               {recents.slice(0, 6).map((path) => (
                 <li key={path}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => void handleOpenRecent(path)}
                     title={path}
-                    className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+                    className="h-8 w-full justify-start gap-2 px-2 font-normal"
                   >
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground/60 group-hover:text-muted-foreground" />
-                    <span className="truncate text-sm text-foreground">{basename(path)}</span>
-                  </button>
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground/60" />
+                    <span className="truncate">{basename(path)}</span>
+                  </Button>
                 </li>
               ))}
             </ul>

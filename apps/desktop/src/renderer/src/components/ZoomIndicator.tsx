@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
 import { iconSize, iconStroke } from '../lib/icons'
+import { Button } from './ui/button'
 
 interface IndicatorState {
   mounted: boolean
@@ -87,34 +88,32 @@ export function ZoomIndicator() {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <button
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={zoomOut}
         aria-label="Zoom out"
         title="Zoom out"
       >
         <Minus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
-      </button>
+      </Button>
       <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
         {zoomLevel}%
       </span>
-      <button
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground active:scale-[0.97]"
-        onClick={zoomIn}
-        aria-label="Zoom in"
-        title="Zoom in"
-      >
+      <Button variant="ghost" size="icon-xs" onClick={zoomIn} aria-label="Zoom in" title="Zoom in">
         <Plus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
-      </button>
-      <button
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-[opacity,background-color,color,transform] duration-150 hover:bg-muted hover:text-foreground active:scale-[0.97] disabled:opacity-0"
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={resetZoom}
         aria-label="Reset zoom"
         title="Reset zoom"
         disabled={zoomLevel === 100}
+        className="disabled:opacity-0"
       >
         <RotateCcw size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
-      </button>
+      </Button>
     </div>
   )
 }

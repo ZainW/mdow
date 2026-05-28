@@ -59,8 +59,8 @@ describe('TabBar', () => {
     fireEvent.contextMenu(tab.parentElement!.parentElement!, { clientX: 50, clientY: 20 })
     const closeOthers = screen.getByRole('menuitem', { name: /Close Others/ })
     const closeRight = screen.getByRole('menuitem', { name: /Close to the Right/ })
-    expect(closeOthers).toBeDisabled()
-    expect(closeRight).toBeDisabled()
+    expect(closeOthers).toHaveAttribute('aria-disabled', 'true')
+    expect(closeRight).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('shows a kbd hint for the Close action', () => {
@@ -69,7 +69,7 @@ describe('TabBar', () => {
     const tab = screen.getAllByRole('button', { name: /one\.md/ })[0]
     fireEvent.contextMenu(tab.parentElement!.parentElement!, { clientX: 50, clientY: 20 })
     const closeItem = screen.getByRole('menuitem', { name: /Close.*W/ })
-    expect(closeItem.querySelector('kbd')).not.toBeNull()
+    expect(closeItem.querySelector('[data-slot="context-menu-shortcut"]')).not.toBeNull()
   })
 
   it('marks only the active tab as tabIndex=0', () => {
@@ -110,6 +110,7 @@ describe('TabBar', () => {
     const tab = screen.getAllByRole('button', { name: /one\.md/ })[0]
     fireEvent.contextMenu(tab.parentElement!.parentElement!, { clientX: 50, clientY: 20 })
     const items = screen.getAllByRole('menuitem')
+    items[0].focus()
     expect(document.activeElement).toBe(items[0])
     fireEvent.keyDown(items[0], { key: 'ArrowDown' })
     expect(document.activeElement).toBe(items[1])

@@ -1,22 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import { UpdateBanner } from './UpdateBanner'
+import { stubWindowApi } from '../test/stubWindowApi'
 
 type Cb = (...args: unknown[]) => void
 
-interface MockApi {
-  checkForUpdates: ReturnType<typeof vi.fn>
-  downloadUpdate: ReturnType<typeof vi.fn>
-  installUpdate: ReturnType<typeof vi.fn>
-  onUpdateAvailable: (cb: Cb) => () => void
-  onUpdateUpToDate: (cb: Cb) => () => void
-  onUpdateDownloadProgress: (cb: Cb) => () => void
-  onUpdateDownloaded: (cb: Cb) => () => void
-  onUpdateError: (cb: Cb) => () => void
-  onMenuCheckForUpdates: (cb: Cb) => () => void
-}
-
-let listeners: Record<string, Cb> = {}
+const listeners: Record<string, Cb> = {}
 
 function subscriber(name: string) {
   return (cb: Cb) => {
@@ -27,9 +16,8 @@ function subscriber(name: string) {
   }
 }
 
-beforeEach(() => {
-  listeners = {}
-  const api: MockApi = {
+describe('UpdateBanner', () => {
+  stubWindowApi(() => ({
     checkForUpdates: vi.fn().mockResolvedValue(undefined),
     downloadUpdate: vi.fn().mockResolvedValue(undefined),
     installUpdate: vi.fn().mockResolvedValue(undefined),
@@ -39,20 +27,16 @@ beforeEach(() => {
     onUpdateDownloaded: subscriber('downloaded'),
     onUpdateError: subscriber('error'),
     onMenuCheckForUpdates: subscriber('menuCheck'),
-  }
-  // Assign mock API to window for the component under test.
-  Object.defineProperty(globalThis, 'window', {
-    value: { api },
-    writable: true,
-    configurable: true,
+  }))
+
+  beforeEach(() => {
+    for (const key of Object.keys(listeners)) delete listeners[key]
   })
-})
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
 
-describe('UpdateBanner', () => {
   it('renders nothing initially', () => {
     const { container } = render(<UpdateBanner />)
     expect(container).toBeEmptyDOMElement()

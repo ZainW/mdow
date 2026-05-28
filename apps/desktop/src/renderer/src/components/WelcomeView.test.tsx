@@ -42,4 +42,9 @@ describe('WelcomeView', () => {
     renderWithClient(<WelcomeView />)
     expect(screen.getByText(/Anywhere in this window/)).toBeInTheDocument()
   })
+
+  it('shows a dev samples button in development', () => {
+    renderWithClient(<WelcomeView />)
+    expect(screen.getByRole('button', { name: /Dev samples/i })).toBeInTheDocument()
+  })
 })

@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
+import { Kbd } from './ui/kbd'
 import { isMac } from '@renderer/lib/utils'
 
 const mod = isMac ? '⌘' : 'Ctrl'
@@ -67,9 +68,7 @@ export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
                 {group.items.map((s) => (
                   <li key={s.label} className="flex items-center justify-between px-4 py-1.5">
                     <span className="text-sm text-muted-foreground">{s.label}</span>
-                    <kbd className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-                      {s.keys}
-                    </kbd>
+                    <Kbd>{s.keys}</Kbd>
                   </li>
                 ))}
               </ul>

@@ -23,27 +23,21 @@ describe('SettingsDialog accessibility', () => {
     })
   })
 
-  it('exposes a Theme radiogroup with three options', () => {
+  it('exposes a Theme toggle group with three options', () => {
     renderOpen()
-    const themeGroup = screen.getByRole('radiogroup', { name: 'Theme' })
+    const themeGroup = screen.getByRole('group', { name: 'Theme' })
     expect(themeGroup).toBeInTheDocument()
-    const options = screen
-      .getAllByRole('radio')
-      .filter(
-        (r) =>
-          r.textContent?.trim() === 'System' ||
-          r.textContent?.trim() === 'Light' ||
-          r.textContent?.trim() === 'Dark',
-      )
-    expect(options).toHaveLength(3)
+    expect(within(themeGroup).getByRole('button', { name: 'System' })).toBeInTheDocument()
+    expect(within(themeGroup).getByRole('button', { name: 'Light' })).toBeInTheDocument()
+    expect(within(themeGroup).getByRole('button', { name: 'Dark' })).toBeInTheDocument()
   })
 
-  it('toggles aria-checked when a theme option is selected', () => {
+  it('toggles aria-pressed when a theme option is selected', () => {
     renderOpen()
-    const dark = screen.getByRole('radio', { name: /Dark/ })
-    expect(dark.getAttribute('aria-checked')).toBe('false')
+    const dark = screen.getByRole('button', { name: 'Dark' })
+    expect(dark.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(dark)
-    expect(dark.getAttribute('aria-checked')).toBe('true')
+    expect(dark.getAttribute('aria-pressed')).toBe('true')
     expect(useAppStore.getState().theme).toBe('dark')
   })
 
@@ -53,23 +47,20 @@ describe('SettingsDialog accessibility', () => {
     expect(screen.getByRole('radiogroup', { name: 'Code font' })).toBeInTheDocument()
   })
 
-  it('ArrowRight rotates focus within the Theme radiogroup', () => {
+  it('selects a theme option on click', () => {
     renderOpen()
-    const themeGroup = screen.getByRole('radiogroup', { name: 'Theme' })
-    const system = within(themeGroup).getByRole('radio', { name: /System/ })
-    const light = within(themeGroup).getByRole('radio', { name: /Light/ })
-    system.focus()
-    fireEvent.keyDown(system, { key: 'ArrowRight' })
-    expect(document.activeElement).toBe(light)
+    const light = screen.getByRole('button', { name: 'Light' })
+    fireEvent.click(light)
+    expect(light.getAttribute('aria-pressed')).toBe('true')
+    expect(useAppStore.getState().theme).toBe('light')
   })
 
-  it('only the active theme option has tabIndex=0', () => {
+  it('marks the active theme option as pressed', () => {
     renderOpen()
-    const group = screen.getByRole('radiogroup', { name: 'Theme' })
-    const radios = Array.from(group.querySelectorAll('[role="radio"]'))
-    // theme=system in beforeEach → System has tabIndex=0
-    expect(radios[0].getAttribute('tabindex')).toBe('0')
-    expect(radios[1].getAttribute('tabindex')).toBe('-1')
-    expect(radios[2].getAttribute('tabindex')).toBe('-1')
+    const group = screen.getByRole('group', { name: 'Theme' })
+    const system = within(group).getByRole('button', { name: 'System' })
+    const light = within(group).getByRole('button', { name: 'Light' })
+    expect(system.getAttribute('aria-pressed')).toBe('true')
+    expect(light.getAttribute('aria-pressed')).toBe('false')
   })
 })

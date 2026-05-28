@@ -1,12 +1,12 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "base-nova",
+  "style": "base-mira",
   "rsc": false,
   "tsx": true,
   "tailwind": {
     "config": "",
     "css": "src/renderer/src/assets/styles/index.css",
-    "baseColor": "neutral",
+    "baseColor": "mist",
     "cssVariables": true,
     "prefix": ""
   },
@@ -17,5 +17,7 @@
     "lib": "@renderer/lib",
     "hooks": "@renderer/hooks"
   },
-  "iconLibrary": "lucide"
+  "iconLibrary": "lucide",
+  "menuColor": "default-translucent",
+  "menuAccent": "subtle"
 }

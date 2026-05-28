@@ -13,6 +13,7 @@ import {
   CommandItem,
 } from './ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Kbd } from './ui/kbd'
 import { FileText } from 'lucide-react'
 
 interface TreeNode {
@@ -82,7 +83,6 @@ export function CommandPalette() {
       <DialogContent
         className="top-[20%] translate-y-0 overflow-hidden rounded-xl p-0 sm:max-w-lg"
         showCloseButton={false}
-        instant
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Quick Open</DialogTitle>
@@ -116,10 +116,10 @@ export function CommandPalette() {
           </CommandList>
           <div className="flex items-center justify-end gap-3 border-t border-border-subtle bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground/80">
             <span className="flex items-center gap-1">
-              <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px]">↵</kbd> open
+              <Kbd>↵</Kbd> open
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px]">esc</kbd> dismiss
+              <Kbd>esc</Kbd> dismiss
             </span>
           </div>
         </Command>
