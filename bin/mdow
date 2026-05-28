@@ -1,0 +1,51 @@
+#!/bin/sh
+
+# Default to current directory if no args provided
+if [ $# -eq 0 ]; then
+  set -- "."
+fi
+
+ARGS=""
+for arg in "$@"; do
+  # Check if argument is a path that exists
+  if [ -e "$arg" ]; then
+    # Resolve relative paths to absolute paths
+    ABS_DIR=$(cd "$(dirname "$arg")" && pwd)
+    BASE=$(basename "$arg")
+    if [ "$BASE" = "." ] || [ "$BASE" = "/" ]; then
+      ABS_PATH="$ABS_DIR"
+    else
+      ABS_PATH="$ABS_DIR/$BASE"
+    fi
+    ARGS="$ARGS \"$ABS_PATH\""
+  else
+    ARGS="$ARGS \"$arg\""
+  fi
+done
+
+# Detect if we are running in the development workspace repository
+# by checking if pnpm-workspace.yaml exists in current or parent folders
+IS_DEV=false
+DIR=$(pwd)
+while [ "$DIR" != "" ] && [ "$DIR" != "/" ]; do
+  if [ -f "$DIR/pnpm-workspace.yaml" ]; then
+    IS_DEV=true
+    DEV_DIR="$DIR"
+    break
+  fi
+  DIR=$(dirname "$DIR")
+done
+
+if [ "$IS_DEV" = true ]; then
+  # Development: execute via pnpm dev in workspace
+  eval pnpm --dir "$DEV_DIR" run --filter desktop dev -- $ARGS
+else
+  # Production: launch packaged app depending on OS
+  if [ "$(uname)" = "Darwin" ]; then
+    eval open -a "Mdow" --args $ARGS
+  elif [ "$(expr substr $(uname -s) 1 5)" = "Linux" ]; then
+    eval mdow $ARGS &
+  else
+    eval mdow $ARGS
+  fi
+fi
