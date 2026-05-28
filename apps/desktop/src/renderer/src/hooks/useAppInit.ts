@@ -7,6 +7,9 @@ export function useAppInit(): void {
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const openPath = urlParams.get('openPath')
+
     void window.api.getAppState().then(async (state: AppState) => {
       const patch: Record<string, unknown> = {}
 
@@ -32,6 +35,28 @@ export function useAppInit(): void {
         useAppStore.setState(patch)
       }
 
+      // If openPath query parameter is specified, open it directly
+      if (openPath) {
+        try {
+          const stat = await window.api.statFile(openPath)
+          if (stat.exists) {
+            if (stat.isDirectory) {
+              const scan = await window.api.readFolderTree(openPath)
+              setOpenFolder(openPath, scan.tree, scan.truncated)
+              useAppStore.setState({ sidebarMode: 'folder' })
+            } else if (stat.isFile) {
+              const content = await window.api.readFile(openPath)
+              openTab({ path: openPath, content })
+            }
+          }
+        } catch {
+          // Failed to load CLI path, fall back gracefully
+        }
+        useAppStore.setState({ initialized: true })
+        return
+      }
+
+      // Fallback: Standard state restoration
       if (state.lastFolder) {
         void window.api
           .readFolderTree(state.lastFolder)
