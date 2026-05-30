@@ -42,35 +42,14 @@ jobs:
       - run: pnpm run test
         if: matrix.platform == 'mac'
 
-      - name: Build, sign, and publish (macOS)
-        if: matrix.platform == 'mac'
+      - run: pnpm run --filter desktop publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
-          echo -n "${{ secrets.CSC_LINK }}" | base64 -d -o "$CERT_PATH"
-          KEYCHAIN_PATH=$RUNNER_TEMP/mdow-signing.keychain-db
-          security create-keychain -p "" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$CSC_KEY_PASSWORD" -A -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/["]//g')
-          echo "--- Identities in keychain ---"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
-          export CSC_LINK="$CERT_PATH"
-          export CSC_KEYCHAIN="$KEYCHAIN_PATH"
-          pnpm run --filter desktop publish
-
-      - name: Build and publish (Windows/Linux)
-        if: matrix.platform != 'mac'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run --filter desktop publish
 
       # Push version + sha256 to ZainW/homebrew-mdow (needs cross-repo write access).
       - run: pnpm run --filter desktop release:homebrew
