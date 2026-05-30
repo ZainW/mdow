@@ -92,9 +92,3 @@ jobs:
         if: ${{ always() && matrix.platform == 'mac' }}
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-
-      - name: Update Homebrew cask
-        if: matrix.platform == 'mac'
-        run: pnpm run --filter desktop release:homebrew
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

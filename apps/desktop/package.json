@@ -28,7 +28,6 @@
     "screenshots:web": "electron-vite build && node scripts/capture-website-screenshots.mjs",
     "build:dist": "electron-vite build && electron-builder",
     "publish": "electron-vite build && electron-builder --publish always",
-    "release:homebrew": "bash scripts/update-homebrew-cask.sh",
     "postinstall": "electron-builder install-app-deps && bash scripts/patch-electron-name.sh"
   },
   "dependencies": {
