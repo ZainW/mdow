@@ -1,4 +1,4 @@
-import { Menu, app, BrowserWindow, shell } from 'electron'
+import { Menu, app, BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { isMac } from './platform'
 import { getRecents } from './store'
@@ -147,11 +147,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Check for Updates…',
           click: () => {
-            if (isMac) {
-              void shell.openExternal('https://github.com/ZainW/mdow/releases/latest')
-            } else {
-              getMainWindow()?.webContents.send('menu:check-for-updates')
-            }
+            getMainWindow()?.webContents.send('menu:check-for-updates')
           },
         },
       ],

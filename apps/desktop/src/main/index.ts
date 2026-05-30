@@ -239,13 +239,6 @@ if (!gotTheLock) {
 
   app.setName('Mdow')
 
-  if (isMac && is.dev) {
-    // Each Electron version bump re-prompts for Keychain access because the
-    // dev binary is ad-hoc signed. Mock the keychain in dev — prod builds
-    // with a real Developer ID signature don't have this problem.
-    app.commandLine.appendSwitch('use-mock-keychain')
-  }
-
   void app.whenReady().then(() => {
     registerLocalProtocol()
 

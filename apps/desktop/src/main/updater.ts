@@ -2,7 +2,6 @@ import pkg from 'electron-updater'
 import { BrowserWindow } from 'electron'
 import log from 'electron-log'
 import { isAutoUpdateEnabled } from './store'
-import { isMac } from './platform'
 
 const { autoUpdater } = pkg
 
@@ -18,13 +17,6 @@ let intervalHandle: NodeJS.Timeout | null = null
 let startupHandle: NodeJS.Timeout | null = null
 
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
-  if (isMac) {
-    // Squirrel.Mac requires a signed build to apply updates. Until we have an
-    // Apple Developer ID, a half-working updater is worse than an honest link
-    // out to the releases page (handled by the menu).
-    return
-  }
-
   const send = (channel: string, ...args: unknown[]) => {
     const win = getMainWindow()
     if (win && !win.isDestroyed()) {
@@ -80,23 +72,19 @@ function scheduleAutoChecks(): void {
 }
 
 export function checkForUpdates(opts?: { manual?: boolean }): void {
-  if (isMac) return
   if (opts?.manual) manualCheckPending = true
   void autoUpdater.checkForUpdates().catch(() => {})
 }
 
 export function downloadUpdate(): void {
-  if (isMac) return
   void autoUpdater.downloadUpdate().catch(() => {})
 }
 
 export function installUpdate(): void {
-  if (isMac) return
   autoUpdater.quitAndInstall()
 }
 
 export function setAutoUpdateScheduling(enabled: boolean): void {
-  if (isMac) return
   if (enabled && !intervalHandle) {
     scheduleAutoChecks()
   } else if (!enabled) {
