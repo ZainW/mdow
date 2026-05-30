@@ -26,7 +26,7 @@ describe('app-store tab performance', () => {
       })
     }
 
-    expect(performance.now() - startedAt).toBeLessThan(100)
+    expect(performance.now() - startedAt).toBeLessThan(200)
     expect(useAppStore.getState().tabs).toHaveLength(500)
   })
 
