@@ -1,8 +1,9 @@
 {
   "name": "desktop",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "A quiet place to read markdown",
+  "author": "Zain Wania",
   "repository": {
     "type": "git",
     "url": "https://github.com/ZainW/mdow.git"

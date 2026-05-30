@@ -61,8 +61,6 @@ jobs:
       - run: pnpm run --filter desktop publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
-          CSC_KEYCHAIN_PASSWORD: ${{ env.KEYCHAIN_PW }}
           CSC_NAME: 'ZAIN XERXES WANIA (XU3M3P2M34)'
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
