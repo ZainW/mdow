@@ -196,12 +196,15 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
 
   const watchState: FolderWatchState = { watcher, debounceTimer: null }
   let pendingChanges: Array<{ type: 'add' | 'unlink' | 'addDir' | 'unlinkDir'; path: string }> = []
+  let scanVersion = 0
 
-  const rescanFolder = () => {
+  const rescanFolder = (emitChange: boolean) => {
+    const version = ++scanVersion
     void scanFolder(folderPath)
       .then((result) => {
+        if (version !== scanVersion || activeFolderWatchers.get(folderPath) !== watchState) return
         folderTreeCache.set(folderPath, result)
-        onChange(result)
+        if (emitChange) onChange(result)
       })
       .catch(() => {
         // Folder might have been deleted.
@@ -216,7 +219,7 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     const hasStructuralChange = changes.some((c) => c.type === 'addDir' || c.type === 'unlinkDir')
 
     if (!cached || cached.truncated || hasStructuralChange) {
-      rescanFolder()
+      rescanFolder(true)
       return
     }
 
@@ -237,7 +240,7 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
           if (inserted) {
             modified = true
           } else {
-            rescanFolder()
+            rescanFolder(true)
             return
           }
         }
@@ -271,9 +274,7 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
   watcher.on('addDir', (path) => scheduleFlush('addDir', path))
   watcher.on('unlinkDir', (path) => scheduleFlush('unlinkDir', path))
 
-  void scanFolder(folderPath).then((result) => {
-    folderTreeCache.set(folderPath, result)
-  })
+  rescanFolder(false)
 
   activeFolderWatchers.set(folderPath, watchState)
 }

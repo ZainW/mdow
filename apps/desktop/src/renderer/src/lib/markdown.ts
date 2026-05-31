@@ -3,6 +3,7 @@ import highlight from 'comark/plugins/highlight'
 import math from 'comark/plugins/math'
 import mermaid from 'comark/plugins/mermaid'
 import { defineCachedFunction } from 'ocache'
+import { configureRendererCacheStorage } from './cache-storage'
 
 import githubLight from 'shiki/themes/github-light.mjs'
 import githubDark from 'shiki/themes/github-dark.mjs'
@@ -40,6 +41,8 @@ import langOcaml from 'shiki/langs/ocaml.mjs'
 import langJsx from 'shiki/langs/jsx.mjs'
 import langTsx from 'shiki/langs/tsx.mjs'
 import langPhp from 'shiki/langs/php.mjs'
+
+configureRendererCacheStorage()
 
 const langs = [
   langJavascript,
@@ -248,10 +251,6 @@ async function renderMarkdownUncached(
 export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
   name: 'renderMarkdown',
   maxAge: 3600,
-  getKey: (text: string, options?: { bypassCache?: boolean }) => {
-    void options
-    return text
-  },
   shouldBypassCache: (text: string, options?: { bypassCache?: boolean }) => {
     void text
     return options?.bypassCache === true

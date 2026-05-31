@@ -1,4 +1,7 @@
 import { defineCachedFunction } from 'ocache'
+import { configureRendererCacheStorage } from './cache-storage'
+
+configureRendererCacheStorage()
 
 type MermaidApi = (typeof import('mermaid'))['default']
 interface MermaidOptions {
@@ -63,8 +66,6 @@ async function generateMermaidSvgUncached(
 const generateMermaidSvg = defineCachedFunction(generateMermaidSvgUncached, {
   name: 'mermaidSvg',
   maxAge: 3600,
-  getKey: (blockId: string, code: string, isDark: boolean) =>
-    `${blockId}:${isDark ? 'dark' : 'light'}:${code}`,
 })
 
 export async function renderMermaidBlock(
