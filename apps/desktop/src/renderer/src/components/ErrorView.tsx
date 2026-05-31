@@ -1,4 +1,5 @@
-import { useAppStore, type FileError, type ErrorType } from '../store/app-store'
+import { useAppStore, type FileError } from '../store/app-store'
+import { getReadErrorType } from '../lib/error-utils'
 import { Button } from './ui/button'
 import { truncatePathMiddle } from '../lib/path-utils'
 import { AlertCircle, FileX, FolderOpen, ShieldAlert, Trash2 } from 'lucide-react'
@@ -32,14 +33,6 @@ const errorMessages: Record<FileError['type'], { title: string; body: string; ic
 interface ErrorViewProps {
   error: FileError
   tabId: string
-}
-
-function getReadErrorType(error: unknown): ErrorType {
-  if (error instanceof Error) {
-    if (error.message === 'not-found') return 'not-found'
-    if (error.message === 'permission-denied') return 'permission-denied'
-  }
-  return 'read-error'
 }
 
 export function ErrorView({ error, tabId }: ErrorViewProps) {

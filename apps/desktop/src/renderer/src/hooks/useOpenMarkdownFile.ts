@@ -1,16 +1,8 @@
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAppStore, type ErrorType } from '../store/app-store'
+import { useAppStore } from '../store/app-store'
+import { getReadErrorType } from '../lib/error-utils'
 import { invalidateRecents } from '../lib/query-keys'
-
-function getReadErrorType(error: unknown): ErrorType {
-  if (error instanceof Error) {
-    if (error.message === 'not-found') return 'not-found'
-    if (error.message === 'permission-denied') return 'permission-denied'
-    if (error.message === 'read-error') return 'read-error'
-  }
-  return 'read-error'
-}
 
 export function useOpenMarkdownFile() {
   const openTab = useAppStore((s) => s.openTab)
