@@ -186,10 +186,11 @@ function appendClassName(node: ComarkElement, className: string): void {
   }
 }
 
-async function _renderMarkdown(
+async function renderMarkdownUncached(
   text: string,
-  _options?: { bypassCache?: boolean },
+  options?: { bypassCache?: boolean },
 ): Promise<RenderResult> {
+  void options
   const tree = await parse(text)
 
   const mermaidBlocks: { id: string; code: string }[] = []
@@ -244,10 +245,15 @@ async function _renderMarkdown(
   }
 }
 
-export const renderMarkdown = defineCachedFunction(_renderMarkdown, {
+export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
   name: 'renderMarkdown',
   maxAge: 3600,
-  getKey: (text: string, _options?: { bypassCache?: boolean }) => text,
-  shouldBypassCache: (_text: string, options?: { bypassCache?: boolean }) =>
-    options?.bypassCache === true,
+  getKey: (text: string, options?: { bypassCache?: boolean }) => {
+    void options
+    return text
+  },
+  shouldBypassCache: (text: string, options?: { bypassCache?: boolean }) => {
+    void text
+    return options?.bypassCache === true
+  },
 })
