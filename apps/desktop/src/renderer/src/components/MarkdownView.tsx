@@ -1,32 +1,22 @@
-import { ComarkRenderer } from '@comark/react'
-import { Math as ComarkMath } from '@comark/react/components/Math'
 import {
-  memo,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useReducer,
   useRef,
   useState,
-  type AnchorHTMLAttributes,
   type CSSProperties,
-  type HTMLAttributes,
-  type ImgHTMLAttributes,
-  type InputHTMLAttributes,
 } from 'react'
-import { Check, Copy } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlock, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
-import { detectSep, isMarkdownPath } from '../lib/path-utils'
+import { isMarkdownPath } from '../lib/path-utils'
 import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
-import { iconSize, iconStroke } from '../lib/icons'
-import { cn } from '../lib/utils'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
+import { MarkdownContent, resolveRelativePath } from './markdown/components'
 
 interface MarkdownViewProps {
   tab: Tab
@@ -40,189 +30,6 @@ function getTabRenderFromStore(tabId: string): RenderResult | undefined {
 function setTabRenderInStore(tabId: string, result: RenderResult): void {
   useAppStore.getState().setRenderCache(tabId, result)
 }
-
-function resolveRelativePath(href: string, docPath: string): string {
-  const sep = detectSep(docPath)
-  const dirParts = docPath.split(/[/\\]/).slice(0, -1)
-  for (const segment of href.split(/[/\\]/)) {
-    if (segment === '..') dirParts.pop()
-    else if (segment === '.' || segment === '') continue
-    else dirParts.push(segment)
-  }
-  return dirParts.join(sep)
-}
-
-function rewriteImageSrc(src: string, docPath: string): string {
-  if (/^(https?:|data:|mdow-local:|blob:)/i.test(src)) return src
-  const resolved = resolveRelativePath(src, docPath)
-  return `mdow-local://local/${encodeURIComponent(resolved)}`
-}
-
-const ALERT_TYPES = ['tip', 'note', 'important', 'warning', 'caution'] as const
-
-function AlertCallout({
-  type,
-  children,
-  className,
-  ...props
-}: HTMLAttributes<HTMLDivElement> & { type: string }) {
-  return (
-    <div
-      className={cn('markdown-alert', `markdown-alert-${type}`, className)}
-      role="note"
-      {...props}
-    >
-      {children}
-    </div>
-  )
-}
-
-function CodeBlock({
-  children,
-  language,
-  ...props
-}: HTMLAttributes<HTMLPreElement> & { language?: string; class?: string }) {
-  const className = props.class
-  const { class: _class, ...preProps } = props
-  return (
-    <div className="code-block-wrapper relative">
-      {language ? <span className="code-lang-badge">{language}</span> : null}
-      <pre className={className} {...preProps}>
-        {children}
-      </pre>
-      <button
-        className="copy-code-btn"
-        type="button"
-        data-copy-code
-        aria-label="Copy code"
-        title="Copy code"
-      >
-        <Copy
-          className="copy-icon copy-icon-default"
-          size={iconSize.md}
-          strokeWidth={iconStroke.default}
-          aria-hidden
-        />
-        <Check
-          className="copy-icon copy-icon-done"
-          size={iconSize.md}
-          strokeWidth={iconStroke.emphasis}
-          aria-hidden
-        />
-      </button>
-    </div>
-  )
-}
-
-interface MermaidBlockProps extends HTMLAttributes<HTMLDivElement> {
-  content?: string
-}
-
-function MermaidBlock({ content, id, className, ...props }: MermaidBlockProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [ariaLabel, setAriaLabel] = useState('Mermaid diagram loading')
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el || !content) return undefined
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return
-        observer.disconnect()
-        const blockId = el.id
-        if (!blockId) return
-        void renderMermaidBlock({ id: blockId, code: content }).then(() => {
-          setAriaLabel('Mermaid diagram')
-        })
-      },
-      { rootMargin: '200px 0px' },
-    )
-
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [content, id])
-
-  return (
-    <div
-      ref={ref}
-      id={id}
-      className={cn('mermaid mermaid-container', className)}
-      aria-label={ariaLabel}
-      {...props}
-    />
-  )
-}
-
-function TableWrap(props: HTMLAttributes<HTMLTableElement>) {
-  return (
-    <div className="table-wrap">
-      <table {...props} />
-    </div>
-  )
-}
-
-function TaskCheckbox({
-  type,
-  class: className,
-  checked,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement> & { class?: string }) {
-  if (type === 'checkbox' && className?.includes('task-list-item-checkbox')) {
-    return (
-      <input
-        type="checkbox"
-        className={className}
-        checked={Boolean(checked)}
-        disabled
-        readOnly
-        aria-disabled
-        {...props}
-      />
-    )
-  }
-  return <input type={type} className={className} checked={checked} {...props} />
-}
-
-function createMarkdownComponents(docPath: string) {
-  const alertComponents = Object.fromEntries(
-    ALERT_TYPES.map((type) => [
-      type,
-      (props: HTMLAttributes<HTMLDivElement>) => <AlertCallout type={type} {...props} />,
-    ]),
-  )
-
-  return {
-    pre: CodeBlock,
-    mermaid: MermaidBlock,
-    math: ComarkMath,
-    table: TableWrap,
-    input: TaskCheckbox,
-    img: ({ src, alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) => (
-      <img
-        src={src ? rewriteImageSrc(src, docPath) : src}
-        alt={alt ?? ''}
-        loading="lazy"
-        {...props}
-      />
-    ),
-    a: ({ children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => (
-      <a {...props}>{children ?? props.href}</a>
-    ),
-    ...alertComponents,
-  }
-}
-
-const MarkdownContent = memo(function MarkdownContent({
-  result,
-  docPath,
-}: {
-  result: RenderResult
-  docPath: string
-}) {
-  const components = useMemo(() => createMarkdownComponents(docPath), [docPath])
-  return <ComarkRenderer tree={result.tree} components={components} />
-})
 
 interface RenderUi {
   result: RenderResult | null
