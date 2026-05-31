@@ -6,7 +6,7 @@ import { seo } from '~/lib/seo'
 import { SiteHeader } from '~/components/site-header'
 import { SiteFooter } from '~/components/site-footer'
 
-const THEME_SCRIPT = `(function(){var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')})()`
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})()`
 
 export const Route = createRootRoute({
   head: () => ({
