@@ -70,10 +70,6 @@ export function getRecents(): string[] {
   return pruneRecentsList()
 }
 
-export function pruneRecents(): string[] {
-  return pruneRecentsList()
-}
-
 export function addRecent(filePath: string): void {
   const recents = store.get('recents').filter((r) => r !== filePath)
   recents.unshift(filePath)

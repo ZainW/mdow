@@ -36,7 +36,6 @@ vi.mock('electron-store', () => {
 import {
   getRecents,
   addRecent,
-  pruneRecents,
   getAppState,
   saveAppState,
   getWindowBounds,
@@ -109,13 +108,6 @@ describe('store', () => {
       expect(getRecents()).toEqual(['/exists.md'])
     })
 
-    it('pruneRecents filters and persists existing files', () => {
-      vi.mocked(existsSync).mockImplementation((path) => path === '/keep.md')
-      addRecent('/keep.md')
-      addRecent('/gone.md')
-      expect(pruneRecents()).toEqual(['/keep.md'])
-      expect(getRecents()).toEqual(['/keep.md'])
-    })
   })
 
   describe('appState', () => {

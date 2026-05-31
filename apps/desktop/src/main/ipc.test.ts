@@ -5,7 +5,6 @@ const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknow
 
 const mockReadFileContent = vi.hoisted(() => vi.fn())
 const mockUnwatchFile = vi.hoisted(() => vi.fn())
-const mockAttachFileWatcher = vi.hoisted(() => vi.fn())
 const mockSetActiveFileWatch = vi.hoisted(() => vi.fn())
 const mockSaveAppState = vi.hoisted(() => vi.fn())
 const mockNativeTheme = vi.hoisted(() => ({ themeSource: 'system' as string }))
@@ -37,7 +36,6 @@ vi.mock('./file-service', () => ({
   readFileContent: mockReadFileContent,
   watchFile: vi.fn(),
   unwatchFile: mockUnwatchFile,
-  attachFileWatcher: mockAttachFileWatcher,
   setActiveFileWatch: mockSetActiveFileWatch,
 }))
 
@@ -50,7 +48,6 @@ vi.mock('./folder-service', () => ({
 vi.mock('./store', () => ({
   getRecents: vi.fn(() => []),
   addRecent: vi.fn(),
-  pruneRecents: vi.fn(() => []),
   getAppState: vi.fn(),
   saveAppState: mockSaveAppState,
   setLastFolder: vi.fn(),
