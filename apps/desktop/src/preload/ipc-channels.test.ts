@@ -22,7 +22,7 @@ function extractMainHandleChannels(source: string): string[] {
   return [...new Set(channels)].sort()
 }
 
-const MAIN_ONLY_INVOKE_CHANNELS = ['file:stat', 'store:add-recent', 'store:prune-recents']
+const MAIN_ONLY_INVOKE_CHANNELS = ['file:stat']
 
 describe('ipc channel parity', () => {
   it('ensures every preload invoke channel is handled in main', () => {
