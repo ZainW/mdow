@@ -9,17 +9,29 @@
       <title></title>
       <link>https://mdow.app/changelog#</link>
       <guid isPermaLink="false"></guid>
-      <pubDate>Mon, 01 Jan 2026 00:00:00 GMT</pubDate>
+      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
       <description># Changelog</description>
+    </item>
+    <item>
+      <title>v1.1.0</title>
+      <link>https://mdow.app/changelog#v1-1-0</link>
+      <guid isPermaLink="false">v1.1.0</guid>
+      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
+      <description>Latest release.
+
+- macOS code signing and notarization — no more Gatekeeper warnings
+- Multi-window support
+- Vault UX and security improvements
+- New UI primitives and Lucide icons
+- Document loading skeleton and content fade-in
+- Performance improvements</description>
     </item>
     <item>
       <title>v1.0.5</title>
       <link>https://mdow.app/changelog#v1-0-5</link>
       <guid isPermaLink="false">v1.0.5</guid>
-      <pubDate>Mon, 26 May 2026 00:00:00 GMT</pubDate>
-      <description>Latest release.
-
-- Improved tab bar accessibility and keyboard navigation
+      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
+      <description>- Improved tab bar accessibility and keyboard navigation
 - Zoom indicator with stable layout across zoom levels
 - Refined sidebar modes (Recents, Outline, Folder)
 - Command palette and search polish
@@ -29,7 +41,7 @@
       <title>v1.0.0</title>
       <link>https://mdow.app/changelog#v1-0-0</link>
       <guid isPermaLink="false">v1.0.0</guid>
-      <pubDate>Mon, 01 Jan 2026 00:00:00 GMT</pubDate>
+      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
       <description>Initial release.
 
 - Markdown rendering with md4x (WASM)

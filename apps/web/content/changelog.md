@@ -5,9 +5,18 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.0.5
+## v1.1.0
 
 Latest release.
+
+- macOS code signing and notarization — no more Gatekeeper warnings
+- Multi-window support
+- Vault UX and security improvements
+- New UI primitives and Lucide icons
+- Document loading skeleton and content fade-in
+- Performance improvements
+
+## v1.0.5
 
 - Improved tab bar accessibility and keyboard navigation
 - Zoom indicator with stable layout across zoom levels

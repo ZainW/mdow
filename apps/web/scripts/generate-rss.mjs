@@ -30,8 +30,7 @@ const items = sections
     const [versionLine, ...rest] = section.split('\n')
     const version = versionLine.trim()
     const content = rest.join('\n').trim()
-    const pubDate =
-      version === 'v1.0.5' ? 'Mon, 26 May 2026 00:00:00 GMT' : 'Mon, 01 Jan 2026 00:00:00 GMT'
+    const pubDate = new Date().toUTCString()
     const anchor = version.replace(/\./g, '-')
     return `
     <item>
