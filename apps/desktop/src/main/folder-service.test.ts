@@ -212,6 +212,27 @@ describe('insertFileNode', () => {
     expect(insertFileNode(nodes, '/root/a.md', 'a.md', '')).toBe(false)
     expect(nodes).toHaveLength(1)
   })
+
+  it('returns false when parent directory does not exist', () => {
+    const nodes: TreeNode[] = []
+    expect(insertFileNode(nodes, '/missing/b.md', 'b.md', '/missing')).toBe(false)
+    expect(nodes).toHaveLength(0)
+  })
+
+  it('appends file after directories', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'subdir',
+        path: '/root/subdir',
+        isDirectory: true,
+        children: [],
+      },
+    ]
+    expect(insertFileNode(nodes, '/root/a.md', 'a.md', '')).toBe(true)
+    expect(nodes).toHaveLength(2)
+    expect(nodes[0].isDirectory).toBe(true)
+    expect(nodes[1].name).toBe('a.md')
+  })
 })
 
 describe('removeFileNode', () => {
@@ -251,6 +272,39 @@ describe('removeFileNode', () => {
       },
     ]
     expect(removeFileNode(nodes, '/root/empty-dir/only.md')).toBe(true)
+    expect(nodes).toHaveLength(0)
+  })
+
+  it('returns false for non-existent file', () => {
+    const nodes: TreeNode[] = [{ name: 'a.md', path: '/root/a.md', isDirectory: false }]
+    expect(removeFileNode(nodes, '/root/missing.md')).toBe(false)
+    expect(nodes).toHaveLength(1)
+  })
+
+  it('cascades empty directory cleanup through multiple levels', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'a',
+        path: '/root/a',
+        isDirectory: true,
+        children: [
+          {
+            name: 'b',
+            path: '/root/a/b',
+            isDirectory: true,
+            children: [
+              {
+                name: 'c',
+                path: '/root/a/b/c',
+                isDirectory: true,
+                children: [{ name: 'only.md', path: '/root/a/b/c/only.md', isDirectory: false }],
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    expect(removeFileNode(nodes, '/root/a/b/c/only.md')).toBe(true)
     expect(nodes).toHaveLength(0)
   })
 })
