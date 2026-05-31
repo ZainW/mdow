@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 import type { AppState } from '../../../shared/types'
+import { getReadErrorType } from '../lib/error-utils'
 import { useAppStore } from '../store/app-store'
 
 export function useAppInit(): void {
   const openTab = useAppStore((s) => s.openTab)
+  const openErrorTab = useAppStore((s) => s.openErrorTab)
   const setOpenFolder = useAppStore((s) => s.setOpenFolder)
 
   useEffect(() => {
@@ -49,8 +51,8 @@ export function useAppInit(): void {
               openTab({ path: openPath, content })
             }
           }
-        } catch {
-          // Failed to load CLI path, fall back gracefully
+        } catch (err) {
+          openErrorTab(openPath, { type: getReadErrorType(err), path: openPath })
         }
         useAppStore.setState({ initialized: true })
         return
@@ -77,13 +79,17 @@ export function useAppInit(): void {
             ]
           : state.sessionTabs
 
+        const failedPaths: string[] = []
         for (const tab of orderedTabs) {
           try {
             const content = await window.api.readFile(tab.path)
             openTab({ path: tab.path, content })
           } catch {
-            // Skip unreadable session tabs
+            failedPaths.push(tab.path)
           }
+        }
+        if (failedPaths.length > 0) {
+          console.warn(`Failed to restore ${failedPaths.length} session tab(s):`, failedPaths)
         }
 
         if (state.sessionActiveTabPath) {
@@ -97,5 +103,5 @@ export function useAppInit(): void {
 
       useAppStore.setState({ initialized: true })
     })
-  }, [setOpenFolder, openTab])
+  }, [setOpenFolder, openTab, openErrorTab])
 }
