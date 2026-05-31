@@ -66,8 +66,6 @@ async function generateMermaidSvgUncached(
 const generateMermaidSvg = defineCachedFunction(generateMermaidSvgUncached, {
   name: 'mermaidSvg',
   maxAge: 3600,
-  getKey: (blockId: string, code: string, isDark: boolean) =>
-    `${blockId}:${isDark ? 'dark' : 'light'}:${code}`,
 })
 
 export async function renderMermaidBlock(

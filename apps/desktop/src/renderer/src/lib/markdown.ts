@@ -251,10 +251,6 @@ async function renderMarkdownUncached(
 export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
   name: 'renderMarkdown',
   maxAge: 3600,
-  getKey: (text: string, options?: { bypassCache?: boolean }) => {
-    void options
-    return text
-  },
   shouldBypassCache: (text: string, options?: { bypassCache?: boolean }) => {
     void text
     return options?.bypassCache === true
