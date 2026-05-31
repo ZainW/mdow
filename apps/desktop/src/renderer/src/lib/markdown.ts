@@ -2,6 +2,7 @@ import { createParse, type ComarkElement, type ComarkNode, type ComarkPlugin } f
 import highlight from 'comark/plugins/highlight'
 import math from 'comark/plugins/math'
 import mermaid from 'comark/plugins/mermaid'
+import { defineCachedFunction } from 'ocache'
 
 import githubLight from 'shiki/themes/github-light.mjs'
 import githubDark from 'shiki/themes/github-dark.mjs'
@@ -144,15 +145,11 @@ export interface RenderResult {
   frontmatter: Record<string, unknown>
 }
 
-const contentRenderCache = new Map<string, RenderResult>()
-
-export function getCachedMarkdownRender(content: string): RenderResult | undefined {
-  return contentRenderCache.get(content)
+export function getCachedMarkdownRender(_content: string): RenderResult | undefined {
+  return undefined
 }
 
-export function clearMarkdownRenderCache(): void {
-  contentRenderCache.clear()
-}
+export function clearMarkdownRenderCache(): void {}
 
 function slugifyHeading(text: string): string {
   return text
@@ -195,15 +192,10 @@ function appendClassName(node: ComarkElement, className: string): void {
   }
 }
 
-export async function renderMarkdown(
+async function _renderMarkdown(
   text: string,
-  options?: { bypassCache?: boolean },
+  _options?: { bypassCache?: boolean },
 ): Promise<RenderResult> {
-  if (!options?.bypassCache) {
-    const cached = contentRenderCache.get(text)
-    if (cached) return cached
-  }
-
   const tree = await parse(text)
 
   const mermaidBlocks: { id: string; code: string }[] = []
@@ -250,12 +242,18 @@ export async function renderMarkdown(
 
   for (const node of tree.nodes) visit(node)
 
-  const result: RenderResult = {
+  return {
     tree,
     mermaidBlocks,
     headings,
     frontmatter: tree.frontmatter ?? {},
   }
-  contentRenderCache.set(text, result)
-  return result
 }
+
+export const renderMarkdown = defineCachedFunction(_renderMarkdown, {
+  name: 'renderMarkdown',
+  maxAge: 3600,
+  getKey: (text: string, _options?: { bypassCache?: boolean }) => text,
+  shouldBypassCache: (_text: string, options?: { bypassCache?: boolean }) =>
+    options?.bypassCache === true,
+})

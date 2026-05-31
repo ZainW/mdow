@@ -16,7 +16,7 @@ import {
 } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { getCachedMarkdownRender, renderMarkdown, type RenderResult } from '../lib/markdown'
+import { renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlock, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
@@ -302,7 +302,7 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
       dispatchRender({ type: 'clear-tab' })
     }
 
-    const cached = getTabRenderFromStore(tab.id) ?? getCachedMarkdownRender(tab.content)
+    const cached = getTabRenderFromStore(tab.id)
     if (cached) {
       renderVersionRef.current += 1
       dispatchRender({

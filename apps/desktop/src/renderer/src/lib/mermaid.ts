@@ -1,3 +1,5 @@
+import { defineCachedFunction } from 'ocache'
+
 type MermaidApi = (typeof import('mermaid'))['default']
 interface MermaidOptions {
   startOnLoad: false
@@ -13,18 +15,12 @@ let mermaidOptions: MermaidOptions = {
   securityLevel: 'loose',
 }
 
-const svgCache = new Map<string, string>()
-
 function getMermaidOptions(isDark: boolean): MermaidOptions {
   return {
     startOnLoad: false,
     theme: isDark ? 'dark' : 'default',
     securityLevel: 'loose',
   }
-}
-
-function cacheKey(block: { id: string; code: string }, isDark: boolean): string {
-  return `${block.id}:${isDark ? 'dark' : 'light'}:${block.code}`
 }
 
 async function loadMermaid(): Promise<MermaidApi> {
@@ -44,14 +40,6 @@ export function updateMermaidTheme(isDark: boolean): void {
   }
 }
 
-export function clearMermaidSvgCache(): void {
-  svgCache.clear()
-}
-
-export function getMermaidSvgCacheSize(): number {
-  return svgCache.size
-}
-
 function applySvgToElement(el: HTMLElement, svg: string): void {
   el.className = 'mermaid mermaid-container'
   el.innerHTML = svg
@@ -60,6 +48,24 @@ function applySvgToElement(el: HTMLElement, svg: string): void {
     el.setAttribute('aria-label', 'Mermaid diagram')
   }
 }
+
+async function _generateMermaidSvg(
+  blockId: string,
+  code: string,
+  _isDark: boolean,
+): Promise<string> {
+  const mermaid = await loadMermaid()
+  mermaid.initialize(mermaidOptions)
+  const { svg } = await mermaid.render(`${blockId}-svg`, code)
+  return svg
+}
+
+const generateMermaidSvg = defineCachedFunction(_generateMermaidSvg, {
+  name: 'mermaidSvg',
+  maxAge: 3600,
+  getKey: (blockId: string, _code: string, isDark: boolean) =>
+    `${blockId}:${isDark ? 'dark' : 'light'}`,
+})
 
 export async function renderMermaidBlock(
   block: { id: string; code: string },
@@ -70,20 +76,9 @@ export async function renderMermaidBlock(
   const el = document.getElementById(block.id)
   if (!el) return
 
-  const key = cacheKey(block, isDark)
-  const cached = svgCache.get(key)
-  if (cached) {
-    applySvgToElement(el, cached)
-    return
-  }
-
-  const mermaid = await loadMermaid()
-  mermaid.initialize(mermaidOptions)
-
   try {
     el.replaceChildren()
-    const { svg } = await mermaid.render(`${block.id}-svg`, block.code)
-    svgCache.set(key, svg)
+    const svg = await generateMermaidSvg(block.id, block.code, isDark)
     applySvgToElement(el, svg)
   } catch (e) {
     el.className = 'mermaid-error'

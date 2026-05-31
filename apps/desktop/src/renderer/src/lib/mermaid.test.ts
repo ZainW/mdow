@@ -51,9 +51,7 @@ describe('mermaid renderer', () => {
   })
 
   it('reuses cached SVG output for repeated renders', async () => {
-    const { clearMermaidSvgCache, getMermaidSvgCacheSize, initMermaid, renderMermaidBlock } =
-      await import('./mermaid')
-    clearMermaidSvgCache()
+    const { initMermaid, renderMermaidBlock } = await import('./mermaid')
     const el = document.createElement('div')
     el.id = 'diagram-2'
     document.body.append(el)
@@ -63,6 +61,5 @@ describe('mermaid renderer', () => {
     await renderMermaidBlock({ id: 'diagram-2', code: 'flowchart TD\n  C --> D' })
 
     expect(mermaidMock.render).toHaveBeenCalledTimes(1)
-    expect(getMermaidSvgCacheSize()).toBe(1)
   })
 })

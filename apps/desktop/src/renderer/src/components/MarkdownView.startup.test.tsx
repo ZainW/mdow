@@ -11,7 +11,6 @@ const markdownMock = vi.hoisted(() => ({
 vi.mock('../lib/markdown', () => ({
   initMarkdown: markdownMock.initMarkdown,
   renderMarkdown: markdownMock.renderMarkdown,
-  getCachedMarkdownRender: vi.fn(() => undefined),
 }))
 
 vi.mock('../lib/mermaid', () => ({
