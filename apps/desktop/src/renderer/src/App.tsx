@@ -29,7 +29,11 @@ function App(): React.JSX.Element {
   if (isIconLab) {
     return <IconLab />
   }
-  return <MainApp />
+  return (
+    <AppErrorBoundary>
+      <MainApp />
+    </AppErrorBoundary>
+  )
 }
 
 function MainContent({ activeTab }: { activeTab: Tab | null }): React.JSX.Element {
@@ -121,29 +125,27 @@ function MainApp(): React.JSX.Element {
   }
 
   return (
-    <AppErrorBoundary>
-      <SidebarProvider>
-        <div
-          className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
-          onDrop={(e) => void handleDrop(e)}
-          onDragOver={(e) => e.preventDefault()}
-        >
-          <TitlebarInset />
-          <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar />
-            <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
-              <TabBar />
-              {activeTab && <DocumentBreadcrumb tab={activeTab} />}
-              <MainContent activeTab={activeTab} />
-              <UpdateBanner />
-            </main>
-            <CommandPalette />
-            <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
-            <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-          </div>
+    <SidebarProvider>
+      <div
+        className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
+        onDrop={(e) => void handleDrop(e)}
+        onDragOver={(e) => e.preventDefault()}
+      >
+        <TitlebarInset />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <Sidebar />
+          <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
+            <TabBar />
+            {activeTab && <DocumentBreadcrumb tab={activeTab} />}
+            <MainContent activeTab={activeTab} />
+            <UpdateBanner />
+          </main>
+          <CommandPalette />
+          <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
+          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>
-      </SidebarProvider>
-    </AppErrorBoundary>
+      </div>
+    </SidebarProvider>
   )
 }
 
