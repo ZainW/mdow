@@ -116,6 +116,59 @@ export async function scanFolder(folderPath: string): Promise<ScanResult> {
   return { tree, truncated: state.truncated }
 }
 
+export function insertFileNode(
+  nodes: TreeNode[],
+  filePath: string,
+  fileName: string,
+  parentPath: string,
+): boolean {
+  const target = parentPath === '' ? nodes : findParentChildren(nodes, parentPath)
+  if (!target) return false
+  if (target.some((n) => n.path === filePath)) return false
+
+  const insertIndex = target.findIndex((n) => !n.isDirectory && n.name.localeCompare(fileName) > 0)
+  const newNode: TreeNode = { name: fileName, path: filePath, isDirectory: false }
+  if (insertIndex === -1) {
+    target.push(newNode)
+  } else {
+    target.splice(insertIndex, 0, newNode)
+  }
+  return true
+}
+
+function findParentChildren(nodes: TreeNode[], dirPath: string): TreeNode[] | null {
+  for (const node of nodes) {
+    if (node.isDirectory && node.path === dirPath) return node.children ?? null
+    if (node.isDirectory && node.children) {
+      const found = findParentChildren(node.children, dirPath)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+export function removeFileNode(nodes: TreeNode[], filePath: string): boolean {
+  const index = nodes.findIndex((n) => n.path === filePath)
+  if (index !== -1) {
+    nodes.splice(index, 1)
+    return true
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    if (node.isDirectory && node.children) {
+      if (removeFileNode(node.children, filePath)) {
+        if (node.children.length === 0) {
+          nodes.splice(i, 1)
+        }
+        return true
+      }
+    }
+  }
+  return false
+}
+
+const folderTreeCache = new Map<string, ScanResult>()
+
 export async function openFolderDialog(win: BrowserWindow) {
   const result = await dialog.showOpenDialog(win, {
     properties: ['openDirectory'],
@@ -129,7 +182,6 @@ export async function openFolderDialog(win: BrowserWindow) {
 }
 
 export function watchFolder(folderPath: string, onChange: (result: ScanResult) => void): void {
-  // Clean up any existing watcher for this specific path first
   unwatchFolder(folderPath)
 
   const watcher = watch(folderPath, {
@@ -142,33 +194,78 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     depth: MAX_DEPTH,
   })
 
-  const watchState: FolderWatchState = {
-    watcher,
-    debounceTimer: null,
+  const watchState: FolderWatchState = { watcher, debounceTimer: null }
+  let pendingChanges: Array<{ type: 'add' | 'unlink' | 'addDir' | 'unlinkDir'; path: string }> = []
+
+  const flushChanges = () => {
+    const changes = pendingChanges
+    pendingChanges = []
+
+    const cached = folderTreeCache.get(folderPath)
+    const hasStructuralChange = changes.some((c) => c.type === 'addDir' || c.type === 'unlinkDir')
+
+    if (!cached || hasStructuralChange) {
+      void scanFolder(folderPath)
+        .then((result) => {
+          folderTreeCache.set(folderPath, result)
+          onChange(result)
+        })
+        .catch(() => {})
+      return
+    }
+
+    let modified = false
+    for (const change of changes) {
+      if (change.type === 'add') {
+        const sep = change.path.includes('\\') ? '\\' : '/'
+        const parts = change.path.split(sep)
+        const fileName = parts.pop()!
+        const parentPath = parts.join(sep)
+        if (isMdFile(fileName)) {
+          if (
+            insertFileNode(
+              cached.tree,
+              change.path,
+              fileName,
+              parentPath === folderPath ? '' : parentPath,
+            )
+          ) {
+            modified = true
+          }
+        }
+      } else if (change.type === 'unlink') {
+        if (removeFileNode(cached.tree, change.path)) {
+          modified = true
+        }
+      }
+    }
+
+    if (modified) {
+      onChange({ tree: cached.tree, truncated: cached.truncated })
+    }
   }
 
-  const handleChange = () => {
+  const scheduleFlush = (type: 'add' | 'unlink' | 'addDir' | 'unlinkDir', path: string) => {
+    pendingChanges.push({ type, path })
     if (watchState.debounceTimer) clearTimeout(watchState.debounceTimer)
     watchState.debounceTimer = setTimeout(() => {
       watchState.debounceTimer = null
-      void scanFolder(folderPath)
-        .then((result) => {
-          onChange(result)
-        })
-        .catch(() => {
-          // Folder might have been deleted
-        })
+      flushChanges()
     }, 1000)
   }
 
-  const handleFileChange = (path: string) => {
-    if (isMarkdownPath(path)) handleChange()
-  }
+  watcher.on('add', (path) => {
+    if (isMarkdownPath(path)) scheduleFlush('add', path)
+  })
+  watcher.on('unlink', (path) => {
+    if (isMarkdownPath(path)) scheduleFlush('unlink', path)
+  })
+  watcher.on('addDir', (path) => scheduleFlush('addDir', path))
+  watcher.on('unlinkDir', (path) => scheduleFlush('unlinkDir', path))
 
-  watcher.on('add', handleFileChange)
-  watcher.on('unlink', handleFileChange)
-  watcher.on('addDir', handleChange)
-  watcher.on('unlinkDir', handleChange)
+  void scanFolder(folderPath).then((result) => {
+    folderTreeCache.set(folderPath, result)
+  })
 
   activeFolderWatchers.set(folderPath, watchState)
 }
@@ -180,6 +277,7 @@ export function unwatchFolder(folderPath?: string): void {
       if (state.debounceTimer) clearTimeout(state.debounceTimer)
       void state.watcher.close()
       activeFolderWatchers.delete(folderPath)
+      folderTreeCache.delete(folderPath)
     }
   } else {
     for (const state of activeFolderWatchers.values()) {
@@ -187,5 +285,6 @@ export function unwatchFolder(folderPath?: string): void {
       void state.watcher.close()
     }
     activeFolderWatchers.clear()
+    folderTreeCache.clear()
   }
 }
