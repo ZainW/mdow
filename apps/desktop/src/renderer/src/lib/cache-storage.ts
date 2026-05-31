@@ -8,7 +8,15 @@ interface StorageEntry<T = unknown> {
 export function createBoundedMemoryStorage(maxEntries: number): StorageInterface {
   const entries = new Map<string, StorageEntry>()
 
+  function purgeExpired(): void {
+    const now = Date.now()
+    for (const [key, entry] of entries) {
+      if (entry.expiresAt !== undefined && entry.expiresAt <= now) entries.delete(key)
+    }
+  }
+
   function evictOverflow(): void {
+    purgeExpired()
     while (entries.size > maxEntries) {
       const oldest = entries.keys().next().value
       if (oldest === undefined) return

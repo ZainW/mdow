@@ -252,6 +252,7 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     }
 
     if (modified) {
+      scanVersion += 1
       onChange({ tree: cached.tree, truncated: cached.truncated })
     }
   }

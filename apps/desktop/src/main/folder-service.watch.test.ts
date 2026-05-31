@@ -96,4 +96,45 @@ describe('watchFolder', () => {
       truncated: false,
     })
   })
+
+  it('keeps newer incremental updates when an older rescan resolves late', async () => {
+    const structuralRescan = createDeferred<Dirent[]>()
+    mockReaddir
+      .mockResolvedValueOnce([file('old.md')])
+      .mockReturnValueOnce(structuralRescan.promise)
+
+    const onChange = vi.fn()
+    watchFolder('/root', onChange)
+    await vi.waitFor(() => expect(mockReaddir).toHaveBeenCalledTimes(1))
+
+    eventCallbacks.get('addDir')!.forEach((cb) => cb('/root/docs'))
+    await vi.advanceTimersByTimeAsync(1000)
+
+    eventCallbacks.get('add')!.forEach((cb) => cb('/root/new.md'))
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(onChange).toHaveBeenCalledWith({
+      tree: [
+        { name: 'new.md', path: '/root/new.md', isDirectory: false },
+        { name: 'old.md', path: '/root/old.md', isDirectory: false },
+      ],
+      truncated: false,
+    })
+
+    structuralRescan.resolve([file('old.md')])
+    await vi.waitFor(() => expect(mockReaddir).toHaveBeenCalledTimes(2))
+
+    mockReaddir.mockResolvedValueOnce([file('another.md'), file('new.md'), file('old.md')])
+    eventCallbacks.get('add')!.forEach((cb) => cb('/root/another.md'))
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      tree: [
+        { name: 'another.md', path: '/root/another.md', isDirectory: false },
+        { name: 'new.md', path: '/root/new.md', isDirectory: false },
+        { name: 'old.md', path: '/root/old.md', isDirectory: false },
+      ],
+      truncated: false,
+    })
+  })
 })

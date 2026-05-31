@@ -30,4 +30,20 @@ describe('createBoundedMemoryStorage', () => {
     vi.advanceTimersByTime(1000)
     expect(storage.get('a')).toBeNull()
   })
+
+  it('purges expired entries before evicting valid entries', () => {
+    vi.useFakeTimers()
+    const storage = createBoundedMemoryStorage(2)
+
+    void storage.set('expired', 'expired', { ttl: 1 })
+    void storage.set('valid', 'valid')
+    expect(storage.get('expired')).toBe('expired')
+
+    vi.advanceTimersByTime(1000)
+    void storage.set('new', 'new')
+
+    expect(storage.get('expired')).toBeNull()
+    expect(storage.get('valid')).toBe('valid')
+    expect(storage.get('new')).toBe('new')
+  })
 })
