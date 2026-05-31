@@ -4,6 +4,7 @@ import type { DocHeading } from '../../lib/markdown'
 export type SidebarMode = 'recents' | 'folder' | 'outline'
 
 export interface UiSlice {
+  initialized: boolean
   sidebarOpen: boolean
   sidebarMode: SidebarMode
   toggleSidebar: () => void
@@ -25,6 +26,7 @@ export interface UiSlice {
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
+  initialized: false,
   sidebarOpen: true,
   sidebarMode: 'recents',
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

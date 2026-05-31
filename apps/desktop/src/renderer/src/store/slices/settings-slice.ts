@@ -1,7 +1,6 @@
 import type { StateCreator } from 'zustand'
 
 export interface SettingsSlice {
-  initialized: boolean
   zoomLevel: number
   zoomIn: () => void
   zoomOut: () => void
@@ -21,8 +20,6 @@ export interface SettingsSlice {
 }
 
 export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set) => ({
-  initialized: false,
-
   zoomLevel: 100,
   zoomIn: () =>
     set((state) => {
