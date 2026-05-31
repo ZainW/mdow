@@ -71,7 +71,6 @@ export const IPC = {
   STORE_GET_RECENTS: 'store:get-recents',
   STORE_GET_STATE: 'store:get-state',
   STORE_SAVE_STATE: 'store:save-state',
-  STORE_PRUNE_RECENTS: 'store:prune-recents',
   SHELL_SHOW_IN_FOLDER: 'shell:show-in-folder',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
   URL_RESOLVE_LOCAL: 'url:resolve-local',

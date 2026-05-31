@@ -4,7 +4,6 @@ import {
   openFileDialog,
   readFileContent,
   unwatchFile,
-  attachFileWatcher,
   setActiveFileWatch,
 } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
@@ -14,7 +13,6 @@ import {
   getAppState,
   saveAppState,
   setLastFolder,
-  pruneRecents,
 } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 import { isMac } from './platform'
@@ -47,7 +45,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const result = await openFileDialog(win)
     if (result) {
       trackRecentFile(() => win, result.path)
-      attachFileWatcher(() => win, result.path)
+      setActiveFileWatch(result.path)
     }
     return result
   })
@@ -59,7 +57,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       const resolved = validateMarkdownPath(path)
       const content = await readFileContent(resolved)
       trackRecentFile(() => win, resolved)
-      attachFileWatcher(() => win, resolved)
+      setActiveFileWatch(resolved)
       return content
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -106,18 +104,17 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     }
   })
 
-  ipcMain.handle('file:set-active-watch', (event, path: string | null) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
+  ipcMain.handle('file:set-active-watch', (_, path: string | null) => {
     if (path === null) {
-      setActiveFileWatch(() => win, null)
+      setActiveFileWatch(null)
       return
     }
     try {
       const resolved = validateMarkdownPath(path)
       registerAllowedFile(resolved)
-      setActiveFileWatch(() => win, resolved)
+      setActiveFileWatch(resolved)
     } catch {
-      setActiveFileWatch(() => win, null)
+      setActiveFileWatch(null)
     }
   })
 
@@ -188,19 +185,12 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   })
 
   ipcMain.handle('store:get-recents', () => getRecents())
-  ipcMain.handle('store:prune-recents', () => pruneRecents())
+
   ipcMain.handle('store:get-state', () => getAppState())
   ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) =>
     saveAppState(state as Parameters<typeof saveAppState>[0]),
   )
-  ipcMain.handle('store:add-recent', (_, filePath: string) => {
-    try {
-      const resolved = validateMarkdownPath(filePath)
-      trackRecentFile(getMainWindow, resolved)
-    } catch {
-      // Ignore invalid paths
-    }
-  })
+
 
   ipcMain.handle('theme:set', (_, theme: string) => {
     const valid: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']

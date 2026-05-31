@@ -85,10 +85,7 @@ export function getActiveWatchPath(): string | null {
   return activeWatchPath
 }
 
-export function setActiveFileWatch(
-  _getMainWindow: () => BrowserWindow | null,
-  filePath: string | null,
-): void {
+export function setActiveFileWatch(filePath: string | null): void {
   if (activeWatchPath && activeWatchPath !== filePath) {
     unwatchFile(activeWatchPath)
   }
@@ -111,6 +108,4 @@ export function setActiveFileWatch(
   })
 }
 
-export function attachFileWatcher(getMainWindow: () => BrowserWindow | null, path: string): void {
-  setActiveFileWatch(getMainWindow, path)
-}
+

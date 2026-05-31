@@ -18,7 +18,7 @@ import { createMenu } from './menu'
 import { initAutoUpdater } from './updater'
 import { addRecent, getWindowBounds, saveWindowBounds, getAppState } from './store'
 import { unwatchFolder } from './folder-service'
-import { readFileContent, unwatchAllFiles, attachFileWatcher } from './file-service'
+import { readFileContent, unwatchAllFiles, setActiveFileWatch } from './file-service'
 import { isMac, isLinux } from './platform'
 import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
 import { isMarkdownPath, validateMarkdownPath, validatePath } from './path-validation'
@@ -85,7 +85,7 @@ function openFile(filePath: string): void {
       if (isMac) {
         app.addRecentDocument(resolved)
       }
-      attachFileWatcher(() => null, resolved)
+      setActiveFileWatch(resolved)
       const allWindows = BrowserWindow.getAllWindows()
       for (const win of allWindows) {
         if (!win.isDestroyed()) {
