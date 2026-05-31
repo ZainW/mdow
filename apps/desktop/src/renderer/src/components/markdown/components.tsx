@@ -2,27 +2,16 @@ import { ComarkRenderer } from '@comark/react'
 import { Math as ComarkMath } from '@comark/react/components/Math'
 import { memo, useMemo, type AnchorHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes } from 'react'
 import type { RenderResult } from '../../lib/markdown'
-import { detectSep } from '../../lib/path-utils'
+import { resolveRelativePath } from '../../lib/path-utils'
 import { ALERT_TYPES, AlertCallout } from './AlertCallout'
 import { CodeBlock } from './CodeBlock'
 import { MermaidBlock } from './MermaidBlock'
 import { TableWrap } from './TableWrap'
 import { TaskCheckbox } from './TaskCheckbox'
 
-export function resolveRelativePath(href: string, docPath: string): string {
-  const sep = detectSep(docPath)
-  const dirParts = docPath.split(/[/\\]/).slice(0, -1)
-  for (const segment of href.split(/[/\\]/)) {
-    if (segment === '..') dirParts.pop()
-    else if (segment === '.' || segment === '') continue
-    else dirParts.push(segment)
-  }
-  return dirParts.join(sep)
-}
-
 function rewriteImageSrc(src: string, docPath: string): string {
   if (/^(https?:|data:|mdow-local:|blob:)/i.test(src)) return src
-  const resolved = resolveRelativePath(src, docPath)
+  const resolved = resolveRelativePath(docPath, src)
   return `mdow-local://local/${encodeURIComponent(resolved)}`
 }
 

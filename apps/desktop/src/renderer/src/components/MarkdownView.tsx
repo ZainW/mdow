@@ -11,12 +11,12 @@ import { renderMarkdown, type RenderResult } from '../lib/markdown'
 import { initMermaid, renderMermaidBlock, updateMermaidTheme } from '../lib/mermaid'
 import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useAppStore, type Tab } from '../store/app-store'
-import { isMarkdownPath } from '../lib/path-utils'
+import { isMarkdownPath, resolveRelativePath } from '../lib/path-utils'
 import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
-import { MarkdownContent, resolveRelativePath } from './markdown/components'
+import { MarkdownContent } from './markdown/components'
 
 interface MarkdownViewProps {
   tab: Tab
@@ -276,7 +276,7 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
         return
       }
 
-      const resolved = resolveRelativePath(href, tab.path)
+      const resolved = resolveRelativePath(tab.path, href)
       if (isMarkdownPath(resolved)) {
         event.preventDefault()
         window.dispatchEvent(
