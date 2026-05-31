@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import { createTabSlice, type TabSlice, type Tab, type FileError, type ErrorType } from './slices/tab-slice'
+import {
+  createTabSlice,
+  type TabSlice,
+  type Tab,
+  type FileError,
+  type ErrorType,
+} from './slices/tab-slice'
 import { createUiSlice, type UiSlice, type SidebarMode } from './slices/ui-slice'
 import { createFolderSlice, type FolderSlice } from './slices/folder-slice'
 import { createSettingsSlice, type SettingsSlice } from './slices/settings-slice'

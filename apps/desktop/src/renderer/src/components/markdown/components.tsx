@@ -1,6 +1,12 @@
 import { ComarkRenderer } from '@comark/react'
 import { Math as ComarkMath } from '@comark/react/components/Math'
-import { memo, useMemo, type AnchorHTMLAttributes, type HTMLAttributes, type ImgHTMLAttributes } from 'react'
+import {
+  memo,
+  useMemo,
+  type AnchorHTMLAttributes,
+  type HTMLAttributes,
+  type ImgHTMLAttributes,
+} from 'react'
 import type { RenderResult } from '../../lib/markdown'
 import { resolveRelativePath } from '../../lib/path-utils'
 import { ALERT_TYPES, AlertCallout } from './AlertCallout'
