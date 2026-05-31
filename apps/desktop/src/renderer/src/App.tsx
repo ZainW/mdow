@@ -12,6 +12,7 @@ import { MarkdownView } from './components/MarkdownView'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
@@ -120,27 +121,29 @@ function MainApp(): React.JSX.Element {
   }
 
   return (
-    <SidebarProvider>
-      <div
-        className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
-        onDrop={(e) => void handleDrop(e)}
-        onDragOver={(e) => e.preventDefault()}
-      >
-        <TitlebarInset />
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar />
-          <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
-            <TabBar />
-            {activeTab && <DocumentBreadcrumb tab={activeTab} />}
-            <MainContent activeTab={activeTab} />
-            <UpdateBanner />
-          </main>
-          <CommandPalette />
-          <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
-          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+    <AppErrorBoundary>
+      <SidebarProvider>
+        <div
+          className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
+          onDrop={(e) => void handleDrop(e)}
+          onDragOver={(e) => e.preventDefault()}
+        >
+          <TitlebarInset />
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <Sidebar />
+            <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
+              <TabBar />
+              {activeTab && <DocumentBreadcrumb tab={activeTab} />}
+              <MainContent activeTab={activeTab} />
+              <UpdateBanner />
+            </main>
+            <CommandPalette />
+            <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
+            <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </AppErrorBoundary>
   )
 }
 
