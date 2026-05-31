@@ -27,10 +27,7 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-background p-12 text-center">
-          <TriangleAlert
-            className="size-12 text-destructive"
-            strokeWidth={iconStroke.default}
-          />
+          <TriangleAlert className="size-12 text-destructive" strokeWidth={iconStroke.default} />
           <div>
             <h1 className="text-xl font-semibold">Something went wrong</h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -42,11 +39,7 @@ export class AppErrorBoundary extends Component<Props, State> {
               </p>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.location.reload()}
-          >
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
             <RotateCcw className="mr-2 size-3.5" strokeWidth={iconStroke.default} />
             Reload application
           </Button>

@@ -1,9 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { clearMarkdownRenderCache, initMarkdown, renderMarkdown } from './markdown'
-
-beforeEach(() => {
-  clearMarkdownRenderCache()
-})
+import { describe, expect, it } from 'vitest'
+import { initMarkdown, renderMarkdown } from './markdown'
 
 describe('renderMarkdown', () => {
   it('extracts headings h1 through h6 with slug ids', async () => {

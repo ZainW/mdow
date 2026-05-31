@@ -145,12 +145,6 @@ export interface RenderResult {
   frontmatter: Record<string, unknown>
 }
 
-export function getCachedMarkdownRender(_content: string): RenderResult | undefined {
-  return undefined
-}
-
-export function clearMarkdownRenderCache(): void {}
-
 function slugifyHeading(text: string): string {
   return text
     .toLowerCase()
