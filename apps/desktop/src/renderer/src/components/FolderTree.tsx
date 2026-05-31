@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from 'react'
 import { FileTree as FileTreeModel } from '@pierre/trees'
 import type { FileTreeOptions } from '@pierre/trees'
 import { FileTree as FileTreeView } from '@pierre/trees/react'
+import type { TreeNode } from '../../../shared/types'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename, detectSep } from '../lib/path-utils'
@@ -12,13 +13,6 @@ import { Loader2 } from 'lucide-react'
 import { cn, isMac } from '../lib/utils'
 
 type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
-
-interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
-}
 
 function normalizeRoot(root: string): string {
   return root.replace(/\\/g, '/').replace(/\/+$/, '')

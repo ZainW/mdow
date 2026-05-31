@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { TreeNode } from '../../../shared/types'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
@@ -15,13 +16,6 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
 import { Kbd } from './ui/kbd'
 import { FileText } from 'lucide-react'
-
-interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
-}
 
 function flattenTree(nodes: TreeNode[], result: { path: string; name: string }[] = []) {
   for (const node of nodes) {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { DocHeading, RenderResult } from '../lib/markdown'
+import type { TreeNode } from '../../../shared/types'
 
 export interface Tab {
   id: string
@@ -7,13 +8,6 @@ export interface Tab {
   content: string
   scrollPosition: number
   error?: FileError | null
-}
-
-interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
 }
 
 export type ErrorType = 'not-found' | 'permission-denied' | 'deleted' | 'read-error'

@@ -3,18 +3,7 @@ import type { Dirent } from 'node:fs'
 import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { watch, type FSWatcher } from 'chokidar'
-
-export interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
-}
-
-export interface ScanResult {
-  tree: TreeNode[]
-  truncated: boolean
-}
+import type { TreeNode, ScanResult } from '../shared/types'
 
 interface FolderWatchState {
   watcher: FSWatcher

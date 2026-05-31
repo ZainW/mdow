@@ -1,18 +1,7 @@
 import { useCallback, useEffect } from 'react'
+import type { ScanResult } from '../../../shared/types'
 import { useIpcEvent } from './useIpcEvent'
 import { useAppStore } from '../store/app-store'
-
-interface TreeNode {
-  name: string
-  path: string
-  isDirectory: boolean
-  children?: TreeNode[]
-}
-
-interface ScanResult {
-  tree: TreeNode[]
-  truncated: boolean
-}
 
 export function useFolderTree(folderPath: string | null) {
   const setFolderTree = useAppStore((s) => s.setFolderTree)
