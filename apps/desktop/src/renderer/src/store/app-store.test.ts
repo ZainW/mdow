@@ -50,6 +50,19 @@ describe('app-store', () => {
       expect(state.activeTabId).toBe(state.tabs[0].id)
     })
 
+    it('clears render cache when reopening an existing tab with new content', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v1' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setRenderCache(id, {
+        tree: {} as RenderResult['tree'],
+        mermaidBlocks: [],
+        headings: [],
+        frontmatter: {},
+      })
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v2' })
+      expect(useAppStore.getState().renderCache.has(id)).toBe(false)
+    })
+
     it('inserts new tab after active tab', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
       useAppStore.getState().openTab({ path: '/b.md', content: 'b' })

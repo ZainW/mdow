@@ -197,6 +197,17 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
   const watchState: FolderWatchState = { watcher, debounceTimer: null }
   let pendingChanges: Array<{ type: 'add' | 'unlink' | 'addDir' | 'unlinkDir'; path: string }> = []
 
+  const rescanFolder = () => {
+    void scanFolder(folderPath)
+      .then((result) => {
+        folderTreeCache.set(folderPath, result)
+        onChange(result)
+      })
+      .catch(() => {
+        // Folder might have been deleted.
+      })
+  }
+
   const flushChanges = () => {
     const changes = pendingChanges
     pendingChanges = []
@@ -204,13 +215,8 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
     const cached = folderTreeCache.get(folderPath)
     const hasStructuralChange = changes.some((c) => c.type === 'addDir' || c.type === 'unlinkDir')
 
-    if (!cached || hasStructuralChange) {
-      void scanFolder(folderPath)
-        .then((result) => {
-          folderTreeCache.set(folderPath, result)
-          onChange(result)
-        })
-        .catch(() => {})
+    if (!cached || cached.truncated || hasStructuralChange) {
+      rescanFolder()
       return
     }
 
@@ -222,15 +228,17 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
         const fileName = parts.pop()!
         const parentPath = parts.join(sep)
         if (isMdFile(fileName)) {
-          if (
-            insertFileNode(
-              cached.tree,
-              change.path,
-              fileName,
-              parentPath === folderPath ? '' : parentPath,
-            )
-          ) {
+          const inserted = insertFileNode(
+            cached.tree,
+            change.path,
+            fileName,
+            parentPath === folderPath ? '' : parentPath,
+          )
+          if (inserted) {
             modified = true
+          } else {
+            rescanFolder()
+            return
           }
         }
       } else if (change.type === 'unlink') {

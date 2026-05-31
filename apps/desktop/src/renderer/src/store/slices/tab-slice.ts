@@ -65,6 +65,7 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       if (existing) {
         return {
           activeTabId: existing.id,
+          renderCache: withoutRenderCache(state.renderCache, [existing.id]),
           tabs: state.tabs.map((t) =>
             t.id === existing.id ? { ...t, content: file.content, error: null } : t,
           ),
