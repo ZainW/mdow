@@ -9,21 +9,26 @@ function CodeMockup() {
       title="example.ts"
       ariaLabel="Illustration of TypeScript syntax highlighting in a code block"
     >
-      <div className="px-5 py-4 font-mono text-xs leading-relaxed">
+      <div className="px-5 py-5 font-mono text-[13px] leading-[1.7]">
         <div>
-          <span className="text-[oklch(0.55_0.17_260)]">import</span>{' '}
-          <span className="text-foreground">{'{ render }'}</span>{' '}
-          <span className="text-[oklch(0.55_0.17_260)]">from</span>{' '}
-          <span className="text-[oklch(0.6_0.15_160)]">'mdow'</span>
+          <span className="text-primary">import</span>
+          <span className="text-foreground">{' { render } '}</span>
+          <span className="text-primary">from</span>
+          <span className="text-[oklch(0.65_0.14_160)]"> 'mdow'</span>
         </div>
-        <div className="mt-2">
-          <span className="text-[oklch(0.55_0.17_260)]">const</span>{' '}
-          <span className="text-foreground">html</span>{' '}
-          <span className="text-muted-foreground">=</span>{' '}
-          <span className="text-[oklch(0.62_0.16_55)]">render</span>(
-          <span className="text-[oklch(0.6_0.15_160)]">'# Hello'</span>)
+        <div className="mt-1.5">
+          <span className="text-primary">const</span>
+          <span className="text-foreground"> html </span>
+          <span className="text-muted-foreground">= </span>
+          <span className="text-[oklch(0.6_0.13_242)]">render</span>
+          <span className="text-muted-foreground">(</span>
+          <span className="text-[oklch(0.65_0.14_160)]">'# Hello'</span>
+          <span className="text-muted-foreground">)</span>
         </div>
-        <div className="mt-2 text-muted-foreground">// Editor-quality highlighting via Shiki</div>
+        <div className="mt-3 text-muted-foreground/70">
+          <span className="text-muted-foreground/50">{'// '}</span>
+          Editor-quality highlighting via Shiki
+        </div>
       </div>
     </BrowserFrame>
   )
@@ -35,17 +40,35 @@ function MermaidMockup() {
       title="diagram.md"
       ariaLabel="Illustration of an inline Mermaid flowchart with Idea, Draft, and Publish steps"
     >
-      <div className="px-6 py-6">
-        <div className="flex items-center justify-center gap-3 text-xs">
-          <div className="rounded-md border border-border bg-surface px-3 py-2 shadow-soft">
+      <div className="px-6 py-8">
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <div className="rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
             Idea
           </div>
-          <div className="text-muted-foreground">→</div>
-          <div className="rounded-md border border-border bg-surface px-3 py-2 shadow-soft">
+          <svg
+            width="24"
+            height="12"
+            viewBox="0 0 24 12"
+            fill="none"
+            className="text-muted-foreground/60"
+            aria-hidden
+          >
+            <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          <div className="rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
             Draft
           </div>
-          <div className="text-muted-foreground">→</div>
-          <div className="rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-foreground shadow-soft">
+          <svg
+            width="24"
+            height="12"
+            viewBox="0 0 24 12"
+            fill="none"
+            className="text-muted-foreground/60"
+            aria-hidden
+          >
+            <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          <div className="rounded-lg border border-primary/30 bg-primary/8 px-4 py-2.5 font-medium text-foreground shadow-soft ring-1 ring-primary/10">
             Publish
           </div>
         </div>
@@ -60,13 +83,9 @@ function ThemeMockup() {
       <Screenshot
         name="reading-light"
         alt="Mdow in light mode"
-        className="rounded-lg shadow-soft ring-1 ring-border/40"
+        className="rounded-lg shadow-card"
       />
-      <Screenshot
-        name="reading-dark"
-        alt="Mdow in dark mode"
-        className="rounded-lg shadow-soft ring-1 ring-border/40"
-      />
+      <Screenshot name="reading-dark" alt="Mdow in dark mode" className="rounded-lg shadow-card" />
     </div>
   )
 }
@@ -76,7 +95,7 @@ function DropFileMockup() {
     <Screenshot
       name="empty-light"
       alt="Mdow welcome screen with open file and open folder actions"
-      className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
+      className="rounded-xl shadow-elevated"
     />
   )
 }
@@ -86,7 +105,7 @@ function SidebarMockup() {
     <Screenshot
       name="sidebar-light"
       alt="Mdow folder sidebar with a file tree and tabbed documents"
-      className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
+      className="rounded-xl shadow-elevated"
     />
   )
 }
@@ -124,7 +143,7 @@ export function LandingFeatures() {
       </FeatureRow>
       <FeatureRow
         title="Light and dark, just right"
-        description="Warm stone tones in light mode, pure neutrals in dark. Follows your system, switches instantly, never fights your eyes."
+        description="Clean white in light mode, cool blue-gray in dark. Follows your system, switches instantly, never fights your eyes."
         align="left"
       >
         <ThemeMockup />

@@ -5,7 +5,6 @@ interface BrowserFrameProps {
   children: ReactNode
   title?: string
   className?: string
-  /** Accessible label for decorative code/diagram illustrations */
   ariaLabel?: string
 }
 
@@ -14,10 +13,7 @@ export function BrowserFrame({ children, title, className, ariaLabel }: BrowserF
     <div
       role={ariaLabel ? 'img' : undefined}
       aria-label={ariaLabel}
-      className={cn(
-        'illustration overflow-hidden rounded-xl border border-border-subtle bg-card shadow-soft-lg',
-        className,
-      )}
+      className={cn('illustration overflow-hidden rounded-xl bg-card shadow-elevated', className)}
     >
       <div className="flex items-center gap-2 border-b border-border-subtle bg-surface px-4 py-2.5">
         <div className="flex gap-1.5" aria-hidden>
@@ -25,7 +21,9 @@ export function BrowserFrame({ children, title, className, ariaLabel }: BrowserF
           <span className="h-3 w-3 rounded-full bg-[oklch(0.85_0.16_85)]" />
           <span className="h-3 w-3 rounded-full bg-[oklch(0.78_0.16_150)]" />
         </div>
-        {title && <span className="ml-3 text-xs text-muted-foreground select-none">{title}</span>}
+        {title && (
+          <span className="ml-3 select-none font-mono text-xs text-muted-foreground">{title}</span>
+        )}
       </div>
       <div className="bg-card">{children}</div>
     </div>

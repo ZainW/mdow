@@ -1,19 +1,8 @@
 import { ipcMain, shell, BrowserWindow, nativeTheme, app } from 'electron'
 import { stat } from 'fs/promises'
-import {
-  openFileDialog,
-  readFileContent,
-  unwatchFile,
-  setActiveFileWatch,
-} from './file-service'
+import { openFileDialog, readFileContent, unwatchFile, setActiveFileWatch } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
-import {
-  getRecents,
-  addRecent,
-  getAppState,
-  saveAppState,
-  setLastFolder,
-} from './store'
+import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 import { isMac } from './platform'
 import { applyWindowChrome } from './window-chrome'
@@ -190,7 +179,6 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) =>
     saveAppState(state as Parameters<typeof saveAppState>[0]),
   )
-
 
   ipcMain.handle('theme:set', (_, theme: string) => {
     const valid: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']

@@ -10,7 +10,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground"
+      className="rounded-md p-2 text-muted-foreground transition-colors duration-150 ease hover:text-foreground"
       aria-label="Toggle theme"
     >
       <svg

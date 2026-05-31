@@ -12,13 +12,13 @@ export function FeatureRow({ title, description, align, children }: FeatureRowPr
   return (
     <div
       className={cn(
-        'flex flex-col gap-10 md:flex-row md:items-center md:gap-16',
+        'flex flex-col gap-8 md:flex-row md:items-center md:gap-14',
         align === 'right' && 'md:flex-row-reverse',
       )}
     >
       <div className="flex-1">
-        <h3 className="text-2xl font-bold tracking-tight sm:text-3xl text-balance">{title}</h3>
-        <p className="mt-3 text-muted-foreground text-balance">{description}</p>
+        <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl text-balance">{title}</h3>
+        <p className="mt-3 leading-relaxed text-muted-foreground text-balance">{description}</p>
       </div>
       <div className="flex-1">{children}</div>
     </div>

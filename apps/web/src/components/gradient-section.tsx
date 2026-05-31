@@ -18,8 +18,8 @@ export function GradientSection({
     <section
       className={cn(
         'relative w-full',
-        variant === 'gradient' && 'bg-warm-gradient',
-        variant === 'surface' && 'bg-section-warm',
+        variant === 'gradient' && 'bg-hero-gradient',
+        variant === 'surface' && 'bg-section-alt',
         className,
       )}
     >

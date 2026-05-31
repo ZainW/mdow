@@ -12,19 +12,19 @@ export function LandingProductPreview() {
         at any time of day — with tabs, outline navigation, and typography tuned for reading.
       </p>
       <div className="relative mx-auto mt-14 max-w-5xl">
-        <div className="grid gap-6 md:grid-cols-2 md:gap-4">
-          <div className="md:translate-y-4">
+        <div className="grid gap-5 md:grid-cols-2">
+          <div className="overflow-hidden rounded-xl shadow-elevated">
             <Screenshot
               name="reading-light"
-              alt="Mdow in light mode with warm stone tones"
-              className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
+              alt="Mdow in light mode with clean white background"
+              className="h-auto w-full"
             />
           </div>
-          <div className="md:-translate-y-4">
+          <div className="overflow-hidden rounded-xl shadow-elevated md:mt-8">
             <Screenshot
               name="sidebar-dark"
               alt="Mdow in dark mode with folder sidebar and tabbed documents"
-              className="rounded-xl shadow-soft-lg ring-1 ring-border/50"
+              className="h-auto w-full"
             />
           </div>
         </div>

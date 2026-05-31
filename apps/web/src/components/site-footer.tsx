@@ -1,34 +1,49 @@
 import { Link } from '@tanstack/react-router'
+import { Logo } from './logo'
 
 const GITHUB_URL = 'https://github.com/ZainW/mdow'
 
 export function SiteFooter() {
   return (
-    <footer className="border-t py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-6 text-sm text-muted-foreground md:flex-row md:justify-between">
-        <div className="text-center md:text-left">
-          <p>&copy; {new Date().getFullYear()} Mdow</p>
-          <p className="mt-1 text-xs">A quiet place to read markdown.</p>
+    <footer className="border-t py-12 pb-[max(3rem,env(safe-area-inset-bottom))]">
+      <div className="mx-auto max-w-6xl px-6">
+        <div className="flex flex-col items-center gap-8 md:flex-row md:justify-between">
+          <div className="flex items-center gap-3">
+            <Logo className="h-5 w-5 opacity-60" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">Mdow</p>
+              <p className="text-xs text-muted-foreground">A quiet place to read markdown.</p>
+            </div>
+          </div>
+          <nav className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-sm text-muted-foreground">
+            <Link to="/docs" className="transition-colors duration-150 ease hover:text-foreground">
+              Docs
+            </Link>
+            <Link
+              to="/changelog"
+              className="transition-colors duration-150 ease hover:text-foreground"
+            >
+              Changelog
+            </Link>
+            <Link
+              to="/download"
+              className="transition-colors duration-150 ease hover:text-foreground"
+            >
+              Download
+            </Link>
+            <a
+              href={GITHUB_URL}
+              className="transition-colors duration-150 ease hover:text-foreground"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
+          </nav>
         </div>
-        <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-          <Link to="/docs" className="transition-colors hover:text-foreground">
-            Docs
-          </Link>
-          <Link to="/changelog" className="transition-colors hover:text-foreground">
-            Changelog
-          </Link>
-          <Link to="/download" className="transition-colors hover:text-foreground">
-            Download
-          </Link>
-          <a
-            href={GITHUB_URL}
-            className="transition-colors hover:text-foreground"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GitHub
-          </a>
-        </nav>
+        <div className="mt-8 border-t border-border-subtle pt-6 text-center text-xs text-muted-foreground">
+          &copy; {new Date().getFullYear()} Mdow · MIT License
+        </div>
       </div>
     </footer>
   )

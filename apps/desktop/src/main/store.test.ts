@@ -107,7 +107,6 @@ describe('store', () => {
       addRecent('/missing.md')
       expect(getRecents()).toEqual(['/exists.md'])
     })
-
   })
 
   describe('appState', () => {

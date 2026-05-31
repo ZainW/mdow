@@ -24,7 +24,7 @@ export function DownloadBar({ platform, release, downloadUrl }: DownloadBarProps
       aria-label="Download prompt"
       aria-hidden={!visible}
       className={cn(
-        'fixed inset-x-0 bottom-0 z-modal border-t bg-background/95 backdrop-blur-sm',
+        'fixed inset-x-0 bottom-0 z-modal border-t border-border-subtle bg-background/95 backdrop-blur-md',
         'pb-[env(safe-area-inset-bottom)]',
         'transition-[transform,opacity] duration-200 ease-out download-bar-motion',
         visible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0',

@@ -14,13 +14,15 @@ interface LandingCtaProps {
 
 export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
   return (
-    <GradientSection variant="surface" innerClassName="text-center">
-      <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl text-balance">
-        Ready to read markdown beautifully?
-      </h2>
-      <p className="mx-auto mt-4 max-w-xl text-muted-foreground text-balance">
-        Download mdow and turn any folder of markdown into a calm reading experience.
-      </p>
+    <GradientSection innerClassName="text-center py-20 md:py-28">
+      <div className="mx-auto max-w-2xl">
+        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-balance">
+          Ready to read markdown beautifully?
+        </h2>
+        <p className="mx-auto mt-4 max-w-xl text-muted-foreground text-balance leading-relaxed">
+          Download mdow and turn any folder of markdown into a calm reading experience.
+        </p>
+      </div>
       <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
         {downloadUrl ? (
           <DownloadButton href={downloadUrl} size="lg">
@@ -40,7 +42,7 @@ export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
           View on GitHub
         </a>
       </div>
-      <p className="mt-4 text-xs text-muted-foreground">
+      <p className="mt-5 text-xs text-muted-foreground">
         Available for macOS, Windows, and Linux · MIT licensed
       </p>
     </GradientSection>

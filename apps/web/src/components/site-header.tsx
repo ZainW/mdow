@@ -7,32 +7,37 @@ import { cn } from '~/lib/utils'
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-header border-b bg-background/80 backdrop-blur-sm pt-[env(safe-area-inset-top)]">
+    <header
+      className={cn(
+        'sticky top-0 z-header pt-[env(safe-area-inset-top)]',
+        'border-b border-border-subtle bg-background/80 backdrop-blur-md',
+      )}
+    >
       <div className="relative mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <div className="flex items-center gap-4 md:gap-8">
           <SiteMobileNav />
-          <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <Link to="/" className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
             <Logo className="h-6 w-6" />
             Mdow
           </Link>
           <nav className="hidden items-center gap-6 text-sm md:flex" aria-label="Main">
             <Link
               to="/docs"
-              className="text-muted-foreground transition-[color] duration-150 ease hover:text-foreground"
+              className="text-muted-foreground transition-colors duration-150 ease hover:text-foreground"
               activeProps={{ className: 'text-foreground' }}
             >
               Docs
             </Link>
             <Link
               to="/changelog"
-              className="text-muted-foreground transition-[color] duration-150 ease hover:text-foreground"
+              className="text-muted-foreground transition-colors duration-150 ease hover:text-foreground"
               activeProps={{ className: 'text-foreground' }}
             >
               Changelog
             </Link>
             <Link
               to="/download"
-              className="text-muted-foreground transition-[color] duration-150 ease hover:text-foreground"
+              className="text-muted-foreground transition-colors duration-150 ease hover:text-foreground"
               activeProps={{ className: 'text-foreground' }}
             >
               Download

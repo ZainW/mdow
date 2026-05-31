@@ -107,5 +107,3 @@ export function setActiveFileWatch(filePath: string | null): void {
     }
   })
 }
-
-
