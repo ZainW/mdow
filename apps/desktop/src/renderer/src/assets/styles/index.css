@@ -125,15 +125,6 @@
     --button-sm-icon-size: 0.75rem;
     --button-lg-icon-size: 1rem;
 
-    --rail-width: 2.25rem;
-    --rail-button-size: 1.75rem;
-    --rail-gap: 0.125rem;
-    --rail-pad-y: 0.375rem;
-    --rail-step: calc(var(--rail-button-size) + var(--rail-gap));
-    --rail-indicator-offset: 0.375rem;
-    --rail-indicator-height: 1rem;
-    --rail-icon-size: 1rem;
-
     --sidebar-drawer-width: 15.25rem;
     --sidebar-title-size: 0.6875rem;
     --sidebar-text-size: 0.75rem;
@@ -166,15 +157,6 @@
     --button-sm-icon-size: 0.875rem;
     --button-lg-icon-size: 1.125rem;
 
-    --rail-width: 2.5rem;
-    --rail-button-size: 2rem;
-    --rail-gap: 0.1875rem;
-    --rail-pad-y: 0.5rem;
-    --rail-step: calc(var(--rail-button-size) + var(--rail-gap));
-    --rail-indicator-offset: 0.4375rem;
-    --rail-indicator-height: 1.125rem;
-    --rail-icon-size: 1.0625rem;
-
     --sidebar-drawer-width: 16.5rem;
     --sidebar-title-size: 0.75rem;
     --sidebar-text-size: 0.8125rem;
@@ -206,15 +188,6 @@
     --button-xs-icon-size: 0.875rem;
     --button-sm-icon-size: 1rem;
     --button-lg-icon-size: 1.25rem;
-
-    --rail-width: 2.75rem;
-    --rail-button-size: 2.25rem;
-    --rail-gap: 0.25rem;
-    --rail-pad-y: 0.625rem;
-    --rail-step: calc(var(--rail-button-size) + var(--rail-gap));
-    --rail-indicator-offset: 0.5rem;
-    --rail-indicator-height: 1.25rem;
-    --rail-icon-size: 1.125rem;
 
     --sidebar-drawer-width: 17.5rem;
     --sidebar-title-size: 0.8125rem;
@@ -352,30 +325,12 @@
 
 /* Active file — subtle left accent bar + distinct bg.
    No font-weight change: it would shift neighbors when selecting. */
-.rail-column {
-  width: var(--rail-width);
-  gap: var(--rail-gap);
-  padding-block: var(--rail-pad-y);
-}
-
-.rail-mode-group {
-  gap: var(--rail-gap);
-}
-
 .sidebar-drawer {
   transition: width 180ms var(--ease-out-ui);
 }
 
 .sidebar-drawer-header {
   padding: 0.5rem 0.75rem;
-}
-
-.sidebar-drawer-title-row {
-  height: var(--rail-button-size);
-}
-
-.sidebar-drawer-title {
-  font-size: var(--sidebar-title-size);
 }
 
 .outline-link {
@@ -422,33 +377,6 @@
   [data-slot='sidebar-menu-sub-button'] {
     transition-duration: 0ms !important;
   }
-}
-
-/* ── Sidebar rail ────────────────────────────────────────── */
-
-/* Icon button — color transition + press feedback */
-.rail-icon-btn {
-  transition:
-    color 120ms ease-out,
-    background-color 120ms ease-out,
-    transform 120ms var(--ease-out-ui);
-}
-.rail-icon-btn:active {
-  transform: scale(0.92);
-}
-
-/* Drop the button's built-in focus-visible border in the rail — the
-   box-shadow ring is enough. Stacked indicators (border + ring) made the
-   tiny 28px icon feel boxy in focus state. */
-.rail-icon-btn:focus-visible {
-  border-color: transparent !important;
-}
-
-/* Sliding active indicator — single element that moves between mode positions */
-.rail-indicator {
-  transition:
-    transform 220ms var(--ease-out-ui),
-    opacity 160ms ease-out;
 }
 
 /* Outline panel — animated mode transition + per-link styling */
@@ -506,8 +434,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rail-icon-btn,
-  .rail-indicator,
   .sidebar-drawer,
   .outline-link,
   .drawer-mode,

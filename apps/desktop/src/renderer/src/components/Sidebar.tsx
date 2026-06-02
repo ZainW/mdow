@@ -1,5 +1,4 @@
 import { lazy, Suspense, useCallback } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore, type SidebarMode } from '../store/app-store'
 import { RecentsList } from './RecentsList'
 import { Button } from './ui/button'
@@ -10,159 +9,142 @@ import {
   SidebarGroup,
   SidebarGroupContent,
 } from './ui/sidebar'
-import { Clock, File, Folder, FolderOpen, List, Search, Settings } from 'lucide-react'
+import { Clock, Folder, FolderOpen, List } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { isMac } from '../lib/utils'
 
 const MODES: SidebarMode[] = ['recents', 'folder', 'outline']
+const MODE_CONFIG: Record<SidebarMode, { label: string; Icon: typeof Clock }> = {
+  recents: { label: 'Recents', Icon: Clock },
+  folder: { label: 'Folder', Icon: Folder },
+  outline: { label: 'Outline', Icon: List },
+}
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 const FolderTree = lazy(() => import('./FolderTree').then((mod) => ({ default: mod.FolderTree })))
-
-function indicatorY(modeIndex: number): string {
-  const steps = Array.from({ length: modeIndex }, () => 'var(--rail-step)').join(' + ')
-  return `calc(var(--rail-pad-y) + var(--rail-indicator-offset)${steps ? ` + ${steps}` : ''})`
-}
+type SidebarModeRoving = ReturnType<typeof useRovingFocus<HTMLDivElement>>
 
 export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
-  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen)
-  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
-  const openTab = useAppStore((s) => s.openTab)
-  const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const docHeadings = useAppStore((s) => s.docHeadings)
   const activeHeadingId = useAppStore((s) => s.activeHeadingId)
   const hasOpenTab = useAppStore((s) => s.tabs.length > 0)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const mode = useAppStore((s) => s.sidebarMode)
   const setSidebarMode = useAppStore((s) => s.setSidebarMode)
-  const queryClient = useQueryClient()
-
-  const handleOpenFile = useCallback(async () => {
-    const result = await window.api.openFileDialog()
-    if (result) {
-      openTab(result)
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
-    }
-  }, [openTab, queryClient])
-
-  const handleOpenFolder = useCallback(async () => {
-    const result = await window.api.openFolderDialog()
-    if (result) {
-      setOpenFolder(result.path, result.tree, result.truncated)
-    }
-  }, [setOpenFolder])
-
-  const drawerTitle = mode === 'recents' ? 'Recents' : mode === 'folder' ? 'Folder' : 'Outline'
-  const modeIndex = MODES.indexOf(mode)
-  const railRoving = useRovingFocus({ orientation: 'vertical' })
+  const modeRoving = useRovingFocus({ orientation: 'horizontal' })
 
   return (
-    <div className="flex h-full shrink-0 border-r border-border-subtle">
-      <div className="rail-column relative flex shrink-0 flex-col items-center border-r border-border-subtle bg-sidebar/40">
-        <span
-          aria-hidden
-          className="rail-indicator pointer-events-none absolute left-0 w-0.5 rounded-r bg-primary"
-          style={{
-            height: 'var(--rail-indicator-height)',
-            top: 0,
-            transform: `translateY(${indicatorY(modeIndex)})`,
-          }}
-        />
-        {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself */}
-        <div
-          ref={railRoving.containerRef}
-          role="radiogroup"
-          aria-label="Sidebar mode"
-          className="rail-mode-group flex flex-col"
-          onKeyDown={railRoving.onKeyDown}
-        >
-          <RailModeIcon
-            checked={mode === 'recents'}
-            onSelect={() => setSidebarMode('recents')}
-            label="Recents"
-          >
-            <Clock />
-          </RailModeIcon>
-          <RailModeIcon
-            checked={mode === 'folder'}
-            onSelect={() => setSidebarMode('folder')}
-            label="Folder"
-          >
-            <Folder />
-          </RailModeIcon>
-          <RailModeIcon
-            checked={mode === 'outline'}
-            onSelect={() => setSidebarMode('outline')}
-            label="Outline"
-          >
-            <List />
-          </RailModeIcon>
-        </div>
-        <RailButton onClick={() => setCommandPaletteOpen(true)} label="Quick Open">
-          <Search />
-        </RailButton>
-        <div className="flex-1" />
-        <div aria-label="Workspace actions" className="contents">
-          <RailButton onClick={() => void handleOpenFile()} label="Open File">
-            <File />
-          </RailButton>
-          <RailButton onClick={() => void handleOpenFolder()} label="Open Folder">
-            <FolderOpen />
-          </RailButton>
-          <RailButton onClick={() => setSettingsOpen(true)} label="Settings">
-            <Settings />
-          </RailButton>
-        </div>
-      </div>
-
-      <div
-        className="sidebar-drawer shrink-0 overflow-hidden"
-        style={{
-          width: sidebarOpen ? 'var(--sidebar-drawer-width)' : 0,
-        }}
-        aria-hidden={!sidebarOpen}
-        inert={!sidebarOpen ? true : undefined}
+    <aside
+      aria-label="Sidebar"
+      className="sidebar-drawer shrink-0 overflow-hidden border-r border-border-subtle"
+      style={{
+        width: sidebarOpen ? 'var(--sidebar-drawer-width)' : 0,
+      }}
+      aria-hidden={!sidebarOpen}
+      inert={!sidebarOpen ? true : undefined}
+    >
+      <ShadcnSidebar
+        collapsible="none"
+        className="h-full border-none"
+        style={{ width: 'var(--sidebar-drawer-width)' }}
       >
-        <ShadcnSidebar
-          collapsible="none"
-          className="h-full border-none"
-          style={{ width: 'var(--sidebar-drawer-width)' }}
-        >
-          <SidebarHeader className="sidebar-drawer-header">
-            <div className="sidebar-drawer-title-row flex items-center">
-              <span className="sidebar-drawer-title font-medium uppercase tracking-wider text-muted-foreground">
-                {drawerTitle}
-              </span>
-            </div>
-          </SidebarHeader>
-          <SidebarContent key={mode} className="drawer-mode">
-            {mode === 'recents' && <RecentsList />}
-            {mode === 'folder' && openFolderPath && (
-              <Suspense fallback={<FolderTreeSkeleton />}>
-                <FolderTree />
-              </Suspense>
-            )}
-            {mode === 'folder' && !openFolderPath && (
-              <EmptyState
-                size="sm"
-                icon={FolderOpen}
-                title="No folder open"
-                hint={`Click Open Folder below, or drag a folder onto this window. Right-click a file to ${revealLabel.toLowerCase()}.`}
-              />
-            )}
-            {mode === 'outline' && (
-              <OutlineList
-                headings={docHeadings}
-                activeId={activeHeadingId}
-                hasActiveDoc={hasOpenTab}
-              />
-            )}
-          </SidebarContent>
-        </ShadcnSidebar>
-      </div>
+        <SidebarHeader className="sidebar-drawer-header border-b border-border-subtle">
+          <SidebarModeTabs mode={mode} onModeChange={setSidebarMode} roving={modeRoving} />
+        </SidebarHeader>
+        <SidebarContent key={mode} className="drawer-mode">
+          {mode === 'recents' && <RecentsList />}
+          {mode === 'folder' && openFolderPath && (
+            <Suspense fallback={<FolderTreeSkeleton />}>
+              <FolderTree />
+            </Suspense>
+          )}
+          {mode === 'folder' && !openFolderPath && (
+            <EmptyState
+              size="sm"
+              icon={FolderOpen}
+              title="No folder open"
+              hint={`Use the app menu, keyboard shortcut, or drag a folder onto this window. Right-click a file to ${revealLabel.toLowerCase()}.`}
+            />
+          )}
+          {mode === 'outline' && (
+            <OutlineList
+              headings={docHeadings}
+              activeId={activeHeadingId}
+              hasActiveDoc={hasOpenTab}
+            />
+          )}
+        </SidebarContent>
+      </ShadcnSidebar>
+    </aside>
+  )
+}
+
+function SidebarModeTabs({
+  mode,
+  onModeChange,
+  roving,
+}: {
+  mode: SidebarMode
+  onModeChange: (mode: SidebarMode) => void
+  roving: SidebarModeRoving
+}) {
+  return (
+    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
+    <div
+      ref={roving.containerRef}
+      role="radiogroup"
+      aria-label="Sidebar mode"
+      className="grid grid-cols-3 gap-1"
+    >
+      {MODES.map((item) => (
+        <SidebarModeTab
+          key={item}
+          mode={item}
+          checked={mode === item}
+          onSelect={() => onModeChange(item)}
+          onKeyDown={roving.onKeyDown}
+        />
+      ))}
     </div>
+  )
+}
+
+function SidebarModeTab({
+  mode,
+  checked,
+  onSelect,
+  onKeyDown,
+}: {
+  mode: SidebarMode
+  checked: boolean
+  onSelect: () => void
+  onKeyDown: React.KeyboardEventHandler<HTMLElement>
+}) {
+  const { label, Icon } = MODE_CONFIG[mode]
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom radio buttons preserve the compact tab layout while exposing radiogroup semantics
+      role="radio"
+      tabIndex={rovingTabIndex(checked)}
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      className={`h-7 min-w-0 justify-center gap-1.5 px-1.5 text-xs ${
+        checked
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
+      }`}
+      onClick={onSelect}
+      onKeyDown={onKeyDown}
+    >
+      <Icon className="size-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+    </Button>
   )
 }
 
@@ -174,64 +156,6 @@ function FolderTreeSkeleton() {
       <div className="ml-3 h-3 w-28 rounded bg-muted/70" />
       <div className="ml-3 h-3 w-32 rounded bg-muted/70" />
     </div>
-  )
-}
-
-function railClasses(active: boolean): string {
-  return `rail-icon-btn size-(--rail-button-size) hover:bg-transparent ${
-    active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
-  }`
-}
-
-function RailModeIcon({
-  checked,
-  onSelect,
-  label,
-  children,
-}: {
-  checked: boolean
-  onSelect: () => void
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- the rail is a custom 36px-wide column of icon toggles; native radio inputs would break the layout
-      role="radio"
-      tabIndex={rovingTabIndex(checked)}
-      aria-checked={checked}
-      aria-label={label}
-      title={label}
-      className={railClasses(checked)}
-      onClick={onSelect}
-    >
-      <span className="[&>svg]:size-(--rail-icon-size)">{children}</span>
-    </Button>
-  )
-}
-
-function RailButton({
-  onClick,
-  label,
-  children,
-}: {
-  onClick: () => void
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label={label}
-      title={label}
-      className={railClasses(false)}
-      onClick={onClick}
-    >
-      <span className="[&>svg]:size-(--rail-icon-size)">{children}</span>
-    </Button>
   )
 }
 
