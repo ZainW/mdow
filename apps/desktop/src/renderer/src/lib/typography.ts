@@ -1,3 +1,6 @@
+export const MARKDOWN_FONT_SIZE = 15.5
+export const MARKDOWN_LINE_HEIGHT = 1.65
+
 export const CONTENT_FONTS = [
   { value: 'inter', label: 'Inter', family: "'Inter', system-ui, -apple-system, sans-serif" },
   { value: 'charter', label: 'Charter', family: "Charter, 'Bitstream Charter', Georgia, serif" },

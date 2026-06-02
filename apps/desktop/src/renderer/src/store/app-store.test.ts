@@ -21,6 +21,8 @@ describe('app-store', () => {
       openFolderPath: null,
       folderTree: [],
       wideMode: false,
+      interfaceScale: 'compact',
+      readingWidth: 'standard',
       commandPaletteOpen: false,
     })
   })
@@ -48,6 +50,19 @@ describe('app-store', () => {
       expect(state.tabs).toHaveLength(2)
       expect(state.tabs[0].content).toBe('v2')
       expect(state.activeTabId).toBe(state.tabs[0].id)
+    })
+
+    it('clears render cache when reopening an existing tab with new content', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v1' })
+      const id = useAppStore.getState().tabs[0].id
+      useAppStore.getState().setRenderCache(id, {
+        tree: {} as RenderResult['tree'],
+        mermaidBlocks: [],
+        headings: [],
+        frontmatter: {},
+      })
+      useAppStore.getState().openTab({ path: '/a.md', content: 'v2' })
+      expect(useAppStore.getState().renderCache.has(id)).toBe(false)
     })
 
     it('inserts new tab after active tab', () => {
@@ -232,6 +247,36 @@ describe('app-store', () => {
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(false)
       expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: false })
+    })
+  })
+
+  describe('display preferences', () => {
+    it('does not expose markdown size or spacing settings', () => {
+      const state = useAppStore.getState()
+      expect('fontSize' in state).toBe(false)
+      expect('lineHeight' in state).toBe(false)
+      expect('setFontSize' in state).toBe(false)
+      expect('setLineHeight' in state).toBe(false)
+    })
+
+    it('starts with compact interface scale', () => {
+      expect(useAppStore.getState().interfaceScale).toBe('compact')
+    })
+
+    it('sets interface scale and persists it', () => {
+      useAppStore.getState().setInterfaceScale('comfortable')
+      expect(useAppStore.getState().interfaceScale).toBe('comfortable')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ interfaceScale: 'comfortable' })
+    })
+
+    it('starts with standard reading width', () => {
+      expect(useAppStore.getState().readingWidth).toBe('standard')
+    })
+
+    it('sets reading width and persists it', () => {
+      useAppStore.getState().setReadingWidth('comfortable')
+      expect(useAppStore.getState().readingWidth).toBe('comfortable')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ readingWidth: 'comfortable' })
     })
   })
 

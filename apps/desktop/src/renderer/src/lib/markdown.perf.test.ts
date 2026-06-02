@@ -1,10 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { clearMarkdownRenderCache, initMarkdown, renderMarkdown } from './markdown'
+import { describe, expect, it } from 'vitest'
+import { initMarkdown, renderMarkdown } from './markdown'
 import { updateMermaidTheme } from './mermaid'
-
-beforeEach(() => {
-  clearMarkdownRenderCache()
-})
 
 function makeLargeDocument(sectionCount: number): string {
   return Array.from({ length: sectionCount }, (_, i) =>

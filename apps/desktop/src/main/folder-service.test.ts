@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
-import { scanFolder } from './folder-service'
+import { scanFolder, insertFileNode, removeFileNode } from './folder-service'
+import type { TreeNode } from '../shared/types'
 
 describe('scanFolder', () => {
   let tempDir: string
@@ -178,5 +179,132 @@ describe('scanFolder', () => {
     expect(result.truncated).toBe(true)
     expect(result.tree.length).toBeLessThanOrEqual(5000)
     expect(result.tree.length).toBeGreaterThan(0)
+  })
+})
+
+describe('insertFileNode', () => {
+  it('inserts a file at the root level in sorted position', () => {
+    const nodes: TreeNode[] = [
+      { name: 'a.md', path: '/root/a.md', isDirectory: false },
+      { name: 'c.md', path: '/root/c.md', isDirectory: false },
+    ]
+    expect(insertFileNode(nodes, '/root/b.md', 'b.md', '')).toBe(true)
+    expect(nodes).toHaveLength(3)
+    expect(nodes[1].name).toBe('b.md')
+  })
+
+  it('inserts a file into a nested directory', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'docs',
+        path: '/root/docs',
+        isDirectory: true,
+        children: [{ name: 'a.md', path: '/root/docs/a.md', isDirectory: false }],
+      },
+    ]
+    expect(insertFileNode(nodes, '/root/docs/b.md', 'b.md', '/root/docs')).toBe(true)
+    expect(nodes[0].children).toHaveLength(2)
+    expect(nodes[0].children![1].name).toBe('b.md')
+  })
+
+  it('does not insert duplicates', () => {
+    const nodes: TreeNode[] = [{ name: 'a.md', path: '/root/a.md', isDirectory: false }]
+    expect(insertFileNode(nodes, '/root/a.md', 'a.md', '')).toBe(false)
+    expect(nodes).toHaveLength(1)
+  })
+
+  it('returns false when parent directory does not exist', () => {
+    const nodes: TreeNode[] = []
+    expect(insertFileNode(nodes, '/missing/b.md', 'b.md', '/missing')).toBe(false)
+    expect(nodes).toHaveLength(0)
+  })
+
+  it('appends file after directories', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'subdir',
+        path: '/root/subdir',
+        isDirectory: true,
+        children: [],
+      },
+    ]
+    expect(insertFileNode(nodes, '/root/a.md', 'a.md', '')).toBe(true)
+    expect(nodes).toHaveLength(2)
+    expect(nodes[0].isDirectory).toBe(true)
+    expect(nodes[1].name).toBe('a.md')
+  })
+})
+
+describe('removeFileNode', () => {
+  it('removes a file from the root level', () => {
+    const nodes: TreeNode[] = [
+      { name: 'a.md', path: '/root/a.md', isDirectory: false },
+      { name: 'b.md', path: '/root/b.md', isDirectory: false },
+    ]
+    expect(removeFileNode(nodes, '/root/a.md')).toBe(true)
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].name).toBe('b.md')
+  })
+
+  it('removes a file from a nested directory', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'docs',
+        path: '/root/docs',
+        isDirectory: true,
+        children: [
+          { name: 'a.md', path: '/root/docs/a.md', isDirectory: false },
+          { name: 'b.md', path: '/root/docs/b.md', isDirectory: false },
+        ],
+      },
+    ]
+    expect(removeFileNode(nodes, '/root/docs/a.md')).toBe(true)
+    expect(nodes[0].children).toHaveLength(1)
+  })
+
+  it('removes empty parent directories after file removal', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'empty-dir',
+        path: '/root/empty-dir',
+        isDirectory: true,
+        children: [{ name: 'only.md', path: '/root/empty-dir/only.md', isDirectory: false }],
+      },
+    ]
+    expect(removeFileNode(nodes, '/root/empty-dir/only.md')).toBe(true)
+    expect(nodes).toHaveLength(0)
+  })
+
+  it('returns false for non-existent file', () => {
+    const nodes: TreeNode[] = [{ name: 'a.md', path: '/root/a.md', isDirectory: false }]
+    expect(removeFileNode(nodes, '/root/missing.md')).toBe(false)
+    expect(nodes).toHaveLength(1)
+  })
+
+  it('cascades empty directory cleanup through multiple levels', () => {
+    const nodes: TreeNode[] = [
+      {
+        name: 'a',
+        path: '/root/a',
+        isDirectory: true,
+        children: [
+          {
+            name: 'b',
+            path: '/root/a/b',
+            isDirectory: true,
+            children: [
+              {
+                name: 'c',
+                path: '/root/a/b/c',
+                isDirectory: true,
+                children: [{ name: 'only.md', path: '/root/a/b/c/only.md', isDirectory: false }],
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    expect(removeFileNode(nodes, '/root/a/b/c/only.md')).toBe(true)
+    expect(nodes).toHaveLength(0)
   })
 })

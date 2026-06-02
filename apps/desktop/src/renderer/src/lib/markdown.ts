@@ -3,6 +3,7 @@ import highlight from 'comark/plugins/highlight'
 import math from 'comark/plugins/math'
 import mermaid from 'comark/plugins/mermaid'
 import { defineCachedFunction } from 'ocache'
+import { configureRendererCacheStorage } from './cache-storage'
 
 import githubLight from 'shiki/themes/github-light.mjs'
 import githubDark from 'shiki/themes/github-dark.mjs'
@@ -40,6 +41,8 @@ import langOcaml from 'shiki/langs/ocaml.mjs'
 import langJsx from 'shiki/langs/jsx.mjs'
 import langTsx from 'shiki/langs/tsx.mjs'
 import langPhp from 'shiki/langs/php.mjs'
+
+configureRendererCacheStorage()
 
 const langs = [
   langJavascript,
@@ -145,12 +148,6 @@ export interface RenderResult {
   frontmatter: Record<string, unknown>
 }
 
-export function getCachedMarkdownRender(_content: string): RenderResult | undefined {
-  return undefined
-}
-
-export function clearMarkdownRenderCache(): void {}
-
 function slugifyHeading(text: string): string {
   return text
     .toLowerCase()
@@ -192,10 +189,11 @@ function appendClassName(node: ComarkElement, className: string): void {
   }
 }
 
-async function _renderMarkdown(
+async function renderMarkdownUncached(
   text: string,
-  _options?: { bypassCache?: boolean },
+  options?: { bypassCache?: boolean },
 ): Promise<RenderResult> {
+  void options
   const tree = await parse(text)
 
   const mermaidBlocks: { id: string; code: string }[] = []
@@ -250,10 +248,11 @@ async function _renderMarkdown(
   }
 }
 
-export const renderMarkdown = defineCachedFunction(_renderMarkdown, {
+export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
   name: 'renderMarkdown',
   maxAge: 3600,
-  getKey: (text: string, _options?: { bypassCache?: boolean }) => text,
-  shouldBypassCache: (_text: string, options?: { bypassCache?: boolean }) =>
-    options?.bypassCache === true,
+  shouldBypassCache: (text: string, options?: { bypassCache?: boolean }) => {
+    void text
+    return options?.bypassCache === true
+  },
 })
