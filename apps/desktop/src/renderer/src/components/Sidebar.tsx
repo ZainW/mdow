@@ -1,8 +1,7 @@
-import { useCallback } from 'react'
+import { lazy, Suspense, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore, type SidebarMode } from '../store/app-store'
 import { RecentsList } from './RecentsList'
-import { FolderTree } from './FolderTree'
 import { Button } from './ui/button'
 import {
   Sidebar as ShadcnSidebar,
@@ -19,6 +18,7 @@ import { isMac } from '../lib/utils'
 
 const MODES: SidebarMode[] = ['recents', 'folder', 'outline']
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
+const FolderTree = lazy(() => import('./FolderTree').then((mod) => ({ default: mod.FolderTree })))
 
 function indicatorY(modeIndex: number): string {
   const steps = Array.from({ length: modeIndex }, () => 'var(--rail-step)').join(' + ')
@@ -139,7 +139,11 @@ export function Sidebar() {
           </SidebarHeader>
           <SidebarContent key={mode} className="drawer-mode">
             {mode === 'recents' && <RecentsList />}
-            {mode === 'folder' && openFolderPath && <FolderTree />}
+            {mode === 'folder' && openFolderPath && (
+              <Suspense fallback={<FolderTreeSkeleton />}>
+                <FolderTree />
+              </Suspense>
+            )}
             {mode === 'folder' && !openFolderPath && (
               <EmptyState
                 size="sm"
@@ -158,6 +162,17 @@ export function Sidebar() {
           </SidebarContent>
         </ShadcnSidebar>
       </div>
+    </div>
+  )
+}
+
+function FolderTreeSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-2 p-3">
+      <div className="h-3 w-24 rounded bg-muted" />
+      <div className="h-3 w-36 rounded bg-muted/80" />
+      <div className="ml-3 h-3 w-28 rounded bg-muted/70" />
+      <div className="ml-3 h-3 w-32 rounded bg-muted/70" />
     </div>
   )
 }

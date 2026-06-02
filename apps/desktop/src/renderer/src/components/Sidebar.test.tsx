@@ -6,6 +6,10 @@ import { SidebarProvider } from './ui/sidebar'
 import { useAppStore } from '../store/app-store'
 
 const recentsMock = vi.hoisted(() => ({ value: [] as string[] }))
+const folderTreeMock = vi.hoisted(() => ({
+  loaded: vi.fn(),
+  rendered: vi.fn(),
+}))
 
 vi.mock('../hooks/useRecents', () => ({
   useRecents: () => ({ data: recentsMock.value }),
@@ -18,6 +22,16 @@ vi.mock('../hooks/useFolderTree', () => ({
 vi.mock('../hooks/useOpenMarkdownFile', () => ({
   useOpenMarkdownFile: () => vi.fn(),
 }))
+
+vi.mock('./FolderTree', () => {
+  folderTreeMock.loaded()
+  return {
+    FolderTree: () => {
+      folderTreeMock.rendered()
+      return <div>Folder tree loaded</div>
+    },
+  }
+})
 
 function renderSidebar() {
   const client = new QueryClient()
@@ -70,6 +84,12 @@ describe('Sidebar', () => {
   it('shows the recents empty-state when no files have been opened', () => {
     renderSidebar()
     expect(screen.getByText('No recents yet')).toBeInTheDocument()
+  })
+
+  it('does not load the folder tree module while another sidebar mode is active', () => {
+    renderSidebar()
+    expect(folderTreeMock.loaded).not.toHaveBeenCalled()
+    expect(folderTreeMock.rendered).not.toHaveBeenCalled()
   })
 
   it('ArrowDown rotates focus between sidebar mode options', () => {

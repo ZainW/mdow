@@ -15,6 +15,12 @@ export const CONTENT_FONTS = [
 export const CODE_FONTS = [
   { value: 'geist-mono', label: 'Geist', family: "'Geist Mono', ui-monospace, monospace" },
   {
+    value: 'system-mono',
+    label: 'System',
+    family:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  },
+  {
     value: 'sf-mono',
     label: 'SF Mono',
     family: "'SF Mono', SFMono-Regular, ui-monospace, monospace",

@@ -84,33 +84,57 @@ export function useAppInit(): void {
 
       if (state.sessionTabs?.length) {
         const activePath = state.sessionActiveTabPath
-        const orderedTabs = activePath
-          ? [
-              ...state.sessionTabs.filter((t) => t.path === activePath),
-              ...state.sessionTabs.filter((t) => t.path !== activePath),
-            ]
+        const activeTab = activePath
+          ? state.sessionTabs.find((tab) => tab.path === activePath)
+          : state.sessionTabs[0]
+        const inactiveTabs = activeTab
+          ? state.sessionTabs.filter((tab) => tab.path !== activeTab.path)
           : state.sessionTabs
 
         const failedPaths: string[] = []
-        for (const tab of orderedTabs) {
+
+        const restoreTab = async (tab: { path: string }, activate: boolean): Promise<boolean> => {
           try {
             const content = await window.api.readFile(tab.path)
-            openTab({ path: tab.path, content })
+            openTab({ path: tab.path, content }, { activate })
+            return true
           } catch {
             failedPaths.push(tab.path)
+            return false
           }
-        }
-        if (failedPaths.length > 0) {
-          console.warn(`Failed to restore ${failedPaths.length} session tab(s):`, failedPaths)
         }
 
-        if (state.sessionActiveTabPath) {
-          const tabs = useAppStore.getState().tabs
-          const active = tabs.find((t) => t.path === state.sessionActiveTabPath)
-          if (active) {
-            useAppStore.setState({ activeTabId: active.id })
+        const restoredActive = activeTab ? await restoreTab(activeTab, true) : false
+        useAppStore.setState({ initialized: true })
+
+        void (async () => {
+          let hasActiveTab = restoredActive
+          let fallbackActivePath = restoredActive ? activeTab?.path : null
+
+          for (const tab of inactiveTabs) {
+            // eslint-disable-next-line no-await-in-loop -- restore background tabs sequentially to avoid an I/O burst at startup.
+            const restored = await restoreTab(tab, !hasActiveTab)
+            if (restored && !hasActiveTab) {
+              hasActiveTab = true
+              fallbackActivePath = tab.path
+            }
           }
-        }
+
+          const targetActivePath = restoredActive ? activeTab?.path : fallbackActivePath
+          if (targetActivePath) {
+            const tabs = useAppStore.getState().tabs
+            const active = tabs.find((t) => t.path === targetActivePath)
+            if (active) {
+              useAppStore.setState({ activeTabId: active.id })
+            }
+          }
+
+          if (failedPaths.length > 0) {
+            console.warn(`Failed to restore ${failedPaths.length} session tab(s):`, failedPaths)
+          }
+        })()
+
+        return
       }
 
       useAppStore.setState({ initialized: true })

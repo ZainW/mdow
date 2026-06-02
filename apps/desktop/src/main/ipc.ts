@@ -3,12 +3,28 @@ import { stat } from 'fs/promises'
 import { openFileDialog, readFileContent, unwatchFile, setActiveFileWatch } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
-import { checkForUpdates, downloadUpdate, installUpdate, setAutoUpdateScheduling } from './updater'
 import { isMac } from './platform'
 import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateMarkdownPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+
+type UpdaterModule = typeof import('./updater')
+
+let updaterModulePromise: Promise<UpdaterModule> | null = null
+
+function loadUpdater(): Promise<UpdaterModule> {
+  updaterModulePromise ??= import('./updater')
+  return updaterModulePromise
+}
+
+async function loadInitializedUpdater(
+  getMainWindow: () => BrowserWindow | null,
+): Promise<UpdaterModule> {
+  const updater = await loadUpdater()
+  updater.initAutoUpdater(getMainWindow)
+  return updater
+}
 
 function setupFolderWatcher(getMainWindow: () => BrowserWindow | null, path: string): void {
   watchFolder(path, (scan) => {
@@ -236,10 +252,20 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     getMainWindow()?.close()
   })
 
-  ipcMain.handle('updater:check', (_event, opts?: { manual?: boolean }) => checkForUpdates(opts))
-  ipcMain.handle('updater:set-scheduling', (_event, enabled: boolean) =>
-    setAutoUpdateScheduling(enabled),
-  )
-  ipcMain.handle('updater:download', () => downloadUpdate())
-  ipcMain.handle('updater:install', () => installUpdate())
+  ipcMain.handle('updater:check', async (_event, opts?: { manual?: boolean }) => {
+    const { checkForUpdates } = await loadInitializedUpdater(getMainWindow)
+    checkForUpdates(opts)
+  })
+  ipcMain.handle('updater:set-scheduling', async (_event, enabled: boolean) => {
+    const { setAutoUpdateScheduling } = await loadInitializedUpdater(getMainWindow)
+    setAutoUpdateScheduling(enabled)
+  })
+  ipcMain.handle('updater:download', async () => {
+    const { downloadUpdate } = await loadInitializedUpdater(getMainWindow)
+    downloadUpdate()
+  })
+  ipcMain.handle('updater:install', async () => {
+    const { installUpdate } = await loadInitializedUpdater(getMainWindow)
+    installUpdate()
+  })
 }

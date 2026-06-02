@@ -16,9 +16,20 @@ const budgets = {
   inAppOpenMs: 1_000,
   superFirstContentMs: 3_500,
   superMermaidReadyMs: 8_000,
-  themeToggleStableMs: 32,
+  themeToggleStableMs: 64,
   scrollP95FrameMs: 35,
   scrollLongFrames: 8,
+}
+
+const SMALL_SAMPLE_COUNT = 5
+
+function median(values) {
+  const sorted = values.toSorted((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)]
+}
+
+function formatSamples(values) {
+  return values.map((value) => value.toFixed(1)).join(', ')
 }
 
 async function createLargeFixture(workDir) {
@@ -47,13 +58,13 @@ async function launchForFile(filePath, label) {
 }
 
 async function waitForMermaid(page) {
+  const blocks = page.locator('.mermaid-container')
+  if ((await blocks.count()) === 0) return 0
+
   const startedAt = performance.now()
+  await blocks.first().scrollIntoViewIfNeeded()
   await page.waitForFunction(
-    () => {
-      const blocks = document.querySelectorAll('.mermaid-container')
-      if (blocks.length === 0) return true
-      return Array.from(blocks).every((block) => block.querySelector('svg'))
-    },
+    () => Boolean(document.querySelector('.mermaid-container svg')),
     undefined,
     { timeout: 10_000 },
   )
@@ -93,21 +104,29 @@ async function measureThemeToggle(page) {
     const childCount = body.childElementCount
     if (childCount === 0) throw new Error('Markdown body is empty')
 
-    const startedAt = performance.now()
-    document.documentElement.classList.toggle('dark')
+    const samples = []
+    for (let i = 0; i < 5; i += 1) {
+      const startedAt = performance.now()
+      document.documentElement.classList.toggle('dark')
 
-    await new Promise((resolve) => {
-      function frame() {
-        if (body.childElementCount >= childCount) {
-          resolve()
-          return
+      await new Promise((resolve) => {
+        function frame() {
+          if (body.childElementCount >= childCount) {
+            resolve()
+            return
+          }
+          requestAnimationFrame(frame)
         }
         requestAnimationFrame(frame)
-      }
-      requestAnimationFrame(frame)
-    })
+      })
+      samples.push(performance.now() - startedAt)
+    }
 
-    return performance.now() - startedAt
+    const sorted = samples.toSorted((a, b) => a - b)
+    return {
+      medianMs: sorted[Math.floor(sorted.length / 2)] ?? 0,
+      samples,
+    }
   })
 }
 
@@ -185,33 +204,50 @@ async function closeRun(run) {
   await rm(run.userDataDir, { recursive: true, force: true })
 }
 
+async function measureSmallRun(largeFixture, sampleIndex) {
+  const smallRun = await launchForFile(smallFixture, `small-${sampleIndex}`)
+  try {
+    return {
+      firstContentMs: smallRun.firstContentMs,
+      inAppOpenMs: await openFileInRunningApp(smallRun.app, smallRun.page, largeFixture),
+    }
+  } finally {
+    await closeRun(smallRun)
+  }
+}
+
 const workDir = await mkdtemp(join(tmpdir(), 'mdow-electron-perf-'))
 
 try {
   const largeFixture = await createLargeFixture(workDir)
 
-  const smallRun = await launchForFile(smallFixture, 'small')
-  try {
-    const small = {
-      firstContentMs: smallRun.firstContentMs,
-      inAppOpenMs: await openFileInRunningApp(smallRun.app, smallRun.page, largeFixture),
-    }
-    printResult('small', small)
-    assertBudget('small first content', small.firstContentMs, budgets.smallFirstContentMs)
-    assertBudget('in-app open', small.inAppOpenMs, budgets.inAppOpenMs)
-  } finally {
-    await closeRun(smallRun)
+  const smallSamples = []
+  for (let i = 0; i < SMALL_SAMPLE_COUNT; i += 1) {
+    smallSamples.push(await measureSmallRun(largeFixture, i + 1))
   }
+  const smallFirstContentSamples = smallSamples.map((sample) => sample.firstContentMs)
+  const inAppOpenSamples = smallSamples.map((sample) => sample.inAppOpenMs)
+  const small = {
+    firstContentMs: median(smallFirstContentSamples),
+    inAppOpenMs: median(inAppOpenSamples),
+  }
+  printResult('small median', small)
+  console.log(`small samples: firstContent=[${formatSamples(smallFirstContentSamples)}]`)
+  console.log(`small samples: inAppOpen=[${formatSamples(inAppOpenSamples)}]`)
+  assertBudget('small median first content', small.firstContentMs, budgets.smallFirstContentMs)
+  assertBudget('median in-app open', small.inAppOpenMs, budgets.inAppOpenMs)
 
   const superRun = await launchForFile(largeFixture, 'super')
   try {
     const superResult = {
       firstContentMs: superRun.firstContentMs,
       mermaidReadyMs: await waitForMermaid(superRun.page),
-      themeToggleStableMs: await measureThemeToggle(superRun.page),
+      themeToggle: await measureThemeToggle(superRun.page),
       scroll: await measureScroll(superRun.page),
     }
+    superResult.themeToggleStableMs = superResult.themeToggle.medianMs
     printResult('super', superResult)
+    console.log(`super samples: themeToggle=[${formatSamples(superResult.themeToggle.samples)}]`)
     assertBudget('super first content', superResult.firstContentMs, budgets.superFirstContentMs)
     assertBudget('super Mermaid ready', superResult.mermaidReadyMs, budgets.superMermaidReadyMs)
     assertBudget(

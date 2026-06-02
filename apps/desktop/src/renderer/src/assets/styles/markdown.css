@@ -12,6 +12,13 @@
   color: var(--foreground);
 }
 
+@supports (content-visibility: auto) {
+  .markdown-body > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 2.5rem;
+  }
+}
+
 /* ── Headings ── */
 
 .markdown-body h1,

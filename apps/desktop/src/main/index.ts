@@ -15,7 +15,6 @@ import { pathToFileURL } from 'url'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
 import { createMenu } from './menu'
-import { initAutoUpdater } from './updater'
 import { addRecent, getWindowBounds, saveWindowBounds, getAppState } from './store'
 import { unwatchFolder } from './folder-service'
 import { readFileContent, unwatchAllFiles, setActiveFileWatch } from './file-service'
@@ -26,6 +25,7 @@ import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed
 
 const windows = new Set<BrowserWindow>()
 const windowPaths = new Map<BrowserWindow, string>()
+const AUTO_UPDATER_INIT_DELAY_MS = 10_000
 
 function getMainWindow(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow()
@@ -197,6 +197,12 @@ function createWindow(targetPath?: string): void {
   })
 }
 
+function scheduleAutoUpdaterInit(): void {
+  setTimeout(() => {
+    void import('./updater').then(({ initAutoUpdater }) => initAutoUpdater(getMainWindow))
+  }, AUTO_UPDATER_INIT_DELAY_MS)
+}
+
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
@@ -251,7 +257,7 @@ if (!gotTheLock) {
     registerIpcHandlers(getMainWindow)
     createMenu(getMainWindow)
     createWindow()
-    initAutoUpdater(getMainWindow)
+    scheduleAutoUpdaterInit()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

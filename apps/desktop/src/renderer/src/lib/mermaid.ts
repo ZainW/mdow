@@ -26,6 +26,12 @@ function getMermaidOptions(isDark: boolean): MermaidOptions {
   }
 }
 
+function ensureMermaidInitialized(isDark: boolean): void {
+  if (mermaidInitialized) return
+  mermaidOptions = getMermaidOptions(isDark)
+  mermaidInitialized = true
+}
+
 async function loadMermaid(): Promise<MermaidApi> {
   mermaidPromise ??= import('mermaid').then((mod) => mod.default)
   return mermaidPromise
@@ -72,7 +78,7 @@ export async function renderMermaidBlock(
   block: { id: string; code: string },
   isDark = document.documentElement.classList.contains('dark'),
 ): Promise<void> {
-  if (!mermaidInitialized) return
+  ensureMermaidInitialized(isDark)
 
   const el = document.getElementById(block.id)
   if (!el) return
@@ -91,8 +97,6 @@ export async function renderMermaidBlock(
 }
 
 export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
-  if (!mermaidInitialized) return
-
   // Sequential: Mermaid races when multiple diagrams render concurrently.
   await blocks.reduce(
     (chain, block) => chain.then(() => renderMermaidBlock(block)),

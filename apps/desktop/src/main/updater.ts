@@ -15,8 +15,12 @@ const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 let manualCheckPending = false
 let intervalHandle: NodeJS.Timeout | null = null
 let startupHandle: NodeJS.Timeout | null = null
+let initialized = false
 
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
+  if (initialized) return
+  initialized = true
+
   const send = (channel: string, ...args: unknown[]) => {
     const win = getMainWindow()
     if (win && !win.isDestroyed()) {
