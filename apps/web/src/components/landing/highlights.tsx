@@ -143,11 +143,11 @@ export function LandingHighlights() {
   return (
     <GradientSection variant="surface" innerClassName="py-16 md:py-24">
       <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-balance">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
           Everything you need for serious reading
         </h2>
         <p className="mt-4 text-muted-foreground text-balance">
-          Mdow is a viewer, not an editor — built for people who write in their editor and read in
+          Mdow is a viewer, not an editor, built for people who write in their editor and read in
           mdow.
         </p>
       </div>
@@ -155,9 +155,9 @@ export function LandingHighlights() {
         {highlights.map((item) => (
           <div
             key={item.title}
-            className={cn('group rounded-xl bg-card p-5 shadow-card', cardLiftClass)}
+            className={cn('group rounded-lg bg-card p-5 shadow-card', cardLiftClass)}
           >
-            <div className="mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/8 ring-1 ring-primary/15">
+            <div className="mb-3 inline-flex size-9 items-center justify-center rounded-md bg-accent/10 ring-1 ring-accent/20">
               <item.icon className={ICON_CLASS} />
             </div>
             <dt className="font-semibold">{item.title}</dt>

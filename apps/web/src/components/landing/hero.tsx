@@ -16,24 +16,24 @@ interface LandingHeroProps {
 export function LandingHero({ platform, release, downloadUrl }: LandingHeroProps) {
   return (
     <section className="relative overflow-hidden bg-hero-gradient">
-      <div className="mx-auto max-w-6xl px-6 pt-20 pb-16 md:pt-28 md:pb-24">
+      <div className="mx-auto max-w-6xl px-6 pt-18 pb-14 md:pt-24 md:pb-20">
         <IntroSection className="mx-auto max-w-3xl text-center">
           {release && (
             <Link
               to="/changelog"
-              className="mb-6 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur-sm transition-colors hover:text-foreground"
+              className="mb-6 inline-flex items-center gap-2 rounded-md border border-border-subtle bg-card/85 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur-sm transition-colors hover:text-foreground"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="size-1.5 rounded-full bg-primary" />
               <span className="tabular-nums font-mono">v{release.version}</span>
               <span className="text-border">|</span>
               <span>What&apos;s new</span>
             </Link>
           )}
-          <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-[4rem] lg:leading-[1.08]">
+          <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl md:text-6xl lg:text-[4rem] lg:leading-[1.08]">
             A quiet place to read markdown
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Open folders, browse with a file tree, and read beautifully rendered markdown — with
+            Open folders, browse with a file tree, and read beautifully rendered markdown, with
             Shiki syntax highlighting, Mermaid diagrams, and a calm interface that stays out of your
             way.
           </p>
@@ -56,13 +56,13 @@ export function LandingHero({ platform, release, downloadUrl }: LandingHeroProps
             </Link>
           </p>
         </IntroSection>
-        <IntroSection delay={1} className="mx-auto mt-16 max-w-5xl">
+        <IntroSection delay={1} className="mx-auto mt-14 max-w-5xl">
           <div className="relative">
             <Screenshot
               name="reading-dark"
               alt="Mdow rendering a markdown document with syntax highlighting and a Mermaid diagram in dark mode"
               priority
-              className="rounded-xl shadow-elevated"
+              className="rounded-lg shadow-elevated"
             />
           </div>
         </IntroSection>

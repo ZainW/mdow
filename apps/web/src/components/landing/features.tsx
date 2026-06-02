@@ -9,7 +9,7 @@ function CodeMockup() {
       title="example.ts"
       ariaLabel="Illustration of TypeScript syntax highlighting in a code block"
     >
-      <div className="px-5 py-5 font-mono text-[13px] leading-[1.7]">
+      <div className="p-5 font-mono text-[13px] leading-[1.7]">
         <div>
           <span className="text-primary">import</span>
           <span className="text-foreground">{' { render } '}</span>
@@ -42,7 +42,7 @@ function MermaidMockup() {
     >
       <div className="px-6 py-8">
         <div className="flex items-center justify-center gap-4 text-sm">
-          <div className="rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
+          <div className="rounded-md border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
             Idea
           </div>
           <svg
@@ -55,7 +55,7 @@ function MermaidMockup() {
           >
             <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
           </svg>
-          <div className="rounded-lg border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
+          <div className="rounded-md border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
             Draft
           </div>
           <svg
@@ -68,7 +68,7 @@ function MermaidMockup() {
           >
             <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
           </svg>
-          <div className="rounded-lg border border-primary/30 bg-primary/8 px-4 py-2.5 font-medium text-foreground shadow-soft ring-1 ring-primary/10">
+          <div className="rounded-md border border-primary/25 bg-primary/8 px-4 py-2.5 font-medium text-foreground shadow-soft ring-1 ring-primary/10">
             Publish
           </div>
         </div>
@@ -95,7 +95,7 @@ function DropFileMockup() {
     <Screenshot
       name="empty-light"
       alt="Mdow welcome screen with open file and open folder actions"
-      className="rounded-xl shadow-elevated"
+      className="rounded-lg shadow-elevated"
     />
   )
 }
@@ -105,7 +105,7 @@ function SidebarMockup() {
     <Screenshot
       name="sidebar-light"
       alt="Mdow folder sidebar with a file tree and tabbed documents"
-      className="rounded-xl shadow-elevated"
+      className="rounded-lg shadow-elevated"
     />
   )
 }

@@ -1,7 +1,7 @@
 import { cn } from '~/lib/utils'
 
 export const btnPrimaryClass = cn(
-  'inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-soft',
+  'inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground shadow-soft',
   'touch-manipulation',
   'transition-[transform,box-shadow,background-color] duration-150 ease-out',
   'active:scale-[0.98]',
@@ -9,7 +9,7 @@ export const btnPrimaryClass = cn(
 )
 
 export const btnSecondaryClass = cn(
-  'inline-flex items-center justify-center rounded-lg border border-border-subtle bg-card shadow-soft',
+  'inline-flex items-center justify-center rounded-md border border-border-subtle bg-card shadow-soft',
   'touch-manipulation',
   'transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out',
   'active:scale-[0.98]',
