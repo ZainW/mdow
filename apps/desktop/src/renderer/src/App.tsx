@@ -67,6 +67,7 @@ function MainApp(): React.JSX.Element {
   const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const interfaceScale = useAppStore((s) => s.interfaceScale)
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
@@ -74,6 +75,13 @@ function MainApp(): React.JSX.Element {
   useFolderTree(openFolderPath)
   useAppMenuBindings()
   useAppKeyboardShortcuts()
+
+  useEffect(() => {
+    document.documentElement.dataset.uiScale = interfaceScale
+    return () => {
+      delete document.documentElement.dataset.uiScale
+    }
+  }, [interfaceScale])
 
   useEffect(() => {
     if (activeTab) {
@@ -127,7 +135,8 @@ function MainApp(): React.JSX.Element {
   return (
     <SidebarProvider>
       <div
-        className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
+        data-ui-scale={interfaceScale}
+        className="mdow-shell isolate flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
         onDrop={(e) => void handleDrop(e)}
         onDragOver={(e) => e.preventDefault()}
       >

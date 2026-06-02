@@ -55,7 +55,7 @@ export function SearchBar({
         ref={inputRef}
         type="text"
         aria-label="Search in document"
-        className="h-6 w-44 px-2 text-xs"
+        className="w-44 px-2"
         placeholder="Search..."
         value={query}
         onChange={(e) => handleChange(e.target.value)}
@@ -64,13 +64,13 @@ export function SearchBar({
       <span
         aria-live="polite"
         aria-atomic="true"
-        className="min-w-[4rem] text-center text-[10px] tabular-nums text-muted-foreground"
+        className="min-w-[4rem] text-center text-[length:var(--control-xs-font-size)] tabular-nums text-muted-foreground"
       >
         {query ? (matchCount > 0 ? `${currentIndex + 1} of ${matchCount}` : 'No results') : ''}
       </span>
       <span
         aria-hidden
-        className="hidden items-center gap-1 text-[10px] text-muted-foreground/60 lg:flex"
+        className="hidden items-center gap-1 text-[length:var(--control-xs-font-size)] text-muted-foreground/60 lg:flex"
         title="Enter: next match · Shift+Enter: previous · Esc: close"
       >
         <Kbd>↵</Kbd>
@@ -85,7 +85,7 @@ export function SearchBar({
         title="Previous match (Shift+Enter)"
         className="active:scale-90 transition-transform"
       >
-        <ChevronUp className="size-3.5" aria-hidden />
+        <ChevronUp className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>
       <Button
         variant="ghost"
@@ -96,7 +96,7 @@ export function SearchBar({
         title="Next match (Enter)"
         className="active:scale-90 transition-transform"
       >
-        <ChevronDown className="size-3.5" aria-hidden />
+        <ChevronDown className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>
       <Button
         variant="ghost"
@@ -106,7 +106,7 @@ export function SearchBar({
         title="Close (Esc)"
         className="active:scale-90 transition-transform"
       >
-        <X className="size-3.5" aria-hidden />
+        <X className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>
     </div>
   )

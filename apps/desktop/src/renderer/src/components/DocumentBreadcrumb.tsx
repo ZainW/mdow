@@ -22,7 +22,7 @@ export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
   const segments = parentSegmentsWithPaths(tab.path, openFolderPath)
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border-subtle bg-background px-3 text-[11px] text-muted-foreground/80">
+    <div className="flex h-(--breadcrumb-height) shrink-0 items-center gap-2 border-b border-border-subtle bg-background px-3 text-[length:var(--breadcrumb-text-size)] text-muted-foreground/80">
       <nav
         aria-label="Document path"
         className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
@@ -43,7 +43,10 @@ export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
                 {seg.name}
               </button>
               {/* Filename lives outside this <ol>; the trailing chevron after the last segment is the separator before it. */}
-              <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/40" aria-hidden />
+              <ChevronRight
+                className="size-(--button-xs-icon-size) shrink-0 text-muted-foreground/40"
+                aria-hidden
+              />
             </li>
           ))}
         </ol>
@@ -57,7 +60,9 @@ export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
           {displayTitle}
         </button>
         {displayTitle !== filename && (
-          <span className="ml-1 truncate text-[10px] text-muted-foreground/60">{filename}</span>
+          <span className="ml-1 truncate text-[length:var(--breadcrumb-secondary-size)] text-muted-foreground/60">
+            {filename}
+          </span>
         )}
       </nav>
       <Button

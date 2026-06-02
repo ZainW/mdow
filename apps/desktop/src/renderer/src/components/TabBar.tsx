@@ -74,7 +74,7 @@ export function TabBar() {
       role="tablist"
       aria-label="Open documents"
       onKeyDown={tablistRoving.onKeyDown}
-      className="relative flex h-9 shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
+      className="relative flex h-(--tabbar-height) shrink-0 items-stretch gap-px overflow-x-auto border-b border-border-subtle bg-background px-1.5 scrollbar-none"
       onDragOver={(e) => {
         if (dragIndex === null) return
         const lastTab = (e.currentTarget as HTMLDivElement).querySelector<HTMLDivElement>(
@@ -138,7 +138,7 @@ export function TabBar() {
                 )}
                 <div
                   className={cn(
-                    'tab-btn flex h-7 max-w-[200px] items-center gap-1.5 self-center rounded-md text-xs',
+                    'tab-btn flex h-(--tab-height) max-w-(--tab-max-width) items-center gap-1.5 self-center rounded-md text-[length:var(--control-font-size)]',
                     isActive
                       ? 'bg-card text-foreground shadow-[0_1px_0_var(--color-border-subtle),0_1px_2px_oklch(0_0_0/0.04)] ring-1 ring-border-subtle'
                       : 'text-muted-foreground',
@@ -170,11 +170,14 @@ export function TabBar() {
                     className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit"
                   >
                     {tab.error ? (
-                      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+                      <AlertCircle
+                        className="size-(--tab-icon-size) shrink-0 text-destructive"
+                        aria-hidden
+                      />
                     ) : (
                       <FileText
                         className={cn(
-                          'size-3.5 shrink-0',
+                          'size-(--tab-icon-size) shrink-0',
                           isActive ? 'text-muted-foreground/80' : 'text-muted-foreground/60',
                         )}
                         strokeWidth={iconStroke.default}
@@ -187,7 +190,7 @@ export function TabBar() {
                     tabIndex={-1}
                     aria-label={`Close ${filename}`}
                     className={cn(
-                      'tab-close-btn mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground',
+                      'tab-close-btn mr-1 flex size-(--tab-close-size) shrink-0 items-center justify-center rounded-sm text-muted-foreground',
                       isActive ? 'opacity-50' : 'opacity-0 group-hover/tab:opacity-50',
                     )}
                     onClick={(e) => {
@@ -196,7 +199,7 @@ export function TabBar() {
                     }}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    <X className="size-3" strokeWidth={iconStroke.emphasis} />
+                    <X className="size-(--button-sm-icon-size)" strokeWidth={iconStroke.emphasis} />
                   </button>
                 </div>
               </div>

@@ -14,6 +14,8 @@ interface WindowBounds {
 }
 
 type SidebarMode = 'recents' | 'folder' | 'outline'
+type InterfaceScale = 'compact' | 'comfortable' | 'large'
+type ReadingWidth = 'standard' | 'comfortable' | 'wide'
 
 interface StoreSchema {
   recents: string[]
@@ -24,11 +26,11 @@ interface StoreSchema {
   sessionActiveTabPath: string | null
   contentFont: string
   codeFont: string
-  fontSize: number
-  lineHeight: number
   theme: string
   autoUpdateEnabled: boolean
   wideMode: boolean
+  interfaceScale: InterfaceScale
+  readingWidth: ReadingWidth
   sidebarMode: SidebarMode
 }
 
@@ -42,11 +44,11 @@ const store = new Store<StoreSchema>({
     sessionActiveTabPath: null,
     contentFont: 'inter',
     codeFont: 'geist-mono',
-    fontSize: 15.5,
-    lineHeight: 1.65,
     theme: 'system',
     autoUpdateEnabled: true,
     wideMode: false,
+    interfaceScale: 'compact',
+    readingWidth: 'standard',
     sidebarMode: 'recents',
   },
 })
@@ -85,11 +87,11 @@ export function getAppState() {
     sessionActiveTabPath: store.get('sessionActiveTabPath'),
     contentFont: store.get('contentFont'),
     codeFont: store.get('codeFont'),
-    fontSize: store.get('fontSize'),
-    lineHeight: store.get('lineHeight'),
     theme: store.get('theme'),
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
     wideMode: store.get('wideMode'),
+    interfaceScale: store.get('interfaceScale'),
+    readingWidth: store.get('readingWidth'),
     sidebarMode: store.get('sidebarMode'),
   }
 }
@@ -104,11 +106,11 @@ export function saveAppState(state: Partial<StoreSchema>): void {
     store.set('sessionActiveTabPath', state.sessionActiveTabPath)
   if (state.contentFont !== undefined) store.set('contentFont', state.contentFont)
   if (state.codeFont !== undefined) store.set('codeFont', state.codeFont)
-  if (state.fontSize !== undefined) store.set('fontSize', state.fontSize)
-  if (state.lineHeight !== undefined) store.set('lineHeight', state.lineHeight)
   if (state.theme !== undefined) store.set('theme', state.theme)
   if (state.autoUpdateEnabled !== undefined) store.set('autoUpdateEnabled', state.autoUpdateEnabled)
   if (state.wideMode !== undefined) store.set('wideMode', state.wideMode)
+  if (state.interfaceScale !== undefined) store.set('interfaceScale', state.interfaceScale)
+  if (state.readingWidth !== undefined) store.set('readingWidth', state.readingWidth)
   if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
 }
 

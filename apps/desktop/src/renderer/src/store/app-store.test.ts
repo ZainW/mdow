@@ -21,6 +21,8 @@ describe('app-store', () => {
       openFolderPath: null,
       folderTree: [],
       wideMode: false,
+      interfaceScale: 'compact',
+      readingWidth: 'standard',
       commandPaletteOpen: false,
     })
   })
@@ -245,6 +247,36 @@ describe('app-store', () => {
       useAppStore.getState().toggleWideMode()
       expect(useAppStore.getState().wideMode).toBe(false)
       expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: false })
+    })
+  })
+
+  describe('display preferences', () => {
+    it('does not expose markdown size or spacing settings', () => {
+      const state = useAppStore.getState()
+      expect('fontSize' in state).toBe(false)
+      expect('lineHeight' in state).toBe(false)
+      expect('setFontSize' in state).toBe(false)
+      expect('setLineHeight' in state).toBe(false)
+    })
+
+    it('starts with compact interface scale', () => {
+      expect(useAppStore.getState().interfaceScale).toBe('compact')
+    })
+
+    it('sets interface scale and persists it', () => {
+      useAppStore.getState().setInterfaceScale('comfortable')
+      expect(useAppStore.getState().interfaceScale).toBe('comfortable')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ interfaceScale: 'comfortable' })
+    })
+
+    it('starts with standard reading width', () => {
+      expect(useAppStore.getState().readingWidth).toBe('standard')
+    })
+
+    it('sets reading width and persists it', () => {
+      useAppStore.getState().setReadingWidth('comfortable')
+      expect(useAppStore.getState().readingWidth).toBe('comfortable')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ readingWidth: 'comfortable' })
     })
   })
 

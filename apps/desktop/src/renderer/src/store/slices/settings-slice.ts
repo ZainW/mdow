@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import type { InterfaceScale, ReadingWidth } from '../../../../shared/types'
 
 export interface SettingsSlice {
   zoomLevel: number
@@ -11,12 +12,12 @@ export interface SettingsSlice {
   setAutoUpdateEnabled: (enabled: boolean) => void
   contentFont: string
   codeFont: string
-  fontSize: number
-  lineHeight: number
+  interfaceScale: InterfaceScale
+  readingWidth: ReadingWidth
   setContentFont: (font: string) => void
   setCodeFont: (font: string) => void
-  setFontSize: (size: number) => void
-  setLineHeight: (height: number) => void
+  setInterfaceScale: (scale: InterfaceScale) => void
+  setReadingWidth: (width: ReadingWidth) => void
 }
 
 export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set) => ({
@@ -53,8 +54,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   contentFont: 'inter',
   codeFont: 'geist-mono',
-  fontSize: 15.5,
-  lineHeight: 1.65,
+  interfaceScale: 'compact',
+  readingWidth: 'standard',
   setContentFont: (font) => {
     void window.api.saveAppState({ contentFont: font })
     set({ contentFont: font })
@@ -63,12 +64,12 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     void window.api.saveAppState({ codeFont: font })
     set({ codeFont: font })
   },
-  setFontSize: (size) => {
-    void window.api.saveAppState({ fontSize: size })
-    set({ fontSize: size })
+  setInterfaceScale: (scale) => {
+    void window.api.saveAppState({ interfaceScale: scale })
+    set({ interfaceScale: scale })
   },
-  setLineHeight: (height) => {
-    void window.api.saveAppState({ lineHeight: height })
-    set({ lineHeight: height })
+  setReadingWidth: (width) => {
+    void window.api.saveAppState({ readingWidth: width })
+    set({ readingWidth: width })
   },
 })

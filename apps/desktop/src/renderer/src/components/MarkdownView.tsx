@@ -7,11 +7,23 @@ import { useHeadingObserver } from '../hooks/useHeadingObserver'
 import { useMermaidThemeSync } from '../hooks/useMermaidThemeSync'
 import { useContentClickHandlers } from '../hooks/useContentClickHandlers'
 import { useAppStore, type Tab } from '../store/app-store'
-import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
+import {
+  MARKDOWN_FONT_SIZE,
+  MARKDOWN_LINE_HEIGHT,
+  getContentFontFamily,
+  getCodeFontFamily,
+} from '../lib/typography'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
 import { MarkdownContent } from './markdown/components'
+import type { ReadingWidth } from '../../../shared/types'
+
+const READING_WIDTHS = {
+  standard: '48rem',
+  comfortable: '56rem',
+  wide: '68rem',
+} as const satisfies Record<ReadingWidth, string>
 
 interface MarkdownViewProps {
   tab: Tab
@@ -24,14 +36,13 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [retryKey, setRetryKey] = useState(0)
 
-  const { wideMode, zoomLevel, contentFont, codeFont, fontSize, lineHeight } = useAppStore(
+  const { wideMode, readingWidth, zoomLevel, contentFont, codeFont } = useAppStore(
     useShallow((s) => ({
       wideMode: s.wideMode,
+      readingWidth: s.readingWidth,
       zoomLevel: s.zoomLevel,
       contentFont: s.contentFont,
       codeFont: s.codeFont,
-      fontSize: s.fontSize,
-      lineHeight: s.lineHeight,
     })),
   )
 
@@ -101,11 +112,11 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
         className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
         style={
           {
-            maxWidth: wideMode ? '100%' : '48rem',
+            maxWidth: wideMode ? '100%' : READING_WIDTHS[readingWidth],
             '--md-content-font': getContentFontFamily(contentFont),
             '--md-code-font': getCodeFontFamily(codeFont),
-            '--md-font-size': `${fontSize * (zoomLevel / 100)}px`,
-            '--md-line-height': String(lineHeight),
+            '--md-font-size': `${MARKDOWN_FONT_SIZE * (zoomLevel / 100)}px`,
+            '--md-line-height': String(MARKDOWN_LINE_HEIGHT),
           } as CSSProperties
         }
       >

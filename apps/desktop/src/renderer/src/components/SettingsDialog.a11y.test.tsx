@@ -47,6 +47,12 @@ describe('SettingsDialog accessibility', () => {
     expect(screen.getByRole('radiogroup', { name: 'Code font' })).toBeInTheDocument()
   })
 
+  it('does not expose manual size or line-height controls', () => {
+    renderOpen()
+    expect(screen.queryByText('Size')).not.toBeInTheDocument()
+    expect(screen.queryByText('Line height')).not.toBeInTheDocument()
+  })
+
   it('selects a theme option on click', () => {
     renderOpen()
     const light = screen.getByRole('button', { name: 'Light' })
