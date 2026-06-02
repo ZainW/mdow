@@ -61,11 +61,14 @@ describe('store', () => {
     storeData.set('sessionActiveTabPath', null)
     storeData.set('contentFont', 'inter')
     storeData.set('codeFont', 'geist-mono')
+    // Legacy typography overrides should no longer be surfaced as app settings.
     storeData.set('fontSize', 15.5)
     storeData.set('lineHeight', 1.65)
     storeData.set('theme', 'system')
     storeData.set('autoUpdateEnabled', true)
     storeData.set('wideMode', false)
+    storeData.set('interfaceScale', 'compact')
+    storeData.set('readingWidth', 'standard')
     storeData.set('sidebarMode', 'recents')
   })
 
@@ -120,11 +123,11 @@ describe('store', () => {
         sessionActiveTabPath: null,
         contentFont: 'inter',
         codeFont: 'geist-mono',
-        fontSize: 15.5,
-        lineHeight: 1.65,
         theme: 'system',
         autoUpdateEnabled: true,
         wideMode: false,
+        interfaceScale: 'compact',
+        readingWidth: 'standard',
         sidebarMode: 'recents',
       })
     })
@@ -140,6 +143,13 @@ describe('store', () => {
       const state = getAppState()
       expect(state.wideMode).toBe(true)
       expect(state.lastFolder).toBe('/docs')
+    })
+
+    it('saves display preference fields', () => {
+      saveAppState({ interfaceScale: 'large', readingWidth: 'comfortable' })
+      const state = getAppState()
+      expect(state.interfaceScale).toBe('large')
+      expect(state.readingWidth).toBe('comfortable')
     })
   })
 

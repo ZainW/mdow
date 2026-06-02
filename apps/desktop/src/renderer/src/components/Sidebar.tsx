@@ -18,18 +18,11 @@ import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { isMac } from '../lib/utils'
 
 const MODES: SidebarMode[] = ['recents', 'folder', 'outline']
-const DRAWER_WIDTH = 244
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 
-// Rail layout — keep in sync with the JSX (icons are h-7 with gap-0.5, py-1.5 padding)
-const ICON_HEIGHT = 28
-const ICON_GAP = 2
-const RAIL_PAD_TOP = 6
-const INDICATOR_HEIGHT = 16
-
-function indicatorY(modeIndex: number): number {
-  const iconTop = RAIL_PAD_TOP + modeIndex * (ICON_HEIGHT + ICON_GAP)
-  return iconTop + (ICON_HEIGHT - INDICATOR_HEIGHT) / 2
+function indicatorY(modeIndex: number): string {
+  const steps = Array.from({ length: modeIndex }, () => 'var(--rail-step)').join(' + ')
+  return `calc(var(--rail-pad-y) + var(--rail-indicator-offset)${steps ? ` + ${steps}` : ''})`
 }
 
 export function Sidebar() {
@@ -67,14 +60,14 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full shrink-0 border-r border-border-subtle">
-      <div className="relative flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-border-subtle bg-sidebar/40 py-1.5">
+      <div className="rail-column relative flex shrink-0 flex-col items-center border-r border-border-subtle bg-sidebar/40">
         <span
           aria-hidden
           className="rail-indicator pointer-events-none absolute left-0 w-0.5 rounded-r bg-primary"
           style={{
-            height: INDICATOR_HEIGHT,
+            height: 'var(--rail-indicator-height)',
             top: 0,
-            transform: `translateY(${indicatorY(modeIndex)}px)`,
+            transform: `translateY(${indicatorY(modeIndex)})`,
           }}
         />
         {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself */}
@@ -82,7 +75,7 @@ export function Sidebar() {
           ref={railRoving.containerRef}
           role="radiogroup"
           aria-label="Sidebar mode"
-          className="flex flex-col gap-0.5"
+          className="rail-mode-group flex flex-col"
           onKeyDown={railRoving.onKeyDown}
         >
           <RailModeIcon
@@ -127,7 +120,7 @@ export function Sidebar() {
       <div
         className="sidebar-drawer shrink-0 overflow-hidden"
         style={{
-          width: sidebarOpen ? DRAWER_WIDTH : 0,
+          width: sidebarOpen ? 'var(--sidebar-drawer-width)' : 0,
         }}
         aria-hidden={!sidebarOpen}
         inert={!sidebarOpen ? true : undefined}
@@ -135,11 +128,11 @@ export function Sidebar() {
         <ShadcnSidebar
           collapsible="none"
           className="h-full border-none"
-          style={{ width: DRAWER_WIDTH }}
+          style={{ width: 'var(--sidebar-drawer-width)' }}
         >
-          <SidebarHeader className="px-3 py-2">
-            <div className="flex h-7 items-center">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <SidebarHeader className="sidebar-drawer-header">
+            <div className="sidebar-drawer-title-row flex items-center">
+              <span className="sidebar-drawer-title font-medium uppercase tracking-wider text-muted-foreground">
                 {drawerTitle}
               </span>
             </div>
@@ -170,7 +163,7 @@ export function Sidebar() {
 }
 
 function railClasses(active: boolean): string {
-  return `rail-icon-btn h-7 w-7 hover:bg-transparent ${
+  return `rail-icon-btn size-(--rail-button-size) hover:bg-transparent ${
     active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
   }`
 }
@@ -199,7 +192,7 @@ function RailModeIcon({
       className={railClasses(checked)}
       onClick={onSelect}
     >
-      <span className="[&>svg]:size-4">{children}</span>
+      <span className="[&>svg]:size-(--rail-icon-size)">{children}</span>
     </Button>
   )
 }
@@ -222,7 +215,7 @@ function RailButton({
       className={railClasses(false)}
       onClick={onClick}
     >
-      <span className="[&>svg]:size-4">{children}</span>
+      <span className="[&>svg]:size-(--rail-icon-size)">{children}</span>
     </Button>
   )
 }
@@ -270,7 +263,7 @@ function OutlineList({
                   href={`#${h.id}`}
                   data-active={isActive}
                   onClick={(e) => handleClick(e, h.id)}
-                  className="outline-link block truncate rounded px-1.5 py-1 text-xs text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
+                  className="outline-link block truncate rounded text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
                   style={{ paddingLeft: 6 + (h.level - 1) * 10 }}
                   title={h.text}
                 >

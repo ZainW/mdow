@@ -78,7 +78,7 @@ export function ZoomIndicator() {
 
   return (
     <div
-      className="zoom-indicator absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-xs text-foreground shadow-sm"
+      className="zoom-indicator absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-[length:var(--control-font-size)] text-foreground shadow-sm"
       style={{
         opacity: visible || persistentlyVisible ? 1 : 0,
         transform: visible || persistentlyVisible ? 'scale(1)' : 'scale(0.95)',

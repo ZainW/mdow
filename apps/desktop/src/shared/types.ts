@@ -23,6 +23,8 @@ export interface FileError {
 }
 
 export type SidebarMode = 'recents' | 'folder' | 'outline'
+export type InterfaceScale = 'compact' | 'comfortable' | 'large'
+export type ReadingWidth = 'standard' | 'comfortable' | 'wide'
 
 export interface AppState {
   recents?: string[]
@@ -33,11 +35,11 @@ export interface AppState {
   sessionActiveTabPath: string | null
   contentFont: string
   codeFont: string
-  fontSize: number
-  lineHeight: number
   theme: string
   autoUpdateEnabled: boolean
   wideMode: boolean
+  interfaceScale: InterfaceScale
+  readingWidth: ReadingWidth
   sidebarMode: SidebarMode
 }
 

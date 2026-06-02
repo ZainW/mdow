@@ -4,11 +4,12 @@ import { useAppStore } from '../store/app-store'
 import {
   CODE_FONTS,
   CONTENT_FONTS,
+  MARKDOWN_FONT_SIZE,
+  MARKDOWN_LINE_HEIGHT,
   getCodeFontFamily,
   getContentFontFamily,
 } from '../lib/typography'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
-import { Slider } from './ui/slider'
 import { Button } from './ui/button'
 import { Label } from './ui/label'
 import { Switch } from './ui/switch'
@@ -16,13 +17,14 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { cn, isMac } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
+import type { InterfaceScale, ReadingWidth } from '../../../shared/types'
 
 const DEFAULTS = {
   theme: 'system' as const,
   contentFont: 'inter',
   codeFont: 'geist-mono',
-  fontSize: 15.5,
-  lineHeight: 1.65,
+  interfaceScale: 'compact' as const,
+  readingWidth: 'standard' as const,
   autoUpdateEnabled: true,
 }
 
@@ -32,6 +34,18 @@ const THEME_OPTIONS = [
   { value: 'dark', label: 'Dark', Icon: Moon },
 ] as const
 
+const INTERFACE_SCALE_OPTIONS = [
+  { value: 'compact', label: 'Compact' },
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'large', label: 'Large' },
+] as const satisfies readonly { value: InterfaceScale; label: string }[]
+
+const READING_WIDTH_OPTIONS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'wide', label: 'Wide' },
+] as const satisfies readonly { value: ReadingWidth; label: string }[]
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -40,14 +54,14 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const contentFont = useAppStore((s) => s.contentFont)
   const codeFont = useAppStore((s) => s.codeFont)
-  const fontSize = useAppStore((s) => s.fontSize)
-  const lineHeight = useAppStore((s) => s.lineHeight)
   const theme = useAppStore((s) => s.theme)
+  const interfaceScale = useAppStore((s) => s.interfaceScale)
+  const readingWidth = useAppStore((s) => s.readingWidth)
   const setContentFont = useAppStore((s) => s.setContentFont)
   const setCodeFont = useAppStore((s) => s.setCodeFont)
-  const setFontSize = useAppStore((s) => s.setFontSize)
-  const setLineHeight = useAppStore((s) => s.setLineHeight)
   const setTheme = useAppStore((s) => s.setTheme)
+  const setInterfaceScale = useAppStore((s) => s.setInterfaceScale)
+  const setReadingWidth = useAppStore((s) => s.setReadingWidth)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
 
@@ -58,8 +72,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setTheme(DEFAULTS.theme)
     setContentFont(DEFAULTS.contentFont)
     setCodeFont(DEFAULTS.codeFont)
-    setFontSize(DEFAULTS.fontSize)
-    setLineHeight(DEFAULTS.lineHeight)
+    setInterfaceScale(DEFAULTS.interfaceScale)
+    setReadingWidth(DEFAULTS.readingWidth)
     if (!isMac) setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
   }
 
@@ -79,20 +93,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         >
           <div
             className="font-semibold tracking-tight text-foreground"
-            style={{ fontSize: `${fontSize * 1.25}px`, lineHeight: 1.25 }}
+            style={{ fontSize: `${MARKDOWN_FONT_SIZE * 1.25}px`, lineHeight: 1.25 }}
           >
             The quiet morning
           </div>
           <p
             className="mt-1.5 text-foreground/85"
-            style={{ fontSize: `${fontSize}px`, lineHeight }}
+            style={{ fontSize: `${MARKDOWN_FONT_SIZE}px`, lineHeight: MARKDOWN_LINE_HEIGHT }}
           >
             Words on the page settle into their rhythm, and{' '}
             <code
               className="rounded bg-muted px-1 py-px text-foreground"
               style={{
                 fontFamily: codeFamily,
-                fontSize: `${fontSize * 0.9}px`,
+                fontSize: `${MARKDOWN_FONT_SIZE * 0.9}px`,
               }}
             >
               ligatures
@@ -103,6 +117,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
         <Field label="Theme">
           <ThemeRadiogroup theme={theme} onChange={setTheme} />
+        </Field>
+
+        <Field label="Interface scale">
+          <PresetToggleGroup
+            groupLabel="Interface scale"
+            value={interfaceScale}
+            options={INTERFACE_SCALE_OPTIONS}
+            onChange={setInterfaceScale}
+          />
+        </Field>
+
+        <Field label="Reading width">
+          <PresetToggleGroup
+            groupLabel="Reading width"
+            value={readingWidth}
+            options={READING_WIDTH_OPTIONS}
+            onChange={setReadingWidth}
+          />
         </Field>
 
         <Field label="Content font">
@@ -136,33 +168,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </FontGrid>
         </Field>
 
-        <div className="flex flex-col gap-4">
-          <SliderField
-            label="Size"
-            valueLabel={`${fontSize}px`}
-            value={fontSize}
-            onValueChange={(v) => setFontSize(Number(v))}
-            min={13}
-            max={24}
-            step={1}
-            leftHint="Aa"
-            rightHint="Aa"
-            leftHintSize={12}
-            rightHintSize={18}
-          />
-          <SliderField
-            label="Line height"
-            valueLabel={lineHeight.toFixed(1)}
-            value={lineHeight}
-            onValueChange={(v) => setLineHeight(Number(v))}
-            min={1.2}
-            max={2.2}
-            step={0.1}
-            leftHint="Compact"
-            rightHint="Spacious"
-          />
-        </div>
-
         {!isMac && (
           <section className="space-y-2">
             <h3 className="text-sm font-medium">Updates</h3>
@@ -179,10 +184,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </section>
         )}
 
-        <p className="text-[11px] leading-snug text-muted-foreground/70">
-          Wide mode is toggled from the document toolbar and saved across sessions.
-        </p>
-
         <div className="flex justify-end border-t border-border-subtle pt-3">
           <Button variant="outline" size="sm" onClick={handleResetDefaults}>
             Reset to defaults
@@ -190,6 +191,43 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function PresetToggleGroup<TValue extends string>({
+  groupLabel,
+  value,
+  options,
+  onChange,
+}: {
+  groupLabel: string
+  value: TValue
+  options: readonly { value: TValue; label: string }[]
+  onChange: (value: TValue) => void
+}) {
+  return (
+    <ToggleGroup
+      aria-label={groupLabel}
+      value={[value]}
+      onValueChange={(nextValue) => {
+        const next = options.find((opt) => opt.value === nextValue[0])?.value
+        if (next) onChange(next)
+      }}
+      variant="outline"
+      spacing={0}
+      className="grid w-full grid-cols-3 rounded-md bg-muted p-0.5"
+    >
+      {options.map((opt) => (
+        <ToggleGroupItem
+          key={opt.value}
+          value={opt.value}
+          aria-label={opt.label}
+          className="flex-1 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15"
+        >
+          {opt.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   )
 }
 
@@ -205,8 +243,8 @@ function ThemeRadiogroup({
       aria-label="Theme"
       value={[theme]}
       onValueChange={(value) => {
-        const next = value[0]
-        if (next) onChange(next as 'system' | 'light' | 'dark')
+        const next = THEME_OPTIONS.find((opt) => opt.value === value[0])?.value
+        if (next) onChange(next)
       }}
       variant="outline"
       spacing={0}
@@ -218,10 +256,13 @@ function ThemeRadiogroup({
           value={opt.value}
           aria-label={opt.label}
           className={cn(
-            'h-7 flex-1 gap-1.5 rounded-[5px] text-xs data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15',
+            'flex-1 gap-1.5 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15',
           )}
         >
-          <opt.Icon className="size-3.5" {...iconActiveProps(theme === opt.value)} />
+          <opt.Icon
+            className="size-(--button-default-icon-size)"
+            {...iconActiveProps(theme === opt.value)}
+          />
           {opt.label}
         </ToggleGroupItem>
       ))}
@@ -233,7 +274,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   const id = useId()
   return (
     <div className="flex flex-col gap-1.5">
-      <Label id={id} className="text-xs font-medium text-muted-foreground">
+      <Label id={id} className="font-medium text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -321,71 +362,5 @@ function FontTile({
         {label}
       </span>
     </button>
-  )
-}
-
-interface SliderFieldProps {
-  label: string
-  valueLabel: string
-  value: number
-  onValueChange: (value: number | readonly number[]) => void
-  min: number
-  max: number
-  step: number
-  leftHint: string
-  rightHint: string
-  leftHintSize?: number
-  rightHintSize?: number
-}
-
-function SliderField({
-  label,
-  valueLabel,
-  value,
-  onValueChange,
-  min,
-  max,
-  step,
-  leftHint,
-  rightHint,
-  leftHintSize,
-  rightHintSize,
-}: SliderFieldProps) {
-  const id = useId()
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
-          {label}
-        </Label>
-        <span className="text-xs tabular-nums text-foreground">{valueLabel}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="select-none leading-none text-muted-foreground/70"
-          style={{ fontSize: leftHintSize ? `${leftHintSize / 16}rem` : '0.625rem' }}
-        >
-          {leftHint}
-        </span>
-        <Slider
-          id={id}
-          aria-label={label}
-          value={value}
-          onValueChange={onValueChange}
-          min={min}
-          max={max}
-          step={step}
-          className="flex-1"
-        />
-        <span
-          aria-hidden="true"
-          className="select-none leading-none text-muted-foreground/70"
-          style={{ fontSize: rightHintSize ? `${rightHintSize / 16}rem` : '0.625rem' }}
-        >
-          {rightHint}
-        </span>
-      </div>
-    </div>
   )
 }

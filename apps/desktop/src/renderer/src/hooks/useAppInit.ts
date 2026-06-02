@@ -30,8 +30,20 @@ export function useAppInit(): void {
       }
       if (state.contentFont) patch.contentFont = state.contentFont
       if (state.codeFont) patch.codeFont = state.codeFont
-      if (state.fontSize) patch.fontSize = state.fontSize
-      if (state.lineHeight) patch.lineHeight = state.lineHeight
+      if (
+        state.interfaceScale === 'compact' ||
+        state.interfaceScale === 'comfortable' ||
+        state.interfaceScale === 'large'
+      ) {
+        patch.interfaceScale = state.interfaceScale
+      }
+      if (
+        state.readingWidth === 'standard' ||
+        state.readingWidth === 'comfortable' ||
+        state.readingWidth === 'wide'
+      ) {
+        patch.readingWidth = state.readingWidth
+      }
 
       if (Object.keys(patch).length > 0) {
         useAppStore.setState(patch)
