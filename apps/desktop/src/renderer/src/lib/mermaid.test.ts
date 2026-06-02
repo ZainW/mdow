@@ -50,6 +50,19 @@ describe('mermaid renderer', () => {
     expect(el.getAttribute('role')).toBe('img')
   })
 
+  it('self-initializes when a block renders before startup initialization runs', async () => {
+    const { renderMermaidBlock } = await import('./mermaid')
+    const el = document.createElement('div')
+    el.id = 'diagram-race'
+    document.body.append(el)
+
+    await renderMermaidBlock({ id: 'diagram-race', code: 'flowchart TD\n  A --> B' })
+
+    expect(mermaidMock.initialize).toHaveBeenCalled()
+    expect(mermaidMock.render).toHaveBeenCalledWith('diagram-race-svg', 'flowchart TD\n  A --> B')
+    expect(el.querySelector('svg')).toBeInTheDocument()
+  })
+
   it('reuses cached SVG output for repeated renders', async () => {
     const { initMermaid, renderMermaidBlock } = await import('./mermaid')
     const el = document.createElement('div')

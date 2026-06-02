@@ -2,7 +2,6 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
-import { initMarkdown } from './lib/markdown'
 import './assets/styles/index.css'
 import './assets/styles/markdown.css'
 
@@ -15,14 +14,15 @@ const queryClient = new QueryClient({
   },
 })
 
+function runMarkdownWarmup(): void {
+  void import('./lib/markdown').then(({ initMarkdown }) => initMarkdown())
+}
+
 function scheduleMarkdownWarmup(): void {
-  const run = () => {
-    void initMarkdown()
-  }
   if ('requestIdleCallback' in globalThis) {
-    requestIdleCallback(run)
+    requestIdleCallback(runMarkdownWarmup)
   } else {
-    setTimeout(run, 1)
+    setTimeout(runMarkdownWarmup, 1)
   }
 }
 

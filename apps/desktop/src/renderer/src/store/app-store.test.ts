@@ -2,6 +2,15 @@ import { describe, expect, it, beforeEach, vi } from 'vitest'
 import type { RenderResult } from '../lib/markdown'
 import { useAppStore, selectActiveTab } from './app-store'
 
+function createRenderResult(): RenderResult {
+  return {
+    tree: { nodes: [], frontmatter: {}, meta: {} },
+    mermaidBlocks: [],
+    headings: [],
+    frontmatter: {},
+  }
+}
+
 describe('app-store', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'api', {
@@ -55,12 +64,7 @@ describe('app-store', () => {
     it('clears render cache when reopening an existing tab with new content', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'v1' })
       const id = useAppStore.getState().tabs[0].id
-      useAppStore.getState().setRenderCache(id, {
-        tree: {} as RenderResult['tree'],
-        mermaidBlocks: [],
-        headings: [],
-        frontmatter: {},
-      })
+      useAppStore.getState().setRenderCache(id, createRenderResult())
       useAppStore.getState().openTab({ path: '/a.md', content: 'v2' })
       expect(useAppStore.getState().renderCache.has(id)).toBe(false)
     })
@@ -151,14 +155,22 @@ describe('app-store', () => {
     it('clears render cache when a tab closes', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
       const id = useAppStore.getState().tabs[0].id
-      useAppStore.getState().setRenderCache(id, {
-        tree: {} as RenderResult['tree'],
-        mermaidBlocks: [],
-        headings: [],
-        frontmatter: {},
-      })
+      useAppStore.getState().setRenderCache(id, createRenderResult())
       useAppStore.getState().closeTab(id)
       expect(useAppStore.getState().renderCache.has(id)).toBe(false)
+    })
+
+    it('bounds render cache entries to avoid retaining every rendered tab', () => {
+      for (let i = 0; i < 5; i++) {
+        useAppStore.getState().openTab({ path: `/file-${i}.md`, content: `# File ${i}` })
+        const tabId = useAppStore.getState().tabs.at(-1)!.id
+        useAppStore.getState().setRenderCache(tabId, createRenderResult())
+      }
+
+      const state = useAppStore.getState()
+      expect(state.renderCache.size).toBeLessThanOrEqual(4)
+      expect(state.renderCache.has(state.tabs[0].id)).toBe(false)
+      expect(state.renderCache.has(state.tabs[4].id)).toBe(true)
     })
   })
 

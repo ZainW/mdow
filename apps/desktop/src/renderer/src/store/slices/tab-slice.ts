@@ -21,7 +21,7 @@ export interface TabSlice {
   activeTabId: string | null
   openingPath: string | null
   renderCache: Map<string, RenderResult>
-  openTab: (file: { path: string; content: string }) => void
+  openTab: (file: { path: string; content: string }, options?: { activate?: boolean }) => void
   openErrorTab: (path: string, error: FileError) => void
   closeTab: (tabId: string) => void
   closeOtherTabs: (tabId: string) => void
@@ -53,18 +53,21 @@ function withoutRenderCache(
   return next
 }
 
+const MAX_RENDER_CACHE_ENTRIES = 4
+
 export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) => ({
   tabs: [],
   activeTabId: null,
   openingPath: null,
   renderCache: new Map(),
 
-  openTab: (file) =>
+  openTab: (file, options) =>
     set((state) => {
+      const activate = options?.activate ?? true
       const existing = state.tabs.find((t) => t.path === file.path)
       if (existing) {
         return {
-          activeTabId: existing.id,
+          activeTabId: activate ? existing.id : state.activeTabId,
           renderCache: withoutRenderCache(state.renderCache, [existing.id]),
           tabs: state.tabs.map((t) =>
             t.id === existing.id ? { ...t, content: file.content, error: null } : t,
@@ -78,10 +81,10 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
         scrollPosition: 0,
       }
       const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId)
-      const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
+      const insertIndex = activate && activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
       const tabs = [...state.tabs]
       tabs.splice(insertIndex, 0, newTab)
-      return { tabs, activeTabId: newTab.id }
+      return { tabs, activeTabId: activate ? newTab.id : state.activeTabId }
     }),
 
   openErrorTab: (path, error) =>
@@ -232,8 +235,15 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
   setRenderCache: (tabId, result) =>
     set((state) => {
       const renderCache = new Map(state.renderCache)
-      if (result === null) renderCache.delete(tabId)
-      else renderCache.set(tabId, result)
+      renderCache.delete(tabId)
+      if (result !== null) {
+        renderCache.set(tabId, result)
+        while (renderCache.size > MAX_RENDER_CACHE_ENTRIES) {
+          const oldest = renderCache.keys().next().value
+          if (!oldest) break
+          renderCache.delete(oldest)
+        }
+      }
       return { renderCache }
     }),
 })

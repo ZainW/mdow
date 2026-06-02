@@ -51,6 +51,10 @@ describe('getContentFontFamily', () => {
 })
 
 describe('getCodeFontFamily', () => {
+  it('returns system monospace family for "system-mono"', () => {
+    expect(getCodeFontFamily('system-mono')).toContain('ui-monospace')
+  })
+
   it('returns Geist Mono family for "geist-mono"', () => {
     expect(getCodeFontFamily('geist-mono')).toContain('Geist Mono')
   })

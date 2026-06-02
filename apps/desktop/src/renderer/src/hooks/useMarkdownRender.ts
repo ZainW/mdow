@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef } from 'react'
-import { renderMarkdown, type RenderResult } from '../lib/markdown'
+import type { RenderResult } from '../lib/markdown'
 import { useAppStore } from '../store/app-store'
 
 function getTabRenderFromStore(tabId: string): RenderResult | undefined {
@@ -8,6 +8,11 @@ function getTabRenderFromStore(tabId: string): RenderResult | undefined {
 
 function setTabRenderInStore(tabId: string, result: RenderResult): void {
   useAppStore.getState().setRenderCache(tabId, result)
+}
+
+async function renderMarkdownContent(content: string): Promise<RenderResult> {
+  const { renderMarkdown } = await import('../lib/markdown')
+  return renderMarkdown(content)
 }
 
 export interface RenderUi {
@@ -76,6 +81,7 @@ export function useMarkdownRender({
 
     const cached = getTabRenderFromStore(tabId)
     if (cached) {
+      setTabRenderInStore(tabId, cached)
       renderVersionRef.current += 1
       dispatchRender({
         type: 'ready',
@@ -87,7 +93,7 @@ export function useMarkdownRender({
 
     let cancelled = false
     dispatchRender({ type: 'start' })
-    void renderMarkdown(content)
+    void renderMarkdownContent(content)
       .then((res) => {
         if (cancelled) return
         setTabRenderInStore(tabId, res)
