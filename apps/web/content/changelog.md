@@ -5,9 +5,16 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.2.1
+## v1.3.0
 
 Latest release.
+
+- Improved desktop startup performance and memory behavior
+- Reduced large-document rendering work with lazy markdown features
+- Tightened folder/sidebar loading behavior and markdown render caching
+- Updated desktop and web dependencies
+
+## v1.2.1
 
 - Enabled the automatic update settings flow on macOS
 - Documented the in-app update download and restart flow across supported platforms
