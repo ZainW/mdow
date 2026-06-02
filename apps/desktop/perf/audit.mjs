@@ -265,7 +265,7 @@ await shot(page, '12-settings-dark')
 
 await probe('settingsRadiogroup', async () =>
   page.evaluate(() => ({
-    theme: document.querySelector('[role="radiogroup"][aria-label="Theme"]')?.tagName,
+    themeOptions: document.querySelector('[aria-label="Theme"]')?.querySelectorAll('button').length,
     contentFont: document.querySelector('[role="radiogroup"][aria-label="Content font"]')?.tagName,
     codeFont: document.querySelector('[role="radiogroup"][aria-label="Code font"]')?.tagName,
   })),
@@ -328,14 +328,16 @@ await shot(page, '18-tab-context-menu')
 
 await probe('contextMenu', async () =>
   page.evaluate(() => {
-    const menuEl = document.querySelector('.tab-context-menu')
-    const items = menuEl ? Array.from(menuEl.querySelectorAll('[role="menuitem"]')) : []
+    const menuEl = document.querySelector('[data-slot="context-menu-content"]')
+    const items = menuEl
+      ? Array.from(menuEl.querySelectorAll('[data-slot="context-menu-item"]'))
+      : []
     const close = items[0]
     return {
       hasMenu: !!menuEl,
       itemCount: items.length,
-      firstItemFocused: document.activeElement === close,
-      hasKbd: !!close?.querySelector('kbd'),
+      firstItemText: close?.textContent?.trim() ?? null,
+      hasShortcut: !!close?.querySelector('[data-slot="context-menu-shortcut"]'),
     }
   }),
 )
@@ -398,6 +400,26 @@ await probe('themeTokens', async () =>
   }),
 )
 
+await probe('windowChromeLight', async () => {
+  const renderer = await page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement)
+    const body = getComputedStyle(document.body)
+    const titlebar = document.querySelector('.titlebar-drag')
+    return {
+      cssBackground: root.getPropertyValue('--background').trim(),
+      bodyBackground: body.backgroundColor,
+      titlebarBackground: titlebar ? getComputedStyle(titlebar).backgroundColor : null,
+    }
+  })
+
+  const electronBackground = await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    return win?.getBackgroundColor?.().toLowerCase() ?? null
+  })
+
+  return { ...renderer, electronBackground }
+})
+
 await probe('reducedMotionRules', async () =>
   page.evaluate(() => {
     let count = 0
@@ -445,9 +467,9 @@ const checks = [
     () => probes.zoomIndicatorReset?.opacity === '1' || probes.zoomIndicatorReset == null,
   ],
   [
-    'settings exposes three radiogroups',
+    'settings exposes theme options and font radiogroups',
     () =>
-      probes.settingsRadiogroup?.theme === 'DIV' &&
+      probes.settingsRadiogroup?.themeOptions === 3 &&
       probes.settingsRadiogroup?.contentFont === 'DIV' &&
       probes.settingsRadiogroup?.codeFont === 'DIV',
   ],
@@ -458,12 +480,12 @@ const checks = [
       JSON.stringify(['Files', 'Navigation', 'View', 'App']),
   ],
   [
-    'context menu has 6 menuitems with first focused and a kbd',
+    'context menu has 6 menuitems with close shortcut',
     () =>
       probes.contextMenu?.hasMenu === true &&
       probes.contextMenu?.itemCount === 6 &&
-      probes.contextMenu?.firstItemFocused === true &&
-      probes.contextMenu?.hasKbd === true,
+      probes.contextMenu?.firstItemText === 'Close⌘ W' &&
+      probes.contextMenu?.hasShortcut === true,
   ],
   [
     'error view shows a truncated path',
@@ -471,6 +493,12 @@ const checks = [
       probes.errorView?.title === 'File moved or deleted' &&
       typeof probes.errorView?.pathSpan === 'string' &&
       probes.errorView.pathSpan.includes('…'),
+  ],
+  [
+    'light Electron chrome matches warm renderer background',
+    () =>
+      probes.windowChromeLight?.bodyBackground === probes.windowChromeLight?.titlebarBackground &&
+      probes.windowChromeLight?.electronBackground === '#fbf8f5',
   ],
   ['reduced-motion rule coverage preserved', () => (probes.reducedMotionRules?.count ?? 0) >= 7],
 ]
