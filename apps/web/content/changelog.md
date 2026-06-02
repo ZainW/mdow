@@ -5,9 +5,14 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.2.0
+## v1.2.1
 
 Latest release.
+
+- Enabled the automatic update settings flow on macOS
+- Documented the in-app update download and restart flow across supported platforms
+
+## v1.2.0
 
 - App-wide error boundary and clearer startup/read error handling
 - TTL-based render cache eviction for steadier memory use

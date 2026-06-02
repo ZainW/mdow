@@ -6,13 +6,21 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.2.1</title>
+      <link>https://mdow.app/changelog#v1-2-1</link>
+      <guid isPermaLink="false">v1.2.1</guid>
+      <pubDate>Tue, 02 Jun 2026 16:33:38 GMT</pubDate>
+      <description>Latest release.
+
+- Enabled the automatic update settings flow on macOS
+- Documented the in-app update download and restart flow across supported platforms</description>
+    </item>
+    <item>
       <title>v1.2.0</title>
       <link>https://mdow.app/changelog#v1-2-0</link>
       <guid isPermaLink="false">v1.2.0</guid>
-      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
-      <description>Latest release.
-
-- App-wide error boundary and clearer startup/read error handling
+      <pubDate>Tue, 02 Jun 2026 16:33:38 GMT</pubDate>
+      <description>- App-wide error boundary and clearer startup/read error handling
 - TTL-based render cache eviction for steadier memory use
 - Refined desktop scaling, spacing, typography, and warm paper palette
 - Restored the smaller Geist Mono font asset for leaner packages
@@ -23,7 +31,7 @@
       <title>v1.1.0</title>
       <link>https://mdow.app/changelog#v1-1-0</link>
       <guid isPermaLink="false">v1.1.0</guid>
-      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
+      <pubDate>Tue, 02 Jun 2026 16:33:38 GMT</pubDate>
       <description>- macOS code signing and notarization — no more Gatekeeper warnings
 - Multi-window support
 - Vault UX and security improvements
@@ -35,7 +43,7 @@
       <title>v1.0.5</title>
       <link>https://mdow.app/changelog#v1-0-5</link>
       <guid isPermaLink="false">v1.0.5</guid>
-      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
+      <pubDate>Tue, 02 Jun 2026 16:33:38 GMT</pubDate>
       <description>- Improved tab bar accessibility and keyboard navigation
 - Zoom indicator with stable layout across zoom levels
 - Refined sidebar modes (Recents, Outline, Folder)
@@ -46,7 +54,7 @@
       <title>v1.0.0</title>
       <link>https://mdow.app/changelog#v1-0-0</link>
       <guid isPermaLink="false">v1.0.0</guid>
-      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
+      <pubDate>Tue, 02 Jun 2026 16:33:38 GMT</pubDate>
       <description>Initial release.
 
 - Markdown rendering with md4x (WASM)
