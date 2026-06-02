@@ -32,4 +32,6 @@ AppImage requires no system installation — run it directly from your Downloads
 
 ## Updates
 
-On Windows and Linux, mdow checks for updates automatically and can download them in-app. On macOS, use the in-app menu to open the latest release on GitHub.
+Mdow checks for updates automatically in the background on macOS, Windows, and Linux.
+When an update is available, use the in-app banner to download it and restart Mdow to install it.
+You can also run a manual check from the app menu.

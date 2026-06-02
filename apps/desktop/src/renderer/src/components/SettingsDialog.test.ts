@@ -1,5 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getContentFontFamily, getCodeFontFamily } from '../lib/typography'
+
+afterEach(() => {
+  vi.resetModules()
+  vi.restoreAllMocks()
+  delete (globalThis.window as { api?: unknown }).api
+})
+
+describe('SettingsDialog', () => {
+  it('shows automatic update controls on macOS', async () => {
+    ;(globalThis.window as { api?: unknown }).api = {
+      platform: 'darwin',
+      saveAppState: vi.fn().mockResolvedValue(undefined),
+      setTheme: vi.fn().mockResolvedValue(undefined),
+      setAutoUpdateScheduling: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const { SettingsDialog } = await import('./SettingsDialog')
+
+    render(createElement(SettingsDialog, { open: true, onOpenChange: () => {} }))
+
+    expect(
+      screen.getByLabelText(/automatically check for updates in the background/i),
+    ).toBeInTheDocument()
+  })
+})
 
 describe('getContentFontFamily', () => {
   it('returns Inter family for "inter"', () => {

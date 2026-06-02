@@ -14,7 +14,7 @@ import { Button } from './ui/button'
 import { Label } from './ui/label'
 import { Switch } from './ui/switch'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-import { cn, isMac } from '@renderer/lib/utils'
+import { cn } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
 import type { InterfaceScale, ReadingWidth } from '../../../shared/types'
@@ -74,7 +74,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setCodeFont(DEFAULTS.codeFont)
     setInterfaceScale(DEFAULTS.interfaceScale)
     setReadingWidth(DEFAULTS.readingWidth)
-    if (!isMac) setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
+    setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
   }
 
   return (
@@ -168,21 +168,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </FontGrid>
         </Field>
 
-        {!isMac && (
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium">Updates</h3>
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-muted-foreground">
-                Automatically check for updates in the background
-              </span>
-              <Switch
-                checked={autoUpdateEnabled}
-                onCheckedChange={setAutoUpdateEnabled}
-                aria-label="Automatically check for updates in the background"
-              />
-            </div>
-          </section>
-        )}
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium">Updates</h3>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">
+              Automatically check for updates in the background
+            </span>
+            <Switch
+              checked={autoUpdateEnabled}
+              onCheckedChange={setAutoUpdateEnabled}
+              aria-label="Automatically check for updates in the background"
+            />
+          </div>
+        </section>
 
         <div className="flex justify-end border-t border-border-subtle pt-3">
           <Button variant="outline" size="sm" onClick={handleResetDefaults}>
