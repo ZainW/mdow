@@ -22,8 +22,8 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
   return (
     <div
       className={cn(
-        'rounded-lg border p-6 text-center',
-        recommended && 'border-primary bg-primary/5 ring-1 ring-primary/20',
+        'rounded-lg border border-border-subtle bg-card p-6 text-center shadow-card',
+        recommended && 'border-accent/40 bg-accent/8 ring-1 ring-accent/15',
       )}
     >
       <div className="mb-3 text-3xl">{icon}</div>
@@ -43,7 +43,7 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
                 'inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-[background-color,border-color,color] duration-150 ease',
                 recommended
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'border hover:bg-muted',
+                  : 'border border-border-subtle bg-card hover:bg-muted',
               )}
             >
               {f.label}
@@ -52,7 +52,7 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
         )}
       </div>
       {note && (
-        <div className="mt-4 flex items-center justify-between gap-2 rounded-md bg-muted/60 px-3 py-2 text-left">
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-md border border-border-subtle bg-muted/60 px-3 py-2 text-left">
           <code className="truncate text-xs">{note}</code>
           <button
             type="button"

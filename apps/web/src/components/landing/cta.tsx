@@ -16,7 +16,7 @@ export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
   return (
     <GradientSection innerClassName="text-center py-20 md:py-28">
       <div className="mx-auto max-w-2xl">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-balance">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
           Ready to read markdown beautifully?
         </h2>
         <p className="mx-auto mt-4 max-w-xl text-muted-foreground text-balance leading-relaxed">
