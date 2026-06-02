@@ -6,20 +6,25 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
-      <title></title>
-      <link>https://mdow.app/changelog#</link>
-      <guid isPermaLink="false"></guid>
-      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
-      <description># Changelog</description>
+      <title>v1.2.0</title>
+      <link>https://mdow.app/changelog#v1-2-0</link>
+      <guid isPermaLink="false">v1.2.0</guid>
+      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
+      <description>Latest release.
+
+- App-wide error boundary and clearer startup/read error handling
+- TTL-based render cache eviction for steadier memory use
+- Refined desktop scaling, spacing, typography, and warm paper palette
+- Restored the smaller Geist Mono font asset for leaner packages
+- Web theme switching fixes with system preference sync
+- Markdown rendering split into focused components and hooks</description>
     </item>
     <item>
       <title>v1.1.0</title>
       <link>https://mdow.app/changelog#v1-1-0</link>
       <guid isPermaLink="false">v1.1.0</guid>
-      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
-      <description>Latest release.
-
-- macOS code signing and notarization — no more Gatekeeper warnings
+      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
+      <description>- macOS code signing and notarization — no more Gatekeeper warnings
 - Multi-window support
 - Vault UX and security improvements
 - New UI primitives and Lucide icons
@@ -30,7 +35,7 @@
       <title>v1.0.5</title>
       <link>https://mdow.app/changelog#v1-0-5</link>
       <guid isPermaLink="false">v1.0.5</guid>
-      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
+      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
       <description>- Improved tab bar accessibility and keyboard navigation
 - Zoom indicator with stable layout across zoom levels
 - Refined sidebar modes (Recents, Outline, Folder)
@@ -41,7 +46,7 @@
       <title>v1.0.0</title>
       <link>https://mdow.app/changelog#v1-0-0</link>
       <guid isPermaLink="false">v1.0.0</guid>
-      <pubDate>Sun, 31 May 2026 01:24:16 GMT</pubDate>
+      <pubDate>Tue, 02 Jun 2026 14:25:00 GMT</pubDate>
       <description>Initial release.
 
 - Markdown rendering with md4x (WASM)

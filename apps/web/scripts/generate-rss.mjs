@@ -22,7 +22,7 @@ function escapeXml(text) {
 }
 
 const raw = readFileSync(changelogPath, 'utf8')
-const body = raw.replace(/^---[\s\S]*?---\n/, '')
+const body = raw.replace(/^---[\s\S]*?---\n/, '').replace(/^\s*# .*\n+/, '')
 const sections = body.split(/^## /m).filter(Boolean)
 
 const items = sections

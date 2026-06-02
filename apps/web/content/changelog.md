@@ -5,9 +5,18 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.1.0
+## v1.2.0
 
 Latest release.
+
+- App-wide error boundary and clearer startup/read error handling
+- TTL-based render cache eviction for steadier memory use
+- Refined desktop scaling, spacing, typography, and warm paper palette
+- Restored the smaller Geist Mono font asset for leaner packages
+- Web theme switching fixes with system preference sync
+- Markdown rendering split into focused components and hooks
+
+## v1.1.0
 
 - macOS code signing and notarization — no more Gatekeeper warnings
 - Multi-window support
