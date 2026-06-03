@@ -5,11 +5,12 @@ import { Button } from './ui/button'
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarGroup,
   SidebarGroupContent,
 } from './ui/sidebar'
-import { Clock, Folder, FolderOpen, List } from 'lucide-react'
+import { Clock, Folder, FolderOpen, List, Settings } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
@@ -33,6 +34,7 @@ export function Sidebar() {
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const mode = useAppStore((s) => s.sidebarMode)
   const setSidebarMode = useAppStore((s) => s.setSidebarMode)
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const modeRoving = useRovingFocus({ orientation: 'horizontal' })
 
   return (
@@ -76,6 +78,20 @@ export function Sidebar() {
             />
           )}
         </SidebarContent>
+        <SidebarFooter className="border-t border-border-subtle p-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Settings"
+            title="Settings"
+            className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings className="size-3.5 shrink-0" aria-hidden />
+            <span>Settings</span>
+          </Button>
+        </SidebarFooter>
       </ShadcnSidebar>
     </aside>
   )
