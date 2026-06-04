@@ -22,11 +22,16 @@ import { createMenu } from './menu'
 
 type MenuItem = Electron.MenuItemConstructorOptions
 
-function createMockWindow(isDestroyed: boolean): BrowserWindow {
-  return {
+function createMockWindow(isDestroyed: boolean): {
+  send: ReturnType<typeof vi.fn>
+  win: BrowserWindow
+} {
+  const send = vi.fn()
+  const win = {
     isDestroyed: () => isDestroyed,
-    webContents: { send: vi.fn() },
+    webContents: { isDestroyed: () => false, send },
   } as unknown as BrowserWindow
+  return { send, win }
 }
 
 function getMenuItem(menuLabel: string, itemLabel: string): MenuItem {
@@ -45,12 +50,12 @@ describe('menu', () => {
   })
 
   it('ignores folder shortcut clicks when the main window has been destroyed', () => {
-    const win = createMockWindow(true)
+    const { send, win } = createMockWindow(true)
     createMenu(() => win)
 
     const openFolder = getMenuItem('File', 'Open Folder...')
 
     expect(() => openFolder.click?.({} as Electron.MenuItem, {} as BrowserWindow, {})).not.toThrow()
-    expect(win.webContents.send).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 })

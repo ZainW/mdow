@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.3.0
+## v1.4.0
 
 Latest release.
+
+- Redesigned sidebar mode navigation with a simpler, more focused menu
+- Added coverage for menu shortcuts and destroyed-window handling
+- Prevented stale folder scans from updating sidebar state after navigation
+- Bounded render caches for steadier memory use during long reading sessions
+- Fixed Mermaid SVG caching so edited diagrams rerender with the latest source
+
+## v1.3.0
 
 - Improved desktop startup performance and memory behavior
 - Reduced large-document rendering work with lazy markdown features
