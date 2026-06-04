@@ -3,6 +3,16 @@ import { is } from '@electron-toolkit/utils'
 import { isMac } from './platform'
 import { getRecents } from './store'
 
+function sendToMainWindow(
+  getMainWindow: () => BrowserWindow | null,
+  channel: string,
+  ...args: unknown[]
+): void {
+  const win = getMainWindow()
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(channel, ...args)
+}
+
 function buildRecentSubmenu(
   getMainWindow: () => BrowserWindow | null,
 ): Electron.MenuItemConstructorOptions[] {
@@ -12,7 +22,7 @@ function buildRecentSubmenu(
   }
   return recents.map((path) => ({
     label: path.split(/[/\\]/).pop() ?? path,
-    click: () => getMainWindow()?.webContents.send('menu:open-recent', path),
+    click: () => sendToMainWindow(getMainWindow, 'menu:open-recent', path),
   }))
 }
 
@@ -52,12 +62,12 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
-          click: () => getMainWindow()?.webContents.send('menu:open-file'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:open-file'),
         },
         {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+Shift+O',
-          click: () => getMainWindow()?.webContents.send('menu:open-folder'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:open-folder'),
         },
         {
           label: 'Open Recent',
@@ -67,7 +77,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
-          click: () => getMainWindow()?.webContents.send('menu:close-tab'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:close-tab'),
         },
         ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }]),
       ],
@@ -86,7 +96,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Find...',
           accelerator: 'CmdOrCtrl+F',
-          click: () => getMainWindow()?.webContents.send('menu:find'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:find'),
         },
       ],
     },
@@ -96,30 +106,30 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
-          click: () => getMainWindow()?.webContents.send('menu:toggle-sidebar'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:toggle-sidebar'),
         },
         { type: 'separator' },
         {
           label: 'Settings...',
           accelerator: 'CmdOrCtrl+,',
-          click: () => getMainWindow()?.webContents.send('menu:settings'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:settings'),
         },
         { type: 'separator' },
         ...buildDevToolsItems(),
         {
           label: 'Actual Size',
           accelerator: 'CmdOrCtrl+0',
-          click: () => getMainWindow()?.webContents.send('menu:zoom-reset'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-reset'),
         },
         {
           label: 'Zoom In',
           accelerator: 'CmdOrCtrl+=',
-          click: () => getMainWindow()?.webContents.send('menu:zoom-in'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-in'),
         },
         {
           label: 'Zoom Out',
           accelerator: 'CmdOrCtrl+-',
-          click: () => getMainWindow()?.webContents.send('menu:zoom-out'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-out'),
         },
         { type: 'separator' },
         { role: 'togglefullscreen' },
@@ -141,13 +151,13 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
-          click: () => getMainWindow()?.webContents.send('menu:shortcuts'),
+          click: () => sendToMainWindow(getMainWindow, 'menu:shortcuts'),
         },
         { type: 'separator' },
         {
           label: 'Check for Updates…',
           click: () => {
-            getMainWindow()?.webContents.send('menu:check-for-updates')
+            sendToMainWindow(getMainWindow, 'menu:check-for-updates')
           },
         },
       ],
