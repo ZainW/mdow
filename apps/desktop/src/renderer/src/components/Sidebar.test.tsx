@@ -57,14 +57,22 @@ describe('Sidebar', () => {
     })
   })
 
-  it('exposes a Sidebar mode radiogroup with three options', () => {
+  it('exposes Sidebar mode tabs inside a single sidebar surface', () => {
     renderSidebar()
+    const sidebar = screen.getByRole('complementary', { name: 'Sidebar' })
     const group = screen.getByRole('radiogroup', { name: 'Sidebar mode' })
-    expect(group).toBeInTheDocument()
+
+    expect(sidebar).toContainElement(group)
+    expect(screen.queryByLabelText('Workspace actions')).not.toBeInTheDocument()
+
     const options = screen.getAllByRole('radio')
     expect(options).toHaveLength(3)
-    const labels = options.map((o) => o.getAttribute('aria-label'))
-    expect(labels).toEqual(['Recents', 'Folder', 'Outline'])
+    expect(options.map((o) => o.textContent)).toEqual(['Recents', 'Folder', 'Outline'])
+    expect(options.map((o) => o.getAttribute('aria-label'))).toEqual([
+      'Recents',
+      'Folder',
+      'Outline',
+    ])
   })
 
   it('marks the active mode as aria-checked', () => {
@@ -73,6 +81,22 @@ describe('Sidebar', () => {
     expect(folder.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(folder)
     expect(folder.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('does not render the old permanent sidebar rail file actions', () => {
+    renderSidebar()
+
+    expect(screen.queryByRole('button', { name: 'Quick Open' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open File' })).not.toBeInTheDocument()
+  })
+
+  it('opens settings from the sidebar footer', () => {
+    useAppStore.setState({ settingsOpen: false })
+    renderSidebar()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+
+    expect(useAppStore.getState().settingsOpen).toBe(true)
   })
 
   it('shows the empty-state when in Folder mode with no folder open', () => {
@@ -92,12 +116,12 @@ describe('Sidebar', () => {
     expect(folderTreeMock.rendered).not.toHaveBeenCalled()
   })
 
-  it('ArrowDown rotates focus between sidebar mode options', () => {
+  it('ArrowRight rotates focus between sidebar mode options', () => {
     renderSidebar()
     const recents = screen.getByRole('radio', { name: 'Recents' })
     const folder = screen.getByRole('radio', { name: 'Folder' })
     recents.focus()
-    fireEvent.keyDown(recents, { key: 'ArrowDown' })
+    fireEvent.keyDown(recents, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(folder)
   })
 

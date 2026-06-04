@@ -3,6 +3,7 @@ out/
 dist/
 .turbo/
 .superpowers/
+.worktrees/
 .agents/
 .playwright-mcp/
 apps/desktop/perf/output/
