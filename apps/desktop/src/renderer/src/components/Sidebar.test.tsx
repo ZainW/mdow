@@ -83,12 +83,20 @@ describe('Sidebar', () => {
     expect(folder.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('does not render the old permanent sidebar rail actions', () => {
+  it('does not render the old permanent sidebar rail file actions', () => {
     renderSidebar()
 
     expect(screen.queryByRole('button', { name: 'Quick Open' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Open File' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+
+  it('opens settings from the sidebar footer', () => {
+    useAppStore.setState({ settingsOpen: false })
+    renderSidebar()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+
+    expect(useAppStore.getState().settingsOpen).toBe(true)
   })
 
   it('shows the empty-state when in Folder mode with no folder open', () => {
