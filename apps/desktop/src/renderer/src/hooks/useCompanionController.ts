@@ -97,7 +97,12 @@ export function useCompanionController() {
 
     return () => {
       disposed = true
-      markActiveRequestCancelled()
+      if (activeRequestRef.current) {
+        markActiveRequestCancelled()
+        void window.api.cancelCompanionMessage().catch((error: unknown) => {
+          useAppStore.getState().setCompanionError(errorMessage(error))
+        })
+      }
       unsubscribe()
     }
   }, [])

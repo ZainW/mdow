@@ -169,6 +169,46 @@ describe('useCompanionController', () => {
         ?.status,
     ).toBe('error')
   })
+
+  it('cancels main request on unmount and allows remounted sends', async () => {
+    const firstSend = deferred<void>()
+    api.sendCompanionMessage.mockReturnValueOnce(firstSend.promise).mockResolvedValueOnce(undefined)
+    const { result, unmount } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = result.current.send('First question')
+    await act(async () => {})
+
+    const firstAssistant = useAppStore
+      .getState()
+      .companionMessages.find((message) => message.role === 'assistant')
+    expect(firstAssistant).toBeDefined()
+
+    unmount()
+
+    expect(api.cancelCompanionMessage).toHaveBeenCalledTimes(1)
+
+    const remounted = renderHook(() => useCompanionController())
+    await act(async () => {})
+    await act(async () => {
+      await remounted.result.current.send('Second question')
+    })
+
+    expect(api.sendCompanionMessage).toHaveBeenCalledTimes(2)
+    expect(useAppStore.getState().companionMessages.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ])
+
+    firstSend.resolve()
+    await firstSendPromise
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === firstAssistant!.id)
+        ?.status,
+    ).not.toBe('complete')
+  })
 })
 
 function deferred<T>() {
