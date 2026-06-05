@@ -23,11 +23,17 @@ type JsonRpcResponse = {
   error?: { code: number; message: string; data?: unknown }
 }
 
+type AcpProcessListener =
+  | ((error: Error) => void)
+  | ((code: number | null, signal: string | null) => void)
+
 type AcpProcess = {
   stdin: Writable
   stdout: Readable
   stderr: Readable
   kill: () => boolean
+  on: (event: 'error' | 'exit' | 'close', listener: AcpProcessListener) => AcpProcess
+  off: (event: 'error' | 'exit' | 'close', listener: AcpProcessListener) => AcpProcess
 }
 
 export type AcpProcessFactory = (command: string, args: string[], cwd: string) => AcpProcess
@@ -70,25 +76,86 @@ export function createAcpClient({
   let nextId = 1
   let sessionId: string | undefined
   let stdoutBuffer = ''
+  let listeners:
+    | {
+        process: AcpProcess
+        stdoutData: (chunk: Buffer | string) => void
+        processError: (error: Error) => void
+        processExit: (code: number | null, signal: string | null) => void
+        processClose: (code: number | null, signal: string | null) => void
+      }
+    | undefined
   const pending = new Map<
     JsonRpcId,
     { resolve: (value: unknown) => void; reject: (reason: Error) => void }
   >()
 
+  function rejectPending(error: Error) {
+    for (const waiter of pending.values()) {
+      waiter.reject(error)
+    }
+    pending.clear()
+  }
+
+  function detachListeners() {
+    if (!listeners) {
+      return
+    }
+    const activeListeners = listeners
+    activeListeners.process.stdout.off('data', activeListeners.stdoutData)
+    activeListeners.process.off('error', activeListeners.processError)
+    activeListeners.process.off('exit', activeListeners.processExit)
+    activeListeners.process.off('close', activeListeners.processClose)
+    listeners = undefined
+  }
+
+  function cleanup({ kill, rejectWith }: { kill: boolean; rejectWith?: Error }) {
+    const processToCleanup = child
+    detachListeners()
+    child = undefined
+    sessionId = undefined
+    stdoutBuffer = ''
+    if (rejectWith) {
+      rejectPending(rejectWith)
+    } else {
+      pending.clear()
+    }
+    if (kill) {
+      processToCleanup?.kill()
+    }
+  }
+
+  function reportProcessFailure(process: AcpProcess, error: Error) {
+    if (process !== child) {
+      return
+    }
+    onUpdate({ type: 'error', message: error.message })
+    cleanup({ kill: false, rejectWith: error })
+  }
+
   function send(message: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse) {
-    child?.stdin.write(`${JSON.stringify(message)}\n`, 'utf8')
+    const process = child
+    if (!process) {
+      return Promise.reject(new Error('ACP process is not running'))
+    }
+    return writeMessage(process, message)
   }
 
   function request(method: string, params?: unknown) {
     const id = nextId++
-    send({ jsonrpc: '2.0', id, method, params })
     return new Promise<unknown>((resolve, reject) => {
       pending.set(id, { resolve, reject })
+      send({ jsonrpc: '2.0', id, method, params }).catch((error: unknown) => {
+        pending.delete(id)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      })
     })
   }
 
   function notify(method: string, params?: unknown) {
-    send({ jsonrpc: '2.0', method, params })
+    void send({ jsonrpc: '2.0', method, params }).catch((error: unknown) => {
+      onUpdate({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+    })
   }
 
   function handleResponse(message: JsonRpcResponse) {
@@ -98,6 +165,12 @@ export function createAcpClient({
     }
     pending.delete(message.id)
     if (message.error) {
+      if (!isJsonRpcError(message.error)) {
+        const error = new Error('Invalid JSON-RPC error response')
+        onUpdate({ type: 'error', message: error.message })
+        waiter.reject(error)
+        return
+      }
       waiter.reject(new Error(message.error.message))
       return
     }
@@ -151,14 +224,23 @@ export function createAcpClient({
   function handleRequest(message: JsonRpcRequest) {
     if (message.method === 'session/request_permission') {
       onUpdate({ type: 'tool-refused', title: extractTitle(message.params) })
-      send({ jsonrpc: '2.0', id: message.id, result: { outcome: 'rejected' } })
+      void send({ jsonrpc: '2.0', id: message.id, result: { outcome: 'rejected' } }).catch(
+        (error: unknown) => {
+          onUpdate({
+            type: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          })
+        },
+      )
       return
     }
 
-    send({
+    void send({
       jsonrpc: '2.0',
       id: message.id,
       error: { code: -32601, message: 'Method not found' },
+    }).catch((error: unknown) => {
+      onUpdate({ type: 'error', message: error instanceof Error ? error.message : String(error) })
     })
   }
 
@@ -186,7 +268,10 @@ export function createAcpClient({
     onUpdate({ type: 'error', message: 'Invalid JSON-RPC message' })
   }
 
-  function handleStdoutChunk(chunk: Buffer | string) {
+  function handleStdoutChunk(process: AcpProcess, chunk: Buffer | string) {
+    if (process !== child) {
+      return
+    }
     stdoutBuffer += chunk.toString()
     const lines = stdoutBuffer.split('\n')
     stdoutBuffer = lines.pop() ?? ''
@@ -208,23 +293,44 @@ export function createAcpClient({
 
   return {
     async start() {
-      child = processFactory(command, args, cwd)
-      child.stdout.on('data', handleStdoutChunk)
-
-      const initializeResult = await request('initialize', {
-        protocolVersion: 1,
-        clientCapabilities: {},
-        clientInfo: { name: 'Mdow' },
-      })
-      if (!isRecord(initializeResult) || initializeResult.protocolVersion !== 1) {
-        throw new Error('Unsupported ACP protocol version')
+      const process = processFactory(command, args, cwd)
+      child = process
+      const stdoutData = (chunk: Buffer | string) => handleStdoutChunk(process, chunk)
+      const processError = (error: Error) => reportProcessFailure(process, error)
+      const handleProcessExit = (code: number | null, signal: string | null) => {
+        reportProcessFailure(process, processExitError(code, signal))
       }
-
-      const sessionResult = await request('session/new', { cwd, mcpServers: [] })
-      if (!isRecord(sessionResult) || typeof sessionResult.sessionId !== 'string') {
-        throw new Error('ACP provider did not create a session')
+      listeners = {
+        process,
+        stdoutData,
+        processError,
+        processExit: handleProcessExit,
+        processClose: handleProcessExit,
       }
-      sessionId = sessionResult.sessionId
+      process.stdout.on('data', stdoutData)
+      process.on('error', processError)
+      process.on('exit', handleProcessExit)
+      process.on('close', handleProcessExit)
+
+      try {
+        const initializeResult = await request('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: 'Mdow' },
+        })
+        if (!isRecord(initializeResult) || initializeResult.protocolVersion !== 1) {
+          throw new Error('Unsupported ACP protocol version')
+        }
+
+        const sessionResult = await request('session/new', { cwd, mcpServers: [] })
+        if (!isRecord(sessionResult) || typeof sessionResult.sessionId !== 'string') {
+          throw new Error('ACP provider did not create a session')
+        }
+        sessionId = sessionResult.sessionId
+      } catch (error) {
+        cleanup({ kill: process === child, rejectWith: undefined })
+        throw error
+      }
     },
 
     sendPrompt(prompt: AcpContentBlock[]) {
@@ -245,16 +351,45 @@ export function createAcpClient({
     },
 
     stop() {
-      child?.kill()
-      child = undefined
-      sessionId = undefined
-      stdoutBuffer = ''
-      for (const waiter of pending.values()) {
-        waiter.reject(new Error('ACP client stopped'))
-      }
-      pending.clear()
+      cleanup({ kill: true, rejectWith: new Error('ACP client stopped') })
     },
   }
+}
+
+function writeMessage(
+  process: AcpProcess,
+  message: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse,
+) {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    function settle(error?: Error | null) {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (error) {
+        reject(error)
+        return
+      }
+      resolve()
+    }
+
+    try {
+      process.stdin.write(`${JSON.stringify(message)}\n`, 'utf8', settle)
+    } catch (error) {
+      settle(error instanceof Error ? error : new Error(String(error)))
+    }
+  })
+}
+
+function processExitError(code: number | null, signal: string | null) {
+  if (signal) {
+    return new Error(`ACP provider exited with signal ${signal}`)
+  }
+  if (code !== null) {
+    return new Error(`ACP provider exited with code ${code}`)
+  }
+  return new Error('ACP provider exited')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -267,6 +402,12 @@ function isJsonRpcId(value: unknown): value is JsonRpcId {
 
 function isJsonRpcResponse(value: Record<string, unknown>): value is JsonRpcResponse {
   return isJsonRpcId(value.id) && ('result' in value || 'error' in value)
+}
+
+function isJsonRpcError(
+  value: unknown,
+): value is { code: number; message: string; data?: unknown } {
+  return isRecord(value) && typeof value.code === 'number' && typeof value.message === 'string'
 }
 
 function isJsonRpcRequest(value: Record<string, unknown>): value is JsonRpcRequest {

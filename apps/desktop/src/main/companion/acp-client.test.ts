@@ -23,6 +23,25 @@ function createHarness() {
   return { child, stdout, writes, factory }
 }
 
+function createFailingWriteHarness() {
+  const stdout = new PassThrough()
+  const stderr = new PassThrough()
+  const stdin = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback(new Error('stdin closed'))
+    },
+  })
+  stdin.on('error', () => {})
+  const child = Object.assign(new EventEmitter(), {
+    stdin,
+    stdout,
+    stderr,
+    kill: vi.fn<() => boolean>(() => true),
+  })
+  const factory: AcpProcessFactory = () => child
+  return { child, stdout, factory }
+}
+
 function writeJson(stdout: PassThrough, message: unknown) {
   stdout.write(`${JSON.stringify(message)}\n`)
 }
@@ -83,7 +102,11 @@ describe('createAcpClient', () => {
       { type: 'text', text: 'Summarize this' },
       {
         type: 'resource',
-        resource: { uri: 'file:///workspace/readme.md', mimeType: 'text/markdown', text: '# Readme' },
+        resource: {
+          uri: 'file:///workspace/readme.md',
+          mimeType: 'text/markdown',
+          text: '# Readme',
+        },
       },
     ]
 
@@ -98,6 +121,9 @@ describe('createAcpClient', () => {
         prompt,
       },
     })
+
+    writeJson(stdout, { jsonrpc: '2.0', id: 3, result: {} })
+    client.stop()
   })
 
   it('streams agent message chunks and refuses permission requests', async () => {
@@ -173,6 +199,7 @@ describe('createAcpClient', () => {
       id: 99,
       result: { outcome: 'rejected' },
     })
+    client.stop()
   })
 
   it('sends session cancel notifications and kills the process on stop', async () => {
@@ -202,5 +229,150 @@ describe('createAcpClient', () => {
 
     client.stop()
     expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects pending start and reports an error when the process errors', async () => {
+    const onUpdate = vi.fn()
+    const { child, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    child.emit('error', new Error('spawn failed'))
+
+    await expect(started).rejects.toThrow('spawn failed')
+    expect(onUpdate).toHaveBeenCalledWith({ type: 'error', message: 'spawn failed' })
+  })
+
+  it('rejects pending start and clears session state when the process exits', async () => {
+    const onUpdate = vi.fn()
+    const { child, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    child.emit('exit', 1, null)
+
+    await expect(started).rejects.toThrow('ACP provider exited')
+    expect(onUpdate).toHaveBeenCalledWith({
+      type: 'error',
+      message: 'ACP provider exited with code 1',
+    })
+    await expect(client.sendPrompt([{ type: 'text', text: 'After exit' }])).rejects.toThrow(
+      'ACP session has not started',
+    )
+  })
+
+  it('kills and detaches listeners when handshake validation fails', async () => {
+    const onUpdate = vi.fn()
+    const { child, stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 2 } })
+
+    await expect(started).rejects.toThrow('Unsupported ACP protocol version')
+    expect(child.kill).toHaveBeenCalledTimes(1)
+
+    writeJson(stdout, {
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'stale' },
+        },
+      },
+    })
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: 'assistant-delta', text: 'stale' })
+  })
+
+  it('ignores stale stdout after stop', async () => {
+    const onUpdate = vi.fn()
+    const { stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
+    await waitForWriteCount(writes, 2)
+    writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
+    await started
+
+    client.stop()
+    writeJson(stdout, {
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'after stop' },
+        },
+      },
+    })
+
+    expect(onUpdate).not.toHaveBeenCalledWith({ type: 'assistant-delta', text: 'after stop' })
+  })
+
+  it('rejects start when stdin write fails', async () => {
+    const onUpdate = vi.fn()
+    const { child, factory } = createFailingWriteHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    await expect(client.start()).rejects.toThrow('stdin closed')
+    expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects malformed JSON-RPC error responses safely', async () => {
+    const onUpdate = vi.fn()
+    const { stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0', id: 1, error: { code: -1 } })
+
+    await expect(started).rejects.toThrow('Invalid JSON-RPC error response')
+    expect(onUpdate).toHaveBeenCalledWith({
+      type: 'error',
+      message: 'Invalid JSON-RPC error response',
+    })
   })
 })
