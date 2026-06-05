@@ -123,7 +123,7 @@ describe('companion settings integration', () => {
     )
   })
 
-  it('updates custom companion command while typing without saving until blur', async () => {
+  it('keeps custom companion command as a local draft until blur', async () => {
     useAppStore.setState({ companionOpen: true })
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
@@ -132,14 +132,39 @@ describe('companion settings integration', () => {
       target: { value: 'custom acp' },
     })
 
-    expect(useAppStore.getState().companionCustomCommand).toBe('custom acp')
+    expect(input).toHaveValue('custom acp')
+    expect(useAppStore.getState().companionCustomCommand).toBe('')
+    expect(window.api.saveAppState).not.toHaveBeenCalledWith({
+      companionCustomCommand: 'custom acp',
+    })
     expect(saveSettings).not.toHaveBeenCalled()
     expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
 
     fireEvent.blur(input)
 
+    expect(useAppStore.getState().companionCustomCommand).toBe('custom acp')
+    expect(window.api.saveAppState).toHaveBeenCalledWith({ companionCustomCommand: 'custom acp' })
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'custom acp' })
     await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not mutate the committed custom command while editing an available custom draft', () => {
+    useAppStore.setState({
+      companionProvider: 'custom',
+      companionCustomCommand: 'previous acp',
+      companionProviders: [
+        { id: 'custom', label: 'Custom ACP', command: 'previous acp', status: 'available' },
+      ],
+    })
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, { target: { value: 'draft acp' } })
+
+    expect(input).toHaveValue('draft acp')
+    expect(useAppStore.getState().companionCustomCommand).toBe('previous acp')
+    expect(saveSettings).not.toHaveBeenCalled()
+    expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
   })
 
   it('saves custom companion command on Enter without detecting providers while companion is closed', async () => {
@@ -150,6 +175,7 @@ describe('companion settings integration', () => {
       target: { value: 'custom acp' },
     })
 
+    expect(useAppStore.getState().companionCustomCommand).toBe('')
     expect(saveSettings).not.toHaveBeenCalled()
     fireEvent.keyDown(input, { key: 'Enter' })
 
@@ -160,6 +186,20 @@ describe('companion settings integration', () => {
       }),
     )
     expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
+  })
+
+  it('commits custom companion command once when Enter is followed by blur', async () => {
+    useAppStore.setState({ companionOpen: true })
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, { target: { value: 'custom acp' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1))
+    expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'custom acp' })
+    expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1)
   })
 
   it('persists the selected companion provider from settings', () => {
