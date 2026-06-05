@@ -14,6 +14,7 @@ interface ProviderCandidate extends ProviderCommand {
 }
 
 const DETECTION_TIMEOUT_MS = 750
+const CLEANUP_GRACE_MS = 250
 
 const BUILT_IN_CANDIDATES: ProviderCandidate[] = [
   {
@@ -48,19 +49,52 @@ async function detectCandidate(candidate: ProviderCandidate): Promise<CompanionP
   return new Promise((resolve) => {
     let settled = false
     let child: ReturnType<typeof spawn> | null = null
+    let timeout: NodeJS.Timeout | null = null
+    let cleanupTimeout: NodeJS.Timeout | null = null
+    let pendingTimeoutStatus: CompanionProviderStatus | null = null
+
+    const clearTimers = () => {
+      if (timeout) clearTimeout(timeout)
+      if (cleanupTimeout) clearTimeout(cleanupTimeout)
+      timeout = null
+      cleanupTimeout = null
+    }
+
+    const providerStatus = (
+      status: CompanionProviderStatus['status'],
+      error?: string,
+    ): CompanionProviderStatus => ({
+      id: candidate.id,
+      label: candidate.label,
+      command: candidate.displayCommand,
+      installHint: candidate.installHint,
+      status,
+      error,
+    })
 
     const finish = (status: CompanionProviderStatus['status'], error?: string) => {
       if (settled) return
       settled = true
-      if (child && status === 'available') child.kill()
-      resolve({
-        id: candidate.id,
-        label: candidate.label,
-        command: candidate.displayCommand,
-        installHint: candidate.installHint,
-        status,
-        error,
-      })
+      clearTimers()
+      resolve(providerStatus(status, error))
+    }
+
+    const finishAfterCleanup = () => {
+      if (!pendingTimeoutStatus || settled) return
+      settled = true
+      clearTimers()
+      resolve(pendingTimeoutStatus)
+    }
+
+    const cleanupTimedOutProvider = () => {
+      if (!child || settled) return
+      pendingTimeoutStatus = providerStatus('available')
+      child.kill('SIGTERM')
+      cleanupTimeout = setTimeout(() => {
+        if (settled) return
+        child?.kill('SIGKILL')
+        finishAfterCleanup()
+      }, CLEANUP_GRACE_MS)
     }
 
     try {
@@ -74,8 +108,14 @@ async function detectCandidate(candidate: ProviderCandidate): Promise<CompanionP
     }
 
     child.once('error', (err) => finish('missing', err.message))
-    child.once('exit', (code) => finish(code === 0 ? 'available' : 'missing', `Exited with ${code}`))
-    setTimeout(() => finish('available'), DETECTION_TIMEOUT_MS)
+    child.once('exit', (code) => {
+      if (pendingTimeoutStatus) {
+        finishAfterCleanup()
+        return
+      }
+      finish(code === 0 ? 'available' : 'missing', `Exited with ${code}`)
+    })
+    timeout = setTimeout(cleanupTimedOutProvider, DETECTION_TIMEOUT_MS)
   })
 }
 
