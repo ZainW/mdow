@@ -32,10 +32,9 @@ type AcpProcess = {
 
 export type AcpProcessFactory = (command: string, args: string[], cwd: string) => AcpProcess
 
-export type AcpContentBlock = {
-  type: 'text'
-  text: string
-}
+export type AcpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'resource'; resource: { uri: string; mimeType?: string; text: string } }
 
 export type AcpClientUpdate =
   | { type: 'assistant-delta'; text: string }
@@ -44,7 +43,7 @@ export type AcpClientUpdate =
 
 export type AcpClient = {
   start: () => Promise<void>
-  sendPrompt: (prompt: string) => Promise<void>
+  sendPrompt: (prompt: AcpContentBlock[]) => Promise<void>
   cancel: () => void
   stop: () => void
 }
@@ -144,7 +143,7 @@ export function createAcpClient({
       return
     }
 
-    if (typeof update.sessionUpdate === 'string' && update.sessionUpdate.includes('tool')) {
+    if (update.sessionUpdate === 'tool_call') {
       onUpdate({ type: 'tool-refused', title: extractTitle(update) })
     }
   }
@@ -228,14 +227,11 @@ export function createAcpClient({
       sessionId = sessionResult.sessionId
     },
 
-    sendPrompt(prompt: string) {
+    sendPrompt(prompt: AcpContentBlock[]) {
       if (!sessionId) {
         return Promise.reject(new Error('ACP session has not started'))
       }
-      request('session/prompt', {
-        sessionId,
-        prompt: [{ type: 'text', text: prompt } satisfies AcpContentBlock],
-      }).catch((error: unknown) => {
+      request('session/prompt', { sessionId, prompt }).catch((error: unknown) => {
         onUpdate({ type: 'error', message: error instanceof Error ? error.message : String(error) })
       })
       return Promise.resolve()

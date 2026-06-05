@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { createAcpClient, type AcpProcessFactory } from './acp-client'
+import { createAcpClient, type AcpContentBlock, type AcpProcessFactory } from './acp-client'
 
 function createHarness() {
   const stdout = new PassThrough()
@@ -42,7 +42,7 @@ async function waitForWriteCount(writes: string[], count: number) {
 }
 
 describe('createAcpClient', () => {
-  it('initializes, creates a session, and sends text prompts', async () => {
+  it('initializes, creates a session, and sends prompt blocks', async () => {
     const { stdout, writes, factory } = createHarness()
     const client = createAcpClient({
       command: 'agent',
@@ -79,7 +79,15 @@ describe('createAcpClient', () => {
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 
-    await client.sendPrompt('Summarize this')
+    const prompt: AcpContentBlock[] = [
+      { type: 'text', text: 'Summarize this' },
+      {
+        type: 'resource',
+        resource: { uri: 'file:///workspace/readme.md', mimeType: 'text/markdown', text: '# Readme' },
+      },
+    ]
+
+    await client.sendPrompt(prompt)
     messages = readMessages(writes)
     expect(messages[2]).toMatchObject({
       jsonrpc: '2.0',
@@ -87,7 +95,7 @@ describe('createAcpClient', () => {
       method: 'session/prompt',
       params: {
         sessionId: 'session-1',
-        prompt: [{ type: 'text', text: 'Summarize this' }],
+        prompt,
       },
     })
   })
@@ -134,6 +142,17 @@ describe('createAcpClient', () => {
     })
     writeJson(stdout, {
       jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'session-1',
+        update: {
+          sessionUpdate: 'tool_call_delta',
+          toolCall: { title: 'Streaming tool call' },
+        },
+      },
+    })
+    writeJson(stdout, {
+      jsonrpc: '2.0',
       id: 99,
       method: 'session/request_permission',
       params: { sessionId: 'session-1', title: 'Edit file' },
@@ -143,6 +162,10 @@ describe('createAcpClient', () => {
       expect(onUpdate).toHaveBeenCalledWith({ type: 'assistant-delta', text: 'Hello' })
       expect(onUpdate).toHaveBeenCalledWith({ type: 'tool-refused', title: 'Read file' })
       expect(onUpdate).toHaveBeenCalledWith({ type: 'tool-refused', title: 'Edit file' })
+      expect(onUpdate).not.toHaveBeenCalledWith({
+        type: 'tool-refused',
+        title: 'Streaming tool call',
+      })
     })
     await waitForWriteCount(writes, 3)
     expect(readMessages(writes)[2]).toEqual({
