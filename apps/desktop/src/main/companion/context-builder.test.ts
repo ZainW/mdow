@@ -263,6 +263,64 @@ describe('companion context builder', () => {
     ])
   })
 
+  it('rejects an active markdown path through an intermediate symlink', async () => {
+    const docs = await createDocs()
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'mdow-companion-outside-'))
+    const outsideFolder = join(outsideRoot, 'docs')
+    await mkdir(outsideFolder)
+    const outsideMarkdown = join(outsideFolder, 'secret.md')
+    await writeFile(outsideMarkdown, '# Secret\n\nOutside allowed roots.')
+    const linkedFolder = join(docs.root, 'linkdir')
+    await symlink(outsideFolder, linkedFolder)
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      activePath: join(linkedFolder, 'secret.md'),
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Active document is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('rejects an open folder path through an intermediate symlink', async () => {
+    const docs = await createDocs()
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'mdow-companion-outside-'))
+    const outsideFolder = join(outsideRoot, 'docs')
+    await mkdir(outsideFolder)
+    const linkedFolder = join(docs.root, 'linkdir')
+    await symlink(outsideRoot, linkedFolder)
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      openFolderPath: join(linkedFolder, 'docs'),
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Open folder is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
   it('reports truncation when active source fills the source limit before folder files', async () => {
     const docs = await createDocs()
     registerAllowedFile(docs.active)
@@ -310,6 +368,22 @@ describe('companion context builder', () => {
       message: 'Available markdown context exceeded the source limit.',
     })
     expect(fsFailures.readdirPaths).not.toContain(unnecessaryFolder)
+  })
+
+  it('includes filesystem-derived markdown filenames containing dot-dot', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const releaseNotes = join(root, 'release..notes.md')
+    await writeFile(releaseNotes, '# Release Notes')
+    registerAllowedPath(root)
+
+    const context = await buildCompanionContext({
+      openFolderPath: root,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources.map((source) => source.path)).toEqual([releaseNotes])
+    expect(context.summary.warnings).toEqual([])
   })
 
   it('reports truncation when traversal directory budget is exhausted', async () => {

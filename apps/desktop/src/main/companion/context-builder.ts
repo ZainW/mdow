@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, parse, sep } from 'node:path'
 import { isPathAllowed } from '../allowed-paths'
 import { isMarkdownPath, validateMarkdownPath, validatePath } from '../path-validation'
 import type {
@@ -75,8 +75,8 @@ export async function buildCompanionContext({
           message: 'Open folder is not available to the companion.',
         })
       } else {
-        const folderStat = await fs.lstat(resolvedFolderPath)
-        if (folderStat.isSymbolicLink()) {
+        const folderStat = await safePathStat(resolvedFolderPath)
+        if (!folderStat) {
           warnings.push({
             type: 'permission-denied',
             message: 'Open folder is not available to the companion.',
@@ -181,16 +181,21 @@ async function readSource({
   maxCharsPerSource,
   warnings,
   unavailableMessage,
+  validateInputPath = true,
 }: {
   filePath: string
   id: string
   maxCharsPerSource: number
   warnings: CompanionContextWarning[]
   unavailableMessage: string
+  validateInputPath?: boolean
 }): Promise<{ resolvedPath: string | null; source?: CompanionContextSource }> {
   let resolvedPath: string
   try {
-    resolvedPath = validateMarkdownPath(filePath)
+    resolvedPath = validateInputPath ? validateMarkdownPath(filePath) : filePath
+    if (!isMarkdownPath(resolvedPath)) {
+      throw new Error('invalid-extension')
+    }
   } catch (error) {
     warnings.push({ type: warningTypeFromError(error), message: unavailableMessage })
     return { resolvedPath: null }
@@ -202,8 +207,8 @@ async function readSource({
   }
 
   try {
-    const fileStat = await fs.lstat(resolvedPath)
-    if (fileStat.isSymbolicLink()) {
+    const fileStat = await safePathStat(resolvedPath)
+    if (!fileStat) {
       warnings.push({ type: 'permission-denied', message: unavailableMessage })
       return { resolvedPath }
     }
@@ -323,7 +328,7 @@ async function readFolderSources({
         continue
       }
 
-      const filePath = validateMarkdownPath(childPath)
+      const filePath = childPath
       if (seen.has(filePath)) {
         continue
       }
@@ -338,6 +343,7 @@ async function readFolderSources({
         maxCharsPerSource,
         warnings,
         unavailableMessage: 'Markdown file is not available to the companion.',
+        validateInputPath: false,
       })
       if (source.source) {
         sources.push(source.source)
@@ -357,6 +363,28 @@ function prefixSourceText(text: string): string {
 
 function sanitizePromptMetadata(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+}
+
+async function safePathStat(path: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
+  const root = parse(path).root
+  const parts = path.slice(root.length).split(sep).filter(Boolean)
+  let current = root
+  let currentStat: Awaited<ReturnType<typeof fs.lstat>> | undefined
+  let reachedAllowedPath = false
+
+  for (const part of parts) {
+    current = join(current, part)
+    reachedAllowedPath ||= isPathAllowed(current)
+    if (!reachedAllowedPath) {
+      continue
+    }
+    currentStat = await fs.lstat(current)
+    if (currentStat.isSymbolicLink()) {
+      return null
+    }
+  }
+
+  return currentStat ?? (await fs.lstat(path))
 }
 
 function compareCodepoints(left: string, right: string): number {
