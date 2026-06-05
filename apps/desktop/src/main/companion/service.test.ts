@@ -201,7 +201,89 @@ describe('companion service', () => {
     })
   })
 
+  it('ignores assistant deltas that arrive after send completes', async () => {
+    type CreateClient = Parameters<typeof createCompanionService>[0]['createClient']
+    let onUpdate!: Parameters<CreateClient>[0]['onUpdate']
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn((options) => {
+        onUpdate = options.onUpdate
+        return {
+          start: vi.fn(async () => {}),
+          sendPrompt: vi.fn(async () => {}),
+          cancel: vi.fn(),
+          stop: vi.fn(),
+        }
+      }),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    await service.send({
+      messageId: 'assistant_1',
+      text: 'Hi',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+
+    const callCount = emitUpdate.mock.calls.length
+    onUpdate({ type: 'assistant-delta', text: 'Late' })
+
+    expect(emitUpdate.mock.calls).toHaveLength(callCount)
+  })
+
+  it('ignores assistant deltas that arrive after cancel settles', async () => {
+    type CreateClient = Parameters<typeof createCompanionService>[0]['createClient']
+    let onUpdate!: Parameters<CreateClient>[0]['onUpdate']
+    let resolvePrompt: () => void = () => {}
+    const promptStarted = deferred<void>()
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn((options) => {
+        onUpdate = options.onUpdate
+        return {
+          start: vi.fn(async () => {}),
+          sendPrompt: vi.fn(() => {
+            promptStarted.resolve()
+            return new Promise<void>((resolve) => {
+              resolvePrompt = resolve
+            })
+          }),
+          cancel: vi.fn(),
+          stop: vi.fn(),
+        }
+      }),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const send = service.send({
+      messageId: 'assistant_1',
+      text: 'Hi',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+
+    await promptStarted.promise
+    service.cancel()
+    resolvePrompt()
+    await send
+
+    const callCount = emitUpdate.mock.calls.length
+    onUpdate({ type: 'assistant-delta', text: 'Late' })
+
+    expect(emitUpdate.mock.calls).toHaveLength(callCount)
+  })
+
   it('cancel and shutdown delegate to the active client', async () => {
+    let resolvePrompt: () => void = () => {}
+    const promptStarted = deferred<void>()
     const cancel = vi.fn()
     const stop = vi.fn()
     const emitUpdate = vi.fn()
@@ -209,9 +291,49 @@ describe('companion service', () => {
       detectProviders: vi.fn(async () => []),
       createClient: vi.fn(() => ({
         start: vi.fn(async () => {}),
-        sendPrompt: vi.fn(async () => {}),
+        sendPrompt: vi.fn(() => {
+          promptStarted.resolve()
+          return new Promise<void>((resolve) => {
+            resolvePrompt = resolve
+          })
+        }),
         cancel,
         stop,
+      })),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const send = service.send({
+      messageId: 'msg_1',
+      text: 'Hi',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+
+    await promptStarted.promise
+    service.cancel()
+    resolvePrompt()
+    await send
+    service.shutdown()
+
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(emitUpdate).toHaveBeenCalledWith({ type: 'status', status: 'cancelled' })
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('idle cancel emits nothing and does not call the last client', async () => {
+    const cancel = vi.fn()
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn(() => ({
+        start: vi.fn(async () => {}),
+        sendPrompt: vi.fn(async () => {}),
+        cancel,
+        stop: vi.fn(),
       })),
       buildContext: vi.fn(async () => emptyContext()),
       getSettings: () => ({ provider: 'auto', customCommand: '' }),
@@ -225,13 +347,12 @@ describe('companion service', () => {
       activePath: null,
       openFolderPath: null,
     })
+    emitUpdate.mockClear()
 
     service.cancel()
-    service.shutdown()
 
-    expect(cancel).toHaveBeenCalledOnce()
-    expect(emitUpdate).toHaveBeenCalledWith({ type: 'status', status: 'cancelled' })
-    expect(stop).toHaveBeenCalledOnce()
+    expect(cancel).not.toHaveBeenCalled()
+    expect(emitUpdate).not.toHaveBeenCalled()
   })
 
   it('rejects concurrent sends with an error update', async () => {

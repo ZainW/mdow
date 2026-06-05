@@ -99,7 +99,7 @@ export function createCompanionService({
   }
 
   function forwardClientUpdate(update: AcpClientUpdate) {
-    if (activeRequest?.cancelled) {
+    if (!activeRequest || isStale(activeRequest)) {
       return
     }
     if (update.type === 'assistant-delta') {
@@ -204,14 +204,16 @@ export function createCompanionService({
         if (activeRequest === requestState) {
           activeRequest = null
           inFlight = false
+          activeMessageId = ''
         }
       }
     },
 
     cancel() {
-      if (activeRequest) {
-        activeRequest.cancelled = true
+      if (!activeRequest || activeRequest.cancelled) {
+        return
       }
+      activeRequest.cancelled = true
       client?.cancel()
       emitUpdate({ type: 'status', status: 'cancelled' })
     },
