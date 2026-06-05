@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CompanionProviderStatus } from '../../../shared/types'
+import type { CompanionProviderStatus, CompanionUpdate } from '../../../shared/types'
 import { useAppStore } from '../store/app-store'
 import { useCompanionController } from './useCompanionController'
 
@@ -11,7 +11,7 @@ const api = vi.hoisted(() => ({
   saveAppState: vi.fn(() => Promise.resolve()),
   sendCompanionMessage: vi.fn(() => Promise.resolve()),
   cancelCompanionMessage: vi.fn(() => Promise.resolve()),
-  onCompanionUpdate: vi.fn(() => () => {}),
+  onCompanionUpdate: vi.fn((_callback: (update: CompanionUpdate) => void) => () => {}),
 }))
 
 describe('useCompanionController', () => {
@@ -208,6 +208,76 @@ describe('useCompanionController', () => {
       useAppStore.getState().companionMessages.find((message) => message.id === firstAssistant!.id)
         ?.status,
     ).not.toBe('complete')
+  })
+
+  it('does not let an old unmounted send clear a remounted send streaming state', async () => {
+    const firstSend = deferred<void>()
+    const secondSend = deferred<void>()
+    api.sendCompanionMessage
+      .mockReturnValueOnce(firstSend.promise)
+      .mockReturnValueOnce(secondSend.promise)
+    const { result, unmount } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = result.current.send('First question')
+    await act(async () => {})
+    unmount()
+
+    const remounted = renderHook(() => useCompanionController())
+    await act(async () => {})
+    const secondSendPromise = remounted.result.current.send('Second question')
+    await act(async () => {})
+
+    firstSend.resolve()
+    await firstSendPromise
+
+    expect(useAppStore.getState().companionStreaming).toBe(true)
+    await act(async () => {
+      await remounted.result.current.send('Third question')
+    })
+    expect(api.sendCompanionMessage).toHaveBeenCalledTimes(2)
+
+    secondSend.resolve()
+    await secondSendPromise
+  })
+
+  it('ignores stale cancelled status updates after a remounted send starts', async () => {
+    const firstSend = deferred<void>()
+    const secondSend = deferred<void>()
+    api.sendCompanionMessage
+      .mockReturnValueOnce(firstSend.promise)
+      .mockReturnValueOnce(secondSend.promise)
+    const { result, unmount } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = result.current.send('First question')
+    await act(async () => {})
+    unmount()
+
+    const remounted = renderHook(() => useCompanionController())
+    await act(async () => {})
+    const secondSendPromise = remounted.result.current.send('Second question')
+    await act(async () => {})
+    const onUpdate = api.onCompanionUpdate.mock.calls.at(-1)?.[0]
+    expect(onUpdate).toBeDefined()
+
+    const secondAssistant = useAppStore
+      .getState()
+      .companionMessages.findLast((message) => message.role === 'assistant')
+    expect(secondAssistant).toBeDefined()
+
+    act(() => {
+      onUpdate!({ type: 'status', status: 'cancelled' })
+    })
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === secondAssistant!.id)
+        ?.status,
+    ).toBe('streaming')
+    expect(useAppStore.getState().companionStreaming).toBe(true)
+
+    firstSend.resolve()
+    secondSend.resolve()
+    await firstSendPromise
+    await secondSendPromise
   })
 })
 

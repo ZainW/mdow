@@ -31,10 +31,9 @@ export function useCompanionController() {
       if (update.type === 'status') {
         if (update.status === 'starting' || update.status === 'streaming') {
           store.setCompanionStreaming(true)
-        } else if (update.status === 'complete' || update.status === 'cancelled') {
-          if (update.status === 'cancelled') {
-            markActiveRequestCancelled()
-          }
+        } else if (update.status === 'complete') {
+          store.setCompanionStreaming(false)
+        } else if (update.status === 'cancelled' && !activeRequestRef.current) {
           store.setCompanionStreaming(false)
         }
         return
@@ -102,6 +101,7 @@ export function useCompanionController() {
         void window.api.cancelCompanionMessage().catch((error: unknown) => {
           useAppStore.getState().setCompanionError(errorMessage(error))
         })
+        activeRequestRef.current = null
       }
       unsubscribe()
     }
@@ -162,8 +162,8 @@ export function useCompanionController() {
       } finally {
         if (activeRequestRef.current === activeRequest) {
           activeRequestRef.current = null
+          useAppStore.getState().setCompanionStreaming(false)
         }
-        useAppStore.getState().setCompanionStreaming(false)
       }
     },
     cancel: async () => {
