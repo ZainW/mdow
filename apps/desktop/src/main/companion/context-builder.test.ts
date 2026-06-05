@@ -36,6 +36,7 @@ describe('companion context builder', () => {
     expect(context.sources[0].id).toBe('src_active')
     expect(context.summary.sourceCount).toBe(2)
     expect(context.summary.truncated).toBe(false)
+    expect(context.summary.sources[0]).not.toHaveProperty('text')
   })
 
   it('omits paths outside allowed roots and reports a context warning', async () => {
@@ -52,6 +53,74 @@ describe('companion context builder', () => {
     expect(context.summary.warnings[0]).toEqual({
       type: 'permission-denied',
       message: 'Active document is not available to the companion.',
+    })
+  })
+
+  it('reports missing-file when the active markdown document cannot be read', async () => {
+    const docs = await createDocs()
+    const missing = join(docs.root, 'missing.md')
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      activePath: missing,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'missing-file',
+        message: 'Active document is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('reports no-context when available markdown files are empty', async () => {
+    const docs = await createDocs()
+    await writeFile(docs.active, '   ')
+    registerAllowedFile(docs.active)
+
+    const context = await buildCompanionContext({
+      activePath: docs.active,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'no-context',
+        message: 'Markdown file has no context for the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('reports truncation when active source fills the source limit before folder files', async () => {
+    const docs = await createDocs()
+    registerAllowedFile(docs.active)
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      activePath: docs.active,
+      openFolderPath: docs.root,
+      maxSources: 1,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources.map((source) => source.path)).toEqual([docs.active])
+    expect(context.summary.truncated).toBe(true)
+    expect(context.summary.warnings).toContainEqual({
+      type: 'truncated',
+      message: 'Available markdown context exceeded the source limit.',
     })
   })
 

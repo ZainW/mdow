@@ -2,36 +2,20 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { isPathAllowed } from '../allowed-paths'
 import { isMarkdownPath, validateMarkdownPath, validatePath } from '../path-validation'
+import type {
+  CompanionContextSource as CompanionContextSourceMetadata,
+  CompanionContextSummary,
+  CompanionContextWarning,
+} from '../../shared/types'
 import type { AcpContentBlock } from './acp-client'
 
 const DEFAULT_MAX_SOURCES = 16
 const DEFAULT_MAX_CHARS_PER_SOURCE = 12_000
 
-export type CompanionContextWarning = {
-  type: 'permission-denied' | 'missing' | 'inaccessible' | 'empty-context' | 'truncated'
-  message: string
-  path?: string
-}
-
-export type CompanionContextSourceMetadata = {
-  id: string
-  path: string
-  title: string
+export type CompanionContextSource = CompanionContextSourceMetadata & {
   truncated: boolean
   chars: number
-}
-
-export type CompanionContextSource = CompanionContextSourceMetadata & {
   text: string
-}
-
-export type CompanionContextSummary = {
-  activePath?: string
-  folderPath?: string
-  sourceCount: number
-  truncated: boolean
-  warnings: CompanionContextWarning[]
-  sources: CompanionContextSourceMetadata[]
 }
 
 export type CompanionContext = {
@@ -40,8 +24,8 @@ export type CompanionContext = {
 }
 
 export type BuildCompanionContextInput = {
-  activePath?: string
-  openFolderPath?: string
+  activePath?: string | null
+  openFolderPath?: string | null
   maxSources?: number
   maxCharsPerSource?: number
 }
@@ -54,8 +38,8 @@ export async function buildCompanionContext({
 }: BuildCompanionContextInput): Promise<CompanionContext> {
   const sources: CompanionContextSource[] = []
   const warnings: CompanionContextWarning[] = []
-  let resolvedActivePath: string | undefined
-  let resolvedFolderPath: string | undefined
+  let resolvedActivePath: string | null = null
+  let resolvedFolderPath: string | null = null
   let truncated = false
 
   if (activePath) {
@@ -73,37 +57,34 @@ export async function buildCompanionContext({
     }
   }
 
-  if (openFolderPath && sources.length < maxSources) {
+  if (openFolderPath) {
     try {
       resolvedFolderPath = validatePath(openFolderPath)
       if (!isPathAllowed(resolvedFolderPath)) {
         warnings.push({
           type: 'permission-denied',
           message: 'Open folder is not available to the companion.',
-          path: resolvedFolderPath,
         })
       } else {
         const folderStat = await stat(resolvedFolderPath)
         if (!folderStat.isDirectory()) {
           warnings.push({
-            type: 'inaccessible',
+            type: 'missing-file',
             message: 'Open folder is not a directory.',
-            path: resolvedFolderPath,
           })
         } else {
           const seen = new Set(sources.map((source) => source.path))
           for (const filePath of await collectMarkdownFiles(resolvedFolderPath)) {
+            if (seen.has(filePath)) {
+              continue
+            }
             if (sources.length >= maxSources) {
               truncated = true
               warnings.push({
                 type: 'truncated',
                 message: 'Available markdown context exceeded the source limit.',
-                path: resolvedFolderPath,
               })
               break
-            }
-            if (seen.has(filePath)) {
-              continue
             }
             const source = await readSource({
               filePath,
@@ -124,14 +105,13 @@ export async function buildCompanionContext({
       warnings.push({
         type: warningTypeFromError(error),
         message: 'Open folder is not available to the companion.',
-        path: openFolderPath,
       })
     }
   }
 
   if (sources.length === 0) {
     warnings.push({
-      type: 'empty-context',
+      type: 'no-context',
       message: 'No markdown context is available to the companion.',
     })
   }
@@ -144,7 +124,7 @@ export async function buildCompanionContext({
       sourceCount: sources.length,
       truncated,
       warnings,
-      sources: sources.map(({ text: _text, ...metadata }) => metadata),
+      sources: sources.map(({ id, title, path, heading }) => ({ id, title, path, heading })),
     },
   }
 }
@@ -184,13 +164,13 @@ async function readSource({
   maxCharsPerSource: number
   warnings: CompanionContextWarning[]
   unavailableMessage: string
-}): Promise<{ resolvedPath?: string; source?: CompanionContextSource }> {
+}): Promise<{ resolvedPath: string | null; source?: CompanionContextSource }> {
   let resolvedPath: string
   try {
     resolvedPath = validateMarkdownPath(filePath)
   } catch (error) {
-    warnings.push({ type: warningTypeFromError(error), message: unavailableMessage, path: filePath })
-    return {}
+    warnings.push({ type: warningTypeFromError(error), message: unavailableMessage })
+    return { resolvedPath: null }
   }
 
   if (!isPathAllowed(resolvedPath)) {
@@ -201,7 +181,7 @@ async function readSource({
   try {
     const fileStat = await stat(resolvedPath)
     if (!fileStat.isFile()) {
-      warnings.push({ type: 'inaccessible', message: unavailableMessage, path: resolvedPath })
+      warnings.push({ type: 'missing-file', message: unavailableMessage })
       return { resolvedPath }
     }
 
@@ -209,9 +189,8 @@ async function readSource({
     const trimmedText = fullText.trim()
     if (!trimmedText) {
       warnings.push({
-        type: 'empty-context',
+        type: 'no-context',
         message: 'Markdown file has no context for the companion.',
-        path: resolvedPath,
       })
       return { resolvedPath }
     }
@@ -222,7 +201,6 @@ async function readSource({
       warnings.push({
         type: 'truncated',
         message: 'Markdown file context was truncated for the companion.',
-        path: resolvedPath,
       })
     }
 
@@ -238,7 +216,7 @@ async function readSource({
       },
     }
   } catch (error) {
-    warnings.push({ type: warningTypeFromError(error), message: unavailableMessage, path: resolvedPath })
+    warnings.push({ type: warningTypeFromError(error), message: unavailableMessage })
     return { resolvedPath }
   }
 }
@@ -264,11 +242,8 @@ async function collectMarkdownFiles(folderPath: string): Promise<string[]> {
 }
 
 function warningTypeFromError(error: unknown): CompanionContextWarning['type'] {
-  if (error instanceof Error && error.message === 'invalid-extension') {
-    return 'inaccessible'
-  }
   if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-    return 'missing'
+    return 'missing-file'
   }
-  return 'inaccessible'
+  return 'no-context'
 }
