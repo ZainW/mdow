@@ -16,6 +16,8 @@
   font-display: swap;
 }
 
+@source "../../../../../node_modules/streamdown/dist/*.js";
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
