@@ -385,7 +385,9 @@ function sanitizePromptMetadata(value: string): string {
   return sanitized.trim()
 }
 
-async function safePathStat(path: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
+export async function safePathStat(
+  path: string,
+): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
   const root = parse(path).root
   const parts = path.slice(root.length).split(sep).filter(Boolean)
   let current = root

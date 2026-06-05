@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CompanionProviderStatus, CompanionSendRequest } from '../../shared/types'
@@ -128,6 +128,83 @@ describe('companion service', () => {
     })
 
     expect(createClient).toHaveBeenCalledWith(expect.objectContaining({ cwd: process.cwd() }))
+  })
+
+  it('falls back to the process cwd for symlinked folder roots', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'mdow-companion-cwd-'))
+    const targetPath = await mkdtemp(join(tmpdir(), 'mdow-companion-target-'))
+    const linkPath = join(basePath, 'linked-folder')
+    await symlink(targetPath, linkPath, 'dir')
+    registerAllowedPath(basePath)
+
+    const createClient = vi.fn(() => ({
+      start: vi.fn(async () => {}),
+      sendPrompt: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      stop: vi.fn(),
+    }))
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient,
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate: vi.fn(),
+    })
+
+    try {
+      await service.send({
+        messageId: 'msg_1',
+        text: 'What can you see?',
+        provider: 'opencode',
+        activePath: null,
+        openFolderPath: linkPath,
+      })
+
+      expect(createClient).toHaveBeenCalledWith(expect.objectContaining({ cwd: process.cwd() }))
+    } finally {
+      await rm(basePath, { recursive: true, force: true })
+      await rm(targetPath, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the process cwd for active files under intermediate symlinks', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'mdow-companion-cwd-'))
+    const targetPath = await mkdtemp(join(tmpdir(), 'mdow-companion-target-'))
+    const linkPath = join(basePath, 'linked-folder')
+    const activePath = join(linkPath, 'README.md')
+    await mkdir(targetPath, { recursive: true })
+    await writeFile(join(targetPath, 'README.md'), '# Secret')
+    await symlink(targetPath, linkPath, 'dir')
+    registerAllowedPath(basePath)
+
+    const createClient = vi.fn(() => ({
+      start: vi.fn(async () => {}),
+      sendPrompt: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      stop: vi.fn(),
+    }))
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient,
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate: vi.fn(),
+    })
+
+    try {
+      await service.send({
+        messageId: 'msg_1',
+        text: 'What can you see?',
+        provider: 'opencode',
+        activePath,
+        openFolderPath: null,
+      })
+
+      expect(createClient).toHaveBeenCalledWith(expect.objectContaining({ cwd: process.cwd() }))
+    } finally {
+      await rm(basePath, { recursive: true, force: true })
+      await rm(targetPath, { recursive: true, force: true })
+    }
   })
 
   it('chooses the first available provider when provider is auto', async () => {

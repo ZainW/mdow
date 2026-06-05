@@ -1,4 +1,3 @@
-import { stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
   CompanionProviderId,
@@ -13,6 +12,7 @@ import { createAcpClient, type AcpClient, type AcpClientUpdate } from './acp-cli
 import {
   buildCompanionContext,
   buildCompanionPromptBlocks,
+  safePathStat,
   type BuildCompanionContextInput,
   type CompanionContext,
 } from './context-builder'
@@ -291,8 +291,8 @@ async function safeDirectoryPath(path: string): Promise<string | null> {
     if (!isPathAllowed(resolved)) {
       return null
     }
-    const stats = await stat(resolved)
-    return stats.isDirectory() ? resolved : null
+    const stats = await safePathStat(resolved)
+    return stats?.isDirectory() ? resolved : null
   } catch {
     return null
   }
@@ -304,8 +304,8 @@ async function safeMarkdownFilePath(path: string): Promise<string | null> {
     if (!isPathAllowed(resolved)) {
       return null
     }
-    const stats = await stat(resolved)
-    return stats.isFile() ? resolved : null
+    const stats = await safePathStat(resolved)
+    return stats?.isFile() ? resolved : null
   } catch {
     return null
   }
