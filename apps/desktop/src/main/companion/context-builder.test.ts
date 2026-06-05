@@ -1,9 +1,35 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAllowedPaths, registerAllowedFile, registerAllowedPath } from '../allowed-paths'
 import { buildCompanionContext, buildCompanionPromptBlocks } from './context-builder'
+
+const fsFailures = vi.hoisted(() => ({
+  readFileError: null as Error | null,
+  readFilePath: null as string | null,
+  statError: null as Error | null,
+  statPath: null as string | null,
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readFile: vi.fn((path, ...args) => {
+      if (String(path) === fsFailures.readFilePath && fsFailures.readFileError) {
+        return Promise.reject(fsFailures.readFileError)
+      }
+      return actual.readFile(path, ...args)
+    }) as unknown as typeof actual.readFile,
+    stat: vi.fn((path, ...args) => {
+      if (String(path) === fsFailures.statPath && fsFailures.statError) {
+        return Promise.reject(fsFailures.statError)
+      }
+      return actual.stat(path, ...args)
+    }) as unknown as typeof actual.stat,
+  }
+})
 
 async function createDocs() {
   const root = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
@@ -17,8 +43,18 @@ async function createDocs() {
   return { root, active, guide, text }
 }
 
+function createFsError(code: 'EACCES' | 'EPERM') {
+  return Object.assign(new Error(code), { code })
+}
+
 describe('companion context builder', () => {
-  beforeEach(() => clearAllowedPaths())
+  beforeEach(() => {
+    clearAllowedPaths()
+    fsFailures.readFileError = null
+    fsFailures.readFilePath = null
+    fsFailures.statError = null
+    fsFailures.statPath = null
+  })
 
   it('prioritizes the active markdown document and includes open-folder markdown files', async () => {
     const docs = await createDocs()
@@ -96,6 +132,56 @@ describe('companion context builder', () => {
       {
         type: 'no-context',
         message: 'Markdown file has no context for the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('reports permission-denied when active markdown read is inaccessible', async () => {
+    const docs = await createDocs()
+    registerAllowedFile(docs.active)
+    fsFailures.readFilePath = docs.active
+    fsFailures.readFileError = createFsError('EACCES')
+
+    const context = await buildCompanionContext({
+      activePath: docs.active,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Active document is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('reports permission-denied when open folder access is inaccessible', async () => {
+    const docs = await createDocs()
+    registerAllowedPath(docs.root)
+    fsFailures.statPath = docs.root
+    fsFailures.statError = createFsError('EPERM')
+
+    const context = await buildCompanionContext({
+      openFolderPath: docs.root,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Open folder is not available to the companion.',
       },
       {
         type: 'no-context',

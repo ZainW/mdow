@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import * as fs from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { isPathAllowed } from '../allowed-paths'
 import { isMarkdownPath, validateMarkdownPath, validatePath } from '../path-validation'
@@ -66,7 +66,7 @@ export async function buildCompanionContext({
           message: 'Open folder is not available to the companion.',
         })
       } else {
-        const folderStat = await stat(resolvedFolderPath)
+        const folderStat = await fs.stat(resolvedFolderPath)
         if (!folderStat.isDirectory()) {
           warnings.push({
             type: 'missing-file',
@@ -179,13 +179,13 @@ async function readSource({
   }
 
   try {
-    const fileStat = await stat(resolvedPath)
+    const fileStat = await fs.stat(resolvedPath)
     if (!fileStat.isFile()) {
       warnings.push({ type: 'missing-file', message: unavailableMessage })
       return { resolvedPath }
     }
 
-    const fullText = await readFile(resolvedPath, 'utf8')
+    const fullText = await fs.readFile(resolvedPath, 'utf8')
     const trimmedText = fullText.trim()
     if (!trimmedText) {
       warnings.push({
@@ -223,7 +223,7 @@ async function readSource({
 
 async function collectMarkdownFiles(folderPath: string): Promise<string[]> {
   const files: string[] = []
-  const entries = await readdir(folderPath, { withFileTypes: true })
+  const entries = await fs.readdir(folderPath, { withFileTypes: true })
   entries.sort((a, b) => a.name.localeCompare(b.name))
 
   for (const entry of entries) {
@@ -242,8 +242,13 @@ async function collectMarkdownFiles(folderPath: string): Promise<string[]> {
 }
 
 function warningTypeFromError(error: unknown): CompanionContextWarning['type'] {
-  if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-    return 'missing-file'
+  if (error instanceof Error && 'code' in error) {
+    if (error.code === 'ENOENT') {
+      return 'missing-file'
+    }
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      return 'permission-denied'
+    }
   }
   return 'no-context'
 }
