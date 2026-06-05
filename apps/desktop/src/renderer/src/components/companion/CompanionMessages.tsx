@@ -5,13 +5,11 @@ import {
   ConversationScrollButton,
 } from '@renderer/components/ai-elements/conversation'
 import { Message, MessageContent, MessageResponse } from '@renderer/components/ai-elements/message'
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from '@renderer/components/ai-elements/sources'
+import { Sources, SourcesContent, SourcesTrigger } from '@renderer/components/ai-elements/sources'
+import { Button } from '@renderer/components/ui/button'
 import { useAppStore } from '@renderer/store/app-store'
+import type { CompanionCitation } from '../../../../shared/types'
+import { useOpenMarkdownFile } from '../../hooks/useOpenMarkdownFile'
 
 export function CompanionMessages() {
   const messages = useAppStore((state) => state.companionMessages)
@@ -39,11 +37,7 @@ export function CompanionMessages() {
                       <SourcesTrigger count={message.citations.length} />
                       <SourcesContent>
                         {message.citations.map((citation) => (
-                          <Source
-                            href={`mdow-source:${citation.sourceId}`}
-                            key={citation.sourceId}
-                            title={citation.title}
-                          />
+                          <CompanionCitationButton key={citation.sourceId} citation={citation} />
                         ))}
                       </SourcesContent>
                     </Sources>
@@ -57,5 +51,20 @@ export function CompanionMessages() {
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
+  )
+}
+
+function CompanionCitationButton({ citation }: { citation: CompanionCitation }) {
+  const openMarkdownFile = useOpenMarkdownFile()
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="xs"
+      onClick={() => void openMarkdownFile(citation.path)}
+    >
+      {citation.title}
+    </Button>
   )
 }
