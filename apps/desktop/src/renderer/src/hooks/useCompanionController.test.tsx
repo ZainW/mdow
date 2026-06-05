@@ -87,6 +87,47 @@ describe('useCompanionController', () => {
         ?.status,
     ).not.toBe('complete')
   })
+
+  it('ignores overlapping sends without losing cancellation tracking', async () => {
+    const firstSend = deferred<void>()
+    api.sendCompanionMessage
+      .mockReturnValueOnce(firstSend.promise)
+      .mockRejectedValueOnce(new Error('busy'))
+    const { result } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = act(async () => {
+      await result.current.send('First question')
+    })
+    await act(async () => {})
+
+    await act(async () => {
+      await result.current.send('Second question')
+    })
+
+    expect(api.sendCompanionMessage).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().companionMessages.map((message) => message.role)).toEqual([
+      'user',
+      'assistant',
+    ])
+
+    const assistant = useAppStore
+      .getState()
+      .companionMessages.find((message) => message.role === 'assistant')
+    expect(assistant).toBeDefined()
+
+    await act(async () => {
+      useAppStore.getState().appendCompanionAssistantDelta(assistant!.id, 'Partial answer')
+      await result.current.cancel()
+    })
+
+    firstSend.resolve()
+    await firstSendPromise
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === assistant!.id)
+        ?.status,
+    ).not.toBe('complete')
+  })
 })
 
 function deferred<T>() {

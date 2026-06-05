@@ -107,6 +107,8 @@ export function useCompanionController() {
       if (!trimmed) return
 
       const store = useAppStore.getState()
+      if (activeRequestRef.current || store.companionStreaming) return
+
       const activeTab = selectActiveTab(store)
       const userMessage = store.appendCompanionMessage('user', trimmed)
       const assistantMessage = store.appendCompanionMessage('assistant', '', 'streaming')
