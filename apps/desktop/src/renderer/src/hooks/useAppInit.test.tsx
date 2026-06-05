@@ -35,6 +35,8 @@ describe('useAppInit', () => {
       folderTree: [],
       folderTreeTruncated: false,
       sidebarMode: 'recents',
+      companionProvider: 'auto',
+      companionCustomCommand: '',
     })
   })
 
@@ -70,5 +72,28 @@ describe('useAppInit', () => {
     expect(state.tabs[0].content).toBe('# Active')
     expect(state.activeTabId).toBe(state.tabs[0].id)
     expect(readFile).toHaveBeenCalledWith('/docs/active.md')
+  })
+
+  it('hydrates persisted companion settings', async () => {
+    Object.defineProperty(window, 'api', {
+      value: {
+        getAppState: vi.fn().mockResolvedValue(
+          appState({
+            companionProvider: 'custom',
+            companionCustomCommand: 'custom acp',
+          }),
+        ),
+        readFile: vi.fn(),
+        readFolderTree: vi.fn(),
+        saveAppState: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+    })
+
+    renderHook(() => useAppInit())
+
+    await waitFor(() => expect(useAppStore.getState().initialized).toBe(true))
+    expect(useAppStore.getState().companionProvider).toBe('custom')
+    expect(useAppStore.getState().companionCustomCommand).toBe('custom acp')
   })
 })

@@ -74,6 +74,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setReadingWidth = useAppStore((s) => s.setReadingWidth)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
+  const companionError = useAppStore((s) => s.companionError)
   const companionProvider = useAppStore((s) => s.companionProvider)
   const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
   const setCompanionProvider = useAppStore((s) => s.setCompanionProvider)
@@ -99,8 +100,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const persistCompanionSettings = async (provider: CompanionProviderId, customCommand: string) => {
     try {
       await window.api.saveCompanionSettings({ provider, customCommand })
-      const providers = await window.api.detectCompanionProviders()
-      setCompanionProviders(providers)
+      const state = useAppStore.getState()
+      if (state.companionOpen || state.companionFullscreen) {
+        const providers = await window.api.detectCompanionProviders()
+        setCompanionProviders(providers)
+      }
       setCompanionError(null)
     } catch (error) {
       setCompanionError(error instanceof Error ? error.message : String(error))
@@ -229,6 +233,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               Custom commands run as local subprocesses and should point to an ACP-compatible agent.
             </p>
           </div>
+          {companionError && (
+            <div
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs"
+              role="alert"
+            >
+              {companionError}
+            </div>
+          )}
           <Field label="Provider">
             <PresetToggleGroup
               groupLabel="Companion provider"

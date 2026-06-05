@@ -134,6 +134,22 @@ describe('companion settings integration', () => {
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'custom acp' })
   })
 
+  it('saves companion settings without detecting providers while companion is closed', async () => {
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+      target: { value: 'custom acp' },
+    })
+
+    await waitFor(() =>
+      expect(saveSettings).toHaveBeenCalledWith({
+        provider: 'auto',
+        customCommand: 'custom acp',
+      }),
+    )
+    expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
+  })
+
   it('persists the selected companion provider from settings', () => {
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
@@ -186,6 +202,7 @@ describe('companion settings integration', () => {
     await waitFor(() => {
       expect(useAppStore.getState().companionError).toBe('Settings save failed')
     })
+    expect(screen.getByRole('alert')).toHaveTextContent('Settings save failed')
     expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
   })
 
