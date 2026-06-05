@@ -71,9 +71,7 @@ describe('useCompanionController', () => {
     api.sendCompanionMessage.mockReturnValue(send.promise)
     const { result } = renderHook(() => useCompanionController())
 
-    const sendPromise = act(async () => {
-      await result.current.send('Summarize this')
-    })
+    const sendPromise = result.current.send('Summarize this')
     await act(async () => {})
 
     const assistant = useAppStore
@@ -134,9 +132,7 @@ describe('useCompanionController', () => {
       .mockRejectedValueOnce(new Error('busy'))
     const { result } = renderHook(() => useCompanionController())
 
-    const firstSendPromise = act(async () => {
-      await result.current.send('First question')
-    })
+    const firstSendPromise = result.current.send('First question')
     await act(async () => {})
 
     await act(async () => {
