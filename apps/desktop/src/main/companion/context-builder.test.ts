@@ -8,6 +8,7 @@ import { buildCompanionContext, buildCompanionPromptBlocks } from './context-bui
 const fsFailures = vi.hoisted(() => ({
   readFileError: null as Error | null,
   readFilePath: null as string | null,
+  readdirPaths: [] as string[],
   statError: null as Error | null,
   statPath: null as string | null,
 }))
@@ -22,6 +23,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.readFile(path, ...args)
     }) as unknown as typeof actual.readFile,
+    readdir: vi.fn((path, ...args) => {
+      fsFailures.readdirPaths.push(String(path))
+      return actual.readdir(path, ...args)
+    }) as unknown as typeof actual.readdir,
     stat: vi.fn((path, ...args) => {
       if (String(path) === fsFailures.statPath && fsFailures.statError) {
         return Promise.reject(fsFailures.statError)
@@ -52,6 +57,7 @@ describe('companion context builder', () => {
     clearAllowedPaths()
     fsFailures.readFileError = null
     fsFailures.readFilePath = null
+    fsFailures.readdirPaths = []
     fsFailures.statError = null
     fsFailures.statPath = null
   })
@@ -208,6 +214,35 @@ describe('companion context builder', () => {
       type: 'truncated',
       message: 'Available markdown context exceeded the source limit.',
     })
+  })
+
+  it('bounds folder traversal after enough unseen markdown files are found', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const unnecessaryFolder = join(root, 'zzz-unneeded')
+    await mkdir(unnecessaryFolder)
+    const first = join(root, 'a.md')
+    const second = join(root, 'b.md')
+    const extra = join(root, 'c.md')
+    await writeFile(first, '# A')
+    await writeFile(second, '# B')
+    await writeFile(extra, '# C')
+    await writeFile(join(unnecessaryFolder, 'ignored.md'), '# Ignored')
+    registerAllowedPath(root)
+
+    const context = await buildCompanionContext({
+      openFolderPath: root,
+      maxSources: 2,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources.map((source) => source.path)).toEqual([first, second])
+    expect(context.summary.sourceCount).toBe(2)
+    expect(context.summary.truncated).toBe(true)
+    expect(context.summary.warnings).toContainEqual({
+      type: 'truncated',
+      message: 'Available markdown context exceeded the source limit.',
+    })
+    expect(fsFailures.readdirPaths).not.toContain(unnecessaryFolder)
   })
 
   it('builds text-only prompt blocks with explicit source marker instructions', async () => {

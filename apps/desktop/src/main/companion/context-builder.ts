@@ -74,31 +74,22 @@ export async function buildCompanionContext({
           })
         } else {
           const seen = new Set(sources.map((source) => source.path))
-          for (const filePath of await collectMarkdownFiles(resolvedFolderPath)) {
-            if (seen.has(filePath)) {
-              continue
-            }
-            if (sources.length >= maxSources) {
-              truncated = true
-              warnings.push({
-                type: 'truncated',
-                message: 'Available markdown context exceeded the source limit.',
-              })
-              break
-            }
-            const source = await readSource({
-              filePath,
-              id: `src_${sources.length}`,
-              maxCharsPerSource,
-              warnings,
-              unavailableMessage: 'Markdown file is not available to the companion.',
+          const folderTruncated = await readFolderSources({
+            folderPath: resolvedFolderPath,
+            seen,
+            sources,
+            maxSources,
+            maxCharsPerSource,
+            warnings,
+          })
+          if (folderTruncated) {
+            truncated = true
+            warnings.push({
+              type: 'truncated',
+              message: 'Available markdown context exceeded the source limit.',
             })
-            if (source.source) {
-              seen.add(source.source.path)
-              sources.push(source.source)
-              truncated ||= source.source.truncated
-            }
           }
+          truncated ||= sources.some((source) => source.truncated)
         }
       }
     } catch (error) {
@@ -221,24 +212,77 @@ async function readSource({
   }
 }
 
-async function collectMarkdownFiles(folderPath: string): Promise<string[]> {
-  const files: string[] = []
+async function readFolderSources({
+  folderPath,
+  seen,
+  sources,
+  maxSources,
+  maxCharsPerSource,
+  warnings,
+}: {
+  folderPath: string
+  seen: Set<string>
+  sources: CompanionContextSource[]
+  maxSources: number
+  maxCharsPerSource: number
+  warnings: CompanionContextWarning[]
+}): Promise<boolean> {
   const entries = await fs.readdir(folderPath, { withFileTypes: true })
-  entries.sort((a, b) => a.name.localeCompare(b.name))
+  entries.sort((a, b) => compareCodepoints(a.name, b.name))
 
   for (const entry of entries) {
     const childPath = join(folderPath, entry.name)
     if (entry.isDirectory()) {
-      files.push(...(await collectMarkdownFiles(childPath)))
+      if (
+        await readFolderSources({
+          folderPath: childPath,
+          seen,
+          sources,
+          maxSources,
+          maxCharsPerSource,
+          warnings,
+        })
+      ) {
+        return true
+      }
       continue
     }
     if (!entry.isFile() || !isMarkdownPath(childPath)) {
       continue
     }
-    files.push(validateMarkdownPath(childPath))
+
+    const filePath = validateMarkdownPath(childPath)
+    if (seen.has(filePath)) {
+      continue
+    }
+    if (sources.length >= maxSources) {
+      return true
+    }
+
+    seen.add(filePath)
+    const source = await readSource({
+      filePath,
+      id: `src_${sources.length}`,
+      maxCharsPerSource,
+      warnings,
+      unavailableMessage: 'Markdown file is not available to the companion.',
+    })
+    if (source.source) {
+      sources.push(source.source)
+    }
   }
 
-  return files
+  return false
+}
+
+function compareCodepoints(left: string, right: string): number {
+  if (left < right) {
+    return -1
+  }
+  if (left > right) {
+    return 1
+  }
+  return 0
 }
 
 function warningTypeFromError(error: unknown): CompanionContextWarning['type'] {
