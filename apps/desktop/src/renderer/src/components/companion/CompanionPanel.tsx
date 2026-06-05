@@ -1,4 +1,5 @@
 import { Button } from '@renderer/components/ui/button'
+import { getReadyCompanionProvider } from '@renderer/lib/companion-provider'
 import { useAppStore } from '@renderer/store/app-store'
 import { Maximize2Icon, XIcon } from 'lucide-react'
 import { useCompanionController } from '../../hooks/useCompanionController'
@@ -10,8 +11,12 @@ import { CompanionStatus } from './CompanionStatus'
 export function CompanionPanel() {
   const companion = useCompanionController()
   const open = useAppStore((state) => state.companionOpen)
-  const hasProvider = useAppStore((state) =>
-    state.companionProviders.some((provider) => provider.status === 'available'),
+  const provider = useAppStore((state) =>
+    getReadyCompanionProvider({
+      provider: state.companionProvider,
+      customCommand: state.companionCustomCommand,
+      providers: state.companionProviders,
+    }),
   )
   const error = useAppStore((state) => state.companionError)
   const setOpen = useAppStore((state) => state.setCompanionOpen)
@@ -22,7 +27,7 @@ export function CompanionPanel() {
   return (
     <aside
       aria-label="AI companion"
-      className="flex h-full w-80 shrink-0 flex-col gap-3 border-l border-border bg-background p-3"
+      className="fixed inset-y-0 right-0 z-40 flex w-80 max-w-[calc(100vw-1rem)] flex-col gap-3 border-l border-border bg-background p-3 shadow-xl lg:static lg:z-auto lg:h-full lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -58,7 +63,7 @@ export function CompanionPanel() {
           {error}
         </div>
       )}
-      {hasProvider ? (
+      {provider ? (
         <>
           <CompanionMessages />
           <CompanionComposer cancel={companion.cancel} send={companion.send} />

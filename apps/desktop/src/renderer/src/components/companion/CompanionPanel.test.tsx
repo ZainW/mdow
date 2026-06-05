@@ -12,6 +12,13 @@ const availableProvider: CompanionProviderStatus = {
   status: 'available',
 }
 
+const availableCustomProvider: CompanionProviderStatus = {
+  id: 'custom',
+  label: 'Custom ACP',
+  command: 'custom acp',
+  status: 'available',
+}
+
 const api = vi.hoisted(() => ({
   detectCompanionProviders: vi.fn((): Promise<CompanionProviderStatus[]> => Promise.resolve([])),
   getCompanionSettings: vi.fn(() => Promise.resolve({ provider: 'auto', customCommand: '' })),
@@ -43,6 +50,18 @@ describe('Companion UI', () => {
     expect(useAppStore.getState().sidebarMode).toBe('folder')
   })
 
+  it('overlays the companion panel below desktop widths', () => {
+    useAppStore.setState({ companionOpen: true })
+    render(<CompanionPanel />)
+
+    expect(screen.getByRole('complementary', { name: 'AI companion' })).toHaveClass(
+      'fixed',
+      'right-0',
+      'lg:static',
+      'lg:w-80',
+    )
+  })
+
   it('shows provider setup when no provider is available', () => {
     useAppStore.setState({ companionOpen: true, companionProviders: [] })
     render(<CompanionPanel />)
@@ -69,6 +88,33 @@ describe('Companion UI', () => {
     expect(screen.getByText('Connect a local companion')).toBeInTheDocument()
     expect(screen.getByText('opencode acp')).toBeInTheDocument()
     expect(screen.getByText('npx --no-install @zed-industries/codex-acp')).toBeInTheDocument()
+  })
+
+  it('requires the selected custom provider to have a command and available detection result', () => {
+    useAppStore.setState({
+      companionOpen: true,
+      companionProvider: 'custom',
+      companionCustomCommand: '',
+      companionProviders: [availableProvider],
+    })
+    render(<CompanionPanel />)
+
+    expect(screen.getByText('Connect a local companion')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Companion prompt' })).toBeNull()
+    expect(screen.getByText('Not connected')).toBeInTheDocument()
+  })
+
+  it('uses the selected custom provider when a command and provider are available', () => {
+    useAppStore.setState({
+      companionOpen: true,
+      companionProvider: 'custom',
+      companionCustomCommand: 'custom acp',
+      companionProviders: [availableProvider, availableCustomProvider],
+    })
+    render(<CompanionPanel />)
+
+    expect(screen.getByRole('textbox', { name: 'Companion prompt' })).toBeInTheDocument()
+    expect(screen.getByText('Custom ACP')).toBeInTheDocument()
   })
 
   it('expands the same conversation', () => {
