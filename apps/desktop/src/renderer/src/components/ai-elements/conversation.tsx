@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from '@renderer/components/ui/button'
 import { cn } from '@renderer/lib/utils'
 import { ArrowDownIcon } from 'lucide-react'
@@ -19,21 +17,13 @@ export const Conversation = ({ className, ...props }: ConversationProps) => (
   />
 )
 
-type ConversationContentProps = ComponentProps<
-  typeof StickToBottom.Content
->
+type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>
 
-export const ConversationContent = ({
-  className,
-  ...props
-}: ConversationContentProps) => (
-  <StickToBottom.Content
-    className={cn('flex flex-col gap-8 p-4', className)}
-    {...props}
-  />
+export const ConversationContent = ({ className, ...props }: ConversationContentProps) => (
+  <StickToBottom.Content className={cn('flex flex-col gap-8 p-4', className)} {...props} />
 )
 
-type ConversationEmptyStateProps = ComponentProps<"div"> & {
+type ConversationEmptyStateProps = ComponentProps<'div'> & {
   title?: string
   description?: string
   icon?: ReactNode
@@ -59,9 +49,7 @@ export const ConversationEmptyState = ({
         {icon && <div className="text-muted-foreground">{icon}</div>}
         <div className="space-y-1">
           <h3 className="font-medium text-sm">{title}</h3>
-          {description && (
-            <p className="text-muted-foreground text-sm">{description}</p>
-          )}
+          {description && <p className="text-muted-foreground text-sm">{description}</p>}
         </div>
       </>
     )}
@@ -72,12 +60,13 @@ type ConversationScrollButtonProps = ComponentProps<typeof Button>
 
 export const ConversationScrollButton = ({
   className,
+  'aria-label': ariaLabel = 'Scroll to bottom',
   ...props
 }: ConversationScrollButtonProps) => {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext()
 
   const handleScrollToBottom = useCallback(() => {
-    scrollToBottom()
+    void scrollToBottom()
   }, [scrollToBottom])
 
   return (
@@ -87,6 +76,7 @@ export const ConversationScrollButton = ({
           'absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted',
           className,
         )}
+        aria-label={ariaLabel}
         onClick={handleScrollToBottom}
         size="icon"
         type="button"

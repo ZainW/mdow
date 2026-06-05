@@ -1,13 +1,19 @@
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { cn } from '@renderer/lib/utils'
-import type { FileUIPart } from 'ai'
 import { ArrowUpIcon } from 'lucide-react'
 import type { ComponentProps, FormEvent } from 'react'
 
+type PromptInputFile = {
+  filename?: string
+  mediaType?: string
+  type: 'file'
+  url: string
+}
+
 export type PromptInputMessage = {
   text: string
-  files: FileUIPart[]
+  files: PromptInputFile[]
 }
 
 type PromptInputProps = Omit<ComponentProps<'form'>, 'onSubmit'> & {
@@ -17,11 +23,12 @@ type PromptInputProps = Omit<ComponentProps<'form'>, 'onSubmit'> & {
 export const PromptInput = ({ className, onSubmit, ...props }: PromptInputProps) => {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const value = new FormData(event.currentTarget).get('message')
 
     onSubmit?.(
       {
         files: [],
-        text: new FormData(event.currentTarget).get('message')?.toString() ?? '',
+        text: typeof value === 'string' ? value : '',
       },
       event,
     )
@@ -56,6 +63,7 @@ type PromptInputSubmitProps = ComponentProps<typeof Button>
 export const PromptInputSubmit = ({ children, className, ...props }: PromptInputSubmitProps) => (
   <Button
     className={cn('size-8 rounded-full', className)}
+    aria-label="Send message"
     size="icon"
     type="submit"
     {...props}
@@ -66,7 +74,11 @@ export const PromptInputSubmit = ({ children, className, ...props }: PromptInput
 
 type PromptInputTextareaProps = ComponentProps<typeof Textarea>
 
-export const PromptInputTextarea = ({ className, name = 'message', ...props }: PromptInputTextareaProps) => (
+export const PromptInputTextarea = ({
+  className,
+  name = 'message',
+  ...props
+}: PromptInputTextareaProps) => (
   <Textarea
     className={cn(
       'max-h-48 min-h-16 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0',

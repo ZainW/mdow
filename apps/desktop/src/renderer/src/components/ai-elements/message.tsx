@@ -3,13 +3,14 @@ import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
-import type { UIMessage } from 'ai'
 import type { ComponentProps, HTMLAttributes } from 'react'
 import { memo } from 'react'
 import { Streamdown } from 'streamdown'
 
+type MessageRole = 'assistant' | 'system' | 'user'
+
 type MessageProps = HTMLAttributes<HTMLDivElement> & {
-  from: UIMessage['role']
+  from: MessageRole
 }
 
 export const Message = ({ className, from, ...props }: MessageProps) => (
@@ -52,8 +53,7 @@ export const MessageResponse = memo(
     />
   ),
   (prevProps, nextProps) =>
-    prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating,
+    prevProps.children === nextProps.children && nextProps.isAnimating === prevProps.isAnimating,
 )
 
 MessageResponse.displayName = 'MessageResponse'
