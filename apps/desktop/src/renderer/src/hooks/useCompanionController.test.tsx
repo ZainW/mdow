@@ -95,6 +95,38 @@ describe('useCompanionController', () => {
     ).not.toBe('complete')
   })
 
+  it('allows a new send immediately after cancelling a pending send', async () => {
+    const firstSend = deferred<void>()
+    api.sendCompanionMessage.mockReturnValueOnce(firstSend.promise).mockResolvedValueOnce(undefined)
+    const { result } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = result.current.send('First question')
+    await act(async () => {})
+
+    const firstAssistant = useAppStore
+      .getState()
+      .companionMessages.find((message) => message.role === 'assistant')
+    expect(firstAssistant).toBeDefined()
+
+    await act(async () => {
+      await result.current.cancel()
+    })
+
+    await act(async () => {
+      await result.current.send('Second question')
+    })
+
+    expect(api.sendCompanionMessage).toHaveBeenCalledTimes(2)
+
+    firstSend.resolve()
+    await firstSendPromise
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === firstAssistant!.id)
+        ?.status,
+    ).not.toBe('complete')
+  })
+
   it('ignores overlapping sends without losing cancellation tracking', async () => {
     const firstSend = deferred<void>()
     api.sendCompanionMessage

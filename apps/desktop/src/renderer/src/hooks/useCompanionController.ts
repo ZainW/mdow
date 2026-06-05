@@ -168,7 +168,11 @@ export function useCompanionController() {
       }
     },
     cancel: async () => {
+      const activeRequest = activeRequestRef.current
       markActiveRequestCancelled()
+      if (activeRequestRef.current === activeRequest) {
+        activeRequestRef.current = null
+      }
       try {
         await window.api.cancelCompanionMessage()
       } finally {
