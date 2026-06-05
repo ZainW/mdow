@@ -295,6 +295,7 @@ async function readFolderSources({
       isSymbolicLink: () => boolean
     }>
     try {
+      // eslint-disable-next-line no-await-in-loop -- traversal is intentionally bounded and sequential for deterministic ordering
       entries = await fs.readdir(current.path, { withFileTypes: true, encoding: 'utf8' })
     } catch (error) {
       warnings.push({
@@ -337,6 +338,7 @@ async function readFolderSources({
       }
 
       seen.add(filePath)
+      // eslint-disable-next-line no-await-in-loop -- sources are consumed in deterministic order up to maxSources
       const source = await readSource({
         filePath,
         id: `src_${sources.length}`,
@@ -362,7 +364,25 @@ function prefixSourceText(text: string): string {
 }
 
 function sanitizePromptMetadata(value: string): string {
-  return value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+  let sanitized = ''
+  let previousWasSpace = false
+
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    const next = code <= 0x1f || code === 0x7f ? ' ' : char
+    if (next === ' ') {
+      if (!previousWasSpace) {
+        sanitized += next
+      }
+      previousWasSpace = true
+      continue
+    }
+
+    sanitized += next
+    previousWasSpace = false
+  }
+
+  return sanitized.trim()
 }
 
 async function safePathStat(path: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
@@ -378,6 +398,7 @@ async function safePathStat(path: string): Promise<Awaited<ReturnType<typeof fs.
     if (!reachedAllowedPath) {
       continue
     }
+    // eslint-disable-next-line no-await-in-loop -- component-wise checks must stop at the first symlink
     currentStat = await fs.lstat(current)
     if (currentStat.isSymbolicLink()) {
       return null
