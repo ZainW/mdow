@@ -325,7 +325,138 @@ describe('companion service', () => {
     expect(cancelledCall).toBeTruthy()
     expect(completeAfterCancel).toBe(false)
   })
+
+  it('does not create a client when shutdown happens while context is building', async () => {
+    const context = deferred<ReturnType<typeof emptyContext>>()
+    const createClient = vi.fn(() => ({
+      start: vi.fn(async () => {}),
+      sendPrompt: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      stop: vi.fn(),
+    }))
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient,
+      buildContext: vi.fn(() => context.promise),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const send = service.send({
+      messageId: 'msg_1',
+      text: 'Hi',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+
+    service.shutdown()
+    context.resolve(emptyContext())
+    await send
+
+    expect(createClient).not.toHaveBeenCalled()
+    expect(hasStatusAfter(emitUpdate, 'complete', 0)).toBe(false)
+  })
+
+  it('does not create a client when cancellation happens during provider detection', async () => {
+    const detected = deferred<CompanionProviderStatus[]>()
+    const detectStarted = deferred<void>()
+    const createClient = vi.fn(() => ({
+      start: vi.fn(async () => {}),
+      sendPrompt: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      stop: vi.fn(),
+    }))
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(() => {
+        detectStarted.resolve()
+        return detected.promise
+      }),
+      createClient,
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const send = service.send({
+      messageId: 'msg_1',
+      text: 'Hi',
+      provider: 'auto',
+      activePath: null,
+      openFolderPath: null,
+    })
+    await detectStarted.promise
+
+    service.cancel()
+    detected.resolve([availableOpencode])
+    await send
+
+    expect(createClient).not.toHaveBeenCalled()
+    expect(hasStatusAfter(emitUpdate, 'complete', 0)).toBe(false)
+  })
+
+  it('stops a created client when cancellation happens while the client is starting', async () => {
+    const start = deferred<void>()
+    const startStarted = deferred<void>()
+    const stop = vi.fn()
+    const sendPrompt = vi.fn(async () => {})
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn(() => ({
+        start: vi.fn(() => {
+          startStarted.resolve()
+          return start.promise
+        }),
+        sendPrompt,
+        cancel: vi.fn(),
+        stop,
+      })),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const send = service.send({
+      messageId: 'msg_1',
+      text: 'Hi',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+    await startStarted.promise
+
+    service.cancel()
+    start.resolve()
+    await send
+
+    expect(stop).toHaveBeenCalledOnce()
+    expect(sendPrompt).not.toHaveBeenCalled()
+    expect(hasStatusAfter(emitUpdate, 'complete', 0)).toBe(false)
+  })
 })
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
+function hasStatusAfter(
+  emitUpdate: ReturnType<typeof vi.fn>,
+  status: 'starting' | 'ready' | 'streaming' | 'complete' | 'cancelled',
+  index: number,
+) {
+  return emitUpdate.mock.calls
+    .slice(index)
+    .some(([update]) => update.type === 'status' && update.status === status)
+}
 
 function emptyContext() {
   return {

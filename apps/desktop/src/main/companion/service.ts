@@ -48,6 +48,11 @@ type CreateDefaultCompanionServiceOptions = {
   emitUpdate: (update: CompanionUpdate) => void
 }
 
+type RequestState = {
+  cancelled: boolean
+  generation: number
+}
+
 const BUILT_IN_COMMANDS: Record<
   Exclude<CompanionProviderId, 'auto' | 'custom'>,
   ProviderCommand
@@ -68,7 +73,8 @@ export function createCompanionService({
   let clientStarted = false
   let activeMessageId = ''
   let inFlight = false
-  let activeRequest: { cancelled: boolean } | null = null
+  let activeRequest: RequestState | null = null
+  let generation = 0
 
   async function detectedProviders() {
     return detectProviders(getSettings().customCommand)
@@ -120,6 +126,19 @@ export function createCompanionService({
     return { client, started: false }
   }
 
+  function isStale(requestState: RequestState) {
+    return requestState.cancelled || requestState.generation !== generation
+  }
+
+  function stopClientIfCurrent(activeClient: AcpClient) {
+    activeClient.stop()
+    if (client === activeClient) {
+      client = null
+      clientKey = null
+      clientStarted = false
+    }
+  }
+
   return {
     detectProviders: detectedProviders,
 
@@ -131,41 +150,61 @@ export function createCompanionService({
       }
 
       inFlight = true
-      const requestState = { cancelled: false }
+      const requestState = { cancelled: false, generation }
       activeRequest = requestState
       try {
         const context = await buildContext({
           activePath: request.activePath,
           openFolderPath: request.openFolderPath,
         })
+        if (isStale(requestState)) {
+          return
+        }
         emitUpdate({ type: 'context', summary: context.summary })
         for (const warning of context.summary.warnings) {
           emitUpdate({ type: 'warning', warning })
         }
+        if (isStale(requestState)) {
+          return
+        }
 
         const command = await resolveProvider(request.provider)
+        if (isStale(requestState)) {
+          return
+        }
         const cwd = await safeCompanionCwd(request)
+        if (isStale(requestState)) {
+          return
+        }
         activeMessageId = request.messageId
         const active = ensureClient(command, cwd)
+        if (isStale(requestState)) {
+          stopClientIfCurrent(active.client)
+          return
+        }
 
         emitUpdate({ type: 'status', status: 'starting' })
         if (!active.started) {
           await active.client.start()
           clientStarted = true
         }
-        if (requestState.cancelled) {
+        if (isStale(requestState)) {
+          stopClientIfCurrent(active.client)
           return
         }
         emitUpdate({ type: 'status', status: 'streaming' })
+        if (isStale(requestState)) {
+          return
+        }
         await active.client.sendPrompt(buildCompanionPromptBlocks(request.text, context))
-        if (!requestState.cancelled) {
+        if (!isStale(requestState)) {
           emitUpdate({ type: 'status', status: 'complete' })
         }
       } finally {
         if (activeRequest === requestState) {
           activeRequest = null
+          inFlight = false
         }
-        inFlight = false
       }
     },
 
@@ -178,6 +217,10 @@ export function createCompanionService({
     },
 
     shutdown() {
+      generation += 1
+      if (activeRequest) {
+        activeRequest.cancelled = true
+      }
       client?.stop()
       client = null
       clientKey = null
