@@ -19,7 +19,7 @@ function createHarness() {
     stderr,
     kill: vi.fn<() => boolean>(() => true),
   })
-  const factory: AcpProcessFactory = () => child
+  const factory = vi.fn<AcpProcessFactory>(() => child)
   return { child, stdout, writes, factory }
 }
 
@@ -38,7 +38,7 @@ function createFailingWriteHarness() {
     stderr,
     kill: vi.fn<() => boolean>(() => true),
   })
-  const factory: AcpProcessFactory = () => child
+  const factory = vi.fn<AcpProcessFactory>(() => child)
   return { child, stdout, factory }
 }
 
@@ -60,6 +60,10 @@ async function waitForWriteCount(writes: string[], count: number) {
   await vi.waitFor(() => expect(readMessages(writes)).toHaveLength(count))
 }
 
+async function settleMicrotasks() {
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+}
+
 describe('createAcpClient', () => {
   it('initializes, creates a session, and sends prompt blocks', async () => {
     const { stdout, writes, factory } = createHarness()
@@ -72,6 +76,10 @@ describe('createAcpClient', () => {
     })
 
     const started = client.start()
+    expect(factory).toHaveBeenCalledWith('agent', ['--stdio'], {
+      cwd: '/workspace',
+      env: process.env,
+    })
     await waitForWriteCount(writes, 1)
     let messages = readMessages(writes)
     expect(messages[0]).toMatchObject({
@@ -110,7 +118,14 @@ describe('createAcpClient', () => {
       },
     ]
 
-    await client.sendPrompt(prompt)
+    let promptSettled = false
+    const sentPrompt = client.sendPrompt(prompt).then(() => {
+      promptSettled = true
+    })
+    await waitForWriteCount(writes, 3)
+    await settleMicrotasks()
+    expect(promptSettled).toBe(false)
+
     messages = readMessages(writes)
     expect(messages[2]).toMatchObject({
       jsonrpc: '2.0',
@@ -123,6 +138,37 @@ describe('createAcpClient', () => {
     })
 
     writeJson(stdout, { jsonrpc: '2.0', id: 3, result: {} })
+    await sentPrompt
+    expect(promptSettled).toBe(true)
+    client.stop()
+  })
+
+  it('rejects sendPrompt when the provider returns a prompt error', async () => {
+    const { stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate: vi.fn(),
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
+    await waitForWriteCount(writes, 2)
+    writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
+    await started
+
+    const sentPrompt = client.sendPrompt([{ type: 'text', text: 'Fail please' }])
+    await waitForWriteCount(writes, 3)
+    writeJson(stdout, {
+      jsonrpc: '2.0',
+      id: 3,
+      error: { code: -32000, message: 'prompt failed' },
+    })
+
+    await expect(sentPrompt).rejects.toThrow('prompt failed')
     client.stop()
   })
 

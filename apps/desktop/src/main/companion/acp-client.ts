@@ -36,7 +36,11 @@ type AcpProcess = {
   off: (event: 'error' | 'exit' | 'close', listener: AcpProcessListener) => AcpProcess
 }
 
-export type AcpProcessFactory = (command: string, args: string[], cwd: string) => AcpProcess
+export type AcpProcessFactory = (
+  command: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv },
+) => AcpProcess
 
 export type AcpContentBlock =
   | { type: 'text'; text: string }
@@ -62,8 +66,8 @@ type CreateAcpClientOptions = {
   onUpdate: (update: AcpClientUpdate) => void
 }
 
-const defaultProcessFactory: AcpProcessFactory = (command, args, cwd) =>
-  spawn(command, args, { cwd, stdio: 'pipe' })
+const defaultProcessFactory: AcpProcessFactory = (command, args, options) =>
+  spawn(command, args, { cwd: options.cwd, env: options.env, stdio: 'pipe' })
 
 export function createAcpClient({
   command,
@@ -301,24 +305,24 @@ export function createAcpClient({
         throw new Error('ACP client is already starting or started')
       }
 
-      const process = processFactory(command, args, cwd)
-      child = process
-      const stdoutData = (chunk: Buffer | string) => handleStdoutChunk(process, chunk)
-      const processError = (error: Error) => reportProcessFailure(process, error)
+      const providerProcess = processFactory(command, args, { cwd, env: process.env })
+      child = providerProcess
+      const stdoutData = (chunk: Buffer | string) => handleStdoutChunk(providerProcess, chunk)
+      const processError = (error: Error) => reportProcessFailure(providerProcess, error)
       const handleProcessExit = (code: number | null, signal: string | null) => {
-        reportProcessFailure(process, processExitError(code, signal))
+        reportProcessFailure(providerProcess, processExitError(code, signal))
       }
       listeners = {
-        process,
+        process: providerProcess,
         stdoutData,
         processError,
         processExit: handleProcessExit,
         processClose: handleProcessExit,
       }
-      process.stdout.on('data', stdoutData)
-      process.on('error', processError)
-      process.on('exit', handleProcessExit)
-      process.on('close', handleProcessExit)
+      providerProcess.stdout.on('data', stdoutData)
+      providerProcess.on('error', processError)
+      providerProcess.on('exit', handleProcessExit)
+      providerProcess.on('close', handleProcessExit)
 
       try {
         const initializeResult = await request('initialize', {
@@ -336,19 +340,16 @@ export function createAcpClient({
         }
         sessionId = sessionResult.sessionId
       } catch (error) {
-        cleanup({ kill: process === child, rejectWith: undefined })
+        cleanup({ kill: providerProcess === child, rejectWith: undefined })
         throw error
       }
     },
 
-    sendPrompt(prompt: AcpContentBlock[]) {
+    async sendPrompt(prompt: AcpContentBlock[]) {
       if (!sessionId) {
-        return Promise.reject(new Error('ACP session has not started'))
+        throw new Error('ACP session has not started')
       }
-      request('session/prompt', { sessionId, prompt }).catch((error: unknown) => {
-        onUpdate({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-      })
-      return Promise.resolve()
+      await request('session/prompt', { sessionId, prompt })
     },
 
     cancel() {
