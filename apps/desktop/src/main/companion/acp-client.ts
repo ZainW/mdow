@@ -235,7 +235,7 @@ export function createAcpClient({
   function handleRequest(message: JsonRpcRequest) {
     if (message.method === 'session/request_permission') {
       onUpdate({ type: 'tool-refused', title: extractTitle(message.params) })
-      void send({ jsonrpc: '2.0', id: message.id, result: { outcome: 'rejected' } }).catch(
+      void send({ jsonrpc: '2.0', id: message.id, result: refusalOutcome(message.params) }).catch(
         (error: unknown) => {
           onUpdate({
             type: 'error',
@@ -253,6 +253,39 @@ export function createAcpClient({
     }).catch((error: unknown) => {
       onUpdate({ type: 'error', message: error instanceof Error ? error.message : String(error) })
     })
+  }
+
+  function refusalOutcome(params: unknown) {
+    const optionId = rejectOptionId(params)
+    if (optionId) {
+      return { outcome: { outcome: 'selected', optionId } }
+    }
+    return { outcome: { outcome: 'cancelled' } }
+  }
+
+  function rejectOptionId(params: unknown): string | null {
+    if (!isRecord(params) || !Array.isArray(params.options)) {
+      return null
+    }
+
+    for (const option of params.options) {
+      if (!isRecord(option) || !isRejectOptionKind(option.kind)) {
+        continue
+      }
+      if (typeof option.optionId === 'string') return option.optionId
+      if (typeof option.id === 'string') return option.id
+    }
+    return null
+  }
+
+  function isRejectOptionKind(kind: unknown): boolean {
+    if (typeof kind === 'string') {
+      return kind.toLowerCase().includes('reject')
+    }
+    if (isRecord(kind) && typeof kind.kind === 'string') {
+      return kind.kind.toLowerCase().includes('reject')
+    }
+    return false
   }
 
   function handleMessage(message: unknown) {

@@ -243,7 +243,47 @@ describe('createAcpClient', () => {
     expect(readMessages(writes)[2]).toEqual({
       jsonrpc: '2.0',
       id: 99,
-      result: { outcome: 'rejected' },
+      result: { outcome: { outcome: 'cancelled' } },
+    })
+    client.stop()
+  })
+
+  it('selects reject permission options when refusing tool requests', async () => {
+    const { stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate: vi.fn(),
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
+    await waitForWriteCount(writes, 2)
+    writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
+    await started
+
+    writeJson(stdout, {
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'session-1',
+        title: 'Edit file',
+        options: [
+          { optionId: 'allow-once', kind: 'AllowOnce' },
+          { optionId: 'reject-once', kind: { kind: 'RejectOnce' } },
+        ],
+      },
+    })
+
+    await waitForWriteCount(writes, 3)
+    expect(readMessages(writes)[2]).toEqual({
+      jsonrpc: '2.0',
+      id: 99,
+      result: { outcome: { outcome: 'selected', optionId: 'reject-once' } },
     })
     client.stop()
   })
