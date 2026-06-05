@@ -140,17 +140,18 @@ export function buildCompanionPromptBlocks(
   context: CompanionContext,
 ): AcpContentBlock[] {
   const sourceText = context.sources
-    .map((source) =>
-      [
+    .map((source) => {
+      const metadata = [
         `BEGIN SOURCE ${source.id}`,
         `Marker: [[source:${source.id}]]`,
-        `Title: ${source.title}`,
-        `Path: ${source.path}`,
-        '',
-        prefixSourceText(source.text),
-        `END SOURCE ${source.id}`,
-      ].join('\n'),
-    )
+        `Title: ${sanitizePromptMetadata(source.title)}`,
+        `Path: ${sanitizePromptMetadata(source.path)}`,
+      ]
+      if (source.heading) {
+        metadata.push(`Heading: ${sanitizePromptMetadata(source.heading)}`)
+      }
+      return [...metadata, '', prefixSourceText(source.text), `END SOURCE ${source.id}`].join('\n')
+    })
     .join('\n\n---\n\n')
 
   return [
@@ -335,6 +336,10 @@ function prefixSourceText(text: string): string {
     .split('\n')
     .map((line) => `| ${line}`)
     .join('\n')
+}
+
+function sanitizePromptMetadata(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
 }
 
 function compareCodepoints(left: string, right: string): number {
