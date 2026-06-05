@@ -13,7 +13,18 @@ const mockCompanionService = vi.hoisted(() => ({
   cancel: vi.fn(),
   shutdown: vi.fn(),
 }))
-const mockCreateDefaultCompanionService = vi.hoisted(() => vi.fn(() => mockCompanionService))
+const mockCompanionOptions = vi.hoisted(
+  () =>
+    ({ current: null }) as {
+      current: { emitUpdate: (update: unknown) => void } | null
+    },
+)
+const mockCreateDefaultCompanionService = vi.hoisted(() =>
+  vi.fn((options: { emitUpdate: (update: unknown) => void }) => {
+    mockCompanionOptions.current = options
+    return mockCompanionService
+  }),
+)
 const mockNativeTheme = vi.hoisted(() => ({ themeSource: 'system' as string }))
 const mockApplyWindowChrome = vi.hoisted(() => vi.fn())
 const mockGetMainWindow = vi.hoisted(() =>
@@ -84,6 +95,9 @@ describe('ipc handlers', () => {
   beforeEach(() => {
     handlers.clear()
     vi.clearAllMocks()
+    mockCompanionOptions.current = null
+    mockCompanionService.detectProviders.mockResolvedValue([])
+    mockCompanionService.send.mockResolvedValue(undefined)
     mockNativeTheme.themeSource = 'system'
     registerIpcHandlers(mockGetMainWindow as unknown as () => BrowserWindow | null)
   })
@@ -198,15 +212,63 @@ describe('ipc handlers', () => {
       expect(mockCompanionService.send).not.toHaveBeenCalled()
     })
 
-    it('returns cleanup that shuts down the companion service', () => {
+    it('returns cleanup that shuts down the companion service', async () => {
       handlers.clear()
       const cleanup = registerIpcHandlers(
         mockGetMainWindow as unknown as () => BrowserWindow | null,
-      ) as unknown as () => void
+      )
+      const handler = handlers.get('companion:detect-providers')!
+
+      await handler({ sender: createMockWebContents(1) })
 
       cleanup()
 
       expect(mockCompanionService.shutdown).toHaveBeenCalledOnce()
     })
+
+    it('routes companion updates to the sender window instead of the current main window', async () => {
+      const senderSend = vi.fn()
+      const mainSend = vi.fn()
+      const senderWindow = {
+        isDestroyed: () => false as const,
+        webContents: createMockWebContents(1, senderSend),
+      }
+      const mainWindow = {
+        isDestroyed: () => false as const,
+        webContents: createMockWebContents(2, mainSend),
+      }
+      mockGetMainWindow.mockReturnValue(mainWindow)
+      mockCompanionService.send.mockImplementation(() => {
+        mockCompanionOptions.current?.emitUpdate({ type: 'status', status: 'streaming' })
+        return Promise.resolve()
+      })
+      const handler = handlers.get('companion:send')!
+
+      await handler(
+        { sender: senderWindow.webContents },
+        {
+          messageId: 'msg_1',
+          text: 'Hi',
+          provider: 'opencode',
+          activePath: null,
+          openFolderPath: null,
+        },
+      )
+
+      expect(senderSend).toHaveBeenCalledWith('companion:update', {
+        type: 'status',
+        status: 'streaming',
+      })
+      expect(mainSend).not.toHaveBeenCalled()
+    })
   })
 })
+
+function createMockWebContents(id: number, send = vi.fn()) {
+  return {
+    id,
+    send,
+    isDestroyed: () => false,
+    once: vi.fn(),
+  }
+}
