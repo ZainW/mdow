@@ -11,6 +11,9 @@ import type { AcpContentBlock } from './acp-client'
 
 const DEFAULT_MAX_SOURCES = 16
 const DEFAULT_MAX_CHARS_PER_SOURCE = 12_000
+const DEFAULT_MAX_DIRECTORIES = 64
+const DEFAULT_MAX_ENTRIES = 512
+const DEFAULT_MAX_DEPTH = 6
 
 export type CompanionContextSource = CompanionContextSourceMetadata & {
   truncated: boolean
@@ -28,6 +31,9 @@ export type BuildCompanionContextInput = {
   openFolderPath?: string | null
   maxSources?: number
   maxCharsPerSource?: number
+  maxDirectories?: number
+  maxEntries?: number
+  maxDepth?: number
 }
 
 export async function buildCompanionContext({
@@ -35,6 +41,9 @@ export async function buildCompanionContext({
   openFolderPath,
   maxSources = DEFAULT_MAX_SOURCES,
   maxCharsPerSource = DEFAULT_MAX_CHARS_PER_SOURCE,
+  maxDirectories = DEFAULT_MAX_DIRECTORIES,
+  maxEntries = DEFAULT_MAX_ENTRIES,
+  maxDepth = DEFAULT_MAX_DEPTH,
 }: BuildCompanionContextInput): Promise<CompanionContext> {
   const sources: CompanionContextSource[] = []
   const warnings: CompanionContextWarning[] = []
@@ -80,13 +89,19 @@ export async function buildCompanionContext({
             sources,
             maxSources,
             maxCharsPerSource,
+            maxDirectories,
+            maxEntries,
+            maxDepth,
             warnings,
           })
           if (folderTruncated) {
             truncated = true
             warnings.push({
               type: 'truncated',
-              message: 'Available markdown context exceeded the source limit.',
+              message:
+                folderTruncated === 'source-limit'
+                  ? 'Available markdown context exceeded the source limit.'
+                  : 'Available markdown context exceeded the traversal budget.',
             })
           }
           truncated ||= sources.some((source) => source.truncated)
@@ -132,7 +147,7 @@ export function buildCompanionPromptBlocks(
         `Title: ${source.title}`,
         `Path: ${source.path}`,
         '',
-        source.text,
+        prefixSourceText(source.text),
         `END SOURCE ${source.id}`,
       ].join('\n'),
     )
@@ -229,6 +244,9 @@ async function readFolderSources({
   sources,
   maxSources,
   maxCharsPerSource,
+  maxDirectories,
+  maxEntries,
+  maxDepth,
   warnings,
 }: {
   folderPath: string
@@ -236,54 +254,87 @@ async function readFolderSources({
   sources: CompanionContextSource[]
   maxSources: number
   maxCharsPerSource: number
+  maxDirectories: number
+  maxEntries: number
+  maxDepth: number
   warnings: CompanionContextWarning[]
-}): Promise<boolean> {
-  const entries = await fs.readdir(folderPath, { withFileTypes: true })
-  entries.sort((a, b) => compareCodepoints(a.name, b.name))
+}): Promise<'source-limit' | 'traversal-budget' | false> {
+  const pending: Array<{ path: string; depth: number }> = [{ path: folderPath, depth: 0 }]
+  let directoriesRead = 0
+  let entriesSeen = 0
 
-  for (const entry of entries) {
-    const childPath = join(folderPath, entry.name)
-    if (entry.isDirectory()) {
-      if (
-        await readFolderSources({
-          folderPath: childPath,
-          seen,
-          sources,
-          maxSources,
-          maxCharsPerSource,
-          warnings,
-        })
-      ) {
-        return true
+  while (pending.length > 0) {
+    if (directoriesRead >= maxDirectories) {
+      return 'traversal-budget'
+    }
+
+    const current = pending.shift()
+    if (!current) {
+      continue
+    }
+
+    let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>
+    try {
+      entries = await fs.readdir(current.path, { withFileTypes: true, encoding: 'utf8' })
+    } catch (error) {
+      warnings.push({
+        type: warningTypeFromError(error),
+        message: 'Folder path is not available to the companion.',
+      })
+      continue
+    }
+
+    directoriesRead += 1
+    entries.sort((a, b) => compareCodepoints(a.name, b.name))
+
+    for (const entry of entries) {
+      entriesSeen += 1
+      if (entriesSeen > maxEntries) {
+        return 'traversal-budget'
       }
-      continue
-    }
-    if (!entry.isFile() || !isMarkdownPath(childPath)) {
-      continue
-    }
 
-    const filePath = validateMarkdownPath(childPath)
-    if (seen.has(filePath)) {
-      continue
-    }
-    if (sources.length >= maxSources) {
-      return true
-    }
+      const childPath = join(current.path, entry.name)
+      if (entry.isDirectory()) {
+        if (current.depth >= maxDepth) {
+          return 'traversal-budget'
+        }
+        pending.push({ path: childPath, depth: current.depth + 1 })
+        continue
+      }
+      if (!entry.isFile() || !isMarkdownPath(childPath)) {
+        continue
+      }
 
-    seen.add(filePath)
-    const source = await readSource({
-      filePath,
-      id: `src_${sources.length}`,
-      maxCharsPerSource,
-      warnings,
-      unavailableMessage: 'Markdown file is not available to the companion.',
-    })
-    if (source.source) {
-      sources.push(source.source)
+      const filePath = validateMarkdownPath(childPath)
+      if (seen.has(filePath)) {
+        continue
+      }
+      if (sources.length >= maxSources) {
+        return 'source-limit'
+      }
+
+      seen.add(filePath)
+      const source = await readSource({
+        filePath,
+        id: `src_${sources.length}`,
+        maxCharsPerSource,
+        warnings,
+        unavailableMessage: 'Markdown file is not available to the companion.',
+      })
+      if (source.source) {
+        sources.push(source.source)
+      }
     }
   }
 
   return false
+}
+
+function prefixSourceText(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `| ${line}`)
+    .join('\n')
 }
 
 function compareCodepoints(left: string, right: string): number {
