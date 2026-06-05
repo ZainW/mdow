@@ -75,16 +75,17 @@ describe('provider detection', () => {
     expect(codex?.command).toBe('npx --no-install @zed-industries/codex-acp')
   })
 
-  it('returns missing for failed built-in commands and includes a custom provider when configured', async () => {
+  it('returns missing for failed built-in commands and preserves custom provider display text', async () => {
     spawnMock.mockImplementation(() => mockProcess({ exitCode: 127 }))
 
-    const promise = detectCompanionProviders('/usr/local/bin/acp --docs')
+    const promise = detectCompanionProviders('  /usr/local/bin/acp --docs  ')
     await vi.advanceTimersByTimeAsync(900)
     const statuses = await promise
 
     expect(statuses.find((s) => s.id === 'opencode')?.status).toBe('missing')
     expect(statuses.find((s) => s.id === 'codex')?.status).toBe('missing')
-    expect(statuses.find((s) => s.id === 'custom')?.command).toBe('/usr/local/bin/acp --docs')
+    expect(statuses.find((s) => s.id === 'custom')?.command).toBe('  /usr/local/bin/acp --docs  ')
+    expect(spawnMock).toHaveBeenCalledWith('/usr/local/bin/acp', ['--docs'], expect.any(Object))
   })
 
   it('waits for a timed-out provider to exit after sending SIGTERM', async () => {

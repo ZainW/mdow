@@ -131,7 +131,7 @@ export async function detectCompanionProviders(
       label: 'Custom',
       command: parsed.command,
       args: parsed.args,
-      displayCommand: trimmed,
+      displayCommand: customCommand,
     })
   }
   return Promise.all(candidates.map((candidate) => detectCandidate(candidate)))
