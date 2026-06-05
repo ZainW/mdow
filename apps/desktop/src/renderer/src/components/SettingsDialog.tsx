@@ -27,6 +27,8 @@ const DEFAULTS = {
   interfaceScale: 'compact' as const,
   readingWidth: 'standard' as const,
   autoUpdateEnabled: true,
+  companionProvider: 'auto' as const,
+  companionCustomCommand: '',
 }
 
 const THEME_OPTIONS = [
@@ -87,6 +89,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setInterfaceScale(DEFAULTS.interfaceScale)
     setReadingWidth(DEFAULTS.readingWidth)
     setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
+    setCompanionProvider(DEFAULTS.companionProvider)
+    setCompanionCustomCommand(DEFAULTS.companionCustomCommand)
+    void window.api.saveCompanionSettings({
+      provider: DEFAULTS.companionProvider,
+      customCommand: DEFAULTS.companionCustomCommand,
+    })
   }
 
   const handleCompanionProviderChange = (provider: CompanionProviderId) => {
@@ -101,7 +109,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5 sm:max-w-md">
+      <DialogContent className="max-h-[calc(100vh-2rem)] gap-5 overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Tune how markdown reads.</DialogDescription>

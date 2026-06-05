@@ -70,6 +70,8 @@ function MainApp(): React.JSX.Element {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const interfaceScale = useAppStore((s) => s.interfaceScale)
+  const companionOpen = useAppStore((s) => s.companionOpen)
+  const companionFullscreen = useAppStore((s) => s.companionFullscreen)
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
@@ -151,9 +153,9 @@ function MainApp(): React.JSX.Element {
             <MainContent activeTab={activeTab} />
             <UpdateBanner />
           </main>
-          <CompanionPanel />
+          {companionOpen && <CompanionPanel />}
           <CommandPalette />
-          <CompanionFullscreen />
+          {companionFullscreen && <CompanionFullscreen />}
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>

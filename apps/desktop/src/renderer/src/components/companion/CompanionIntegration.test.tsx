@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
@@ -105,6 +105,15 @@ describe('companion settings integration', () => {
     expect(screen.getByLabelText('Custom ACP command')).toBeInTheDocument()
   })
 
+  it('keeps settings reachable on short viewports', () => {
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toHaveClass(
+      'max-h-[calc(100vh-2rem)]',
+      'overflow-y-auto',
+    )
+  })
+
   it('persists custom companion command from settings', () => {
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
@@ -123,6 +132,19 @@ describe('companion settings integration', () => {
 
     expect(useAppStore.getState().companionProvider).toBe('codex')
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'codex', customCommand: '' })
+  })
+
+  it('resets companion settings to defaults and persists them', () => {
+    useAppStore.setState({ companionProvider: 'codex', companionCustomCommand: 'custom acp' })
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }))
+
+    expect(useAppStore.getState().companionProvider).toBe('auto')
+    expect(useAppStore.getState().companionCustomCommand).toBe('')
+    expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Custom ACP command')).toHaveValue('')
+    expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: '' })
   })
 
   it('Cmd+Shift+K toggles the companion panel without opening the command palette', () => {
@@ -150,6 +172,22 @@ describe('companion settings integration', () => {
     render(<App />, { wrapper })
 
     expect(screen.getByRole('dialog', { name: 'AI companion' })).toBeInTheDocument()
+  })
+
+  it('does not start companion provider detection until the panel opens', async () => {
+    render(<App />, { wrapper })
+
+    await waitFor(() => expect(window.api.setWindowTitle).toHaveBeenCalled())
+    expect(window.api.getCompanionSettings).not.toHaveBeenCalled()
+    expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
+    expect(window.api.onCompanionUpdate).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true, shiftKey: true, bubbles: true })
+
+    expect(screen.getByRole('complementary', { name: 'AI companion' })).toBeInTheDocument()
+    await waitFor(() => expect(window.api.getCompanionSettings).toHaveBeenCalledTimes(1))
+    expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1)
+    expect(window.api.onCompanionUpdate).toHaveBeenCalledTimes(1)
   })
 
   it('lists the companion shortcut in keyboard shortcuts', () => {
