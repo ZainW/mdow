@@ -89,14 +89,19 @@ describe('createAcpClient', () => {
       params: {
         protocolVersion: 1,
         clientCapabilities: {},
-        clientInfo: { name: 'Mdow' },
+        clientInfo: { name: 'Mdow', version: '1.4.0' },
       },
     })
 
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     messages = readMessages(writes)
     expect(messages[1]).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'initialized',
+      params: {},
+    })
+    expect(messages[2]).toMatchObject({
       jsonrpc: '2.0',
       id: 2,
       method: 'session/new',
@@ -122,12 +127,12 @@ describe('createAcpClient', () => {
     const sentPrompt = client.sendPrompt(prompt).then(() => {
       promptSettled = true
     })
-    await waitForWriteCount(writes, 3)
+    await waitForWriteCount(writes, 4)
     await settleMicrotasks()
     expect(promptSettled).toBe(false)
 
     messages = readMessages(writes)
-    expect(messages[2]).toMatchObject({
+    expect(messages[3]).toMatchObject({
       jsonrpc: '2.0',
       id: 3,
       method: 'session/prompt',
@@ -156,12 +161,12 @@ describe('createAcpClient', () => {
     const started = client.start()
     await waitForWriteCount(writes, 1)
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 
     const sentPrompt = client.sendPrompt([{ type: 'text', text: 'Fail please' }])
-    await waitForWriteCount(writes, 3)
+    await waitForWriteCount(writes, 4)
     writeJson(stdout, {
       jsonrpc: '2.0',
       id: 3,
@@ -186,7 +191,7 @@ describe('createAcpClient', () => {
     const started = client.start()
     await waitForWriteCount(writes, 1)
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 
@@ -239,8 +244,8 @@ describe('createAcpClient', () => {
         title: 'Streaming tool call',
       })
     })
-    await waitForWriteCount(writes, 3)
-    expect(readMessages(writes)[2]).toEqual({
+    await waitForWriteCount(writes, 4)
+    expect(readMessages(writes)[3]).toEqual({
       jsonrpc: '2.0',
       id: 99,
       result: { outcome: { outcome: 'cancelled' } },
@@ -261,7 +266,7 @@ describe('createAcpClient', () => {
     const started = client.start()
     await waitForWriteCount(writes, 1)
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 
@@ -279,8 +284,8 @@ describe('createAcpClient', () => {
       },
     })
 
-    await waitForWriteCount(writes, 3)
-    expect(readMessages(writes)[2]).toEqual({
+    await waitForWriteCount(writes, 4)
+    expect(readMessages(writes)[3]).toEqual({
       jsonrpc: '2.0',
       id: 99,
       result: { outcome: { outcome: 'selected', optionId: 'reject-once' } },
@@ -301,13 +306,13 @@ describe('createAcpClient', () => {
     const started = client.start()
     await waitForWriteCount(writes, 1)
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 
     client.cancel()
-    await waitForWriteCount(writes, 3)
-    expect(readMessages(writes)[2]).toEqual({
+    await waitForWriteCount(writes, 4)
+    expect(readMessages(writes)[3]).toEqual({
       jsonrpc: '2.0',
       method: 'session/cancel',
       params: { sessionId: 'session-1' },
@@ -406,7 +411,7 @@ describe('createAcpClient', () => {
     const started = client.start()
     await waitForWriteCount(writes, 1)
     writeJson(stdout, { jsonrpc: '2.0', id: 1, result: { protocolVersion: 1 } })
-    await waitForWriteCount(writes, 2)
+    await waitForWriteCount(writes, 3)
     writeJson(stdout, { jsonrpc: '2.0', id: 2, result: { sessionId: 'session-1' } })
     await started
 

@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
 
+const ACP_CLIENT_INFO = { name: 'Mdow', version: '1.4.0' }
+
 type JsonRpcId = number | string
 
 type JsonRpcRequest = {
@@ -361,11 +363,13 @@ export function createAcpClient({
         const initializeResult = await request('initialize', {
           protocolVersion: 1,
           clientCapabilities: {},
-          clientInfo: { name: 'Mdow' },
+          clientInfo: ACP_CLIENT_INFO,
         })
         if (!isRecord(initializeResult) || initializeResult.protocolVersion !== 1) {
           throw new Error('Unsupported ACP protocol version')
         }
+
+        await send({ jsonrpc: '2.0', method: 'initialized', params: {} })
 
         const sessionResult = await request('session/new', { cwd, mcpServers: [] })
         if (!isRecord(sessionResult) || typeof sessionResult.sessionId !== 'string') {
