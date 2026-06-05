@@ -69,9 +69,7 @@ export function createCompanionService({
   emitUpdate,
 }: CompanionServiceDeps): CompanionService {
   let client: AcpClient | null = null
-  let clientKey: string | null = null
   let clientStarted = false
-  let activeMessageId = ''
   let inFlight = false
   let activeRequest: RequestState | null = null
   let generation = 0
@@ -98,32 +96,35 @@ export function createCompanionService({
     return providerCommand(preferredProvider, settings.customCommand)
   }
 
-  function forwardClientUpdate(update: AcpClientUpdate) {
-    if (!activeRequest || isStale(activeRequest)) {
+  function forwardClientUpdate(
+    requestState: RequestState,
+    messageId: string,
+    update: AcpClientUpdate,
+  ) {
+    if (activeRequest !== requestState || isStale(requestState)) {
       return
     }
     if (update.type === 'assistant-delta') {
-      emitUpdate({ type: 'assistant-delta', messageId: activeMessageId, text: update.text })
+      emitUpdate({ type: 'assistant-delta', messageId, text: update.text })
       return
     }
     emitUpdate(update)
   }
 
-  function ensureClient(command: ProviderCommand, cwd: string) {
-    const nextKey = JSON.stringify({ ...command, cwd })
-    if (client && clientKey === nextKey) {
-      return { client, started: clientStarted }
-    }
-
+  function createPromptClient(
+    command: ProviderCommand,
+    cwd: string,
+    requestState: RequestState,
+    messageId: string,
+  ) {
     client?.stop()
     client = createClient({
       ...command,
       cwd,
-      onUpdate: forwardClientUpdate,
+      onUpdate: (update) => forwardClientUpdate(requestState, messageId, update),
     })
-    clientKey = nextKey
     clientStarted = false
-    return { client, started: false }
+    return client
   }
 
   function isStale(requestState: RequestState) {
@@ -134,7 +135,6 @@ export function createCompanionService({
     activeClient.stop()
     if (client === activeClient) {
       client = null
-      clientKey = null
       clientStarted = false
     }
   }
@@ -151,6 +151,7 @@ export function createCompanionService({
 
       inFlight = true
       const requestState = { cancelled: false, generation }
+      let promptClient: AcpClient | null = null
       activeRequest = requestState
       try {
         const context = await buildContext({
@@ -176,35 +177,34 @@ export function createCompanionService({
         if (isStale(requestState)) {
           return
         }
-        activeMessageId = request.messageId
-        const active = ensureClient(command, cwd)
+        promptClient = createPromptClient(command, cwd, requestState, request.messageId)
         if (isStale(requestState)) {
-          stopClientIfCurrent(active.client)
           return
         }
 
         emitUpdate({ type: 'status', status: 'starting' })
-        if (!active.started) {
-          await active.client.start()
+        if (!clientStarted) {
+          await promptClient.start()
           clientStarted = true
         }
         if (isStale(requestState)) {
-          stopClientIfCurrent(active.client)
           return
         }
         emitUpdate({ type: 'status', status: 'streaming' })
         if (isStale(requestState)) {
           return
         }
-        await active.client.sendPrompt(buildCompanionPromptBlocks(request.text, context))
+        await promptClient.sendPrompt(buildCompanionPromptBlocks(request.text, context))
         if (!isStale(requestState)) {
           emitUpdate({ type: 'status', status: 'complete' })
         }
       } finally {
+        if (promptClient) {
+          stopClientIfCurrent(promptClient)
+        }
         if (activeRequest === requestState) {
           activeRequest = null
           inFlight = false
-          activeMessageId = ''
         }
       }
     },
@@ -225,7 +225,6 @@ export function createCompanionService({
       }
       client?.stop()
       client = null
-      clientKey = null
       clientStarted = false
       activeRequest = null
       inFlight = false

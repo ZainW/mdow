@@ -281,6 +281,64 @@ describe('companion service', () => {
     expect(emitUpdate.mock.calls).toHaveLength(callCount)
   })
 
+  it('does not attribute late updates from a previous client to the active message', async () => {
+    type CreateClient = Parameters<typeof createCompanionService>[0]['createClient']
+    const onUpdates: Array<Parameters<CreateClient>[0]['onUpdate']> = []
+    const secondPromptStarted = deferred<void>()
+    let resolveSecondPrompt: () => void = () => {}
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn((options) => {
+        onUpdates.push(options.onUpdate)
+        const sendPrompt = vi.fn(async () => {
+          if (onUpdates.length === 2) {
+            secondPromptStarted.resolve()
+            await new Promise<void>((resolve) => {
+              resolveSecondPrompt = resolve
+            })
+          }
+        })
+        return {
+          start: vi.fn(async () => {}),
+          sendPrompt,
+          cancel: vi.fn(),
+          stop: vi.fn(),
+        }
+      }),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    await service.send({
+      messageId: 'msg_1',
+      text: 'First',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+
+    const secondSend = service.send({
+      messageId: 'msg_2',
+      text: 'Second',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+    await secondPromptStarted.promise
+
+    onUpdates[0]({ type: 'assistant-delta', text: 'late' })
+    resolveSecondPrompt()
+    await secondSend
+
+    expect(emitUpdate).not.toHaveBeenCalledWith({
+      type: 'assistant-delta',
+      messageId: 'msg_2',
+      text: 'late',
+    })
+  })
+
   it('cancel and shutdown delegate to the active client', async () => {
     let resolvePrompt: () => void = () => {}
     const promptStarted = deferred<void>()
