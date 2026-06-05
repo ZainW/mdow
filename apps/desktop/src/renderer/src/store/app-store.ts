@@ -9,16 +9,18 @@ import {
 import { createUiSlice, type UiSlice, type SidebarMode } from './slices/ui-slice'
 import { createFolderSlice, type FolderSlice } from './slices/folder-slice'
 import { createSettingsSlice, type SettingsSlice } from './slices/settings-slice'
+import { createCompanionSlice, type CompanionSlice } from './slices/companion-slice'
 
 export type { Tab, FileError, ErrorType, SidebarMode }
 
-type AppStore = TabSlice & UiSlice & FolderSlice & SettingsSlice
+type AppStore = TabSlice & UiSlice & FolderSlice & SettingsSlice & CompanionSlice
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createTabSlice(...args),
   ...createUiSlice(...args),
   ...createFolderSlice(...args),
   ...createSettingsSlice(...args),
+  ...createCompanionSlice(...args),
 }))
 
 export const selectActiveTab = (s: AppStore): Tab | null =>
