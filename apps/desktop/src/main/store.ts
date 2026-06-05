@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import { existsSync } from 'fs'
+import type { CompanionProviderId } from '../shared/types'
 
 interface SessionTab {
   path: string
@@ -32,6 +33,8 @@ interface StoreSchema {
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
+  companionProvider: CompanionProviderId
+  companionCustomCommand: string
 }
 
 const store = new Store<StoreSchema>({
@@ -50,6 +53,8 @@ const store = new Store<StoreSchema>({
     interfaceScale: 'compact',
     readingWidth: 'standard',
     sidebarMode: 'recents',
+    companionProvider: 'auto',
+    companionCustomCommand: '',
   },
 })
 
@@ -93,6 +98,8 @@ export function getAppState() {
     interfaceScale: store.get('interfaceScale'),
     readingWidth: store.get('readingWidth'),
     sidebarMode: store.get('sidebarMode'),
+    companionProvider: store.get('companionProvider'),
+    companionCustomCommand: store.get('companionCustomCommand'),
   }
 }
 
@@ -112,6 +119,9 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.interfaceScale !== undefined) store.set('interfaceScale', state.interfaceScale)
   if (state.readingWidth !== undefined) store.set('readingWidth', state.readingWidth)
   if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
+  if (state.companionProvider !== undefined) store.set('companionProvider', state.companionProvider)
+  if (state.companionCustomCommand !== undefined)
+    store.set('companionCustomCommand', state.companionCustomCommand)
 }
 
 export function getWindowBounds(): WindowBounds | null {

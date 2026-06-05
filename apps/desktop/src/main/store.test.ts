@@ -129,7 +129,16 @@ describe('store', () => {
         interfaceScale: 'compact',
         readingWidth: 'standard',
         sidebarMode: 'recents',
+        companionProvider: 'auto',
+        companionCustomCommand: '',
       })
+    })
+
+    it('returns default companion settings with app state', () => {
+      const state = getAppState()
+
+      expect(state.companionProvider).toBe('auto')
+      expect(state.companionCustomCommand).toBe('')
     })
 
     it('saves partial state', () => {
@@ -150,6 +159,16 @@ describe('store', () => {
       const state = getAppState()
       expect(state.interfaceScale).toBe('large')
       expect(state.readingWidth).toBe('comfortable')
+    })
+
+    it('persists companion provider and custom command through saveAppState', () => {
+      saveAppState({
+        companionProvider: 'custom',
+        companionCustomCommand: '/usr/local/bin/custom-acp --stdio',
+      })
+
+      expect(getAppState().companionProvider).toBe('custom')
+      expect(getAppState().companionCustomCommand).toBe('/usr/local/bin/custom-acp --stdio')
     })
   })
 
