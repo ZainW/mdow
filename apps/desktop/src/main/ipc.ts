@@ -8,6 +8,8 @@ import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateMarkdownPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+import { createDefaultCompanionService } from './companion/service'
+import { IPC, type CompanionSendRequest, type CompanionSettings } from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
 
@@ -44,6 +46,21 @@ function trackRecentFile(getMainWindow: () => BrowserWindow | null, filePath: st
 }
 
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
+  const companionService = createDefaultCompanionService({
+    getSettings: () => {
+      const state = getAppState()
+      return {
+        provider: state.companionProvider,
+        customCommand: state.companionCustomCommand,
+      }
+    },
+    emitUpdate: (update) => {
+      const win = getMainWindow()
+      if (!win || win.isDestroyed()) return
+      win.webContents.send(IPC.COMPANION_UPDATE, update)
+    },
+  })
+
   ipcMain.handle('file:open-dialog', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
@@ -268,4 +285,24 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const { installUpdate } = await loadInitializedUpdater(getMainWindow)
     installUpdate()
   })
+
+  ipcMain.handle('companion:detect-providers', () => companionService.detectProviders())
+  ipcMain.handle('companion:get-settings', () => {
+    const state = getAppState()
+    return {
+      provider: state.companionProvider,
+      customCommand: state.companionCustomCommand,
+    } satisfies CompanionSettings
+  })
+  ipcMain.handle('companion:save-settings', (_, settings: CompanionSettings) => {
+    saveAppState({
+      companionProvider: settings.provider,
+      companionCustomCommand: settings.customCommand,
+    })
+  })
+  ipcMain.handle('companion:send', (_, request: CompanionSendRequest) =>
+    companionService.send(request),
+  )
+  ipcMain.handle('companion:cancel', () => companionService.cancel())
+  ipcMain.handle('companion:shutdown', () => companionService.shutdown())
 }

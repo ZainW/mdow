@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AppState,
+  type CompanionProviderStatus,
+  type CompanionSendRequest,
+  type CompanionSettings,
+  type CompanionUpdate,
   type FileResult,
   type FolderOpenResult,
   type ScanResult,
@@ -10,6 +14,10 @@ import {
 
 export type {
   AppState,
+  CompanionProviderStatus,
+  CompanionSendRequest,
+  CompanionSettings,
+  CompanionUpdate,
   ErrorType,
   FileError,
   FileResult,
@@ -78,6 +86,12 @@ export interface ElectronAPI {
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
   setAutoUpdateScheduling: (enabled: boolean) => Promise<void>
+  detectCompanionProviders: () => Promise<CompanionProviderStatus[]>
+  getCompanionSettings: () => Promise<CompanionSettings>
+  saveCompanionSettings: (settings: CompanionSettings) => Promise<void>
+  sendCompanionMessage: (request: CompanionSendRequest) => Promise<void>
+  cancelCompanionMessage: () => Promise<void>
+  shutdownCompanion: () => Promise<void>
   onUpdateAvailable: (
     callback: (info: { version: string; releaseNotes?: string }) => void,
   ) => Unsubscribe
@@ -86,6 +100,7 @@ export interface ElectronAPI {
   onUpdateDownloaded: (callback: () => void) => Unsubscribe
   onUpdateError: (callback: (message: string) => void) => Unsubscribe
   onMenuCheckForUpdates: (callback: () => void) => Unsubscribe
+  onCompanionUpdate: (callback: (update: CompanionUpdate) => void) => Unsubscribe
 }
 
 const api: ElectronAPI = {
@@ -131,12 +146,19 @@ const api: ElectronAPI = {
   installUpdate: () => ipcRenderer.invoke(IPC.UPDATER_INSTALL),
   setAutoUpdateScheduling: (enabled: boolean) =>
     ipcRenderer.invoke(IPC.UPDATER_SET_SCHEDULING, enabled),
+  detectCompanionProviders: () => ipcRenderer.invoke(IPC.COMPANION_DETECT_PROVIDERS),
+  getCompanionSettings: () => ipcRenderer.invoke(IPC.COMPANION_GET_SETTINGS),
+  saveCompanionSettings: (settings) => ipcRenderer.invoke(IPC.COMPANION_SAVE_SETTINGS, settings),
+  sendCompanionMessage: (request) => ipcRenderer.invoke(IPC.COMPANION_SEND, request),
+  cancelCompanionMessage: () => ipcRenderer.invoke(IPC.COMPANION_CANCEL),
+  shutdownCompanion: () => ipcRenderer.invoke(IPC.COMPANION_SHUTDOWN),
   onUpdateAvailable: (callback) => createIpcListener(IPC.UPDATER_UPDATE_AVAILABLE, callback),
   onUpdateUpToDate: (callback) => createIpcListener(IPC.UPDATER_UP_TO_DATE, callback),
   onUpdateDownloadProgress: (callback) =>
     createIpcListener(IPC.UPDATER_DOWNLOAD_PROGRESS, callback),
   onUpdateDownloaded: (callback) => createIpcListener(IPC.UPDATER_UPDATE_DOWNLOADED, callback),
   onUpdateError: (callback) => createIpcListener(IPC.UPDATER_ERROR, callback),
+  onCompanionUpdate: (callback) => createIpcListener(IPC.COMPANION_UPDATE, callback),
 }
 
 contextBridge.exposeInMainWorld('api', api)
