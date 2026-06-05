@@ -375,4 +375,71 @@ describe('createAcpClient', () => {
       message: 'Invalid JSON-RPC error response',
     })
   })
+
+  it('rejects pending start and cleans up when provider writes malformed JSON', async () => {
+    const onUpdate = vi.fn()
+    const { child, stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    stdout.write('{not json}\n')
+
+    await expect(started).rejects.toThrow('Malformed JSON-RPC message')
+    expect(onUpdate).toHaveBeenCalledWith({
+      type: 'error',
+      message: 'Malformed JSON-RPC message',
+    })
+    expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects pending start and cleans up when provider writes invalid JSON-RPC', async () => {
+    const onUpdate = vi.fn()
+    const { child, stdout, writes, factory } = createHarness()
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate,
+    })
+
+    const started = client.start()
+    await waitForWriteCount(writes, 1)
+    writeJson(stdout, { jsonrpc: '2.0' })
+
+    await expect(started).rejects.toThrow('Invalid JSON-RPC message')
+    expect(onUpdate).toHaveBeenCalledWith({
+      type: 'error',
+      message: 'Invalid JSON-RPC message',
+    })
+    expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects double start without spawning another process', async () => {
+    const harness = createHarness()
+    const factory = vi.fn<AcpProcessFactory>(() => harness.child)
+    const client = createAcpClient({
+      command: 'agent',
+      args: [],
+      cwd: '/workspace',
+      processFactory: factory,
+      onUpdate: vi.fn(),
+    })
+
+    const started = client.start()
+    await waitForWriteCount(harness.writes, 1)
+
+    await expect(client.start()).rejects.toThrow('ACP client is already starting or started')
+    expect(factory).toHaveBeenCalledTimes(1)
+
+    harness.child.emit('error', new Error('stop pending start'))
+    await expect(started).rejects.toThrow('stop pending start')
+  })
 })

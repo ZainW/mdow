@@ -133,6 +133,13 @@ export function createAcpClient({
     cleanup({ kill: false, rejectWith: error })
   }
 
+  function reportProtocolFailure(error: Error) {
+    onUpdate({ type: 'error', message: error.message })
+    if (pending.size > 0) {
+      cleanup({ kill: true, rejectWith: error })
+    }
+  }
+
   function send(message: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse) {
     const process = child
     if (!process) {
@@ -246,7 +253,7 @@ export function createAcpClient({
 
   function handleMessage(message: unknown) {
     if (!isRecord(message) || message.jsonrpc !== '2.0') {
-      onUpdate({ type: 'error', message: 'Invalid JSON-RPC message' })
+      reportProtocolFailure(new Error('Invalid JSON-RPC message'))
       return
     }
 
@@ -265,7 +272,7 @@ export function createAcpClient({
       return
     }
 
-    onUpdate({ type: 'error', message: 'Invalid JSON-RPC message' })
+    reportProtocolFailure(new Error('Invalid JSON-RPC message'))
   }
 
   function handleStdoutChunk(process: AcpProcess, chunk: Buffer | string) {
@@ -282,17 +289,18 @@ export function createAcpClient({
       }
       try {
         handleMessage(JSON.parse(line))
-      } catch (error) {
-        onUpdate({
-          type: 'error',
-          message: error instanceof Error ? error.message : 'Malformed JSON-RPC message',
-        })
+      } catch {
+        reportProtocolFailure(new Error('Malformed JSON-RPC message'))
       }
     }
   }
 
   return {
     async start() {
+      if (child) {
+        throw new Error('ACP client is already starting or started')
+      }
+
       const process = processFactory(command, args, cwd)
       child = process
       const stdoutData = (chunk: Buffer | string) => handleStdoutChunk(process, chunk)
