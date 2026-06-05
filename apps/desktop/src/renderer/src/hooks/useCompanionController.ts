@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { extractCompanionCitations } from '../lib/companion-citations'
 import { selectActiveTab, useAppStore } from '../store/app-store'
 
@@ -7,104 +7,115 @@ type ActiveCompanionRequest = {
   cancelled: boolean
 }
 
-export function useCompanionController() {
-  const activeRequestRef = useRef<ActiveCompanionRequest | null>(null)
+let activeRequest: ActiveCompanionRequest | null = null
+let mountedControllers = 0
+let unsubscribeCompanionUpdates: (() => void) | null = null
+let controllerGeneration = 0
 
-  function markActiveRequestCancelled() {
-    const activeRequest = activeRequestRef.current
-    if (!activeRequest) return
+function markActiveRequestCancelled() {
+  if (!activeRequest) return
 
-    activeRequest.cancelled = true
-    const store = useAppStore.getState()
-    const message = store.companionMessages.find((item) => item.id === activeRequest.messageId)
-    if (message) {
-      store.updateCompanionMessage({ ...message, status: 'error' })
-    }
-    store.setCompanionStreaming(false)
+  activeRequest.cancelled = true
+  const store = useAppStore.getState()
+  const message = store.companionMessages.find((item) => item.id === activeRequest!.messageId)
+  if (message) {
+    store.updateCompanionMessage({ ...message, status: 'error' })
   }
+  store.setCompanionStreaming(false)
+}
 
+export function useCompanionController() {
   useEffect(() => {
-    let disposed = false
-    const unsubscribe = window.api.onCompanionUpdate((update) => {
-      const store = useAppStore.getState()
+    mountedControllers += 1
+    if (!unsubscribeCompanionUpdates) {
+      controllerGeneration += 1
+      const generation = controllerGeneration
 
-      if (update.type === 'status') {
-        if (update.status === 'starting' || update.status === 'streaming') {
-          store.setCompanionStreaming(true)
-        } else if (
-          (update.status === 'complete' || update.status === 'cancelled') &&
-          !activeRequestRef.current
-        ) {
+      unsubscribeCompanionUpdates = window.api.onCompanionUpdate((update) => {
+        const store = useAppStore.getState()
+
+        if (update.type === 'status') {
+          if (update.status === 'starting' || update.status === 'streaming') {
+            store.setCompanionStreaming(true)
+          } else if (
+            (update.status === 'complete' || update.status === 'cancelled') &&
+            !activeRequest
+          ) {
+            store.setCompanionStreaming(false)
+          }
+          return
+        }
+
+        if (update.type === 'context') {
+          store.setCompanionContext(update.summary)
+          return
+        }
+
+        if (update.type === 'assistant-delta') {
+          store.appendCompanionAssistantDelta(update.messageId, update.text)
+          return
+        }
+
+        if (update.type === 'error') {
+          store.setCompanionError(update.message)
           store.setCompanionStreaming(false)
+          return
         }
-        return
-      }
 
-      if (update.type === 'context') {
-        store.setCompanionContext(update.summary)
-        return
-      }
-
-      if (update.type === 'assistant-delta') {
-        store.appendCompanionAssistantDelta(update.messageId, update.text)
-        return
-      }
-
-      if (update.type === 'error') {
-        store.setCompanionError(update.message)
-        store.setCompanionStreaming(false)
-        return
-      }
-
-      if (update.type === 'warning') {
-        store.setCompanionError(update.warning.message)
-        return
-      }
-
-      if (update.type === 'tool-refused') {
-        store.setCompanionError(`Tool refused: ${update.title}`)
-      }
-    })
-
-    void window.api
-      .getCompanionSettings()
-      .then((settings) => {
-        if (!disposed) {
-          useAppStore.setState({
-            companionProvider: settings.provider,
-            companionCustomCommand: settings.customCommand,
-          })
+        if (update.type === 'warning') {
+          store.setCompanionError(update.warning.message)
+          return
         }
-      })
-      .catch((error: unknown) => {
-        if (!disposed) {
-          useAppStore.getState().setCompanionError(errorMessage(error))
+
+        if (update.type === 'tool-refused') {
+          store.setCompanionError(`Tool refused: ${update.title}`)
         }
       })
 
-    void window.api
-      .detectCompanionProviders()
-      .then((providers) => {
-        if (!disposed) {
-          useAppStore.getState().setCompanionProviders(providers)
-        }
-      })
-      .catch((error: unknown) => {
-        if (!disposed) {
-          useAppStore.getState().setCompanionError(errorMessage(error))
-        }
-      })
+      void window.api
+        .getCompanionSettings()
+        .then((settings) => {
+          if (mountedControllers > 0 && generation === controllerGeneration) {
+            useAppStore.setState({
+              companionProvider: settings.provider,
+              companionCustomCommand: settings.customCommand,
+            })
+          }
+        })
+        .catch((error: unknown) => {
+          if (mountedControllers > 0 && generation === controllerGeneration) {
+            useAppStore.getState().setCompanionError(errorMessage(error))
+          }
+        })
+
+      void window.api
+        .detectCompanionProviders()
+        .then((providers) => {
+          if (mountedControllers > 0 && generation === controllerGeneration) {
+            useAppStore.getState().setCompanionProviders(providers)
+          }
+        })
+        .catch((error: unknown) => {
+          if (mountedControllers > 0 && generation === controllerGeneration) {
+            useAppStore.getState().setCompanionError(errorMessage(error))
+          }
+        })
+    }
 
     return () => {
-      disposed = true
-      if (activeRequestRef.current) {
+      mountedControllers = Math.max(0, mountedControllers - 1)
+      if (mountedControllers === 0) {
         markActiveRequestCancelled()
-        void window.api.cancelCompanionMessage().catch((error: unknown) => {
-          useAppStore.getState().setCompanionError(errorMessage(error))
-        })
-        activeRequestRef.current = null
+        if (activeRequest) {
+          void window.api.cancelCompanionMessage().catch((error: unknown) => {
+            useAppStore.getState().setCompanionError(errorMessage(error))
+          })
+          activeRequest = null
+        }
+        unsubscribeCompanionUpdates?.()
+        unsubscribeCompanionUpdates = null
+        controllerGeneration += 1
       }
-      unsubscribe()
     }
   }, [])
 
@@ -114,13 +125,13 @@ export function useCompanionController() {
       if (!trimmed) return
 
       const store = useAppStore.getState()
-      if (activeRequestRef.current || store.companionStreaming) return
+      if (activeRequest || store.companionStreaming) return
 
       const activeTab = selectActiveTab(store)
       const userMessage = store.appendCompanionMessage('user', trimmed)
       const assistantMessage = store.appendCompanionMessage('assistant', '', 'streaming')
-      const activeRequest = { messageId: assistantMessage.id, cancelled: false }
-      activeRequestRef.current = activeRequest
+      const request = { messageId: assistantMessage.id, cancelled: false }
+      activeRequest = request
       store.setCompanionError(null)
       store.setCompanionStreaming(true)
 
@@ -136,7 +147,7 @@ export function useCompanionController() {
         const latest = useAppStore.getState()
         const message = latest.companionMessages.find((item) => item.id === assistantMessage.id)
         if (message) {
-          if (activeRequest.cancelled) {
+          if (request.cancelled) {
             latest.updateCompanionMessage({ ...message, status: 'error' })
             return
           }
@@ -157,21 +168,21 @@ export function useCompanionController() {
         if (message) {
           latest.updateCompanionMessage({ ...message, status: 'error' })
         }
-        if (!activeRequest.cancelled) {
+        if (!request.cancelled) {
           latest.setCompanionError(errorMessage(error))
         }
       } finally {
-        if (activeRequestRef.current === activeRequest) {
-          activeRequestRef.current = null
+        if (activeRequest === request) {
+          activeRequest = null
           useAppStore.getState().setCompanionStreaming(false)
         }
       }
     },
     cancel: async () => {
-      const activeRequest = activeRequestRef.current
+      const request = activeRequest
       markActiveRequestCancelled()
-      if (activeRequestRef.current === activeRequest) {
-        activeRequestRef.current = null
+      if (activeRequest === request) {
+        activeRequest = null
       }
       try {
         await window.api.cancelCompanionMessage()

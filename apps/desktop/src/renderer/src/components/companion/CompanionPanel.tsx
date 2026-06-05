@@ -12,6 +12,7 @@ export function CompanionPanel() {
     state.companionProviders.some((provider) => provider.status === 'available'),
   )
   const hasMessages = useAppStore((state) => state.companionMessages.length > 0)
+  const error = useAppStore((state) => state.companionError)
   const setOpen = useAppStore((state) => state.setCompanionOpen)
   const setFullscreen = useAppStore((state) => state.setCompanionFullscreen)
   const showChat = hasProvider || hasMessages
@@ -49,6 +50,14 @@ export function CompanionPanel() {
           </Button>
         </div>
       </div>
+      {error && (
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs"
+          role="alert"
+        >
+          {error}
+        </div>
+      )}
       {showChat ? (
         <>
           <CompanionMessages />

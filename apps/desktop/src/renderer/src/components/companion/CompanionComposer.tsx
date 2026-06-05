@@ -8,7 +8,7 @@ import {
 } from '@renderer/components/ai-elements/prompt-input'
 import { useAppStore } from '@renderer/store/app-store'
 import { SquareIcon } from 'lucide-react'
-import { useState } from 'react'
+import { type KeyboardEvent, useState } from 'react'
 import { useCompanionController } from '../../hooks/useCompanionController'
 
 export function CompanionComposer() {
@@ -30,12 +30,24 @@ export function CompanionComposer() {
     void send(nextText)
   }
 
+  function submitText() {
+    handleSubmit({ files: [], text })
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return
+
+    event.preventDefault()
+    submitText()
+  }
+
   return (
     <PromptInput className="shrink-0" onSubmit={handleSubmit}>
       <PromptInputBody>
         <PromptInputTextarea
           aria-label="Companion prompt"
           className="text-base md:text-sm"
+          onKeyDown={handleKeyDown}
           onChange={(event) => setText(event.currentTarget.value)}
           placeholder="Ask about this document..."
           value={text}
