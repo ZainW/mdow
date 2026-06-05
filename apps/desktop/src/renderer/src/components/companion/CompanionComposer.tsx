@@ -9,11 +9,14 @@ import {
 import { useAppStore } from '@renderer/store/app-store'
 import { SquareIcon } from 'lucide-react'
 import { type KeyboardEvent, useState } from 'react'
-import { useCompanionController } from '../../hooks/useCompanionController'
 
-export function CompanionComposer() {
+type CompanionComposerProps = {
+  cancel: () => Promise<void>
+  send: (text: string) => Promise<void>
+}
+
+export function CompanionComposer({ cancel, send }: CompanionComposerProps) {
   const streaming = useAppStore((state) => state.companionStreaming)
-  const { cancel, send } = useCompanionController()
   const [text, setText] = useState('')
   const trimmed = text.trim()
 

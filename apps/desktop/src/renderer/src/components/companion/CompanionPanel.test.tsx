@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompanionProviderStatus, CompanionUpdate } from '../../../../shared/types'
 import { useAppStore } from '../../store/app-store'
@@ -52,6 +52,15 @@ describe('Companion UI', () => {
     expect(screen.getByText('npx --no-install @zed-industries/codex-acp')).toBeInTheDocument()
   })
 
+  it('detects providers when setup renders without a composer', async () => {
+    useAppStore.setState({ companionOpen: true, companionProviders: [] })
+    render(<CompanionPanel />)
+
+    expect(screen.queryByRole('textbox', { name: 'Companion prompt' })).toBeNull()
+    await waitFor(() => expect(api.getCompanionSettings).toHaveBeenCalledTimes(1))
+    expect(api.detectCompanionProviders).toHaveBeenCalledTimes(1)
+  })
+
   it('shows provider setup when no provider is available even with existing messages', () => {
     useAppStore.setState({ companionOpen: true, companionProviders: [] })
     useAppStore.getState().appendCompanionMessage('user', 'Hello')
@@ -62,7 +71,7 @@ describe('Companion UI', () => {
     expect(screen.getByText('npx --no-install @zed-industries/codex-acp')).toBeInTheDocument()
   })
 
-  it('expands and collapses the same conversation', () => {
+  it('expands the same conversation', () => {
     useAppStore.setState({ companionOpen: true, companionProviders: [availableProvider] })
     useAppStore.getState().appendCompanionMessage('user', 'Hello')
     render(

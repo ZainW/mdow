@@ -1,12 +1,14 @@
 import { Button } from '@renderer/components/ui/button'
 import { useAppStore } from '@renderer/store/app-store'
 import { Maximize2Icon, XIcon } from 'lucide-react'
+import { useCompanionController } from '../../hooks/useCompanionController'
 import { CompanionComposer } from './CompanionComposer'
 import { CompanionMessages } from './CompanionMessages'
 import { CompanionSetup } from './CompanionSetup'
 import { CompanionStatus } from './CompanionStatus'
 
 export function CompanionPanel() {
+  const companion = useCompanionController()
   const open = useAppStore((state) => state.companionOpen)
   const hasProvider = useAppStore((state) =>
     state.companionProviders.some((provider) => provider.status === 'available'),
@@ -59,7 +61,7 @@ export function CompanionPanel() {
       {hasProvider ? (
         <>
           <CompanionMessages />
-          <CompanionComposer />
+          <CompanionComposer cancel={companion.cancel} send={companion.send} />
         </>
       ) : (
         <CompanionSetup />

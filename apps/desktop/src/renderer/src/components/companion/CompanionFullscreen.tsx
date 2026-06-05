@@ -6,12 +6,14 @@ import {
   DialogTitle,
 } from '@renderer/components/ui/dialog'
 import { useAppStore } from '@renderer/store/app-store'
+import { useCompanionController } from '../../hooks/useCompanionController'
 import { CompanionComposer } from './CompanionComposer'
 import { CompanionMessages } from './CompanionMessages'
 import { CompanionSetup } from './CompanionSetup'
 import { CompanionStatus } from './CompanionStatus'
 
 export function CompanionFullscreen() {
+  const companion = useCompanionController()
   const open = useAppStore((state) => state.companionFullscreen)
   const hasProvider = useAppStore((state) =>
     state.companionProviders.some((provider) => provider.status === 'available'),
@@ -47,7 +49,7 @@ export function CompanionFullscreen() {
         {hasProvider ? (
           <>
             <CompanionMessages />
-            <CompanionComposer />
+            <CompanionComposer cancel={companion.cancel} send={companion.send} />
           </>
         ) : (
           <CompanionSetup />
