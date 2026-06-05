@@ -27,7 +27,7 @@ export function CompanionPanel() {
   return (
     <aside
       aria-label="AI companion"
-      className="fixed inset-y-0 right-0 z-40 flex w-80 max-w-[calc(100vw-1rem)] flex-col gap-3 border-l border-border bg-background p-3 shadow-xl lg:static lg:z-auto lg:h-full lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none"
+      className="absolute inset-y-0 right-0 z-40 flex w-80 max-w-[calc(100vw-1rem)] flex-col gap-3 border-l border-border bg-background p-3 shadow-xl lg:static lg:z-auto lg:h-full lg:w-80 lg:max-w-none lg:shrink-0 lg:shadow-none"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">

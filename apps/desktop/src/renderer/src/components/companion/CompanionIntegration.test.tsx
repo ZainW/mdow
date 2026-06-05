@@ -123,23 +123,35 @@ describe('companion settings integration', () => {
     )
   })
 
-  it('persists custom companion command from settings', () => {
+  it('updates custom companion command while typing without saving until blur', async () => {
+    useAppStore.setState({ companionOpen: true })
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
-    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, {
       target: { value: 'custom acp' },
     })
 
     expect(useAppStore.getState().companionCustomCommand).toBe('custom acp')
+    expect(saveSettings).not.toHaveBeenCalled()
+    expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
+
+    fireEvent.blur(input)
+
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'custom acp' })
+    await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1))
   })
 
-  it('saves companion settings without detecting providers while companion is closed', async () => {
+  it('saves custom companion command on Enter without detecting providers while companion is closed', async () => {
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
-    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, {
       target: { value: 'custom acp' },
     })
+
+    expect(saveSettings).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() =>
       expect(saveSettings).toHaveBeenCalledWith({
@@ -175,9 +187,13 @@ describe('companion settings integration', () => {
     await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1))
     expect(screen.getByText('Connect a local companion')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, {
       target: { value: 'opencode acp' },
     })
+
+    expect(saveSettings).not.toHaveBeenCalled()
+    fireEvent.blur(input)
 
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'opencode acp' })
     await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(2))
@@ -191,13 +207,50 @@ describe('companion settings integration', () => {
     expect(screen.getByRole('textbox', { name: 'Companion prompt' })).toBeInTheDocument()
   })
 
+  it('ignores stale companion provider detections after newer settings commits', async () => {
+    let resolveFirst!: (providers: (typeof availableProvider)[]) => void
+    let resolveSecond!: (providers: (typeof availableProvider)[]) => void
+    const staleProvider = { ...availableProvider, command: 'stale acp' }
+    vi.mocked(window.api.detectCompanionProviders)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve
+          }),
+      )
+    useAppStore.setState({ companionOpen: true, companionProviders: [] })
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Codex' }))
+    await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'opencode' }))
+
+    await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(2))
+    resolveSecond([availableProvider])
+    await waitFor(() =>
+      expect(useAppStore.getState().companionProviders).toEqual([availableProvider]),
+    )
+    resolveFirst([staleProvider])
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(useAppStore.getState().companionProviders).toEqual([availableProvider])
+  })
+
   it('surfaces companion settings save failures without leaving an unhandled rejection', async () => {
     saveSettings.mockRejectedValueOnce(new Error('Settings save failed'))
     render(<SettingsDialog open onOpenChange={() => {}} />)
 
-    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+    const input = screen.getByLabelText('Custom ACP command')
+    fireEvent.change(input, {
       target: { value: 'custom acp' },
     })
+    fireEvent.blur(input)
 
     await waitFor(() => {
       expect(useAppStore.getState().companionError).toBe('Settings save failed')
@@ -238,6 +291,7 @@ describe('companion settings integration', () => {
     const { unmount } = render(<App />, { wrapper })
 
     expect(screen.getByRole('complementary', { name: 'AI companion' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'Document' }).parentElement).toHaveClass('relative')
 
     unmount()
     useAppStore.setState({ companionOpen: false, companionFullscreen: true })

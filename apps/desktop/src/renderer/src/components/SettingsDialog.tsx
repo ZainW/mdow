@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
 import {
@@ -84,6 +84,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
+  const companionSettingsRequestRef = useRef(0)
 
   const handleResetDefaults = () => {
     setTheme(DEFAULTS.theme)
@@ -98,15 +99,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   const persistCompanionSettings = async (provider: CompanionProviderId, customCommand: string) => {
+    const requestId = companionSettingsRequestRef.current + 1
+    companionSettingsRequestRef.current = requestId
+
     try {
       await window.api.saveCompanionSettings({ provider, customCommand })
+
       const state = useAppStore.getState()
       if (state.companionOpen || state.companionFullscreen) {
+        if (requestId !== companionSettingsRequestRef.current) return
         const providers = await window.api.detectCompanionProviders()
-        setCompanionProviders(providers)
+        if (requestId === companionSettingsRequestRef.current) {
+          setCompanionProviders(providers)
+        }
       }
-      setCompanionError(null)
+      if (requestId === companionSettingsRequestRef.current) setCompanionError(null)
     } catch (error) {
+      if (requestId !== companionSettingsRequestRef.current) return
       setCompanionError(error instanceof Error ? error.message : String(error))
     }
   }
@@ -118,7 +127,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const handleCompanionCustomCommandChange = (command: string) => {
     setCompanionCustomCommand(command)
-    void persistCompanionSettings(companionProvider, command)
+  }
+
+  const handleCompanionCustomCommandCommit = () => {
+    void persistCompanionSettings(
+      useAppStore.getState().companionProvider,
+      useAppStore.getState().companionCustomCommand,
+    )
   }
 
   return (
@@ -258,6 +273,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               aria-label="Custom ACP command"
               value={companionCustomCommand}
               onChange={(event) => handleCompanionCustomCommandChange(event.currentTarget.value)}
+              onBlur={handleCompanionCustomCommandCommit}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleCompanionCustomCommandCommit()
+              }}
               placeholder="custom-acp --stdio"
             />
           </div>

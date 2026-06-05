@@ -55,7 +55,7 @@ describe('Companion UI', () => {
     render(<CompanionPanel />)
 
     expect(screen.getByRole('complementary', { name: 'AI companion' })).toHaveClass(
-      'fixed',
+      'absolute',
       'right-0',
       'lg:static',
       'lg:w-80',
