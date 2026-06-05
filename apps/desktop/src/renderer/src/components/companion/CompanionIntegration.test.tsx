@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import App from '../../App'
+import type { CompanionProviderStatus } from '../../../../shared/types'
+import { CompanionPanel } from './CompanionPanel'
 import { ShortcutsDialog } from '../ShortcutsDialog'
 import { SettingsDialog } from '../SettingsDialog'
 import { useAppKeyboardShortcuts } from '../../hooks/useAppBindings'
@@ -13,6 +15,13 @@ vi.mock('../MarkdownView', () => ({
 }))
 
 const saveSettings = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+
+const availableProvider: CompanionProviderStatus = {
+  id: 'opencode',
+  label: 'opencode',
+  command: 'opencode acp',
+  status: 'available',
+}
 
 function ShortcutsHarness() {
   useAppKeyboardShortcuts()
@@ -132,6 +141,52 @@ describe('companion settings integration', () => {
 
     expect(useAppStore.getState().companionProvider).toBe('codex')
     expect(saveSettings).toHaveBeenCalledWith({ provider: 'codex', customCommand: '' })
+  })
+
+  it('refreshes open companion providers after settings change', async () => {
+    vi.mocked(window.api.detectCompanionProviders)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([availableProvider])
+    useAppStore.setState({ companionOpen: true, companionProviders: [] })
+
+    const { rerender } = render(
+      <>
+        <CompanionPanel />
+        <SettingsDialog open onOpenChange={() => {}} />
+      </>,
+    )
+
+    await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('Connect a local companion')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+      target: { value: 'opencode acp' },
+    })
+
+    expect(saveSettings).toHaveBeenCalledWith({ provider: 'auto', customCommand: 'opencode acp' })
+    await waitFor(() => expect(window.api.detectCompanionProviders).toHaveBeenCalledTimes(2))
+    expect(useAppStore.getState().companionProviders).toEqual([availableProvider])
+    rerender(
+      <>
+        <CompanionPanel />
+        <SettingsDialog open={false} onOpenChange={() => {}} />
+      </>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Companion prompt' })).toBeInTheDocument()
+  })
+
+  it('surfaces companion settings save failures without leaving an unhandled rejection', async () => {
+    saveSettings.mockRejectedValueOnce(new Error('Settings save failed'))
+    render(<SettingsDialog open onOpenChange={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('Custom ACP command'), {
+      target: { value: 'custom acp' },
+    })
+
+    await waitFor(() => {
+      expect(useAppStore.getState().companionError).toBe('Settings save failed')
+    })
+    expect(window.api.detectCompanionProviders).not.toHaveBeenCalled()
   })
 
   it('resets companion settings to defaults and persists them', () => {

@@ -78,6 +78,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
   const setCompanionProvider = useAppStore((s) => s.setCompanionProvider)
   const setCompanionCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
+  const setCompanionProviders = useAppStore((s) => s.setCompanionProviders)
+  const setCompanionError = useAppStore((s) => s.setCompanionError)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
@@ -91,20 +93,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
     setCompanionProvider(DEFAULTS.companionProvider)
     setCompanionCustomCommand(DEFAULTS.companionCustomCommand)
-    void window.api.saveCompanionSettings({
-      provider: DEFAULTS.companionProvider,
-      customCommand: DEFAULTS.companionCustomCommand,
-    })
+    void persistCompanionSettings(DEFAULTS.companionProvider, DEFAULTS.companionCustomCommand)
+  }
+
+  const persistCompanionSettings = async (provider: CompanionProviderId, customCommand: string) => {
+    try {
+      await window.api.saveCompanionSettings({ provider, customCommand })
+      const providers = await window.api.detectCompanionProviders()
+      setCompanionProviders(providers)
+      setCompanionError(null)
+    } catch (error) {
+      setCompanionError(error instanceof Error ? error.message : String(error))
+    }
   }
 
   const handleCompanionProviderChange = (provider: CompanionProviderId) => {
     setCompanionProvider(provider)
-    void window.api.saveCompanionSettings({ provider, customCommand: companionCustomCommand })
+    void persistCompanionSettings(provider, companionCustomCommand)
   }
 
   const handleCompanionCustomCommandChange = (command: string) => {
     setCompanionCustomCommand(command)
-    void window.api.saveCompanionSettings({ provider: companionProvider, customCommand: command })
+    void persistCompanionSettings(companionProvider, command)
   }
 
   return (
