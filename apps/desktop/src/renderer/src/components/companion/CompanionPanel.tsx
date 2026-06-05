@@ -11,11 +11,9 @@ export function CompanionPanel() {
   const hasProvider = useAppStore((state) =>
     state.companionProviders.some((provider) => provider.status === 'available'),
   )
-  const hasMessages = useAppStore((state) => state.companionMessages.length > 0)
   const error = useAppStore((state) => state.companionError)
   const setOpen = useAppStore((state) => state.setCompanionOpen)
   const setFullscreen = useAppStore((state) => state.setCompanionFullscreen)
-  const showChat = hasProvider || hasMessages
 
   if (!open) return null
 
@@ -58,10 +56,10 @@ export function CompanionPanel() {
           {error}
         </div>
       )}
-      {showChat ? (
+      {hasProvider ? (
         <>
           <CompanionMessages />
-          {hasProvider && <CompanionComposer />}
+          <CompanionComposer />
         </>
       ) : (
         <CompanionSetup />

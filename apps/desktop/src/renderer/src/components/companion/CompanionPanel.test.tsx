@@ -52,8 +52,18 @@ describe('Companion UI', () => {
     expect(screen.getByText('npx --no-install @zed-industries/codex-acp')).toBeInTheDocument()
   })
 
+  it('shows provider setup when no provider is available even with existing messages', () => {
+    useAppStore.setState({ companionOpen: true, companionProviders: [] })
+    useAppStore.getState().appendCompanionMessage('user', 'Hello')
+    render(<CompanionPanel />)
+
+    expect(screen.getByText('Connect a local companion')).toBeInTheDocument()
+    expect(screen.getByText('opencode acp')).toBeInTheDocument()
+    expect(screen.getByText('npx --no-install @zed-industries/codex-acp')).toBeInTheDocument()
+  })
+
   it('expands and collapses the same conversation', () => {
-    useAppStore.setState({ companionOpen: true })
+    useAppStore.setState({ companionOpen: true, companionProviders: [availableProvider] })
     useAppStore.getState().appendCompanionMessage('user', 'Hello')
     render(
       <>
