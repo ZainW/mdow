@@ -8,10 +8,14 @@ import {
 import { useAppStore } from '@renderer/store/app-store'
 import { CompanionComposer } from './CompanionComposer'
 import { CompanionMessages } from './CompanionMessages'
+import { CompanionSetup } from './CompanionSetup'
 import { CompanionStatus } from './CompanionStatus'
 
 export function CompanionFullscreen() {
   const open = useAppStore((state) => state.companionFullscreen)
+  const hasProvider = useAppStore((state) =>
+    state.companionProviders.some((provider) => provider.status === 'available'),
+  )
   const error = useAppStore((state) => state.companionError)
   const setOpen = useAppStore((state) => state.setCompanionFullscreen)
 
@@ -40,8 +44,14 @@ export function CompanionFullscreen() {
             {error}
           </div>
         )}
-        <CompanionMessages />
-        <CompanionComposer />
+        {hasProvider ? (
+          <>
+            <CompanionMessages />
+            <CompanionComposer />
+          </>
+        ) : (
+          <CompanionSetup />
+        )}
       </DialogContent>
     </Dialog>
   )

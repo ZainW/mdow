@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompanionProviderStatus, CompanionUpdate } from '../../../../shared/types'
 import { useAppStore } from '../../store/app-store'
@@ -76,6 +76,26 @@ describe('Companion UI', () => {
 
     expect(screen.getByRole('dialog', { name: 'AI companion' })).toBeInTheDocument()
     expect(screen.getAllByText('Hello')).toHaveLength(2)
+  })
+
+  it('shows provider setup in fullscreen when no provider is available', () => {
+    useAppStore.setState({ companionOpen: true, companionProviders: [] })
+    render(
+      <>
+        <CompanionPanel />
+        <CompanionFullscreen />
+      </>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand companion' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'AI companion' })
+    expect(within(dialog).getByText('Connect a local companion')).toBeInTheDocument()
+    expect(within(dialog).getByText('opencode acp')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('npx --no-install @zed-industries/codex-acp'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByRole('textbox', { name: 'Companion prompt' })).toBeNull()
   })
 
   it('uses one controller subscription when panel and fullscreen composers are mounted', () => {
