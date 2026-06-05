@@ -31,9 +31,10 @@ export function useCompanionController() {
       if (update.type === 'status') {
         if (update.status === 'starting' || update.status === 'streaming') {
           store.setCompanionStreaming(true)
-        } else if (update.status === 'complete') {
-          store.setCompanionStreaming(false)
-        } else if (update.status === 'cancelled' && !activeRequestRef.current) {
+        } else if (
+          (update.status === 'complete' || update.status === 'cancelled') &&
+          !activeRequestRef.current
+        ) {
           store.setCompanionStreaming(false)
         }
         return

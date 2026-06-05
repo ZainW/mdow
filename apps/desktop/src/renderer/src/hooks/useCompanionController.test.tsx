@@ -279,6 +279,41 @@ describe('useCompanionController', () => {
     await firstSendPromise
     await secondSendPromise
   })
+
+  it('ignores stale complete status updates after a remounted send starts', async () => {
+    const firstSend = deferred<void>()
+    const secondSend = deferred<void>()
+    api.sendCompanionMessage
+      .mockReturnValueOnce(firstSend.promise)
+      .mockReturnValueOnce(secondSend.promise)
+    const { result, unmount } = renderHook(() => useCompanionController())
+
+    const firstSendPromise = result.current.send('First question')
+    await act(async () => {})
+    unmount()
+
+    const remounted = renderHook(() => useCompanionController())
+    await act(async () => {})
+    const secondSendPromise = remounted.result.current.send('Second question')
+    await act(async () => {})
+    const onUpdate = api.onCompanionUpdate.mock.calls.at(-1)?.[0]
+    expect(onUpdate).toBeDefined()
+
+    act(() => {
+      onUpdate!({ type: 'status', status: 'complete' })
+    })
+
+    expect(useAppStore.getState().companionStreaming).toBe(true)
+    await act(async () => {
+      await remounted.result.current.send('Third question')
+    })
+    expect(api.sendCompanionMessage).toHaveBeenCalledTimes(2)
+
+    firstSend.resolve()
+    secondSend.resolve()
+    await firstSendPromise
+    await secondSendPromise
+  })
 })
 
 function deferred<T>() {
