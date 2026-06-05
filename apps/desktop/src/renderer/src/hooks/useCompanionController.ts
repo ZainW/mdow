@@ -97,6 +97,7 @@ export function useCompanionController() {
 
     return () => {
       disposed = true
+      markActiveRequestCancelled()
       unsubscribe()
     }
   }, [])

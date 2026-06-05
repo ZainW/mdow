@@ -16,7 +16,14 @@ const api = vi.hoisted(() => ({
 
 describe('useCompanionController', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    api.detectCompanionProviders.mockResolvedValue([])
+    api.getCompanionSettings.mockResolvedValue({ provider: 'auto', customCommand: '' })
+    api.saveCompanionSettings.mockResolvedValue(undefined)
+    api.saveAppState.mockResolvedValue(undefined)
+    api.sendCompanionMessage.mockResolvedValue(undefined)
+    api.cancelCompanionMessage.mockResolvedValue(undefined)
+    api.onCompanionUpdate.mockReturnValue(() => {})
     Object.defineProperty(window, 'api', { value: api, configurable: true })
     useAppStore.getState().resetCompanion()
     useAppStore.setState({ tabs: [], activeTabId: null, openFolderPath: null })
@@ -127,6 +134,40 @@ describe('useCompanionController', () => {
       useAppStore.getState().companionMessages.find((message) => message.id === assistant!.id)
         ?.status,
     ).not.toBe('complete')
+  })
+
+  it('does not finalize an in-flight assistant message after unmount and remount', async () => {
+    const send = deferred<void>()
+    api.sendCompanionMessage.mockReturnValue(send.promise)
+    const { result, unmount } = renderHook(() => useCompanionController())
+
+    const sendPromise = result.current.send('Summarize this')
+    await act(async () => {})
+
+    const assistant = useAppStore
+      .getState()
+      .companionMessages.find((message) => message.role === 'assistant')
+    expect(assistant).toBeDefined()
+
+    unmount()
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === assistant!.id)
+        ?.status,
+    ).toBe('error')
+
+    renderHook(() => useCompanionController())
+    await act(async () => {})
+    act(() => {
+      useAppStore.getState().appendCompanionAssistantDelta(assistant!.id, 'Partial answer')
+    })
+
+    send.resolve()
+    await sendPromise
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === assistant!.id)
+        ?.status,
+    ).toBe('error')
   })
 })
 
