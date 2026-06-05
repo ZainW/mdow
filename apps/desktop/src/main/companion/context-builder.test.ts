@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,6 +32,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.readdir(path, ...args)
     }) as unknown as typeof actual.readdir,
+    lstat: vi.fn((path, ...args) => {
+      if (String(path) === fsFailures.statPath && fsFailures.statError) {
+        return Promise.reject(fsFailures.statError)
+      }
+      return actual.lstat(path, ...args)
+    }) as unknown as typeof actual.lstat,
     stat: vi.fn((path, ...args) => {
       if (String(path) === fsFailures.statPath && fsFailures.statError) {
         return Promise.reject(fsFailures.statError)
@@ -186,6 +192,60 @@ describe('companion context builder', () => {
 
     const context = await buildCompanionContext({
       openFolderPath: docs.root,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Open folder is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('rejects a symlinked active markdown file inside an allowed root', async () => {
+    const docs = await createDocs()
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'mdow-companion-outside-'))
+    const outsideMarkdown = join(outsideRoot, 'secret.md')
+    const linkedMarkdown = join(docs.root, 'linked.md')
+    await writeFile(outsideMarkdown, '# Secret\n\nOutside allowed roots.')
+    await symlink(outsideMarkdown, linkedMarkdown)
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      activePath: linkedMarkdown,
+      maxSources: 8,
+      maxCharsPerSource: 1_000,
+    })
+
+    expect(context.sources).toHaveLength(0)
+    expect(context.summary.warnings).toEqual([
+      {
+        type: 'permission-denied',
+        message: 'Active document is not available to the companion.',
+      },
+      {
+        type: 'no-context',
+        message: 'No markdown context is available to the companion.',
+      },
+    ])
+  })
+
+  it('rejects a symlinked open folder root', async () => {
+    const docs = await createDocs()
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'mdow-companion-outside-'))
+    const linkedFolder = join(docs.root, 'linked-folder')
+    await symlink(outsideRoot, linkedFolder)
+    registerAllowedPath(docs.root)
+
+    const context = await buildCompanionContext({
+      openFolderPath: linkedFolder,
       maxSources: 8,
       maxCharsPerSource: 1_000,
     })

@@ -75,8 +75,13 @@ export async function buildCompanionContext({
           message: 'Open folder is not available to the companion.',
         })
       } else {
-        const folderStat = await fs.stat(resolvedFolderPath)
-        if (!folderStat.isDirectory()) {
+        const folderStat = await fs.lstat(resolvedFolderPath)
+        if (folderStat.isSymbolicLink()) {
+          warnings.push({
+            type: 'permission-denied',
+            message: 'Open folder is not available to the companion.',
+          })
+        } else if (!folderStat.isDirectory()) {
           warnings.push({
             type: 'missing-file',
             message: 'Open folder is not a directory.',
@@ -197,7 +202,11 @@ async function readSource({
   }
 
   try {
-    const fileStat = await fs.stat(resolvedPath)
+    const fileStat = await fs.lstat(resolvedPath)
+    if (fileStat.isSymbolicLink()) {
+      warnings.push({ type: 'permission-denied', message: unavailableMessage })
+      return { resolvedPath }
+    }
     if (!fileStat.isFile()) {
       warnings.push({ type: 'missing-file', message: unavailableMessage })
       return { resolvedPath }
@@ -274,7 +283,12 @@ async function readFolderSources({
       continue
     }
 
-    let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>
+    let entries: Array<{
+      name: string
+      isDirectory: () => boolean
+      isFile: () => boolean
+      isSymbolicLink: () => boolean
+    }>
     try {
       entries = await fs.readdir(current.path, { withFileTypes: true, encoding: 'utf8' })
     } catch (error) {
@@ -295,6 +309,9 @@ async function readFolderSources({
       }
 
       const childPath = join(current.path, entry.name)
+      if (entry.isSymbolicLink()) {
+        continue
+      }
       if (entry.isDirectory()) {
         if (current.depth >= maxDepth) {
           return 'traversal-budget'
