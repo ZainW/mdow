@@ -261,6 +261,26 @@ describe('ipc handlers', () => {
       })
       expect(mainSend).not.toHaveBeenCalled()
     })
+
+    it('does not accumulate destroyed listeners across explicit shutdown and recreate', async () => {
+      const sender = createMockWebContents(7)
+      const sendHandler = handlers.get('companion:send')!
+      const shutdownHandler = handlers.get('companion:shutdown')!
+      const request = {
+        messageId: 'msg_1',
+        text: 'Hi',
+        provider: 'opencode',
+        activePath: null,
+        openFolderPath: null,
+      }
+
+      await sendHandler({ sender }, request)
+      await shutdownHandler({ sender })
+      await sendHandler({ sender }, { ...request, messageId: 'msg_2' })
+
+      expect(sender.once).toHaveBeenCalledTimes(2)
+      expect(sender.off).toHaveBeenCalledTimes(1)
+    })
   })
 })
 
@@ -270,5 +290,6 @@ function createMockWebContents(id: number, send = vi.fn()) {
     send,
     isDestroyed: () => false,
     once: vi.fn(),
+    off: vi.fn(),
   }
 }

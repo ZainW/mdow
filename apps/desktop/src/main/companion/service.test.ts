@@ -461,6 +461,112 @@ describe('companion service', () => {
     await firstSend
   })
 
+  it('allows a new send after cancellation stops an unresponsive prompt', async () => {
+    let rejectPrompt: (reason?: unknown) => void = () => {}
+    const sendPrompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectPrompt = reject
+          }),
+      )
+      .mockResolvedValueOnce(undefined)
+    const stop = vi.fn(() => rejectPrompt(new Error('ACP client stopped')))
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn(() => ({
+        start: vi.fn(async () => {}),
+        sendPrompt,
+        cancel: vi.fn(),
+        stop,
+      })),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const firstSend = service.send({
+      messageId: 'msg_1',
+      text: 'First',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+    await vi.waitFor(() => expect(sendPrompt).toHaveBeenCalledOnce())
+
+    service.cancel()
+    await firstSend
+
+    await expect(
+      service.send({
+        messageId: 'msg_2',
+        text: 'Second',
+        provider: 'opencode',
+        activePath: null,
+        openFolderPath: null,
+      }),
+    ).resolves.toBeUndefined()
+
+    expect(stop).toHaveBeenCalled()
+    expect(sendPrompt).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows a new send after cancellation stops a client before start completes', async () => {
+    let rejectStart: (reason?: unknown) => void = () => {}
+    const start = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectStart = reject
+          }),
+      )
+      .mockResolvedValueOnce(undefined)
+    const sendPrompt = vi.fn(async () => {})
+    const stop = vi.fn(() => rejectStart(new Error('ACP client stopped')))
+    const emitUpdate = vi.fn()
+    const service = createCompanionService({
+      detectProviders: vi.fn(async () => []),
+      createClient: vi.fn(() => ({
+        start,
+        sendPrompt,
+        cancel: vi.fn(),
+        stop,
+      })),
+      buildContext: vi.fn(async () => emptyContext()),
+      getSettings: () => ({ provider: 'auto', customCommand: '' }),
+      emitUpdate,
+    })
+
+    const firstSend = service.send({
+      messageId: 'msg_1',
+      text: 'First',
+      provider: 'opencode',
+      activePath: null,
+      openFolderPath: null,
+    })
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce())
+
+    service.cancel()
+    await firstSend
+
+    await expect(
+      service.send({
+        messageId: 'msg_2',
+        text: 'Second',
+        provider: 'opencode',
+        activePath: null,
+        openFolderPath: null,
+      }),
+    ).resolves.toBeUndefined()
+
+    expect(stop).toHaveBeenCalled()
+    expect(start).toHaveBeenCalledTimes(2)
+    expect(sendPrompt).toHaveBeenCalledOnce()
+  })
+
   it('suppresses complete status after cancellation', async () => {
     let resolvePrompt: () => void = () => {}
     const emitUpdate = vi.fn()

@@ -132,11 +132,12 @@ export function createCompanionService({
   }
 
   function stopClientIfCurrent(activeClient: AcpClient) {
-    activeClient.stop()
-    if (client === activeClient) {
-      client = null
-      clientStarted = false
+    if (client !== activeClient) {
+      return
     }
+    activeClient.stop()
+    client = null
+    clientStarted = false
   }
 
   return {
@@ -198,6 +199,10 @@ export function createCompanionService({
         if (!isStale(requestState)) {
           emitUpdate({ type: 'status', status: 'complete' })
         }
+      } catch (error) {
+        if (!isStale(requestState)) {
+          throw error
+        }
       } finally {
         if (promptClient) {
           stopClientIfCurrent(promptClient)
@@ -214,7 +219,13 @@ export function createCompanionService({
         return
       }
       activeRequest.cancelled = true
+      const activeClient = client
       client?.cancel()
+      if (activeClient) {
+        stopClientIfCurrent(activeClient)
+      }
+      activeRequest = null
+      inFlight = false
       emitUpdate({ type: 'status', status: 'cancelled' })
     },
 

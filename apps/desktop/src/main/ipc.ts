@@ -17,6 +17,11 @@ import {
 } from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
+type CompanionServiceEntry = {
+  service: CompanionService
+  sender: Electron.WebContents
+  destroyedListener: () => void
+}
 
 let updaterModulePromise: Promise<UpdaterModule> | null = null
 
@@ -59,12 +64,12 @@ function getCompanionSettings(): CompanionSettings {
 }
 
 export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): () => void {
-  const companionServices = new Map<number, CompanionService>()
+  const companionServices = new Map<number, CompanionServiceEntry>()
 
   function companionServiceForSender(sender: Electron.WebContents): CompanionService {
     const existing = companionServices.get(sender.id)
     if (existing) {
-      return existing
+      return existing.service
     }
 
     const service = createDefaultCompanionService({
@@ -74,12 +79,23 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
         sender.send(IPC.COMPANION_UPDATE, update)
       },
     })
-    companionServices.set(sender.id, service)
-    sender.once('destroyed', () => {
+    const destroyedListener = () => {
       service.shutdown()
       companionServices.delete(sender.id)
-    })
+    }
+    companionServices.set(sender.id, { service, sender, destroyedListener })
+    sender.once('destroyed', destroyedListener)
     return service
+  }
+
+  function removeCompanionService(sender: Electron.WebContents): void {
+    const entry = companionServices.get(sender.id)
+    if (!entry) {
+      return
+    }
+    entry.service.shutdown()
+    entry.sender.off('destroyed', entry.destroyedListener)
+    companionServices.delete(sender.id)
   }
 
   ipcMain.handle('file:open-dialog', async (event) => {
@@ -323,16 +339,16 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return companionServiceForSender(event.sender).send(companionRequest)
   })
   ipcMain.handle('companion:cancel', (event) => {
-    companionServices.get(event.sender.id)?.cancel()
+    companionServices.get(event.sender.id)?.service.cancel()
   })
   ipcMain.handle('companion:shutdown', (event) => {
-    companionServices.get(event.sender.id)?.shutdown()
-    companionServices.delete(event.sender.id)
+    removeCompanionService(event.sender)
   })
 
   return () => {
-    for (const service of companionServices.values()) {
-      service.shutdown()
+    for (const entry of companionServices.values()) {
+      entry.service.shutdown()
+      entry.sender.off('destroyed', entry.destroyedListener)
     }
     companionServices.clear()
   }
