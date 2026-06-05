@@ -9,7 +9,12 @@ import { validatePath, validateMarkdownPath, isAllowedExternalUrl } from './path
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
 import { createDefaultCompanionService } from './companion/service'
-import { IPC, type CompanionSendRequest, type CompanionSettings } from '../shared/types'
+import {
+  IPC,
+  type CompanionProviderId,
+  type CompanionSendRequest,
+  type CompanionSettings,
+} from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
 
@@ -45,7 +50,7 @@ function trackRecentFile(getMainWindow: () => BrowserWindow | null, filePath: st
   rebuildMenu(getMainWindow)
 }
 
-export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
+export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): () => void {
   const companionService = createDefaultCompanionService({
     getSettings: () => {
       const state = getAppState()
@@ -294,15 +299,66 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       customCommand: state.companionCustomCommand,
     } satisfies CompanionSettings
   })
-  ipcMain.handle('companion:save-settings', (_, settings: CompanionSettings) => {
+  ipcMain.handle('companion:save-settings', (_, settings: unknown) => {
+    const companionSettings = validateCompanionSettings(settings)
     saveAppState({
-      companionProvider: settings.provider,
-      companionCustomCommand: settings.customCommand,
+      companionProvider: companionSettings.provider,
+      companionCustomCommand: companionSettings.customCommand,
     })
   })
-  ipcMain.handle('companion:send', (_, request: CompanionSendRequest) =>
-    companionService.send(request),
+  ipcMain.handle('companion:send', (_, request: unknown) =>
+    companionService.send(validateCompanionSendRequest(request)),
   )
   ipcMain.handle('companion:cancel', () => companionService.cancel())
   ipcMain.handle('companion:shutdown', () => companionService.shutdown())
+
+  return () => companionService.shutdown()
+}
+
+const COMPANION_PROVIDER_IDS = new Set<CompanionProviderId>(['auto', 'opencode', 'codex', 'custom'])
+
+function validateCompanionSettings(value: unknown): CompanionSettings {
+  if (!isRecord(value)) {
+    throw new Error('invalid-companion-settings')
+  }
+  if (!isCompanionProviderId(value.provider) || typeof value.customCommand !== 'string') {
+    throw new Error('invalid-companion-settings')
+  }
+  return { provider: value.provider, customCommand: value.customCommand }
+}
+
+function validateCompanionSendRequest(value: unknown): CompanionSendRequest {
+  if (!isRecord(value)) {
+    throw new Error('invalid-companion-request')
+  }
+  if (
+    typeof value.messageId !== 'string' ||
+    value.messageId.trim() === '' ||
+    typeof value.text !== 'string' ||
+    value.text.trim() === '' ||
+    !isCompanionProviderId(value.provider) ||
+    !isNullableString(value.activePath) ||
+    !isNullableString(value.openFolderPath)
+  ) {
+    throw new Error('invalid-companion-request')
+  }
+  return {
+    messageId: value.messageId,
+    text: value.text,
+    provider: value.provider,
+    activePath: value.activePath,
+    openFolderPath: value.openFolderPath,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isCompanionProviderId(value: unknown): value is CompanionProviderId {
+  return typeof value === 'string' && COMPANION_PROVIDER_IDS.has(value as CompanionProviderId)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
 }

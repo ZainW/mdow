@@ -26,6 +26,7 @@ import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed
 const windows = new Set<BrowserWindow>()
 const windowPaths = new Map<BrowserWindow, string>()
 const AUTO_UPDATER_INIT_DELAY_MS = 10_000
+let cleanupIpcHandlers: (() => void) | null = null
 
 function getMainWindow(): BrowserWindow | null {
   const focused = BrowserWindow.getFocusedWindow()
@@ -189,6 +190,7 @@ function createWindow(targetPath?: string): void {
     windows.delete(win)
 
     if (windows.size === 0) {
+      cleanupIpcHandlers?.()
       unwatchAllFiles()
       unwatchFolder()
       clearAllowedPaths()
@@ -254,7 +256,7 @@ if (!gotTheLock) {
     if (theme && theme !== 'system') {
       nativeTheme.themeSource = theme
     }
-    registerIpcHandlers(getMainWindow)
+    cleanupIpcHandlers = registerIpcHandlers(getMainWindow)
     createMenu(getMainWindow)
     createWindow()
     scheduleAutoUpdaterInit()
@@ -274,6 +276,7 @@ if (!gotTheLock) {
   })
 
   app.on('before-quit', () => {
+    cleanupIpcHandlers?.()
     unwatchAllFiles()
     unwatchFolder()
   })

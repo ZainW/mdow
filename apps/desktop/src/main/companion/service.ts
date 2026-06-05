@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type {
   CompanionProviderId,
@@ -6,6 +7,8 @@ import type {
   CompanionSettings,
   CompanionUpdate,
 } from '../../shared/types'
+import { isPathAllowed } from '../allowed-paths'
+import { validateMarkdownPath, validatePath } from '../path-validation'
 import { createAcpClient, type AcpClient, type AcpClientUpdate } from './acp-client'
 import {
   buildCompanionContext,
@@ -64,6 +67,8 @@ export function createCompanionService({
   let clientKey: string | null = null
   let clientStarted = false
   let activeMessageId = ''
+  let inFlight = false
+  let activeRequest: { cancelled: boolean } | null = null
 
   async function detectedProviders() {
     return detectProviders(getSettings().customCommand)
@@ -88,6 +93,9 @@ export function createCompanionService({
   }
 
   function forwardClientUpdate(update: AcpClientUpdate) {
+    if (activeRequest?.cancelled) {
+      return
+    }
     if (update.type === 'assistant-delta') {
       emitUpdate({ type: 'assistant-delta', messageId: activeMessageId, text: update.text })
       return
@@ -116,32 +124,55 @@ export function createCompanionService({
     detectProviders: detectedProviders,
 
     async send(request) {
-      const context = await buildContext({
-        activePath: request.activePath,
-        openFolderPath: request.openFolderPath,
-      })
-      emitUpdate({ type: 'context', summary: context.summary })
-      for (const warning of context.summary.warnings) {
-        emitUpdate({ type: 'warning', warning })
+      if (inFlight) {
+        const message = 'A companion response is already in progress.'
+        emitUpdate({ type: 'error', message })
+        throw new Error(message)
       }
 
-      const command = await resolveProvider(request.provider)
-      const cwd =
-        request.openFolderPath ?? (request.activePath ? dirname(request.activePath) : process.cwd())
-      activeMessageId = request.messageId
-      const active = ensureClient(command, cwd)
+      inFlight = true
+      const requestState = { cancelled: false }
+      activeRequest = requestState
+      try {
+        const context = await buildContext({
+          activePath: request.activePath,
+          openFolderPath: request.openFolderPath,
+        })
+        emitUpdate({ type: 'context', summary: context.summary })
+        for (const warning of context.summary.warnings) {
+          emitUpdate({ type: 'warning', warning })
+        }
 
-      emitUpdate({ type: 'status', status: 'starting' })
-      if (!active.started) {
-        await active.client.start()
-        clientStarted = true
+        const command = await resolveProvider(request.provider)
+        const cwd = await safeCompanionCwd(request)
+        activeMessageId = request.messageId
+        const active = ensureClient(command, cwd)
+
+        emitUpdate({ type: 'status', status: 'starting' })
+        if (!active.started) {
+          await active.client.start()
+          clientStarted = true
+        }
+        if (requestState.cancelled) {
+          return
+        }
+        emitUpdate({ type: 'status', status: 'streaming' })
+        await active.client.sendPrompt(buildCompanionPromptBlocks(request.text, context))
+        if (!requestState.cancelled) {
+          emitUpdate({ type: 'status', status: 'complete' })
+        }
+      } finally {
+        if (activeRequest === requestState) {
+          activeRequest = null
+        }
+        inFlight = false
       }
-      emitUpdate({ type: 'status', status: 'streaming' })
-      await active.client.sendPrompt(buildCompanionPromptBlocks(request.text, context))
-      emitUpdate({ type: 'status', status: 'complete' })
     },
 
     cancel() {
+      if (activeRequest) {
+        activeRequest.cancelled = true
+      }
       client?.cancel()
       emitUpdate({ type: 'status', status: 'cancelled' })
     },
@@ -151,6 +182,8 @@ export function createCompanionService({
       client = null
       clientKey = null
       clientStarted = false
+      activeRequest = null
+      inFlight = false
     },
   }
 }
@@ -177,4 +210,48 @@ function providerCommand(provider: Exclude<CompanionProviderId, 'auto'>, customC
     return parsed
   }
   return BUILT_IN_COMMANDS[provider]
+}
+
+async function safeCompanionCwd(request: CompanionSendRequest): Promise<string> {
+  if (request.openFolderPath) {
+    const folderPath = await safeDirectoryPath(request.openFolderPath)
+    if (folderPath) {
+      return folderPath
+    }
+  }
+
+  if (request.activePath) {
+    const filePath = await safeMarkdownFilePath(request.activePath)
+    if (filePath) {
+      return dirname(filePath)
+    }
+  }
+
+  return process.cwd()
+}
+
+async function safeDirectoryPath(path: string): Promise<string | null> {
+  try {
+    const resolved = validatePath(path)
+    if (!isPathAllowed(resolved)) {
+      return null
+    }
+    const stats = await stat(resolved)
+    return stats.isDirectory() ? resolved : null
+  } catch {
+    return null
+  }
+}
+
+async function safeMarkdownFilePath(path: string): Promise<string | null> {
+  try {
+    const resolved = validateMarkdownPath(path)
+    if (!isPathAllowed(resolved)) {
+      return null
+    }
+    const stats = await stat(resolved)
+    return stats.isFile() ? resolved : null
+  } catch {
+    return null
+  }
 }

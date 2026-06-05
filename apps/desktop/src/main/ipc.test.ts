@@ -7,6 +7,13 @@ const mockReadFileContent = vi.hoisted(() => vi.fn())
 const mockUnwatchFile = vi.hoisted(() => vi.fn())
 const mockSetActiveFileWatch = vi.hoisted(() => vi.fn())
 const mockSaveAppState = vi.hoisted(() => vi.fn())
+const mockCompanionService = vi.hoisted(() => ({
+  detectProviders: vi.fn(),
+  send: vi.fn(),
+  cancel: vi.fn(),
+  shutdown: vi.fn(),
+}))
+const mockCreateDefaultCompanionService = vi.hoisted(() => vi.fn(() => mockCompanionService))
 const mockNativeTheme = vi.hoisted(() => ({ themeSource: 'system' as string }))
 const mockApplyWindowChrome = vi.hoisted(() => vi.fn())
 const mockGetMainWindow = vi.hoisted(() =>
@@ -67,6 +74,9 @@ vi.mock('./allowed-paths', () => ({
   registerAllowedPath: vi.fn(),
 }))
 vi.mock('./menu', () => ({ rebuildMenu: vi.fn() }))
+vi.mock('./companion/service', () => ({
+  createDefaultCompanionService: mockCreateDefaultCompanionService,
+}))
 
 import { registerIpcHandlers } from './ipc'
 
@@ -160,6 +170,43 @@ describe('ipc handlers', () => {
       expect(mockNativeTheme.themeSource).toBe('system')
       expect(mockSaveAppState).not.toHaveBeenCalled()
       expect(mockApplyWindowChrome).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('companion ipc', () => {
+    it('rejects invalid companion settings without saving', async () => {
+      const handler = handlers.get('companion:save-settings')!
+
+      await expect(
+        Promise.resolve().then(() =>
+          handler({}, { provider: 'bogus', customCommand: 'custom acp' }),
+        ),
+      ).rejects.toMatchObject({ message: 'invalid-companion-settings' })
+
+      expect(mockSaveAppState).not.toHaveBeenCalled()
+    })
+
+    it('rejects invalid companion send requests without calling the service', async () => {
+      const handler = handlers.get('companion:send')!
+
+      await expect(
+        Promise.resolve().then(() =>
+          handler({}, { messageId: 'msg_1', text: '', provider: 'opencode' }),
+        ),
+      ).rejects.toMatchObject({ message: 'invalid-companion-request' })
+
+      expect(mockCompanionService.send).not.toHaveBeenCalled()
+    })
+
+    it('returns cleanup that shuts down the companion service', () => {
+      handlers.clear()
+      const cleanup = registerIpcHandlers(
+        mockGetMainWindow as unknown as () => BrowserWindow | null,
+      ) as unknown as () => void
+
+      cleanup()
+
+      expect(mockCompanionService.shutdown).toHaveBeenCalledOnce()
     })
   })
 })
