@@ -58,4 +58,43 @@ describe('useCompanionController', () => {
       }),
     )
   })
+
+  it('does not finalize a cancelled assistant message when send later resolves', async () => {
+    const send = deferred<void>()
+    api.sendCompanionMessage.mockReturnValue(send.promise)
+    const { result } = renderHook(() => useCompanionController())
+
+    const sendPromise = act(async () => {
+      await result.current.send('Summarize this')
+    })
+    await act(async () => {})
+
+    const assistant = useAppStore
+      .getState()
+      .companionMessages.find((message) => message.role === 'assistant')
+    expect(assistant).toBeDefined()
+
+    await act(async () => {
+      useAppStore.getState().appendCompanionAssistantDelta(assistant!.id, 'Partial answer')
+      await result.current.cancel()
+    })
+
+    send.resolve()
+    await sendPromise
+
+    expect(
+      useAppStore.getState().companionMessages.find((message) => message.id === assistant!.id)
+        ?.status,
+    ).not.toBe('complete')
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}

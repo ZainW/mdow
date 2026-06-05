@@ -1,8 +1,28 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { extractCompanionCitations } from '../lib/companion-citations'
 import { selectActiveTab, useAppStore } from '../store/app-store'
 
+type ActiveCompanionRequest = {
+  messageId: string
+  cancelled: boolean
+}
+
 export function useCompanionController() {
+  const activeRequestRef = useRef<ActiveCompanionRequest | null>(null)
+
+  function markActiveRequestCancelled() {
+    const activeRequest = activeRequestRef.current
+    if (!activeRequest) return
+
+    activeRequest.cancelled = true
+    const store = useAppStore.getState()
+    const message = store.companionMessages.find((item) => item.id === activeRequest.messageId)
+    if (message) {
+      store.updateCompanionMessage({ ...message, status: 'error' })
+    }
+    store.setCompanionStreaming(false)
+  }
+
   useEffect(() => {
     let disposed = false
     const unsubscribe = window.api.onCompanionUpdate((update) => {
@@ -12,6 +32,9 @@ export function useCompanionController() {
         if (update.status === 'starting' || update.status === 'streaming') {
           store.setCompanionStreaming(true)
         } else if (update.status === 'complete' || update.status === 'cancelled') {
+          if (update.status === 'cancelled') {
+            markActiveRequestCancelled()
+          }
           store.setCompanionStreaming(false)
         }
         return
@@ -87,6 +110,8 @@ export function useCompanionController() {
       const activeTab = selectActiveTab(store)
       const userMessage = store.appendCompanionMessage('user', trimmed)
       const assistantMessage = store.appendCompanionMessage('assistant', '', 'streaming')
+      const activeRequest = { messageId: assistantMessage.id, cancelled: false }
+      activeRequestRef.current = activeRequest
       store.setCompanionError(null)
       store.setCompanionStreaming(true)
 
@@ -102,6 +127,10 @@ export function useCompanionController() {
         const latest = useAppStore.getState()
         const message = latest.companionMessages.find((item) => item.id === assistantMessage.id)
         if (message) {
+          if (activeRequest.cancelled) {
+            latest.updateCompanionMessage({ ...message, status: 'error' })
+            return
+          }
           const citations = extractCompanionCitations(
             message.content,
             latest.companionContext?.sources ?? [],
@@ -119,12 +148,18 @@ export function useCompanionController() {
         if (message) {
           latest.updateCompanionMessage({ ...message, status: 'error' })
         }
-        latest.setCompanionError(errorMessage(error))
+        if (!activeRequest.cancelled) {
+          latest.setCompanionError(errorMessage(error))
+        }
       } finally {
+        if (activeRequestRef.current === activeRequest) {
+          activeRequestRef.current = null
+        }
         useAppStore.getState().setCompanionStreaming(false)
       }
     },
     cancel: async () => {
+      markActiveRequestCancelled()
       try {
         await window.api.cancelCompanionMessage()
       } finally {
