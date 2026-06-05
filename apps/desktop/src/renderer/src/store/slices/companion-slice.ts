@@ -52,7 +52,9 @@ export interface CompanionSlice extends CompanionState {
   resetCompanion: () => void
 }
 
-export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (set) => ({
+export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (
+  set,
+) => ({
   ...initialCompanionState,
   setCompanionOpen: (open) => set({ companionOpen: open }),
   setCompanionFullscreen: (fullscreen) => set({ companionFullscreen: fullscreen }),
