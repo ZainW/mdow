@@ -8,7 +8,7 @@ export interface ReleaseInfo {
   publishedAt: string
   htmlUrl: string
   assets: {
-    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[] }
+    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; nativeBeta: ReleaseAsset | null }
     windows: { exe: string | null }
     linux: { appImage: string | null }
   }
@@ -35,27 +35,52 @@ function detectArch(name: string): 'arm64' | 'x64' | undefined {
   return undefined
 }
 
+function releaseAsset(asset: GhAsset): ReleaseAsset {
+  const arch = detectArch(asset.name)
+  return arch ? { arch, url: asset.browser_download_url } : { url: asset.browser_download_url }
+}
+
+function isNativeMacBetaAsset(name: string): boolean {
+  const normalized = name.toLowerCase()
+  return (
+    normalized === 'mdownative-mac-beta.zip' ||
+    (normalized.endsWith('.zip') &&
+      normalized.includes('native') &&
+      normalized.includes('mac') &&
+      normalized.includes('beta'))
+  )
+}
+
 export function parseRelease(release: GhRelease): ReleaseInfo | null {
   if (!release?.assets?.length) return null
 
-  const dmg = release.assets
-    .filter((a) => a.name.endsWith('.dmg'))
-    .map((a) => ({ arch: detectArch(a.name), url: a.browser_download_url }))
+  const dmg: ReleaseAsset[] = []
+  const zip: ReleaseAsset[] = []
+  let nativeBeta: ReleaseAsset | null = null
+  let exe: string | null = null
+  let appImage: string | null = null
 
-  const zip = release.assets
-    .filter((a) => a.name.endsWith('.zip') && a.name.includes('mac'))
-    .map((a) => ({ arch: detectArch(a.name), url: a.browser_download_url }))
-
-  const exe = release.assets.find((a) => a.name.endsWith('.exe'))?.browser_download_url ?? null
-
-  const appImage =
-    release.assets.find((a) => a.name.endsWith('.AppImage'))?.browser_download_url ?? null
+  for (const asset of release.assets) {
+    if (asset.name.endsWith('.dmg')) {
+      dmg.push(releaseAsset(asset))
+    } else if (asset.name.endsWith('.zip') && asset.name.includes('mac')) {
+      if (isNativeMacBetaAsset(asset.name)) {
+        nativeBeta ??= releaseAsset(asset)
+      } else {
+        zip.push(releaseAsset(asset))
+      }
+    } else if (asset.name.endsWith('.exe')) {
+      exe ??= asset.browser_download_url
+    } else if (asset.name.endsWith('.AppImage')) {
+      appImage ??= asset.browser_download_url
+    }
+  }
 
   return {
     version: release.tag_name.replace(/^v/, ''),
     publishedAt: release.published_at,
     htmlUrl: release.html_url,
-    assets: { mac: { dmg, zip }, windows: { exe }, linux: { appImage } },
+    assets: { mac: { dmg, zip, nativeBeta }, windows: { exe }, linux: { appImage } },
   }
 }
 

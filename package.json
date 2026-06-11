@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "package:native-mac-beta": "bash script/package_native_mac_beta.sh",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "fmt": "turbo fmt",

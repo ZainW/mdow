@@ -20,11 +20,15 @@ Mdow is a fast, native markdown viewer for macOS, Windows, and Linux. Open files
 
 Download the latest release from the [Releases](https://github.com/zain/mdow/releases) page.
 
-| Platform | Format                  |
-| -------- | ----------------------- |
-| macOS    | `.dmg`, `.zip`          |
-| Windows  | `.exe` (NSIS installer) |
-| Linux    | `.AppImage`             |
+| Platform   | Format                     |
+| ---------- | -------------------------- |
+| macOS      | `.dmg`, `.zip`             |
+| macOS beta | `MdowNative-mac-beta.zip`  |
+| Windows    | `.exe` (NSIS installer)    |
+| Linux      | `.AppImage`                |
+
+The native macOS beta is a separate SwiftUI preview for macOS 14 and newer. The Electron app
+remains the recommended stable build.
 
 ## Development
 

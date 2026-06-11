@@ -17,6 +17,10 @@ const sample = {
       browser_download_url: 'https://example.test/Mdow-1.2.3-arm64-mac.zip',
     },
     {
+      name: 'MdowNative-mac-beta.zip',
+      browser_download_url: 'https://example.test/MdowNative-mac-beta.zip',
+    },
+    {
       name: 'Mdow-Setup-1.2.3.exe',
       browser_download_url: 'https://example.test/Mdow-Setup-1.2.3.exe',
     },
@@ -39,8 +43,28 @@ describe('parseRelease', () => {
       { arch: 'x64', url: 'https://example.test/Mdow-1.2.3-x64.dmg' },
     ])
     expect(result.assets.mac.zip).toHaveLength(1)
+    expect(result.assets.mac.nativeBeta).toEqual({
+      url: 'https://example.test/MdowNative-mac-beta.zip',
+    })
     expect(result.assets.windows.exe).toBe('https://example.test/Mdow-Setup-1.2.3.exe')
     expect(result.assets.linux.appImage).toBe('https://example.test/Mdow-1.2.3.AppImage')
+  })
+
+  it('recognizes versioned native mac beta assets as a fallback', () => {
+    const result = parseRelease({
+      ...sample,
+      assets: [
+        {
+          name: 'MdowNative-1.2.3-arm64-mac-beta.zip',
+          browser_download_url: 'https://example.test/MdowNative-1.2.3-arm64-mac-beta.zip',
+        },
+      ],
+    })
+
+    expect(result?.assets.mac.nativeBeta).toEqual({
+      arch: 'arm64',
+      url: 'https://example.test/MdowNative-1.2.3-arm64-mac-beta.zip',
+    })
   })
 
   it('strips the leading v from tag_name', () => {

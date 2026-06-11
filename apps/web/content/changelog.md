@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.4.0
+## v1.4.1
 
 Latest release.
+
+- Added a native SwiftUI macOS beta build under the download page beta section
+- Published native Mac beta zip artifacts from the tagged release workflow
+- Kept the Electron macOS build as the recommended stable download
+
+## v1.4.0
 
 - Redesigned sidebar mode navigation with a simpler, more focused menu
 - Added coverage for menu shortcuts and destroyed-window handling
