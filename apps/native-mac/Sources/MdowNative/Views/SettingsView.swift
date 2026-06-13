@@ -3,11 +3,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: DocumentStore
-    @Binding var isPresented: Bool
+    @Environment(\.dismiss) private var dismiss
+    var showsHeader = true
+    var onClose: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if showsHeader {
+                header
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
@@ -67,6 +71,21 @@ struct SettingsView: View {
                             subtitle: "Scale rendered Markdown from 60% to 200%."
                         ) {
                             zoomControl
+                        }
+
+                        sectionDivider
+
+                        settingsRow(
+                            title: "Full width",
+                            subtitle: "Let wide documents use the full reader area."
+                        ) {
+                            Toggle("", isOn: Binding(
+                                get: { store.wideMode },
+                                set: { _ in store.toggleWideMode() }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .frame(width: 236, alignment: .trailing)
                         }
                     }
 
@@ -144,7 +163,7 @@ struct SettingsView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button {
-                isPresented = false
+                close()
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 13, weight: .semibold))
@@ -344,6 +363,18 @@ struct SettingsView: View {
         store.codeFont = .geistMono
         store.interfaceScale = .compact
         store.readingWidth = .standard
+        store.sidebarMode = .recents
         store.resetZoom()
+        if store.wideMode {
+            store.toggleWideMode()
+        }
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 }

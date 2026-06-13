@@ -28,16 +28,31 @@ enum SidebarMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum FolderScanState: Equatable {
+    case none
+    case scanning
+    case loaded
+    case empty
+    case truncated(limit: Int)
+    case failed
+}
+
 @MainActor
 final class DocumentStore: ObservableObject {
     static let shared = DocumentStore()
 
     @Published private(set) var openDocuments: [MarkdownDocument] = []
-    @Published private(set) var activeURL: URL?
+    @Published private(set) var activeURL: URL? {
+        didSet {
+            guard activeURL != oldValue else { return }
+            resetSearchNavigation()
+        }
+    }
     @Published private(set) var blocksByURL: [URL: [MarkdownBlock]] = [:]
     @Published private(set) var recents: [MarkdownFileSummary] = []
     @Published private(set) var folderURL: URL?
     @Published private(set) var folderFiles: [MarkdownFileSummary] = []
+    @Published private(set) var folderScanState: FolderScanState = .none
     @Published var fileError: MarkdownFileErrorModel?
     @Published var errorMessage: String?
     @Published var searchQuery = "" {
@@ -48,7 +63,11 @@ final class DocumentStore: ObservableObject {
         }
     }
     @Published var searchOpen = false
-    @Published var sidebarMode: SidebarMode = .recents
+    @Published var sidebarMode: SidebarMode = .recents {
+        didSet {
+            UserDefaults.standard.set(sidebarMode.rawValue, forKey: "MdowNativeSidebarMode")
+        }
+    }
     @Published var appTheme: AppTheme = .system {
         didSet {
             UserDefaults.standard.set(appTheme.rawValue, forKey: "MdowNativeAppTheme")
@@ -77,7 +96,7 @@ final class DocumentStore: ObservableObject {
             UserDefaults.standard.set(interfaceScale.rawValue, forKey: "MdowNativeInterfaceScale")
         }
     }
-    @Published var wideMode = false
+    @Published private(set) var wideMode = false
 
     private var didOpenLaunchArgument = false
     private var searchNavigationQuery = ""
@@ -112,6 +131,15 @@ final class DocumentStore: ObservableObject {
         )
     }
 
+    var activeSearchTarget: MarkdownSearchNavigationTarget? {
+        let targets = searchTargets
+        guard let searchCurrentIndex,
+              targets.indices.contains(searchCurrentIndex) else {
+            return nil
+        }
+        return targets[searchCurrentIndex]
+    }
+
     var searchCounterText: String {
         MarkdownSearchNavigation.counterText(
             query: searchQuery,
@@ -137,10 +165,12 @@ final class DocumentStore: ObservableObject {
         appTheme = Self.loadAppTheme()
         contentFont = Self.loadContentFont()
         codeFont = Self.loadCodeFont()
+        sidebarMode = Self.loadSidebarMode()
         sidebarOpen = Self.loadSidebarOpen()
         zoomLevel = Self.loadZoomLevel()
         readingWidth = Self.loadReadingWidth()
         interfaceScale = Self.loadInterfaceScale()
+        wideMode = Self.loadWideMode()
         applyAppTheme()
         openURLObserver = NotificationCenter.default.addObserver(
             forName: AppDelegate.openURLsNotification,
@@ -187,6 +217,7 @@ final class DocumentStore: ObservableObject {
         folderScanTask?.cancel()
         folderURL = url
         folderFiles = []
+        folderScanState = .scanning
         sidebarMode = .folder
         UserDefaults.standard.set(url.path, forKey: "MdowNativeLastFolder")
         errorMessage = nil
@@ -194,11 +225,11 @@ final class DocumentStore: ObservableObject {
         folderScanTask = Task { [weak self] in
             do {
                 let files = try await Task.detached(priority: .userInitiated) {
-                    try MarkdownFolder.scan(url)
+                    try MarkdownFolder.scanWithMetadata(url)
                 }.value
 
                 guard !Task.isCancelled else { return }
-                self?.finishFolderScan(url: url, files: files)
+                self?.finishFolderScan(url: url, result: files)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.finishFolderScanFailure(url: url)
@@ -225,6 +256,8 @@ final class DocumentStore: ObservableObject {
             openFolder(folderURL)
         case .markdownFile(let fileURL):
             open(fileURL)
+        case .unsupportedFile(let fileURL):
+            open(fileURL)
         case .ignored:
             break
         }
@@ -232,6 +265,7 @@ final class DocumentStore: ObservableObject {
 
     func open(_ url: URL) {
         do {
+            let previousActiveURL = activeURL
             let loadedDocument = try MarkdownFile.load(url)
             if let existingIndex = openDocuments.firstIndex(where: { $0.url == loadedDocument.url }) {
                 openDocuments[existingIndex] = loadedDocument
@@ -240,13 +274,15 @@ final class DocumentStore: ObservableObject {
             }
             activeURL = loadedDocument.url
             blocksByURL[loadedDocument.url] = MarkdownParser.parse(loadedDocument.content)
+            if previousActiveURL == loadedDocument.url {
+                resetSearchNavigation()
+            }
             addRecent(loadedDocument.url)
             startWatching(loadedDocument.url)
             fileError = nil
             errorMessage = nil
         } catch {
-            activeURL = nil
-            stopWatching()
+            restoreActiveDocumentAfterOpenFailure()
             fileError = MarkdownFileErrorModel(url: url, error: error)
             errorMessage = nil
         }
@@ -344,6 +380,19 @@ final class DocumentStore: ObservableObject {
         stopWatching()
     }
 
+    func closeActiveDocument() {
+        guard let activeURL else { return }
+        close(activeURL)
+    }
+
+    func activateNextDocument() {
+        activateDocument(offset: 1)
+    }
+
+    func activatePreviousDocument() {
+        activateDocument(offset: -1)
+    }
+
     func copyPath(_ url: URL) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.path, forType: .string)
@@ -374,7 +423,8 @@ final class DocumentStore: ObservableObject {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         ).toggledSidebar())
     }
 
@@ -386,7 +436,8 @@ final class DocumentStore: ObservableObject {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         ).zoomedIn())
     }
 
@@ -398,7 +449,8 @@ final class DocumentStore: ObservableObject {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         ).zoomedOut())
     }
 
@@ -410,8 +462,22 @@ final class DocumentStore: ObservableObject {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         ).resetZoom())
+    }
+
+    func toggleWideMode() {
+        applyChromePreferences(ReaderChromePreferences(
+            appTheme: appTheme,
+            contentFont: contentFont,
+            codeFont: codeFont,
+            sidebarOpen: sidebarOpen,
+            zoomLevel: zoomLevel,
+            readingWidth: readingWidth,
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
+        ).toggledWideMode())
     }
 
     private static var supportedContentTypes: [UTType] {
@@ -475,16 +541,28 @@ final class DocumentStore: ObservableObject {
         return targets[searchNavigationPosition].blockIndex
     }
 
-    private func finishFolderScan(url: URL, files: [MarkdownFileSummary]) {
+    private func resetSearchNavigation() {
+        searchNavigationQuery = ""
+        searchNavigationPosition = -1
+    }
+
+    private func finishFolderScan(url: URL, result: MarkdownFolderScanResult) {
         guard folderURL == url else { return }
-        folderFiles = files
+        folderFiles = result.files
+        if result.didReachLimit {
+            folderScanState = .truncated(limit: result.maxScannedEntries)
+        } else if result.files.isEmpty {
+            folderScanState = .empty
+        } else {
+            folderScanState = .loaded
+        }
         errorMessage = nil
     }
 
     private func finishFolderScanFailure(url: URL) {
         guard folderURL == url else { return }
-        folderURL = nil
         folderFiles = []
+        folderScanState = .failed
         errorMessage = "Could not scan this folder."
     }
 
@@ -540,6 +618,14 @@ final class DocumentStore: ObservableObject {
         return CodeFontPreset(rawValue: rawValue) ?? .geistMono
     }
 
+    private static func loadSidebarMode() -> SidebarMode {
+        guard let rawValue = UserDefaults.standard.string(forKey: "MdowNativeSidebarMode") else {
+            return .recents
+        }
+
+        return SidebarMode(rawValue: rawValue) ?? .recents
+    }
+
     private static func loadZoomLevel() -> Int {
         guard UserDefaults.standard.object(forKey: "MdowNativeZoomLevel") != nil else {
             return 100
@@ -566,6 +652,10 @@ final class DocumentStore: ObservableObject {
         return InterfaceScale(rawValue: rawValue) ?? .compact
     }
 
+    private static func loadWideMode() -> Bool {
+        UserDefaults.standard.bool(forKey: "MdowNativeWideMode")
+    }
+
     private func applyChromePreferences(_ preferences: ReaderChromePreferences) {
         appTheme = preferences.appTheme
         contentFont = preferences.contentFont
@@ -574,6 +664,7 @@ final class DocumentStore: ObservableObject {
         zoomLevel = preferences.zoomLevel
         readingWidth = preferences.readingWidth
         interfaceScale = preferences.interfaceScale
+        wideMode = preferences.wideMode
         UserDefaults.standard.set(appTheme.rawValue, forKey: "MdowNativeAppTheme")
         UserDefaults.standard.set(contentFont.rawValue, forKey: "MdowNativeContentFont")
         UserDefaults.standard.set(codeFont.rawValue, forKey: "MdowNativeCodeFont")
@@ -581,6 +672,39 @@ final class DocumentStore: ObservableObject {
         UserDefaults.standard.set(zoomLevel, forKey: "MdowNativeZoomLevel")
         UserDefaults.standard.set(readingWidth.rawValue, forKey: "MdowNativeReadingWidth")
         UserDefaults.standard.set(interfaceScale.rawValue, forKey: "MdowNativeInterfaceScale")
+        UserDefaults.standard.set(wideMode, forKey: "MdowNativeWideMode")
+    }
+
+    private func activateDocument(offset: Int) {
+        guard let activeURL,
+              let activeIndex = openDocuments.firstIndex(where: { $0.url == activeURL }),
+              !openDocuments.isEmpty else {
+            activeURL = openDocuments.first?.url
+            if let activeURL {
+                startWatching(activeURL)
+            }
+            return
+        }
+
+        let nextIndex = (activeIndex + offset + openDocuments.count) % openDocuments.count
+        let nextURL = openDocuments[nextIndex].url
+        self.activeURL = nextURL
+        startWatching(nextURL)
+    }
+
+    private func restoreActiveDocumentAfterOpenFailure() {
+        if let activeURL,
+           openDocuments.contains(where: { $0.url == activeURL }) {
+            startWatching(activeURL)
+            return
+        }
+
+        activeURL = openDocuments.last?.url
+        if let activeURL {
+            startWatching(activeURL)
+        } else {
+            stopWatching()
+        }
     }
 
     private func applyAppTheme() {

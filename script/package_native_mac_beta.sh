@@ -7,6 +7,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/script/native_mac_bundle.sh"
 APP_DIR="$ROOT_DIR/apps/native-mac"
 DIST_DIR="$ROOT_DIR/dist/native-mac"
 APP_NAME="MdowNative"
@@ -34,6 +35,14 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 VERSIONED_ZIP="$DIST_DIR/$APP_NAME-$VERSION-$RELEASE_ARCH-mac-beta.zip"
 ALIAS_ZIP="$DIST_DIR/$APP_NAME-mac-beta.zip"
+TEMP_PATHS=()
+
+cleanup_temp_paths() {
+  for temp_path in "${TEMP_PATHS[@]:-}"; do
+    rm -rf "$temp_path"
+  done
+}
+trap cleanup_temp_paths EXIT
 
 echo "Running native core checks"
 swift run --package-path "$APP_DIR" MdowNativeCoreChecks
@@ -44,50 +53,11 @@ BUILD_BINARY="$(swift build --package-path "$APP_DIR" -c release --show-bin-path
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
+copy_native_mac_resources "$ROOT_DIR" "$APP_CONTENTS" "$APP_NAME"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
-cat >"$INFO_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleIdentifier</key>
-  <string>$BUNDLE_ID</string>
-  <key>CFBundleName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleShortVersionString</key>
-  <string>$VERSION</string>
-  <key>CFBundleVersion</key>
-  <string>$BUILD_NUMBER</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>$MIN_SYSTEM_VERSION</string>
-  <key>NSPrincipalClass</key>
-  <string>NSApplication</string>
-  <key>NSQuitAlwaysKeepsWindows</key>
-  <false/>
-  <key>CFBundleDocumentTypes</key>
-  <array>
-    <dict>
-      <key>CFBundleTypeName</key>
-      <string>Markdown Document</string>
-      <key>CFBundleTypeExtensions</key>
-      <array>
-        <string>md</string>
-        <string>markdown</string>
-        <string>mdx</string>
-      </array>
-      <key>CFBundleTypeRole</key>
-      <string>Viewer</string>
-    </dict>
-  </array>
-</dict>
-</plist>
-PLIST
+write_native_mac_info_plist "$INFO_PLIST" "$APP_NAME" "$BUNDLE_ID" "$MIN_SYSTEM_VERSION" "$VERSION" "$BUILD_NUMBER"
 
 resolve_signing_identity() {
   if [[ -n "${NATIVE_MAC_CODESIGN_IDENTITY:-}" ]]; then
@@ -135,9 +105,11 @@ fi
 
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
+DID_NOTARIZE=false
 if [[ "$SIGNING_IDENTITY" != "-" ]]; then
   if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
     NOTARY_DIR="$(mktemp -d "$DIST_DIR/notary.XXXXXX")"
+    TEMP_PATHS+=("$NOTARY_DIR")
     NOTARY_ZIP="$NOTARY_DIR/$APP_NAME-notary.zip"
     COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr --keepParent "$APP_BUNDLE" "$NOTARY_ZIP"
     xcrun notarytool submit "$NOTARY_ZIP" \
@@ -145,18 +117,28 @@ if [[ "$SIGNING_IDENTITY" != "-" ]]; then
       --password "$APPLE_APP_SPECIFIC_PASSWORD" \
       --team-id "$APPLE_TEAM_ID" \
       --wait
-    rm -rf "$NOTARY_DIR"
     xcrun stapler staple "$APP_BUNDLE"
     xcrun stapler validate "$APP_BUNDLE"
+    DID_NOTARIZE=true
   elif [[ "${CI:-}" == "true" ]]; then
     echo "Apple notarization credentials are required for CI native beta packaging." >&2
     exit 1
+  else
+    echo "No Apple notarization credentials found; skipping local notarization validation."
   fi
 fi
 
 rm -f "$VERSIONED_ZIP" "$ALIAS_ZIP"
 COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr --keepParent "$APP_BUNDLE" "$VERSIONED_ZIP"
 cp "$VERSIONED_ZIP" "$ALIAS_ZIP"
+
+if [[ "$DID_NOTARIZE" == "true" ]]; then
+  VALIDATION_DIR="$(mktemp -d "$DIST_DIR/validate.XXXXXX")"
+  TEMP_PATHS+=("$VALIDATION_DIR")
+  ditto -x -k "$VERSIONED_ZIP" "$VALIDATION_DIR"
+  spctl -a -vv --type execute "$VALIDATION_DIR/$APP_NAME.app"
+  xcrun stapler validate "$VALIDATION_DIR/$APP_NAME.app"
+fi
 
 echo "Created native Mac beta artifacts:"
 echo "$VERSIONED_ZIP"

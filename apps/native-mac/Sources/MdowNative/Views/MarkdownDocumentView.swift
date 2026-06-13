@@ -5,6 +5,7 @@ struct MarkdownDocumentView: View {
     let document: MarkdownDocument
     let blocks: [MarkdownBlock]
     let searchQuery: String
+    let activeSearchTarget: MarkdownSearchNavigationTarget?
     @Binding var scrollTarget: Int?
     let isWide: Bool
     let zoomLevel: Int
@@ -19,11 +20,21 @@ struct MarkdownDocumentView: View {
 
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                         blockView(block, index: index)
                             .id(index)
                             .padding(.bottom, bottomSpacing(after: block, before: nextBlock(after: index)))
+                            .overlay(alignment: .leading) {
+                                if isActiveSearchBlock(index) {
+                                    Capsule()
+                                        .fill(MdowStyle.searchCurrentHighlight)
+                                        .frame(width: 3)
+                                        .padding(.vertical, 3)
+                                        .offset(x: -12)
+                                        .accessibilityHidden(true)
+                                }
+                            }
                     }
                 }
                 .frame(
@@ -50,7 +61,7 @@ struct MarkdownDocumentView: View {
         switch block {
         case .heading(let level, let text):
             let presentation = MarkdownHeadingPresentation(level: level)
-            markdownText(text)
+            markdownText(text, activeMatchIndex: activeMatchIndex(for: index))
                 .font(headingFont(presentation))
                 .foregroundStyle(presentation.isMuted ? MdowStyle.mutedForeground : MdowStyle.foreground)
                 .textCase(presentation.isUppercase ? .uppercase : nil)
@@ -58,7 +69,10 @@ struct MarkdownDocumentView: View {
 
         case .paragraph(let text):
             NativeMarkdownInlineText(
-                attributedText: markdownAttributedText(text),
+                attributedText: markdownAttributedText(
+                    text,
+                    activeMatchIndex: activeMatchIndex(for: index)
+                ),
                 font: contentFont.nsFont(size: scaled(15.5)),
                 codeFont: codeFont.nsFont(size: scaled(15.5)),
                 lineSpacing: scaled(5)
@@ -68,7 +82,7 @@ struct MarkdownDocumentView: View {
         case .unorderedListItem(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
-                markdownText(text)
+                markdownText(text, activeMatchIndex: activeMatchIndex(for: index))
             }
             .font(contentFont.font(size: scaled(15.5)))
 
@@ -76,7 +90,7 @@ struct MarkdownDocumentView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(number).")
                     .foregroundStyle(.secondary)
-                markdownText(text)
+                markdownText(text, activeMatchIndex: activeMatchIndex(for: index))
             }
             .font(contentFont.font(size: scaled(15.5)))
 
@@ -85,7 +99,7 @@ struct MarkdownDocumentView: View {
                 Image(systemName: isComplete ? "checkmark.square.fill" : "square")
                     .foregroundStyle(isComplete ? Color.accentColor : Color.secondary)
                     .accessibilityLabel(isComplete ? "Completed task" : "Incomplete task")
-                markdownText(text)
+                markdownText(text, activeMatchIndex: activeMatchIndex(for: index))
             }
             .font(contentFont.font(size: scaled(15.5)))
 
@@ -95,7 +109,7 @@ struct MarkdownDocumentView: View {
                 Rectangle()
                     .fill(MdowStyle.border)
                     .frame(width: CGFloat(style.borderWidth))
-                quoteText(text)
+                quoteText(text, activeMatchIndex: activeMatchIndex(for: index))
                     .foregroundStyle(style.textIsMuted ? MdowStyle.mutedForeground : MdowStyle.foreground)
                     .font(contentFont.font(size: scaled(15.5)))
                     .lineSpacing(scaled(5))
@@ -119,6 +133,12 @@ struct MarkdownDocumentView: View {
             let style = MarkdownCodeBlockStyle.standard
             let codeTextFont = codeFont.nsFont(size: scaled(15.5 * style.codeFontScale))
             let codeLineSpacing = scaled(4)
+            let naturalCodeHeight = NativeCodeBlockText.height(
+                for: code,
+                font: codeTextFont,
+                lineSpacing: codeLineSpacing
+            )
+            let visibleCodeHeight = min(naturalCodeHeight, scaled(520))
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
@@ -157,16 +177,14 @@ struct MarkdownDocumentView: View {
                     code: code,
                     language: language,
                     searchQuery: searchQuery,
+                    activeSearchMatchIndex: activeMatchIndex(for: index),
                     font: codeTextFont,
                     lineSpacing: codeLineSpacing
                 )
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: NativeCodeBlockText.height(
-                        for: code,
-                        font: codeTextFont,
-                        lineSpacing: codeLineSpacing
-                    ),
+                    minHeight: visibleCodeHeight,
+                    maxHeight: visibleCodeHeight,
                     alignment: .leading
                 )
             }
@@ -422,11 +440,11 @@ struct MarkdownDocumentView: View {
         }
     }
 
-    private func markdownText(_ source: String) -> Text {
-        Text(markdownAttributedText(source))
+    private func markdownText(_ source: String, activeMatchIndex: Int? = nil) -> Text {
+        Text(markdownAttributedText(source, activeMatchIndex: activeMatchIndex))
     }
 
-    private func markdownAttributedText(_ source: String) -> AttributedString {
+    private func markdownAttributedText(_ source: String, activeMatchIndex: Int? = nil) -> AttributedString {
         let normalizedSource = MarkdownInline.normalizedMarkdown(source)
         if let attributed = try? AttributedString(
             markdown: normalizedSource,
@@ -434,13 +452,17 @@ struct MarkdownDocumentView: View {
                 interpretedSyntax: .inlineOnlyPreservingWhitespace
             )
         ) {
-            return highlightedSearchMatches(in: attributed, query: searchQuery)
+            return highlightedSearchMatches(
+                in: attributed,
+                query: searchQuery,
+                activeMatchIndex: activeMatchIndex
+            )
         }
 
-        return highlightedPlainText(source, query: searchQuery)
+        return highlightedPlainText(source, query: searchQuery, activeMatchIndex: activeMatchIndex)
     }
 
-    private func quoteText(_ source: String) -> Text {
+    private func quoteText(_ source: String, activeMatchIndex: Int? = nil) -> Text {
         let normalizedSource = MarkdownInline.normalizedMarkdown(source)
         if let attributed = try? AttributedString(
             markdown: normalizedSource,
@@ -448,34 +470,40 @@ struct MarkdownDocumentView: View {
                 interpretedSyntax: .inlineOnlyPreservingWhitespace
             )
         ) {
-            return Text(highlightedSearchMatches(in: attributed, query: searchQuery))
+            return Text(highlightedSearchMatches(
+                in: attributed,
+                query: searchQuery,
+                activeMatchIndex: activeMatchIndex
+            ))
         }
 
-        return Text(highlightedPlainText(source, query: searchQuery))
+        return Text(highlightedPlainText(source, query: searchQuery, activeMatchIndex: activeMatchIndex))
     }
 
     private func tableView(headers: [String], rows: [[String]]) -> some View {
         let style = MarkdownTableGridStyle.standard
         let allRows = [headers] + rows
 
-        return VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(allRows.enumerated()), id: \.offset) { rowIndex, row in
-                tableRow(
-                    cells: row,
-                    isHeader: rowIndex == 0,
-                    showsBottomBorder: rowIndex < allRows.count - 1,
-                    style: style
-                )
+        return ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(allRows.enumerated()), id: \.offset) { rowIndex, row in
+                    tableRow(
+                        cells: row,
+                        isHeader: rowIndex == 0,
+                        showsBottomBorder: rowIndex < allRows.count - 1,
+                        style: style
+                    )
+                }
+            }
+            .font(contentFont.font(size: scaled(15.5 * style.bodyFontScale)))
+            .frame(minWidth: CGFloat(max(headers.count, 1)) * scaled(160), alignment: .leading)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(MdowStyle.border.opacity(0.82))
+                    .frame(height: 1)
             }
         }
-        .font(contentFont.font(size: scaled(15.5 * style.bodyFontScale)))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(MdowStyle.elevatedSurface, in: RoundedRectangle(cornerRadius: CGFloat(style.cornerRadius)))
-        .overlay {
-            RoundedRectangle(cornerRadius: CGFloat(style.cornerRadius))
-                .stroke(MdowStyle.border.opacity(0.82), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: CGFloat(style.cornerRadius)))
     }
 
     private func tableRow(
@@ -485,20 +513,18 @@ struct MarkdownDocumentView: View {
         style: MarkdownTableGridStyle
     ) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+            ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
                 tableCell(
                     cell,
                     isHeader: isHeader,
-                    showsTrailingBorder: index < cells.count - 1,
                     style: style
                 )
             }
         }
-        .background(isHeader ? MdowStyle.muted.opacity(0.74) : Color.clear)
         .overlay(alignment: .bottom) {
             if showsBottomBorder {
                 Rectangle()
-                    .fill(isHeader ? MdowStyle.border.opacity(0.8) : MdowStyle.borderSubtle.opacity(0.72))
+                    .fill(isHeader ? MdowStyle.border.opacity(0.82) : MdowStyle.borderSubtle.opacity(0.72))
                     .frame(height: 1)
             }
         }
@@ -507,7 +533,6 @@ struct MarkdownDocumentView: View {
     private func tableCell(
         _ text: String,
         isHeader: Bool,
-        showsTrailingBorder: Bool,
         style: MarkdownTableGridStyle
     ) -> some View {
         markdownText(text)
@@ -515,18 +540,10 @@ struct MarkdownDocumentView: View {
                 size: scaled(15.5 * (isHeader ? style.headerFontScale : style.bodyFontScale)),
                 weight: isHeader ? .semibold : .regular
             ))
-            .foregroundStyle(isHeader ? MdowStyle.mutedForeground : MdowStyle.foreground)
-            .textCase(isHeader ? .uppercase : nil)
+            .foregroundStyle(isHeader ? MdowStyle.foreground : MdowStyle.foreground)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, CGFloat(style.horizontalPadding))
             .padding(.vertical, CGFloat(style.verticalPadding))
-            .overlay(alignment: .trailing) {
-                if showsTrailingBorder {
-                    Rectangle()
-                        .fill(MdowStyle.borderSubtle.opacity(0.72))
-                        .frame(width: 1)
-                }
-            }
     }
 
     @ViewBuilder
@@ -579,21 +596,38 @@ struct MarkdownDocumentView: View {
         return document.url.deletingLastPathComponent().appendingPathComponent(source)
     }
 
-    private func highlightedPlainText(_ source: String, query: String) -> AttributedString {
-        highlightedSearchMatches(in: AttributedString(source), query: query)
+    private func highlightedPlainText(
+        _ source: String,
+        query: String,
+        activeMatchIndex: Int? = nil
+    ) -> AttributedString {
+        highlightedSearchMatches(
+            in: AttributedString(source),
+            query: query,
+            activeMatchIndex: activeMatchIndex
+        )
     }
 
-    private func highlightedSearchMatches(in source: AttributedString, query: String) -> AttributedString {
+    private func highlightedSearchMatches(
+        in source: AttributedString,
+        query: String,
+        activeMatchIndex: Int? = nil
+    ) -> AttributedString {
         guard !query.isEmpty else { return source }
 
         var attributed = source
         let plainText = String(attributed.characters)
         let matches = MarkdownSearch.matches(in: plainText, query: query)
 
-        for match in matches {
+        for (index, match) in matches.enumerated() {
             guard let range = attributedRange(for: match, in: attributed) else { continue }
-            attributed[range].backgroundColor = MdowStyle.searchHighlight
-            attributed[range].foregroundColor = MdowStyle.searchHighlightForeground
+            let isCurrent = index == activeMatchIndex
+            attributed[range].backgroundColor = isCurrent
+                ? MdowStyle.searchCurrentHighlight
+                : MdowStyle.searchHighlight
+            attributed[range].foregroundColor = isCurrent
+                ? MdowStyle.searchCurrentHighlightForeground
+                : MdowStyle.searchHighlightForeground
         }
 
         return attributed
@@ -617,6 +651,16 @@ struct MarkdownDocumentView: View {
         }
 
         return lowerBound..<upperBound
+    }
+
+    private func activeMatchIndex(for blockIndex: Int) -> Int? {
+        guard activeSearchTarget?.blockIndex == blockIndex else { return nil }
+        return activeSearchTarget?.matchIndex
+    }
+
+    private func isActiveSearchBlock(_ blockIndex: Int) -> Bool {
+        guard !searchQuery.isEmpty else { return false }
+        return activeSearchTarget?.blockIndex == blockIndex
     }
 }
 

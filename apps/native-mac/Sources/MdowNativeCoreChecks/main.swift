@@ -67,8 +67,8 @@ func checkMarkdownOpenURLRouting() throws {
         "routes markdown URLs to files"
     )
     check(
-        MarkdownOpenURLRouting.target(for: unsupportedURL) == .ignored,
-        "ignores unsupported file URLs"
+        MarkdownOpenURLRouting.target(for: unsupportedURL) == .unsupportedFile(unsupportedURL),
+        "routes unsupported file URLs to unsupported file errors"
     )
 }
 
@@ -380,7 +380,7 @@ func checkMarkdownInlineNormalization() {
     )
 }
 
-func checkMarkdownLinkResolver() {
+func checkMarkdownLinkResolver() throws {
     let documentURL = URL(fileURLWithPath: "/Users/zain/notes/today.md")
 
     check(
@@ -409,8 +409,24 @@ func checkMarkdownLinkResolver() {
     )
 
     check(
-        MarkdownLinkResolver.resolve(href: "assets/diagram.png", documentURL: documentURL) == .ignored,
-        "ignores non-markdown relative assets"
+        MarkdownLinkResolver.resolve(href: "assets/diagram.png", documentURL: documentURL)
+            == .localFile(URL(fileURLWithPath: "/Users/zain/notes/assets/diagram.png")),
+        "resolves non-markdown relative assets as local files"
+    )
+
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MdowNativeLinkResolver-\(UUID().uuidString)")
+    let indexURL = root.appendingPathComponent("Index.md")
+    let linkedURL = root.appendingPathComponent("Daily Notes.md")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "# Index".write(to: indexURL, atomically: true, encoding: .utf8)
+    try "# Daily".write(to: linkedURL, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    check(
+        MarkdownLinkResolver.resolve(href: "Daily%20Notes", documentURL: indexURL)
+            == .markdownFile(linkedURL.standardizedFileURL, anchor: nil),
+        "resolves extensionless wiki-style Markdown links by probing supported extensions"
     )
 
     let anchorBlocks = MarkdownParser.parse(
@@ -455,6 +471,13 @@ func checkMarkdownSearch() {
         "empty search has no matches"
     )
 
+    let emojiSource = "emoji 😀 goal"
+    check(
+        MarkdownSearch.matches(in: emojiSource, query: "goal").first?.nsRange(in: emojiSource)
+            == NSRange(location: 9, length: 4),
+        "search matches expose UTF-16 ranges for AppKit text storage"
+    )
+
     check(
         MarkdownSearchNavigation.targets(in: ["Goal goal", "No match", "GOAL"], query: "goal") == [
             .init(blockIndex: 0, matchIndex: 0),
@@ -485,8 +508,8 @@ func checkMarkdownSearch() {
             targetCount: 3,
             offset: 1,
             queryChanged: true
-        ) == 1,
-        "first next action advances from visible first match to second match"
+        ) == 0,
+        "first next action selects the first match after typing"
     )
 
     check(
@@ -526,6 +549,14 @@ func checkMarkdownFileErrors() {
     )
     check(readError.kind == .readError, "classifies unreadable markdown file errors")
     check(readError.title == "Couldn't read file", "titles read errors")
+
+    let unsupportedURL = URL(fileURLWithPath: "/tmp/not-markdown.txt")
+    let unsupportedError = MarkdownFileErrorModel(
+        url: unsupportedURL,
+        error: MarkdownFileError.unsupportedExtension(unsupportedURL)
+    )
+    check(unsupportedError.kind == .unsupportedType, "classifies unsupported file types")
+    check(unsupportedError.title == "Unsupported file type", "titles unsupported file errors")
 }
 
 func checkReaderChromePreferences() {
@@ -595,6 +626,7 @@ func checkReaderChromePreferences() {
         ReaderChromePreferences().interfaceScale == .compact,
         "reader chrome starts with compact interface scale"
     )
+    check(!ReaderChromePreferences().wideMode, "reader chrome starts with constrained width")
     check(
         ReaderChromePreferences(interfaceScale: .compact).controlFontSize == 12,
         "compact interface scale uses compact control text"
@@ -618,6 +650,10 @@ func checkReaderChromePreferences() {
     check(
         ReaderChromePreferences(codeFont: .sfMono).withCodeFont(.systemMono).codeFont == .systemMono,
         "reader chrome updates code font"
+    )
+    check(
+        ReaderChromePreferences(wideMode: false).toggledWideMode().wideMode,
+        "reader chrome toggles full-width mode on"
     )
 }
 
@@ -695,7 +731,7 @@ func checkMarkdownHeadingPresentation() {
 
 func checkKeyboardShortcutReference() {
     let groups = KeyboardShortcutReference.groups
-    check(groups.map(\.heading) == ["Files", "Navigation", "View", "App"], "lists shortcut groups")
+    check(groups.map(\.heading) == ["Files", "Navigation", "Tabs", "View", "App"], "lists shortcut groups")
     check(
         groups.flatMap(\.items).contains(.init(label: "Open file", keys: "⌘ O")),
         "lists open file shortcut"
@@ -703,6 +739,14 @@ func checkKeyboardShortcutReference() {
     check(
         groups.flatMap(\.items).contains(.init(label: "Keyboard shortcuts", keys: "⌘ /")),
         "lists keyboard shortcuts shortcut"
+    )
+    check(
+        groups.flatMap(\.items).contains(.init(label: "Close tab", keys: "⌘ W")),
+        "lists close tab shortcut"
+    )
+    check(
+        groups.flatMap(\.items).contains(.init(label: "Toggle full width", keys: "⌘ ⇧ W")),
+        "lists full-width shortcut"
     )
     check(
         groups.flatMap(\.items).contains(.init(label: "Reset zoom", keys: "⌘ 0")),
@@ -937,7 +981,7 @@ do {
     try checkMarkdownOpenURLRouting()
     checkMarkdownParser()
     checkMarkdownInlineNormalization()
-    checkMarkdownLinkResolver()
+    try checkMarkdownLinkResolver()
     checkMarkdownSearch()
     checkMarkdownFileErrors()
     checkReaderChromePreferences()

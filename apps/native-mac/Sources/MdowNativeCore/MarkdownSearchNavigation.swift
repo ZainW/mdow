@@ -43,9 +43,11 @@ public enum MarkdownSearchNavigation {
     ) -> Int? {
         guard targetCount > 0 else { return nil }
 
-        let visiblePosition = queryChanged
-            ? 0
-            : min(max(currentPosition, 0), targetCount - 1)
+        if queryChanged {
+            return offset < 0 ? targetCount - 1 : 0
+        }
+
+        let visiblePosition = min(max(currentPosition, 0), targetCount - 1)
         return (visiblePosition + offset + targetCount) % targetCount
     }
 }

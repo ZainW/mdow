@@ -166,6 +166,7 @@ public struct ReaderChromePreferences: Equatable, Sendable {
     public let zoomLevel: Int
     public let readingWidth: ReadingWidth
     public let interfaceScale: InterfaceScale
+    public let wideMode: Bool
 
     public init(
         appTheme: AppTheme = .system,
@@ -174,7 +175,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
         sidebarOpen: Bool = true,
         zoomLevel: Int = 100,
         readingWidth: ReadingWidth = .standard,
-        interfaceScale: InterfaceScale = .compact
+        interfaceScale: InterfaceScale = .compact,
+        wideMode: Bool = false
     ) {
         self.appTheme = appTheme
         self.contentFont = contentFont
@@ -183,6 +185,7 @@ public struct ReaderChromePreferences: Equatable, Sendable {
         self.zoomLevel = Self.clampedZoomLevel(zoomLevel)
         self.readingWidth = readingWidth
         self.interfaceScale = interfaceScale
+        self.wideMode = wideMode
     }
 
     public var documentMaxWidth: Int {
@@ -205,7 +208,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: !sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -217,7 +221,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel + 10,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -229,7 +234,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel - 10,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -241,7 +247,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: 100,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -253,7 +260,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -265,7 +273,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -277,7 +286,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -289,7 +299,8 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
         )
     }
 
@@ -301,7 +312,21 @@ public struct ReaderChromePreferences: Equatable, Sendable {
             sidebarOpen: sidebarOpen,
             zoomLevel: zoomLevel,
             readingWidth: readingWidth,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            wideMode: wideMode
+        )
+    }
+
+    public func toggledWideMode() -> ReaderChromePreferences {
+        ReaderChromePreferences(
+            appTheme: appTheme,
+            contentFont: contentFont,
+            codeFont: codeFont,
+            sidebarOpen: sidebarOpen,
+            zoomLevel: zoomLevel,
+            readingWidth: readingWidth,
+            interfaceScale: interfaceScale,
+            wideMode: !wideMode
         )
     }
 

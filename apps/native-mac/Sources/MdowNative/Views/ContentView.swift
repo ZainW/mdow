@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var isDropTargeted = false
     @State private var scrollTarget: Int?
     @State private var isCommandPalettePresented = false
-    @State private var isSettingsPresented = false
     @State private var isShortcutsPresented = false
     @State private var expandedFolderPaths: Set<String> = []
     @State private var isSearchFocused = false
@@ -57,27 +56,17 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.focusSearchNotification)) { _ in
             guard store.document != nil else { return }
-            isSettingsPresented = false
             store.searchOpen = true
             isSearchFocused = true
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.nextSearchResultNotification)) { _ in
-            if store.searchOpen {
-                isSettingsPresented = false
-            }
             scrollTarget = store.nextSearchResultBlock()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.previousSearchResultNotification)) { _ in
-            if store.searchOpen {
-                isSettingsPresented = false
-            }
             scrollTarget = store.previousSearchResultBlock()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.showCommandPaletteNotification)) { _ in
             isCommandPalettePresented = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.showSettingsNotification)) { _ in
-            isSettingsPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.showShortcutsNotification)) { _ in
             isShortcutsPresented = true
@@ -94,16 +83,30 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.resetZoomNotification)) { _ in
             store.resetZoom()
         }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleWideModeNotification)) { _ in
+            store.toggleWideMode()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.closeTabNotification)) { _ in
+            store.closeActiveDocument()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.nextTabNotification)) { _ in
+            store.activateNextDocument()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.previousTabNotification)) { _ in
+            store.activatePreviousDocument()
+        }
         .onChange(of: store.folderURL) { _, _ in
             expandedFolderPaths = defaultExpandedFolderPaths()
+        }
+        .onChange(of: store.folderFiles) { _, _ in
+            expandedFolderPaths.formUnion(defaultExpandedFolderPaths())
+            expandActiveDocumentAncestors()
         }
         .onChange(of: store.activeURL) { _, _ in
             expandActiveDocumentAncestors()
         }
         .sheet(isPresented: $isCommandPalettePresented) {
-            CommandPaletteView(isPresented: $isCommandPalettePresented) {
-                isSettingsPresented = false
-            }
+            CommandPaletteView(isPresented: $isCommandPalettePresented)
                 .environmentObject(store)
         }
         .sheet(isPresented: $isShortcutsPresented) {
@@ -162,19 +165,18 @@ struct ContentView: View {
                 .frame(height: 1)
 
             Button {
-                isSettingsPresented = true
+                openNativeSettings()
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(SidebarRowButtonStyle(
-                isActive: isSettingsPresented,
+                isActive: false,
                 fontSize: CGFloat(store.interfaceScale.controlFontSize)
             ))
             .foregroundStyle(MdowStyle.mutedForeground)
             .padding(8)
             .accessibilityLabel("Settings")
-            .accessibilityValue(isSettingsPresented ? "Selected" : "")
         }
         .frame(width: CGFloat(store.interfaceScale.sidebarWidth))
         .background(MdowStyle.sidebar)
@@ -222,10 +224,11 @@ struct ContentView: View {
             }
 
         case .folder:
-            if store.folderFiles.isEmpty {
-                emptySidebarState(icon: "folder", title: "No folder open", hint: "Open a folder or drop one here.")
+            if let status = folderStatus {
+                emptySidebarState(icon: status.icon, title: status.title, hint: status.hint)
             } else {
                 folderSidebarHeader
+                folderScanLimitNotice
                 ForEach(folderTree(), id: \.id) { node in
                     FolderTreeRow(
                         node: node,
@@ -233,7 +236,6 @@ struct ContentView: View {
                         interfaceScale: store.interfaceScale,
                         expandedFolderPaths: $expandedFolderPaths
                     ) { url in
-                        isSettingsPresented = false
                         store.open(url)
                     } copyPath: { url in
                         store.copyPath(url)
@@ -270,22 +272,24 @@ struct ContentView: View {
 
     private var mainColumn: some View {
         VStack(spacing: 0) {
-            if !store.openDocuments.isEmpty && !isSettingsPresented {
+            if !store.openDocuments.isEmpty {
                 tabBar
             }
 
-            if isSettingsPresented {
-                SettingsView(isPresented: $isSettingsPresented)
-                    .environmentObject(store)
-            } else if let fileError = store.fileError {
-                fileErrorView(fileError)
-            } else if let document = store.document {
+            if let document = store.document {
                 breadcrumb(document)
+                if let fileError = store.fileError {
+                    fileErrorBanner(fileError)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
+                }
                 ZStack(alignment: .topTrailing) {
                     MarkdownDocumentView(
                         document: document,
                         blocks: store.blocks,
                         searchQuery: store.searchQuery,
+                        activeSearchTarget: store.activeSearchTarget,
                         scrollTarget: $scrollTarget,
                         isWide: store.wideMode,
                         zoomLevel: store.zoomLevel,
@@ -304,6 +308,8 @@ struct ContentView: View {
                     }
                     zoomIndicator
                 }
+            } else if let fileError = store.fileError {
+                fileErrorView(fileError)
             } else {
                 emptyState
             }
@@ -318,7 +324,6 @@ struct ContentView: View {
                 ForEach(Array(store.openDocuments.enumerated()), id: \.element.url) { index, document in
                     HStack(spacing: 6) {
                         Button {
-                            isSettingsPresented = false
                             store.activate(document.url)
                         } label: {
                             HStack(spacing: 6) {
@@ -458,7 +463,7 @@ struct ContentView: View {
             Spacer()
 
             Button {
-                store.wideMode.toggle()
+                store.toggleWideMode()
             } label: {
                 Image(systemName: store.wideMode ? "arrow.left.and.right.righttriangle.left.righttriangle.right" : "arrow.left.and.right")
                     .font(.system(size: 12, weight: .medium))
@@ -577,6 +582,10 @@ struct ContentView: View {
             NSWorkspace.shared.open(externalURL)
             return .handled
 
+        case .localFile(let fileURL):
+            NSWorkspace.shared.open(fileURL)
+            return .handled
+
         case .ignored:
             return .discarded
         }
@@ -646,15 +655,29 @@ struct ContentView: View {
     }
 
     private var emptyState: some View {
-        HStack(alignment: .top, spacing: store.recents.isEmpty ? 0 : 44) {
-            welcomeIntro
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: store.recents.isEmpty ? 0 : 36) {
+                welcomeIntro
 
-            if !store.recents.isEmpty {
-                welcomeRecentList
+                if !store.recents.isEmpty {
+                    welcomeRecentList
+                }
+            }
+
+            ScrollView {
+                VStack(alignment: store.recents.isEmpty ? .center : .leading, spacing: 24) {
+                    welcomeIntro
+
+                    if !store.recents.isEmpty {
+                        welcomeRecentList
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: store.recents.isEmpty ? .center : .leading)
+                .padding(.vertical, 4)
             }
         }
-        .padding(.horizontal, 52)
-        .padding(.vertical, 42)
+        .padding(.horizontal, 36)
+        .padding(.vertical, 36)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isDropTargeted ? MdowStyle.primary.opacity(0.035) : Color.clear)
         .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
@@ -768,12 +791,80 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private func fileErrorBanner(_ error: MarkdownFileErrorModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: fileErrorSymbol(error.kind))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(MdowStyle.mutedForeground)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(error.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(MdowStyle.foreground)
+                    .lineLimit(1)
+
+                Text(error.url.lastPathComponent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(MdowStyle.mutedForeground)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 10)
+
+            Button("Try again") {
+                store.retryFileError()
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11, weight: .medium))
+
+            if error.canRevealInFinder {
+                Button {
+                    store.revealFileErrorInFinder()
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.borderless)
+                .help("Show in folder")
+                .accessibilityLabel("Show in folder")
+            }
+
+            Button {
+                store.closeFileError()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.borderless)
+            .help("Dismiss")
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 520)
+        .background(MdowStyle.elevatedSurface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(MdowStyle.borderSubtle.opacity(0.68), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 8)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .accessibilityElement(children: .combine)
+    }
+
     private func fileErrorSymbol(_ kind: MarkdownFileErrorKind) -> String {
         switch kind {
         case .notFound:
             "doc.badge.questionmark"
         case .permissionDenied:
             "lock.shield"
+        case .unsupportedType:
+            "doc.badge.ellipsis"
         case .readError:
             "exclamationmark.triangle"
         }
@@ -787,23 +878,26 @@ struct ContentView: View {
     }
 
     private var welcomeDropHint: some View {
-        HStack(spacing: 4) {
-            Text("Anywhere in this window")
-                .fontWeight(.medium)
-                .foregroundStyle(MdowStyle.foreground.opacity(0.9))
-            Text("— drop")
-            Text(".md")
-                .font(.system(size: 11, design: .monospaced))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(MdowStyle.muted, in: RoundedRectangle(cornerRadius: 4))
-            Text("files or a folder.")
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "arrow.down.doc")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MdowStyle.primary)
+                .frame(width: 16, height: 18)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Drop Markdown files or folders")
+                    .fontWeight(.medium)
+                    .foregroundStyle(MdowStyle.foreground.opacity(0.9))
+                Text("Anywhere in this window. Supports .md, .markdown, and .mdx.")
+                    .foregroundStyle(MdowStyle.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.system(size: 12))
-        .foregroundStyle(MdowStyle.mutedForeground)
         .padding(.horizontal, 13)
         .padding(.vertical, 10)
-        .frame(maxWidth: 420, alignment: store.recents.isEmpty ? .center : .leading)
+        .frame(maxWidth: 420, alignment: .leading)
         .background(
             isDropTargeted ? MdowStyle.primary.opacity(0.08) : MdowStyle.muted.opacity(0.32),
             in: RoundedRectangle(cornerRadius: 8)
@@ -859,18 +953,71 @@ struct ContentView: View {
         .padding(.bottom, 4)
     }
 
+    @ViewBuilder
+    private var folderScanLimitNotice: some View {
+        if case .truncated(let limit) = store.folderScanState {
+            HStack(alignment: .top, spacing: 7) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(MdowStyle.accent)
+                    .frame(width: 13)
+                    .accessibilityHidden(true)
+                Text("Showing first \(limit) scanned entries.")
+                    .font(.system(size: CGFloat(store.interfaceScale.secondaryFontSize)))
+                    .foregroundStyle(MdowStyle.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 7)
+            .background(MdowStyle.muted.opacity(0.42), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private var folderStatus: (icon: String, title: String, hint: String)? {
+        switch store.folderScanState {
+        case .none:
+            return ("folder", "No folder open", "Open a folder or drop one here.")
+        case .scanning:
+            return ("hourglass", "Scanning folder", "Markdown files will appear here shortly.")
+        case .empty:
+            return ("folder", "No Markdown files", "This folder does not contain .md, .markdown, or .mdx files.")
+        case .truncated(let limit):
+            guard store.folderFiles.isEmpty else { return nil }
+            return ("exclamationmark.triangle", "Folder scan limited", "Scanned the first \(limit) entries. Open a smaller folder for full results.")
+        case .failed:
+            return ("exclamationmark.triangle", "Could not scan folder", "Check permissions or choose a different folder.")
+        case .loaded:
+            return store.folderFiles.isEmpty ? ("folder", "No Markdown files", "This folder does not contain Markdown files.") : nil
+        }
+    }
+
     private func fileRow(_ file: MarkdownFileSummary, icon: String) -> some View {
         recentFileRow(file, icon: icon)
     }
 
     private func recentFileRow(_ file: MarkdownFileSummary, icon: String) -> some View {
         Button {
-            isSettingsPresented = false
             store.open(file.url)
         } label: {
-            Label(file.title, systemImage: icon)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: CGFloat(store.interfaceScale.controlFontSize)))
+                    .foregroundStyle(MdowStyle.mutedForeground)
+                    .frame(width: 14, height: 16)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(file.title)
+                        .lineLimit(1)
+                    Text(compactParentPath(file.url))
+                        .font(.system(size: CGFloat(max(10, store.interfaceScale.secondaryFontSize))))
+                        .foregroundStyle(MdowStyle.mutedForeground.opacity(0.72))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(SidebarRowButtonStyle(
             isActive: file.url == store.activeURL,
@@ -880,8 +1027,16 @@ struct ContentView: View {
             recentFileContextMenu(file)
         }
         .help(file.url.path)
-        .accessibilityLabel(file.title)
+        .accessibilityLabel("\(file.title), \(compactParentPath(file.url))")
         .accessibilityValue(file.url == store.activeURL ? "Selected" : "")
+    }
+
+    private func compactParentPath(_ url: URL) -> String {
+        let components = url.deletingLastPathComponent().pathComponents
+            .filter { $0 != "/" }
+        guard !components.isEmpty else { return url.deletingLastPathComponent().path }
+
+        return components.suffix(3).joined(separator: "/")
     }
 
     @ViewBuilder
@@ -934,7 +1089,6 @@ struct ContentView: View {
             let url = droppedURL(from: item)
             Task { @MainActor in
                 if let url {
-                    isSettingsPresented = false
                     if isDirectory(url) {
                         store.openFolder(url)
                     } else {
@@ -1002,6 +1156,10 @@ struct ContentView: View {
         return children.sorted {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
+    }
+
+    private func openNativeSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 
     private func defaultExpandedFolderPaths() -> Set<String> {
@@ -1175,7 +1333,7 @@ private struct FolderTreeRow: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, CGFloat(node.depth) * 11)
+                .padding(.leading, visualIndent)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(FolderTreeRowButtonStyle(
@@ -1216,7 +1374,7 @@ private struct FolderTreeRow: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, CGFloat(node.depth) * 11 + 15)
+                .padding(.leading, visualIndent + 15)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(FolderTreeRowButtonStyle(
@@ -1255,6 +1413,10 @@ private struct FolderTreeRow: View {
 
     private var isExpanded: Bool {
         expandedFolderPaths.contains(node.id)
+    }
+
+    private var visualIndent: CGFloat {
+        CGFloat(min(node.depth, 6)) * 11
     }
 
     private func toggleFolder() {
