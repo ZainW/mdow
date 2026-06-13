@@ -3,6 +3,7 @@ import Foundation
 public enum MarkdownFileErrorKind: String, Sendable {
     case notFound
     case permissionDenied
+    case unsupportedType
     case readError
 }
 
@@ -23,7 +24,12 @@ public struct MarkdownFileErrorModel: Equatable, Sendable {
                 self.title = "File not found"
                 self.body = "This file may have been moved or renamed."
                 self.canRevealInFinder = true
-            case .unsupportedExtension, .unreadable:
+            case .unsupportedExtension:
+                self.kind = .unsupportedType
+                self.title = "Unsupported file type"
+                self.body = "Mdow opens .md, .markdown, and .mdx files. Choose a Markdown file or drop a folder."
+                self.canRevealInFinder = true
+            case .unreadable:
                 self.kind = .readError
                 self.title = "Couldn't read file"
                 self.body = "Something went wrong trying to read this file. It might be corrupted or locked by another process."

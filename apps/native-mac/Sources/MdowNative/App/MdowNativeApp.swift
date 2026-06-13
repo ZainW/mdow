@@ -8,9 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let nextSearchResultNotification = Notification.Name("MdowNativeNextSearchResult")
     static let previousSearchResultNotification = Notification.Name("MdowNativePreviousSearchResult")
     static let showCommandPaletteNotification = Notification.Name("MdowNativeShowCommandPalette")
-    static let showSettingsNotification = Notification.Name("MdowNativeShowSettings")
     static let showShortcutsNotification = Notification.Name("MdowNativeShowShortcuts")
     static let toggleSidebarNotification = Notification.Name("MdowNativeToggleSidebar")
+    static let toggleWideModeNotification = Notification.Name("MdowNativeToggleWideMode")
+    static let closeTabNotification = Notification.Name("MdowNativeCloseTab")
+    static let nextTabNotification = Notification.Name("MdowNativeNextTab")
+    static let previousTabNotification = Notification.Name("MdowNativePreviousTab")
     static let zoomInNotification = Notification.Name("MdowNativeZoomIn")
     static let zoomOutNotification = Notification.Name("MdowNativeZoomOut")
     static let resetZoomNotification = Notification.Name("MdowNativeResetZoom")
@@ -67,6 +70,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LaunchWindowRecovery.shared.schedule()
         }
         return true
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        guard !flag else { return true }
+        Task { @MainActor in
+            LaunchWindowRecovery.shared.reopenDocumentWindow()
+        }
+        return false
     }
 
     @MainActor
@@ -126,9 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "0" where modifiers == .command:
                 NotificationCenter.default.post(name: Self.resetZoomNotification, object: nil)
                 return nil
-            case "," where modifiers == .command:
-                NotificationCenter.default.post(name: Self.showSettingsNotification, object: nil)
-                return nil
             default:
                 return event
             }
@@ -141,26 +152,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 final class LaunchWindowRecovery {
     static let shared = LaunchWindowRecovery()
 
+    private static let documentWindowIdentifier = NSUserInterfaceItemIdentifier("main")
+    private static let fallbackDocumentWindowIdentifier = NSUserInterfaceItemIdentifier("MdowDocumentWindow")
+
     private var fallbackWindowController: NSWindowController?
     private var didOpenFallbackWindow = false
     private let logger = Logger(subsystem: "com.zain.mdow.native", category: "Launch")
 
     func schedule() {
-        for delay in [0.4, 1.0, 1.8] {
+        for delay in [0.2, 0.5, 0.9, 1.3, 1.8, 2.6, 3.6] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.coalesceDuplicateDocumentWindows()
                 self?.frontExistingDocumentWindowIfPossible()
             }
         }
 
-        for delay in [0.6, 1.6, 2.4] {
+        for delay in [1.2, 2.4, 3.6] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.openFallbackWindowIfNeeded()
             }
         }
     }
 
+    func reopenDocumentWindow() {
+        coalesceDuplicateDocumentWindows()
+        if frontExistingDocumentWindowIfPossible() {
+            return
+        }
+
+        didOpenFallbackWindow = false
+        openFallbackWindowIfNeeded()
+    }
+
     private func openFallbackWindowIfNeeded() {
+        coalesceDuplicateDocumentWindows()
+        guard visibleDocumentWindowCount() == 0 else { return }
         if frontExistingDocumentWindowIfPossible() {
             return
         }
@@ -175,6 +201,7 @@ final class LaunchWindowRecovery {
             .frame(minWidth: 720, minHeight: 520)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
+        window.identifier = Self.fallbackDocumentWindowIdentifier
         window.title = DocumentStore.shared.document?.title ?? "Mdow"
         window.representedURL = DocumentStore.shared.document?.url
         window.setContentSize(NSSize(width: 1040, height: 700))
@@ -224,7 +251,7 @@ final class LaunchWindowRecovery {
 
     private func recoverableDocumentWindows() -> [NSWindow] {
         NSApp.windows.filter { window in
-            !window.isMiniaturized
+            isDocumentWindow(window)
                 && window.parent == nil
                 && !(window is NSPanel)
                 && window.frame.width > 10
@@ -232,7 +259,20 @@ final class LaunchWindowRecovery {
         }
     }
 
+    private func visibleDocumentWindowCount() -> Int {
+        recoverableDocumentWindows().filter { $0.isVisible && !$0.isMiniaturized }.count
+    }
+
+    private func isDocumentWindow(_ window: NSWindow) -> Bool {
+        let identifier = window.identifier?.rawValue
+        return identifier == Self.documentWindowIdentifier.rawValue
+            || identifier == Self.fallbackDocumentWindowIdentifier.rawValue
+    }
+
     private func configureWindowForDisplay(_ window: NSWindow) {
+        if window.identifier == nil {
+            window.identifier = Self.fallbackDocumentWindowIdentifier
+        }
         window.title = DocumentStore.shared.document?.title ?? "Mdow"
         window.representedURL = DocumentStore.shared.document?.url
         window.minSize = NSSize(width: 720, height: 520)
@@ -271,7 +311,7 @@ struct MdowNativeApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("Mdow", id: "main") {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 720, minHeight: 520)
@@ -320,6 +360,11 @@ struct MdowNativeApp: App {
                 }
                 .keyboardShortcut("b", modifiers: .command)
 
+                Button("Toggle Full Width") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleWideModeNotification, object: nil)
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+
                 Button("Keyboard Shortcuts") {
                     NotificationCenter.default.post(name: AppDelegate.showShortcutsNotification, object: nil)
                 }
@@ -343,12 +388,29 @@ struct MdowNativeApp: App {
                 .keyboardShortcut("0", modifiers: .command)
             }
 
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings...") {
-                    NotificationCenter.default.post(name: AppDelegate.showSettingsNotification, object: nil)
+            CommandMenu("Tabs") {
+                Button("Close Tab") {
+                    NotificationCenter.default.post(name: AppDelegate.closeTabNotification, object: nil)
                 }
-                .keyboardShortcut(",", modifiers: .command)
+                .keyboardShortcut("w", modifiers: .command)
+
+                Button("Next Tab") {
+                    NotificationCenter.default.post(name: AppDelegate.nextTabNotification, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+
+                Button("Previous Tab") {
+                    NotificationCenter.default.post(name: AppDelegate.previousTabNotification, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
             }
+        }
+
+        Settings {
+            SettingsView(showsHeader: false)
+                .environmentObject(store)
+                .frame(width: 820)
+                .frame(minHeight: 620)
         }
     }
 

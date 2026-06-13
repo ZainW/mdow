@@ -3,6 +3,7 @@ import Foundation
 public enum MarkdownLinkTarget: Equatable, Sendable {
     case anchor(String)
     case markdownFile(URL, anchor: String?)
+    case localFile(URL)
     case external(URL)
     case ignored
 }
@@ -25,18 +26,25 @@ public enum MarkdownLinkResolver {
 
         let parts = splitFragment(trimmedHref)
         let path = decodedPath(parts.path)
-        guard isMarkdownPath(path) else { return .ignored }
+        let resolvedURL = resolvedLocalURL(path: path, documentURL: documentURL)
 
-        let resolvedURL: URL
-        if path.hasPrefix("/") {
-            resolvedURL = URL(fileURLWithPath: path)
-        } else if let fileURL = URL(string: path), fileURL.isFileURL {
-            resolvedURL = fileURL
-        } else {
-            resolvedURL = documentURL.deletingLastPathComponent().appendingPathComponent(path)
+        if isMarkdownPath(path) {
+            return .markdownFile(resolvedURL.standardizedFileURL, anchor: parts.fragment.map(decodedFragment))
         }
 
-        return .markdownFile(resolvedURL.standardizedFileURL, anchor: parts.fragment.map(decodedFragment))
+        if resolvedURL.pathExtension.isEmpty,
+           let probedURL = probedMarkdownURL(for: resolvedURL) {
+            return .markdownFile(probedURL.standardizedFileURL, anchor: parts.fragment.map(decodedFragment))
+        }
+
+        if resolvedURL.pathExtension.isEmpty {
+            return .markdownFile(
+                resolvedURL.appendingPathExtension("md").standardizedFileURL,
+                anchor: parts.fragment.map(decodedFragment)
+            )
+        }
+
+        return .localFile(resolvedURL.standardizedFileURL)
     }
 
     public static func slug(_ title: String) -> String {
@@ -65,6 +73,26 @@ public enum MarkdownLinkResolver {
 
     private static func decodedFragment(_ fragment: String) -> String {
         fragment.removingPercentEncoding ?? fragment
+    }
+
+    private static func resolvedLocalURL(path: String, documentURL: URL) -> URL {
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+        if let fileURL = URL(string: path), fileURL.isFileURL {
+            return fileURL
+        }
+        return documentURL.deletingLastPathComponent().appendingPathComponent(path)
+    }
+
+    private static func probedMarkdownURL(for url: URL) -> URL? {
+        for pathExtension in ["md", "markdown", "mdx"] {
+            let candidate = url.appendingPathExtension(pathExtension)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     private static func isMarkdownPath(_ path: String) -> Bool {

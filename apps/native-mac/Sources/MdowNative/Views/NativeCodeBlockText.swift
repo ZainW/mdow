@@ -6,6 +6,7 @@ struct NativeCodeBlockText: NSViewRepresentable {
     let code: String
     let language: String?
     let searchQuery: String
+    let activeSearchMatchIndex: Int?
     let font: NSFont
     let lineSpacing: CGFloat
 
@@ -19,7 +20,7 @@ struct NativeCodeBlockText: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = false
+        scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
@@ -36,7 +37,7 @@ struct NativeCodeBlockText: NSViewRepresentable {
             height: CGFloat.greatestFiniteMagnitude
         )
         textView.isHorizontallyResizable = true
-        textView.isVerticallyResizable = false
+        textView.isVerticallyResizable = true
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.setAccessibilityLabel(languageLabel)
@@ -53,11 +54,22 @@ struct NativeCodeBlockText: NSViewRepresentable {
             language: language,
             font: font,
             lineSpacing: lineSpacing,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            activeSearchMatchIndex: activeSearchMatchIndex
         )
         textView.textStorage?.setAttributedString(attributedCode)
         textView.frame = NSRect(origin: .zero, size: textSize(for: attributedCode))
         textView.setAccessibilityLabel(languageLabel)
+
+        if let activeRange = NativeCodeHighlighter.searchRange(
+            in: code,
+            query: searchQuery,
+            matchIndex: activeSearchMatchIndex
+        ) {
+            DispatchQueue.main.async {
+                textView.scrollRangeToVisible(activeRange)
+            }
+        }
     }
 
     private var languageLabel: String {
@@ -87,12 +99,24 @@ struct NativeCodeBlockText: NSViewRepresentable {
 }
 
 enum NativeCodeHighlighter {
+    static func searchRange(in code: String, query: String, matchIndex: Int?) -> NSRange? {
+        guard let matchIndex,
+              !query.isEmpty else {
+            return nil
+        }
+
+        let matches = MarkdownSearch.matches(in: code, query: query)
+        guard matches.indices.contains(matchIndex) else { return nil }
+        return matches[matchIndex].nsRange(in: code)
+    }
+
     static func highlightedCode(
         _ code: String,
         language: String?,
         font: NSFont,
         lineSpacing: CGFloat,
-        searchQuery: String
+        searchQuery: String,
+        activeSearchMatchIndex: Int?
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(string: code)
         let fullRange = NSRange(location: 0, length: result.length)
@@ -109,7 +133,11 @@ enum NativeCodeHighlighter {
         ], range: fullRange)
 
         applySyntaxHighlighting(to: result, language: language)
-        applySearchHighlighting(to: result, query: searchQuery)
+        applySearchHighlighting(
+            to: result,
+            query: searchQuery,
+            activeSearchMatchIndex: activeSearchMatchIndex
+        )
         return result
     }
 
@@ -149,14 +177,21 @@ enum NativeCodeHighlighter {
         }
     }
 
-    private static func applySearchHighlighting(to result: NSMutableAttributedString, query: String) {
+    private static func applySearchHighlighting(
+        to result: NSMutableAttributedString,
+        query: String,
+        activeSearchMatchIndex: Int?
+    ) {
         guard !query.isEmpty else { return }
         let matches = MarkdownSearch.matches(in: result.string, query: query)
-        for match in matches {
-            let range = NSRange(location: match.offset, length: match.length)
+        for (index, match) in matches.enumerated() {
+            guard let range = match.nsRange(in: result.string) else { continue }
+            let isCurrent = index == activeSearchMatchIndex
             result.addAttributes([
-                .backgroundColor: NSColor(MdowStyle.searchHighlight),
-                .foregroundColor: NSColor(MdowStyle.searchHighlightForeground),
+                .backgroundColor: NSColor(isCurrent ? MdowStyle.searchCurrentHighlight : MdowStyle.searchHighlight),
+                .foregroundColor: NSColor(
+                    isCurrent ? MdowStyle.searchCurrentHighlightForeground : MdowStyle.searchHighlightForeground
+                ),
             ], range: range)
         }
     }

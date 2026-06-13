@@ -13,15 +13,35 @@ public struct MarkdownFileSummary: Equatable, Identifiable, Sendable {
     }
 }
 
+public struct MarkdownFolderScanResult: Equatable, Sendable {
+    public let files: [MarkdownFileSummary]
+    public let didReachLimit: Bool
+    public let maxScannedEntries: Int
+
+    public init(files: [MarkdownFileSummary], didReachLimit: Bool, maxScannedEntries: Int) {
+        self.files = files
+        self.didReachLimit = didReachLimit
+        self.maxScannedEntries = maxScannedEntries
+    }
+}
+
 public enum MarkdownFolder {
     private static let maxScannedEntries = 5_000
 
     public static func scan(_ root: URL) throws -> [MarkdownFileSummary] {
+        try scanWithMetadata(root).files
+    }
+
+    public static func scanWithMetadata(_ root: URL) throws -> MarkdownFolderScanResult {
         var files: [MarkdownFileSummary] = []
         var scannedEntries = 0
+        var didReachLimit = false
 
         func scanDirectory(_ directoryPath: String) {
-            guard scannedEntries < Self.maxScannedEntries else { return }
+            guard scannedEntries < Self.maxScannedEntries else {
+                didReachLimit = true
+                return
+            }
             guard let directory = opendir(directoryPath) else { return }
             defer { closedir(directory) }
 
@@ -40,7 +60,10 @@ public enum MarkdownFolder {
             for childName in childNames.sorted(by: { lhs, rhs in
                 lhs.localizedStandardCompare(rhs) == .orderedAscending
             }) {
-                guard scannedEntries < Self.maxScannedEntries else { return }
+                guard scannedEntries < Self.maxScannedEntries else {
+                    didReachLimit = true
+                    return
+                }
                 scannedEntries += 1
 
                 let childPath = NSString(string: directoryPath).appendingPathComponent(childName)
@@ -68,8 +91,13 @@ public enum MarkdownFolder {
 
         scanDirectory(root.path)
 
-        return files.sorted {
+        let sortedFiles = files.sorted {
             $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending
         }
+        return MarkdownFolderScanResult(
+            files: sortedFiles,
+            didReachLimit: didReachLimit,
+            maxScannedEntries: Self.maxScannedEntries
+        )
     }
 }

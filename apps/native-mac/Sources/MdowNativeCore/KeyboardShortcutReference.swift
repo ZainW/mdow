@@ -39,9 +39,18 @@ public enum KeyboardShortcutReference {
             ]
         ),
         KeyboardShortcutGroup(
+            heading: "Tabs",
+            items: [
+                KeyboardShortcutItem(label: "Close tab", keys: "⌘ W"),
+                KeyboardShortcutItem(label: "Next tab", keys: "⌘ ⇧ ]"),
+                KeyboardShortcutItem(label: "Previous tab", keys: "⌘ ⇧ ["),
+            ]
+        ),
+        KeyboardShortcutGroup(
             heading: "View",
             items: [
                 KeyboardShortcutItem(label: "Toggle sidebar", keys: "⌘ B"),
+                KeyboardShortcutItem(label: "Toggle full width", keys: "⌘ ⇧ W"),
                 KeyboardShortcutItem(label: "Keyboard shortcuts", keys: "⌘ /"),
                 KeyboardShortcutItem(label: "Zoom in", keys: "⌘ +"),
                 KeyboardShortcutItem(label: "Zoom out", keys: "⌘ -"),

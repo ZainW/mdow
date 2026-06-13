@@ -8,6 +8,28 @@ public struct MarkdownSearchMatch: Equatable, Sendable {
         self.offset = offset
         self.length = length
     }
+
+    public func range(in source: String) -> Range<String.Index>? {
+        guard let lowerBound = source.index(
+            source.startIndex,
+            offsetBy: offset,
+            limitedBy: source.endIndex
+        ),
+              let upperBound = source.index(
+                  lowerBound,
+                  offsetBy: length,
+                  limitedBy: source.endIndex
+              ) else {
+            return nil
+        }
+
+        return lowerBound..<upperBound
+    }
+
+    public func nsRange(in source: String) -> NSRange? {
+        guard let range = range(in: source) else { return nil }
+        return NSRange(range, in: source)
+    }
 }
 
 public enum MarkdownSearch {
