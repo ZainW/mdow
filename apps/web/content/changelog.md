@@ -5,9 +5,16 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.4.1
+## v1.5.0
 
 Latest release.
+
+- Open and render HTML documents alongside Markdown documents
+- Added sandboxed HTML previews for local files and document links
+- Added side-by-side document panes with pane targeting from tabs
+- Expanded coverage for HTML loading, split panes, tab actions, and renderer CSP
+
+## v1.4.1
 
 - Added a native SwiftUI macOS beta build under the download page beta section
 - Published native Mac beta zip artifacts from the tagged release workflow
