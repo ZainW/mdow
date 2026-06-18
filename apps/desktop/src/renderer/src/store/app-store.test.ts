@@ -25,6 +25,10 @@ describe('app-store', () => {
       activeTabId: null,
       openingPath: null,
       renderCache: new Map(),
+      splitView: false,
+      activePane: 'primary',
+      primaryPaneTabId: null,
+      secondaryPaneTabId: null,
       sidebarOpen: true,
       sidebarMode: 'recents',
       openFolderPath: null,
@@ -171,6 +175,107 @@ describe('app-store', () => {
       expect(state.renderCache.size).toBeLessThanOrEqual(4)
       expect(state.renderCache.has(state.tabs[0].id)).toBe(false)
       expect(state.renderCache.has(state.tabs[4].id)).toBe(true)
+    })
+
+    it('opens html files as document tabs', () => {
+      useAppStore.getState().openTab({ path: '/a/export.html', content: '<h1>Export</h1>' })
+      const state = useAppStore.getState()
+      expect(state.tabs[0]).toMatchObject({
+        path: '/a/export.html',
+        content: '<h1>Export</h1>',
+      })
+      expect(state.activeTabId).toBe(state.tabs[0].id)
+    })
+  })
+
+  describe('split panes', () => {
+    it('starts in single-pane mode', () => {
+      const state = useAppStore.getState()
+      expect(state.splitView).toBe(false)
+      expect(state.activePane).toBe('primary')
+      expect(state.primaryPaneTabId).toBeNull()
+      expect(state.secondaryPaneTabId).toBeNull()
+    })
+
+    it('enables split view with the active tab on the left and next tab on the right', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      const [a, b] = useAppStore.getState().tabs
+      useAppStore.getState().setActiveTab(a.id)
+
+      useAppStore.getState().enableSplitView()
+
+      expect(useAppStore.getState()).toMatchObject({
+        splitView: true,
+        activePane: 'primary',
+        primaryPaneTabId: a.id,
+        secondaryPaneTabId: b.id,
+        activeTabId: a.id,
+      })
+    })
+
+    it('selects tabs into whichever pane is active while split view is enabled', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      useAppStore.getState().openTab({ path: '/c.md', content: 'c' })
+      const [, b, c] = useAppStore.getState().tabs
+      useAppStore.getState().enableSplitView()
+      useAppStore.getState().setActivePane('secondary')
+
+      useAppStore.getState().setActiveTab(c.id)
+
+      expect(useAppStore.getState().secondaryPaneTabId).toBe(c.id)
+      expect(useAppStore.getState().primaryPaneTabId).not.toBe(c.id)
+      expect(useAppStore.getState().activeTabId).toBe(c.id)
+      expect(useAppStore.getState().tabs.some((tab) => tab.id === b.id)).toBe(true)
+    })
+
+    it('assigns a tab directly to a split pane and activates that pane', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      const [a, b] = useAppStore.getState().tabs
+
+      useAppStore.getState().setPaneTab('secondary', b.id)
+
+      expect(useAppStore.getState()).toMatchObject({
+        splitView: true,
+        primaryPaneTabId: a.id,
+        secondaryPaneTabId: b.id,
+        activePane: 'secondary',
+        activeTabId: b.id,
+      })
+    })
+
+    it('leaves split view when a pane tab is closed and no replacement is available', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      const [a, b] = useAppStore.getState().tabs
+      useAppStore.getState().enableSplitView()
+
+      useAppStore.getState().closeTab(b.id)
+
+      expect(useAppStore.getState()).toMatchObject({
+        splitView: false,
+        activePane: 'primary',
+        primaryPaneTabId: a.id,
+        secondaryPaneTabId: null,
+        activeTabId: a.id,
+      })
+    })
+
+    it('disables split view without closing tabs', () => {
+      useAppStore.getState().openTab({ path: '/a.md', content: 'a' })
+      useAppStore.getState().openTab({ path: '/b.md', content: 'b' })
+      useAppStore.getState().enableSplitView()
+
+      useAppStore.getState().disableSplitView()
+
+      expect(useAppStore.getState().tabs).toHaveLength(2)
+      expect(useAppStore.getState()).toMatchObject({
+        splitView: false,
+        activePane: 'primary',
+        secondaryPaneTabId: null,
+      })
     })
   })
 

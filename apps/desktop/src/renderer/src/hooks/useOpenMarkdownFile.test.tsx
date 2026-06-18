@@ -38,6 +38,21 @@ describe('useOpenMarkdownFile', () => {
     })
   })
 
+  it('opens an html document tab when read succeeds', async () => {
+    readFile.mockResolvedValue('<h1>Preview</h1>')
+    const { result } = renderHook(() => useOpenMarkdownFile(), { wrapper })
+
+    await result.current('/docs/preview.html')
+
+    await waitFor(() => {
+      expect(useAppStore.getState().tabs).toHaveLength(1)
+    })
+    expect(useAppStore.getState().tabs[0]).toMatchObject({
+      path: '/docs/preview.html',
+      content: '<h1>Preview</h1>',
+    })
+  })
+
   it('opens an error tab for not-found failures', async () => {
     readFile.mockRejectedValue(new Error('not-found'))
     const { result } = renderHook(() => useOpenMarkdownFile(), { wrapper })

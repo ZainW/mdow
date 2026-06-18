@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type { RenderResult } from '../lib/markdown'
-import { isMarkdownPath, resolveRelativePath } from '../lib/path-utils'
+import { isDocumentPath, resolveRelativePath } from '../lib/path-utils'
 
 export function useContentClickHandlers({
   contentRef,
@@ -55,10 +55,10 @@ export function useContentClickHandlers({
       }
 
       const resolved = resolveRelativePath(tabPath, href)
-      if (isMarkdownPath(resolved)) {
+      if (isDocumentPath(resolved)) {
         event.preventDefault()
         window.dispatchEvent(
-          new CustomEvent('mdow:open-markdown-link', { detail: { path: resolved } }),
+          new CustomEvent('mdow:open-document-link', { detail: { path: resolved } }),
         )
         onOpenMarkdownLink?.(resolved)
       }

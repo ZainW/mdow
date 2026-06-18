@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { useRecents } from '../hooks/useRecents'
-import { basename, isMarkdownPath } from '../lib/path-utils'
+import { basename, isDocumentPath } from '../lib/path-utils'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
@@ -52,7 +52,7 @@ export function WelcomeView() {
       if (files.length === 0) return
 
       const paths = files.map((f) => window.api.getPathForFile(f))
-      const mdPaths = paths.filter((p) => isMarkdownPath(p))
+      const mdPaths = paths.filter((p) => isDocumentPath(p))
 
       if (mdPaths.length > 0) {
         await Promise.all(mdPaths.map((path) => openMarkdownFile(path)))

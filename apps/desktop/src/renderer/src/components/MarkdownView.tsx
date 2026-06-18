@@ -27,10 +27,11 @@ const READING_WIDTHS = {
 
 interface MarkdownViewProps {
   tab: Tab
+  isActive?: boolean
   onOpenMarkdownLink?: (path: string) => void
 }
 
-export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
+export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: MarkdownViewProps) {
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -62,7 +63,7 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
 
   const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
-    searchOpen ? searchQuery : '',
+    searchOpen && isActive ? searchQuery : '',
     renderVersion,
   )
 
@@ -93,7 +94,7 @@ export function MarkdownView({ tab, onOpenMarkdownLink }: MarkdownViewProps) {
 
   return (
     <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
-      {searchOpen && (
+      {searchOpen && isActive && (
         <SearchBar
           matchCount={matchCount}
           currentIndex={currentIndex}

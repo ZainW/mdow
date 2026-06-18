@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { basename, detectSep, isMarkdownPath, shortenPath, truncatePathMiddle } from './path-utils'
+import {
+  basename,
+  detectSep,
+  isDocumentPath,
+  isHtmlPath,
+  isMarkdownPath,
+  shortenPath,
+  truncatePathMiddle,
+} from './path-utils'
 
 describe('basename', () => {
   it('extracts filename from unix path', () => {
@@ -132,5 +140,30 @@ describe('isMarkdownPath', () => {
   it('rejects unsupported extensions', () => {
     expect(isMarkdownPath('readme.txt')).toBe(false)
     expect(isMarkdownPath('markdown.json')).toBe(false)
+  })
+})
+
+describe('isHtmlPath', () => {
+  it('accepts html documents case-insensitively', () => {
+    expect(isHtmlPath('preview.html')).toBe(true)
+    expect(isHtmlPath('export.HTM')).toBe(true)
+  })
+
+  it('rejects non-html paths', () => {
+    expect(isHtmlPath('preview.xhtml')).toBe(false)
+    expect(isHtmlPath('html.md')).toBe(false)
+  })
+})
+
+describe('isDocumentPath', () => {
+  it('accepts markdown and html documents', () => {
+    expect(isDocumentPath('readme.md')).toBe(true)
+    expect(isDocumentPath('page.html')).toBe(true)
+    expect(isDocumentPath('legacy.htm')).toBe(true)
+  })
+
+  it('rejects unsupported document extensions', () => {
+    expect(isDocumentPath('readme.txt')).toBe(false)
+    expect(isDocumentPath('page.xhtml')).toBe(false)
   })
 })

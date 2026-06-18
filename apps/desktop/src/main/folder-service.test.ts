@@ -36,7 +36,15 @@ describe('scanFolder', () => {
     ])
   })
 
-  it('ignores non-markdown files', async () => {
+  it('finds html documents', async () => {
+    await writeFile(join(tempDir, 'preview.html'), '<h1>Preview</h1>')
+    await writeFile(join(tempDir, 'legacy.HTM'), '<p>Legacy</p>')
+
+    const result = await scanFolder(tempDir)
+    expect(result.tree.map((n) => n.name).toSorted()).toEqual(['legacy.HTM', 'preview.html'])
+  })
+
+  it('ignores unsupported document files', async () => {
     await writeFile(join(tempDir, 'readme.md'), '# Hello')
     await writeFile(join(tempDir, 'script.ts'), 'code')
     await writeFile(join(tempDir, 'style.css'), 'css')
@@ -109,7 +117,7 @@ describe('scanFolder', () => {
     expect(result.tree.map((n) => n.name)).toEqual(['alpha.md', 'bravo.md', 'charlie.md'])
   })
 
-  it('excludes empty directories (no markdown inside)', async () => {
+  it('excludes empty directories (no supported documents inside)', async () => {
     await mkdir(join(tempDir, 'empty'))
     await mkdir(join(tempDir, 'has-code'))
     await writeFile(join(tempDir, 'has-code', 'script.ts'), 'code')

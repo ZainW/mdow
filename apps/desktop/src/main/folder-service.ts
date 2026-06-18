@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs'
 import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { watch, type FSWatcher } from 'chokidar'
-import type { TreeNode, ScanResult } from '../shared/types'
+import { DOCUMENT_EXTENSIONS, type TreeNode, type ScanResult } from '../shared/types'
 
 interface FolderWatchState {
   watcher: FSWatcher
@@ -11,8 +11,6 @@ interface FolderWatchState {
 }
 
 const activeFolderWatchers = new Map<string, FolderWatchState>()
-
-const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -28,15 +26,15 @@ const IGNORED_DIRS = new Set([
 const MAX_FILES = 5000
 const MAX_DEPTH = 8
 
-function isMdFile(name: string): boolean {
+function isDocumentFile(name: string): boolean {
   const dotIndex = name.lastIndexOf('.')
   if (dotIndex === -1) return false
   const ext = name.substring(dotIndex).toLowerCase()
-  return MD_EXTENSIONS.has(ext)
+  return DOCUMENT_EXTENSIONS.has(ext)
 }
 
-function isMarkdownPath(path: string): boolean {
-  return isMdFile(path.split(/[/\\]/).pop() ?? '')
+function isDocumentPath(path: string): boolean {
+  return isDocumentFile(path.split(/[/\\]/).pop() ?? '')
 }
 
 function shouldSkipEntry(name: string): boolean {
@@ -70,7 +68,7 @@ async function appendEntry(
     return
   }
 
-  if (isMdFile(entry.name)) {
+  if (isDocumentFile(entry.name)) {
     if (state.fileCount >= MAX_FILES) {
       state.truncated = true
       return
@@ -230,7 +228,7 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
         const parts = change.path.split(sep)
         const fileName = parts.pop()!
         const parentPath = parts.join(sep)
-        if (isMdFile(fileName)) {
+        if (isDocumentFile(fileName)) {
           const inserted = insertFileNode(
             cached.tree,
             change.path,
@@ -267,10 +265,10 @@ export function watchFolder(folderPath: string, onChange: (result: ScanResult) =
   }
 
   watcher.on('add', (path) => {
-    if (isMarkdownPath(path)) scheduleFlush('add', path)
+    if (isDocumentPath(path)) scheduleFlush('add', path)
   })
   watcher.on('unlink', (path) => {
-    if (isMarkdownPath(path)) scheduleFlush('unlink', path)
+    if (isDocumentPath(path)) scheduleFlush('unlink', path)
   })
   watcher.on('addDir', (path) => scheduleFlush('addDir', path))
   watcher.on('unlinkDir', (path) => scheduleFlush('unlinkDir', path))

@@ -16,7 +16,14 @@ export type {
   ScanResult,
   TreeNode,
 } from '../shared/types'
-export { isMarkdownPath, MD_EXTENSIONS } from '../shared/types'
+export {
+  DOCUMENT_EXTENSIONS,
+  HTML_EXTENSIONS,
+  MD_EXTENSIONS,
+  isDocumentPath,
+  isHtmlPath,
+  isMarkdownPath,
+} from '../shared/types'
 
 type Unsubscribe = () => void
 

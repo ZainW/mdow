@@ -25,6 +25,7 @@ export interface FileError {
 export type SidebarMode = 'recents' | 'folder' | 'outline'
 export type InterfaceScale = 'compact' | 'comfortable' | 'large'
 export type ReadingWidth = 'standard' | 'comfortable' | 'wide'
+export type PaneId = 'primary' | 'secondary'
 
 export interface AppState {
   recents?: string[]
@@ -33,6 +34,10 @@ export interface AppState {
   windowBounds: { x: number; y: number; width: number; height: number } | null
   sessionTabs: { path: string }[]
   sessionActiveTabPath: string | null
+  sessionSplitView?: boolean
+  sessionPrimaryPanePath?: string | null
+  sessionSecondaryPanePath?: string | null
+  sessionActivePane?: PaneId
   contentFont: string
   codeFont: string
   theme: string
@@ -48,10 +53,28 @@ export interface FolderOpenResult extends ScanResult {
 }
 
 export const MD_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
+export const HTML_EXTENSIONS = new Set(['.html', '.htm'])
+export const DOCUMENT_EXTENSIONS = new Set([...MD_EXTENSIONS, ...HTML_EXTENSIONS])
 
 export function isMarkdownPath(path: string): boolean {
   const lower = path.toLowerCase()
   for (const ext of MD_EXTENSIONS) {
+    if (lower.endsWith(ext)) return true
+  }
+  return false
+}
+
+export function isHtmlPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  for (const ext of HTML_EXTENSIONS) {
+    if (lower.endsWith(ext)) return true
+  }
+  return false
+}
+
+export function isDocumentPath(path: string): boolean {
+  const lower = path.toLowerCase()
+  for (const ext of DOCUMENT_EXTENSIONS) {
     if (lower.endsWith(ext)) return true
   }
   return false

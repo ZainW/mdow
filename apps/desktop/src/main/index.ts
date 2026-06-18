@@ -20,7 +20,7 @@ import { unwatchFolder } from './folder-service'
 import { readFileContent, unwatchAllFiles, setActiveFileWatch } from './file-service'
 import { isMac, isLinux } from './platform'
 import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
-import { isMarkdownPath, validateMarkdownPath, validatePath } from './path-validation'
+import { isDocumentPath, validateDocumentPath, validatePath } from './path-validation'
 import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
 
 const windows = new Set<BrowserWindow>()
@@ -78,7 +78,7 @@ function setupWebContentsSecurity(win: BrowserWindow): void {
 function openFile(filePath: string): void {
   void (async () => {
     try {
-      const resolved = validateMarkdownPath(filePath)
+      const resolved = validateDocumentPath(filePath)
       const content = await readFileContent(resolved)
       addRecent(resolved)
       registerAllowedFile(resolved)
@@ -99,7 +99,7 @@ function openFile(filePath: string): void {
 }
 
 function openFileFromArgv(argv: string[], _win: BrowserWindow): void {
-  const filePath = argv.find(isMarkdownPath)
+  const filePath = argv.find(isDocumentPath)
   if (filePath) {
     openFile(filePath)
   }

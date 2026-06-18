@@ -107,6 +107,12 @@ describe('ipc handlers', () => {
       await expect(handler({}, '/readme.md')).resolves.toBe('# Hello')
     })
 
+    it('returns html document content on success', async () => {
+      mockReadFileContent.mockResolvedValue('<h1>Preview</h1>')
+      const handler = handlers.get('file:read')!
+      await expect(handler({}, '/preview.html')).resolves.toBe('<h1>Preview</h1>')
+    })
+
     it('rejects path traversal', async () => {
       const handler = handlers.get('file:read')!
       await expect(handler({}, '../etc/passwd.md')).rejects.toMatchObject({
@@ -114,7 +120,7 @@ describe('ipc handlers', () => {
       })
     })
 
-    it('rejects non-markdown extensions', async () => {
+    it('rejects unsupported document extensions', async () => {
       const handler = handlers.get('file:read')!
       await expect(handler({}, '/readme.txt')).rejects.toMatchObject({
         message: 'invalid-extension',

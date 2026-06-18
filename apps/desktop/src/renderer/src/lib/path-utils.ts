@@ -1,3 +1,9 @@
+import {
+  isDocumentPath as isSharedDocumentPath,
+  isHtmlPath as isSharedHtmlPath,
+  isMarkdownPath as isSharedMarkdownPath,
+} from '../../../shared/types'
+
 export function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path
 }
@@ -10,8 +16,15 @@ export function detectSep(path: string): '/' | '\\' {
 }
 
 export function isMarkdownPath(path: string): boolean {
-  const lower = path.toLowerCase()
-  return lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.mdx')
+  return isSharedMarkdownPath(path)
+}
+
+export function isHtmlPath(path: string): boolean {
+  return isSharedHtmlPath(path)
+}
+
+export function isDocumentPath(path: string): boolean {
+  return isSharedDocumentPath(path)
 }
 
 export function shortenPath(path: string, maxLen = 40): string {
