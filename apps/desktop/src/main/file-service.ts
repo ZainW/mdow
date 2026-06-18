@@ -14,7 +14,7 @@ let activeWatchPath: string | null = null
 export async function openFileDialog(win: BrowserWindow) {
   const result = await dialog.showOpenDialog(win, {
     properties: ['openFile'],
-    filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdx'] }],
+    filters: [{ name: 'Documents', extensions: ['md', 'markdown', 'mdx', 'html', 'htm'] }],
   })
 
   if (result.canceled || result.filePaths.length === 0) return null

@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { RenderResult } from '../../lib/markdown'
+import type { PaneId } from '../../../../shared/types'
 
 export interface Tab {
   id: string
@@ -19,6 +20,10 @@ export interface FileError {
 export interface TabSlice {
   tabs: Tab[]
   activeTabId: string | null
+  splitView: boolean
+  activePane: PaneId
+  primaryPaneTabId: string | null
+  secondaryPaneTabId: string | null
   openingPath: string | null
   renderCache: Map<string, RenderResult>
   openTab: (file: { path: string; content: string }, options?: { activate?: boolean }) => void
@@ -31,6 +36,11 @@ export interface TabSlice {
   cycleTab: (direction: 1 | -1) => void
   selectTabByIndex: (index: number) => void
   setActiveTab: (tabId: string) => void
+  setActivePane: (pane: PaneId) => void
+  setPaneTab: (pane: PaneId, tabId: string) => void
+  enableSplitView: () => void
+  disableSplitView: () => void
+  toggleSplitView: () => void
   updateTabContent: (path: string, content: string) => void
   updateTabScroll: (tabId: string, scrollPosition: number) => void
   setTabError: (path: string, error: FileError) => void
@@ -55,9 +65,34 @@ function withoutRenderCache(
 
 const MAX_RENDER_CACHE_ENTRIES = 4
 
+function findTabIndex(tabs: Tab[], tabId: string | null): number {
+  if (!tabId) return -1
+  return tabs.findIndex((tab) => tab.id === tabId)
+}
+
+function nextDifferentTabId(tabs: Tab[], tabId: string | null): string | null {
+  if (tabs.length === 0) return null
+  if (!tabId) return tabs[0].id
+  const index = findTabIndex(tabs, tabId)
+  if (index === -1) return tabs[0].id
+  for (let offset = 1; offset < tabs.length; offset++) {
+    const next = tabs[(index + offset) % tabs.length]
+    if (next.id !== tabId) return next.id
+  }
+  return null
+}
+
+function existingTabId(tabs: Tab[], tabId: string | null): string | null {
+  return tabId && tabs.some((tab) => tab.id === tabId) ? tabId : null
+}
+
 export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) => ({
   tabs: [],
   activeTabId: null,
+  splitView: false,
+  activePane: 'primary',
+  primaryPaneTabId: null,
+  secondaryPaneTabId: null,
   openingPath: null,
   renderCache: new Map(),
 
@@ -66,8 +101,15 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       const activate = options?.activate ?? true
       const existing = state.tabs.find((t) => t.path === file.path)
       if (existing) {
+        const panePatch =
+          activate && state.splitView
+            ? state.activePane === 'primary'
+              ? { primaryPaneTabId: existing.id }
+              : { secondaryPaneTabId: existing.id }
+            : {}
         return {
           activeTabId: activate ? existing.id : state.activeTabId,
+          ...panePatch,
           renderCache: withoutRenderCache(state.renderCache, [existing.id]),
           tabs: state.tabs.map((t) =>
             t.id === existing.id ? { ...t, content: file.content, error: null } : t,
@@ -84,7 +126,15 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       const insertIndex = activate && activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
       const tabs = [...state.tabs]
       tabs.splice(insertIndex, 0, newTab)
-      return { tabs, activeTabId: activate ? newTab.id : state.activeTabId }
+      const panePatch =
+        activate && state.splitView
+          ? state.activePane === 'primary'
+            ? { primaryPaneTabId: newTab.id }
+            : { secondaryPaneTabId: newTab.id }
+          : activate
+            ? { primaryPaneTabId: newTab.id }
+            : {}
+      return { tabs, activeTabId: activate ? newTab.id : state.activeTabId, ...panePatch }
     }),
 
   openErrorTab: (path, error) =>
@@ -107,7 +157,16 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       const insertIndex = activeIndex >= 0 ? activeIndex + 1 : state.tabs.length
       const tabs = [...state.tabs]
       tabs.splice(insertIndex, 0, newTab)
-      return { tabs, activeTabId: newTab.id }
+      return {
+        tabs,
+        activeTabId: newTab.id,
+        primaryPaneTabId:
+          state.splitView && state.activePane === 'secondary' ? state.primaryPaneTabId : newTab.id,
+        secondaryPaneTabId:
+          state.splitView && state.activePane === 'secondary'
+            ? newTab.id
+            : state.secondaryPaneTabId,
+      }
     }),
 
   closeTab: (tabId) =>
@@ -126,9 +185,36 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
           activeTabId = tabs[tabs.length - 1].id
         }
       }
+      let primaryPaneTabId = existingTabId(tabs, state.primaryPaneTabId)
+      let secondaryPaneTabId = existingTabId(tabs, state.secondaryPaneTabId)
+      if (state.primaryPaneTabId === tabId) {
+        primaryPaneTabId = activeTabId ?? tabs[0]?.id ?? null
+      }
+      if (state.secondaryPaneTabId === tabId) {
+        secondaryPaneTabId = nextDifferentTabId(tabs, primaryPaneTabId)
+      }
+      if (primaryPaneTabId && primaryPaneTabId === secondaryPaneTabId) {
+        secondaryPaneTabId = nextDifferentTabId(tabs, primaryPaneTabId)
+      }
+      const splitView = Boolean(
+        state.splitView &&
+        primaryPaneTabId &&
+        secondaryPaneTabId &&
+        primaryPaneTabId !== secondaryPaneTabId,
+      )
+      const activePane: PaneId =
+        splitView && activeTabId === secondaryPaneTabId ? 'secondary' : 'primary'
+      if (!splitView) {
+        secondaryPaneTabId = null
+        primaryPaneTabId = activeTabId
+      }
       return {
         tabs,
         activeTabId,
+        splitView,
+        activePane,
+        primaryPaneTabId,
+        secondaryPaneTabId,
         renderCache: withoutRenderCache(state.renderCache, [tabId]),
       }
     }),
@@ -144,6 +230,10 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       return {
         tabs: [keep],
         activeTabId: tabId,
+        splitView: false,
+        activePane: 'primary',
+        primaryPaneTabId: tabId,
+        secondaryPaneTabId: null,
         renderCache: withoutRenderCache(state.renderCache, removedIds),
       }
     }),
@@ -161,6 +251,10 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       return {
         tabs,
         activeTabId: stillActive ? state.activeTabId : tabId,
+        splitView: false,
+        activePane: 'primary',
+        primaryPaneTabId: stillActive ? state.activeTabId : tabId,
+        secondaryPaneTabId: null,
         renderCache: withoutRenderCache(
           state.renderCache,
           removed.map((t) => t.id),
@@ -171,7 +265,15 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
   closeAllTabs: () =>
     set((state) => {
       for (const t of state.tabs) unwatchPath(t.path)
-      return { tabs: [], activeTabId: null, renderCache: new Map() }
+      return {
+        tabs: [],
+        activeTabId: null,
+        splitView: false,
+        activePane: 'primary',
+        primaryPaneTabId: null,
+        secondaryPaneTabId: null,
+        renderCache: new Map(),
+      }
     }),
 
   reorderTabs: (fromIndex, toIndex) =>
@@ -200,7 +302,127 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       return { activeTabId: state.tabs[index].id }
     }),
 
-  setActiveTab: (tabId) => set({ activeTabId: tabId }),
+  setActiveTab: (tabId) =>
+    set((state) => {
+      if (!state.splitView) {
+        return { activeTabId: tabId, activePane: 'primary', primaryPaneTabId: tabId }
+      }
+      if (state.activePane === 'primary') {
+        const secondaryPaneTabId =
+          state.secondaryPaneTabId === tabId
+            ? nextDifferentTabId(state.tabs, tabId)
+            : state.secondaryPaneTabId
+        return { activeTabId: tabId, primaryPaneTabId: tabId, secondaryPaneTabId }
+      }
+      const primaryPaneTabId =
+        state.primaryPaneTabId === tabId
+          ? nextDifferentTabId(state.tabs, tabId)
+          : state.primaryPaneTabId
+      return { activeTabId: tabId, primaryPaneTabId, secondaryPaneTabId: tabId }
+    }),
+
+  setActivePane: (pane) =>
+    set((state) => {
+      if (!state.splitView && pane === 'secondary') return state
+      const tabId = pane === 'primary' ? state.primaryPaneTabId : state.secondaryPaneTabId
+      return { activePane: pane, activeTabId: tabId ?? state.activeTabId }
+    }),
+
+  setPaneTab: (pane, tabId) =>
+    set((state) => {
+      if (!state.tabs.some((tab) => tab.id === tabId)) return state
+      const currentPrimary =
+        existingTabId(state.tabs, state.primaryPaneTabId) ??
+        existingTabId(state.tabs, state.activeTabId) ??
+        state.tabs[0]?.id ??
+        null
+      if (pane === 'primary') {
+        const secondary =
+          existingTabId(state.tabs, state.secondaryPaneTabId) ??
+          nextDifferentTabId(state.tabs, tabId)
+        return {
+          splitView: Boolean(secondary),
+          activePane: 'primary',
+          primaryPaneTabId: tabId,
+          secondaryPaneTabId: secondary,
+          activeTabId: tabId,
+        }
+      }
+      return {
+        splitView: true,
+        activePane: 'secondary',
+        primaryPaneTabId:
+          currentPrimary === tabId ? nextDifferentTabId(state.tabs, tabId) : currentPrimary,
+        secondaryPaneTabId: tabId,
+        activeTabId: tabId,
+      }
+    }),
+
+  enableSplitView: () =>
+    set((state) => {
+      const primary =
+        existingTabId(state.tabs, state.primaryPaneTabId) ??
+        existingTabId(state.tabs, state.activeTabId) ??
+        state.tabs[0]?.id ??
+        null
+      const secondary =
+        existingTabId(state.tabs, state.secondaryPaneTabId) ??
+        nextDifferentTabId(state.tabs, primary)
+      return {
+        splitView: Boolean(primary),
+        activePane: 'primary',
+        primaryPaneTabId: primary,
+        secondaryPaneTabId: secondary,
+        activeTabId: primary,
+      }
+    }),
+
+  disableSplitView: () =>
+    set((state) => {
+      const activeTabId =
+        existingTabId(state.tabs, state.activeTabId) ??
+        existingTabId(state.tabs, state.primaryPaneTabId) ??
+        existingTabId(state.tabs, state.secondaryPaneTabId)
+      return {
+        splitView: false,
+        activePane: 'primary',
+        primaryPaneTabId: activeTabId,
+        secondaryPaneTabId: null,
+        activeTabId,
+      }
+    }),
+
+  toggleSplitView: () =>
+    set((state) => {
+      if (state.splitView) {
+        const activeTabId =
+          existingTabId(state.tabs, state.activeTabId) ??
+          existingTabId(state.tabs, state.primaryPaneTabId) ??
+          existingTabId(state.tabs, state.secondaryPaneTabId)
+        return {
+          splitView: false,
+          activePane: 'primary',
+          primaryPaneTabId: activeTabId,
+          secondaryPaneTabId: null,
+          activeTabId,
+        }
+      }
+      const primary =
+        existingTabId(state.tabs, state.primaryPaneTabId) ??
+        existingTabId(state.tabs, state.activeTabId) ??
+        state.tabs[0]?.id ??
+        null
+      const secondary =
+        existingTabId(state.tabs, state.secondaryPaneTabId) ??
+        nextDifferentTabId(state.tabs, primary)
+      return {
+        splitView: Boolean(primary),
+        activePane: 'primary',
+        primaryPaneTabId: primary,
+        secondaryPaneTabId: secondary,
+        activeTabId: primary,
+      }
+    }),
 
   updateTabContent: (path, content) =>
     set((state) => {

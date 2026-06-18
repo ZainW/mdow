@@ -1,9 +1,14 @@
 import { resolve, normalize, extname } from 'path'
+import { DOCUMENT_EXTENSIONS, MD_EXTENSIONS } from '../shared/types'
 
-const MARKDOWN_EXTENSIONS = new Set(['.md', '.markdown', '.mdx'])
+const MARKDOWN_EXTENSIONS = MD_EXTENSIONS
 
 export function isMarkdownPath(path: string): boolean {
   return MARKDOWN_EXTENSIONS.has(extname(path).toLowerCase())
+}
+
+export function isDocumentPath(path: string): boolean {
+  return DOCUMENT_EXTENSIONS.has(extname(path).toLowerCase())
 }
 
 export function validatePath(path: string): string {
@@ -21,6 +26,14 @@ export function validatePath(path: string): string {
 export function validateMarkdownPath(path: string): string {
   const resolved = validatePath(path)
   if (!isMarkdownPath(resolved)) {
+    throw new Error('invalid-extension')
+  }
+  return resolved
+}
+
+export function validateDocumentPath(path: string): string {
+  const resolved = validatePath(path)
+  if (!isDocumentPath(resolved)) {
     throw new Error('invalid-extension')
   }
   return resolved

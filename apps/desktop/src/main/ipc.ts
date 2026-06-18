@@ -5,7 +5,7 @@ import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
 import { isMac } from './platform'
 import { applyWindowChrome } from './window-chrome'
-import { validatePath, validateMarkdownPath, isAllowedExternalUrl } from './path-validation'
+import { validatePath, validateDocumentPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
 
@@ -59,7 +59,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('no-window')
     try {
-      const resolved = validateMarkdownPath(path)
+      const resolved = validateDocumentPath(path)
       const content = await readFileContent(resolved)
       trackRecentFile(() => win, resolved)
       setActiveFileWatch(resolved)
@@ -115,7 +115,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       return
     }
     try {
-      const resolved = validateMarkdownPath(path)
+      const resolved = validateDocumentPath(path)
       registerAllowedFile(resolved)
       setActiveFileWatch(resolved)
     } catch {

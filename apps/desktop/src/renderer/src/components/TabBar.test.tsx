@@ -47,8 +47,8 @@ describe('TabBar', () => {
     const menu = screen.getByRole('menu')
     expect(menu).toBeInTheDocument()
     const items = screen.getAllByRole('menuitem')
-    // Close, Close Others, Close to the Right, Close All, Copy Path, Reveal/Show
-    expect(items.length).toBe(6)
+    // Close, Close Others, Close to the Right, Close All, pane actions, Copy Path, Reveal/Show
+    expect(items.length).toBe(8)
     expect(items[0].textContent).toContain('Close')
   })
 
@@ -102,6 +102,32 @@ describe('TabBar', () => {
     const tabs = screen.getAllByRole('tab')
     fireEvent.click(tabs[1])
     expect(useAppStore.getState().activeTabId).toBe('tab-1')
+  })
+
+  it('exposes an icon control for side-by-side view', () => {
+    seedTabs(['/a/one.md', '/a/two.html'])
+    render(<TabBar />)
+    const splitButton = screen.getByRole('button', { name: 'Open side-by-side view' })
+
+    fireEvent.click(splitButton)
+
+    expect(useAppStore.getState().splitView).toBe(true)
+    expect(screen.getByRole('button', { name: 'Close split view' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('can assign a tab to the right pane from the context menu', () => {
+    seedTabs(['/a/one.md', '/a/two.html'])
+    render(<TabBar />)
+    const tab = screen.getAllByRole('button', { name: /two\.html/ })[0]
+    fireEvent.contextMenu(tab.parentElement!.parentElement!, { clientX: 50, clientY: 20 })
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in Right Pane' }))
+
+    expect(useAppStore.getState().splitView).toBe(true)
+    expect(useAppStore.getState().secondaryPaneTabId).toBe('tab-1')
   })
 
   it('navigates menu items with ArrowDown/ArrowUp', () => {
