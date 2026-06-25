@@ -71,6 +71,7 @@ export interface ElectronAPI {
   onThemeChanged: (callback: (isDark: boolean) => void) => Unsubscribe
   onMenuOpenFile: (callback: () => void) => Unsubscribe
   onMenuOpenFolder: (callback: () => void) => Unsubscribe
+  onMenuOpenRecent: (callback: (path: string) => void) => Unsubscribe
   onMenuFind: (callback: () => void) => Unsubscribe
   onMenuToggleSidebar: (callback: () => void) => Unsubscribe
   onFileOpened: (callback: (file: FileResult) => void) => Unsubscribe
@@ -122,6 +123,7 @@ const api: ElectronAPI = {
   onThemeChanged: (callback) => createIpcListener(IPC.THEME_CHANGED, callback),
   onMenuOpenFile: (callback) => createIpcListener(IPC.MENU_OPEN_FILE, callback),
   onMenuOpenFolder: (callback) => createIpcListener(IPC.MENU_OPEN_FOLDER, callback),
+  onMenuOpenRecent: (callback) => createIpcListener(IPC.MENU_OPEN_RECENT, callback),
   onMenuFind: (callback) => createIpcListener(IPC.MENU_FIND, callback),
   onMenuToggleSidebar: (callback) => createIpcListener(IPC.MENU_TOGGLE_SIDEBAR, callback),
   onFileOpened: (callback) => createIpcListener(IPC.FILE_OPENED, callback),

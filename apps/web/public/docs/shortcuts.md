@@ -13,32 +13,30 @@ Mdow is built for keyboard-first reading. Press **⌘?** (macOS) or **Ctrl+?** (
 
 ## Files
 
-| Action            | macOS | Windows / Linux |
-| ----------------- | ----- | --------------- |
-| Open file         | ⌘O    | Ctrl+O          |
-| Open folder       | ⌘⇧O   | Ctrl+Shift+O    |
-| Close tab         | ⌘W    | Ctrl+W          |
-| Reopen closed tab | ⌘⇧T   | Ctrl+Shift+T    |
+| Action      | macOS | Windows / Linux |
+| ----------- | ----- | --------------- |
+| Open file   | ⌘O    | Ctrl+O          |
+| Open folder | ⌘⇧O   | Ctrl+Shift+O    |
+| Close tab   | ⌘W    | Ctrl+W          |
 
 ## Navigation
 
-| Action           | macOS | Windows / Linux |
-| ---------------- | ----- | --------------- |
-| Command palette  | ⌘K    | Ctrl+K          |
-| Find in document | ⌘F    | Ctrl+F          |
-| Toggle sidebar   | ⌘B    | Ctrl+B          |
-| Next tab         | ⌘⇧]   | Ctrl+Shift+]    |
-| Previous tab     | ⌘⇧[   | Ctrl+Shift+[    |
+| Action             | macOS | Windows / Linux |
+| ------------------ | ----- | --------------- |
+| Command palette    | ⌘K    | Ctrl+K          |
+| Find in document   | ⌘F    | Ctrl+F          |
+| Toggle sidebar     | ⌘B    | Ctrl+B          |
+| Switch tab by slot | ⌘1–9  | Ctrl+1–9        |
+| Next tab           | ⌘⌥→   | Ctrl+Alt+→      |
+| Previous tab       | ⌘⌥←   | Ctrl+Alt+←      |
 
 ## View
 
-| Action       | macOS | Windows / Linux |
-| ------------ | ----- | --------------- |
-| Zoom in      | ⌘+    | Ctrl++          |
-| Zoom out     | ⌘-    | Ctrl+-          |
-| Reset zoom   | ⌘0    | Ctrl+0          |
-| Wide mode    | ⌘⇧W   | Ctrl+Shift+W    |
-| Toggle theme | ⌘⇧L   | Ctrl+Shift+L    |
+| Action     | macOS | Windows / Linux |
+| ---------- | ----- | --------------- |
+| Zoom in    | ⌘+    | Ctrl++          |
+| Zoom out   | ⌘-    | Ctrl+-          |
+| Reset zoom | ⌘0    | Ctrl+0          |
 
 ## App
 
@@ -46,3 +44,7 @@ Mdow is built for keyboard-first reading. Press **⌘?** (macOS) or **Ctrl+?** (
 | --------- | ----- | --------------- |
 | Settings  | ⌘,    | Ctrl+,          |
 | Shortcuts | ⌘?    | Ctrl+?          |
+
+## Command palette actions
+
+Some view actions do not need dedicated global shortcuts. Press `Cmd+K` or `Ctrl+K` to run actions such as opening a file, opening a folder, toggling wide mode, toggling split view, opening settings, and showing keyboard shortcuts.

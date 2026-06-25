@@ -2,6 +2,7 @@ import { Menu, app, BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { isMac } from './platform'
 import { getRecents } from './store'
+import { IPC } from '../shared/types'
 
 function sendToMainWindow(
   getMainWindow: () => BrowserWindow | null,
@@ -22,7 +23,7 @@ function buildRecentSubmenu(
   }
   return recents.map((path) => ({
     label: path.split(/[/\\]/).pop() ?? path,
-    click: () => sendToMainWindow(getMainWindow, 'menu:open-recent', path),
+    click: () => sendToMainWindow(getMainWindow, IPC.MENU_OPEN_RECENT, path),
   }))
 }
 
@@ -62,12 +63,12 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Open File...',
           accelerator: 'CmdOrCtrl+O',
-          click: () => sendToMainWindow(getMainWindow, 'menu:open-file'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_OPEN_FILE),
         },
         {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+Shift+O',
-          click: () => sendToMainWindow(getMainWindow, 'menu:open-folder'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_OPEN_FOLDER),
         },
         {
           label: 'Open Recent',
@@ -77,7 +78,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
-          click: () => sendToMainWindow(getMainWindow, 'menu:close-tab'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_CLOSE_TAB),
         },
         ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }]),
       ],
@@ -96,7 +97,7 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Find...',
           accelerator: 'CmdOrCtrl+F',
-          click: () => sendToMainWindow(getMainWindow, 'menu:find'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_FIND),
         },
       ],
     },
@@ -106,30 +107,30 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
-          click: () => sendToMainWindow(getMainWindow, 'menu:toggle-sidebar'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_TOGGLE_SIDEBAR),
         },
         { type: 'separator' },
         {
           label: 'Settings...',
           accelerator: 'CmdOrCtrl+,',
-          click: () => sendToMainWindow(getMainWindow, 'menu:settings'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_SETTINGS),
         },
         { type: 'separator' },
         ...buildDevToolsItems(),
         {
           label: 'Actual Size',
           accelerator: 'CmdOrCtrl+0',
-          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-reset'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_ZOOM_RESET),
         },
         {
           label: 'Zoom In',
           accelerator: 'CmdOrCtrl+=',
-          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-in'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_ZOOM_IN),
         },
         {
           label: 'Zoom Out',
           accelerator: 'CmdOrCtrl+-',
-          click: () => sendToMainWindow(getMainWindow, 'menu:zoom-out'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_ZOOM_OUT),
         },
         { type: 'separator' },
         { role: 'togglefullscreen' },
@@ -151,13 +152,13 @@ export function createMenu(getMainWindow: () => BrowserWindow | null): void {
         {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
-          click: () => sendToMainWindow(getMainWindow, 'menu:shortcuts'),
+          click: () => sendToMainWindow(getMainWindow, IPC.MENU_SHORTCUTS),
         },
         { type: 'separator' },
         {
           label: 'Check for Updates…',
           click: () => {
-            sendToMainWindow(getMainWindow, 'menu:check-for-updates')
+            sendToMainWindow(getMainWindow, IPC.MENU_CHECK_FOR_UPDATES)
           },
         },
       ],

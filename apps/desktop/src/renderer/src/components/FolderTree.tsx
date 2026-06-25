@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { FileTree as FileTreeModel } from '@pierre/trees'
 import type { FileTreeOptions } from '@pierre/trees'
 import { FileTree as FileTreeView } from '@pierre/trees/react'
@@ -9,6 +9,7 @@ import { basename, detectSep } from '../lib/path-utils'
 import { fileTreeIcons } from '../lib/file-tree-icons'
 import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
 import { Separator } from './ui/separator'
+import { Input } from './ui/input'
 import { Loader2 } from 'lucide-react'
 import { cn, isMac } from '../lib/utils'
 
@@ -111,6 +112,7 @@ export function FolderTree() {
   })
   const openMarkdownFile = useOpenMarkdownFile()
   const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
+  const [filterQuery, setFilterQuery] = useState('')
 
   const normalizedRoot = useMemo(
     () => (openFolderPath ? normalizeRoot(openFolderPath) : ''),
@@ -124,11 +126,21 @@ export function FolderTree() {
     return out
   }, [folderTree, normalizedRoot])
 
+  const filteredPaths = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase()
+    if (!q) return paths
+    return paths.filter((path) => {
+      const normalized = path.toLowerCase()
+      const fileName = basename(path).toLowerCase()
+      return normalized.includes(q) || fileName.includes(q)
+    })
+  }, [filterQuery, paths])
+
   const lastSelectionRef = useRef<string | null>(null)
   const selectionHandlerRef = useRef<(selected: readonly string[]) => void>(() => {})
 
   const model = useStableFileTree(() => ({
-    paths,
+    paths: filteredPaths,
     initialExpansion: 'closed',
     icons: fileTreeIcons,
     onSelectionChange: (selected) => selectionHandlerRef.current(selected),
@@ -149,12 +161,12 @@ export function FolderTree() {
 
   // Keep the model's paths in sync as the user opens different folders or files
   // are added/removed by the watcher.
-  const previousPathsRef = useRef(paths)
+  const previousPathsRef = useRef(filteredPaths)
   useEffect(() => {
-    if (previousPathsRef.current === paths) return
-    previousPathsRef.current = paths
-    model.resetPaths(paths)
-  }, [paths, model])
+    if (previousPathsRef.current === filteredPaths) return
+    previousPathsRef.current = filteredPaths
+    model.resetPaths(filteredPaths)
+  }, [filteredPaths, model])
 
   useEffect(() => {
     if (!activeTab?.path || !normalizedRoot) return
@@ -170,7 +182,7 @@ export function FolderTree() {
       lastSelectionRef.current = rel
       fileHandle.select()
     }
-  }, [activeTab?.path, normalizedRoot, model, paths])
+  }, [activeTab?.path, normalizedRoot, model, filteredPaths])
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -196,7 +208,21 @@ export function FolderTree() {
             {folderName}
           </span>
         </SidebarGroupLabel>
-        <SidebarGroupContent className="flex-1 overflow-hidden">
+        <SidebarGroupContent className="flex flex-1 flex-col overflow-hidden">
+          <div className="shrink-0 px-2 pb-2">
+            <Input
+              value={filterQuery}
+              onChange={(event) => setFilterQuery(event.currentTarget.value)}
+              placeholder="Filter folder..."
+              aria-label="Filter folder"
+              className="h-7"
+            />
+            {filterQuery.trim() && (
+              <p className="mt-1 px-1 text-[10px] text-muted-foreground/70">
+                {filteredPaths.length} match{filteredPaths.length === 1 ? '' : 'es'}
+              </p>
+            )}
+          </div>
           {folderTreeTruncated && (
             <div
               className="mx-2 mb-1 shrink-0 rounded-md border border-border-subtle bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
@@ -206,7 +232,7 @@ export function FolderTree() {
             </div>
           )}
           <div
-            className="folder-tree-host relative h-full"
+            className="folder-tree-host relative min-h-0 flex-1"
             onContextMenu={handleContextMenu}
             title={`Right-click to ${revealLabel.toLowerCase()}`}
           >
@@ -219,9 +245,15 @@ export function FolderTree() {
                 Opening…
               </div>
             )}
-            <div className={cn('h-full', openingPath && 'opacity-60')}>
-              <FileTreeView model={model} style={{ height: '100%' }} />
-            </div>
+            {filteredPaths.length === 0 ? (
+              <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
+                No matching files
+              </div>
+            ) : (
+              <div className={cn('h-full', openingPath && 'opacity-60')}>
+                <FileTreeView model={model} style={{ height: '100%' }} />
+              </div>
+            )}
           </div>
         </SidebarGroupContent>
       </SidebarGroup>

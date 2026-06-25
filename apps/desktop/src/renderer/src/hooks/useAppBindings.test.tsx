@@ -1,15 +1,53 @@
 import { fireEvent, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { useAppKeyboardShortcuts } from './useAppBindings'
+import { useAppKeyboardShortcuts, useAppMenuBindings } from './useAppBindings'
 import { useAppStore } from '../store/app-store'
 import { createMinimalWindowApi, stubWindowApi } from '../test/stubWindowApi'
 
-stubWindowApi(() => createMinimalWindowApi())
+const openMarkdownFileMock = vi.hoisted(() => vi.fn())
+const menuCallbacks = vi.hoisted(() => ({
+  openRecent: null as ((path: string) => void) | null,
+}))
+
+vi.mock('../hooks/useOpenMarkdownFile', () => ({
+  useOpenMarkdownFile: () => openMarkdownFileMock,
+}))
+
+stubWindowApi(() =>
+  createMinimalWindowApi({
+    openFileDialog: vi.fn().mockResolvedValue(null),
+    openFolderDialog: vi.fn().mockResolvedValue(null),
+    setActiveFileWatch: vi.fn().mockResolvedValue(undefined),
+    closeWindow: vi.fn().mockResolvedValue(undefined),
+    onMenuOpenFile: vi.fn(() => vi.fn()),
+    onMenuOpenFolder: vi.fn(() => vi.fn()),
+    onFileOpened: vi.fn(() => vi.fn()),
+    onFileChanged: vi.fn(() => vi.fn()),
+    onFileDeleted: vi.fn(() => vi.fn()),
+    onMenuFind: vi.fn(() => vi.fn()),
+    onMenuToggleSidebar: vi.fn(() => vi.fn()),
+    onMenuZoomIn: vi.fn(() => vi.fn()),
+    onMenuZoomOut: vi.fn(() => vi.fn()),
+    onMenuZoomReset: vi.fn(() => vi.fn()),
+    onMenuShortcuts: vi.fn(() => vi.fn()),
+    onMenuSettings: vi.fn(() => vi.fn()),
+    onMenuCloseTab: vi.fn(() => vi.fn()),
+    onMenuOpenRecent: vi.fn((callback: (path: string) => void) => {
+      menuCallbacks.openRecent = callback
+      return vi.fn()
+    }),
+  }),
+)
 
 function ShortcutsHarness() {
   useAppKeyboardShortcuts()
+  return null
+}
+
+function MenuBindingsHarness() {
+  useAppMenuBindings()
   return null
 }
 
@@ -24,12 +62,18 @@ function renderShortcuts() {
   return render(<ShortcutsHarness />, { wrapper })
 }
 
+function renderMenuBindings() {
+  return render(<MenuBindingsHarness />, { wrapper })
+}
+
 function key(modifiers: Partial<KeyboardEventInit>, key: string) {
   fireEvent.keyDown(window, { key, bubbles: true, ...modifiers })
 }
 
 describe('useAppKeyboardShortcuts', () => {
   beforeEach(() => {
+    openMarkdownFileMock.mockReset()
+    menuCallbacks.openRecent = null
     useAppStore.setState({
       commandPaletteOpen: false,
       searchOpen: false,
@@ -112,5 +156,29 @@ describe('useAppKeyboardShortcuts', () => {
     key({ metaKey: true }, '1')
 
     expect(useAppStore.getState().activeTabId).toBe(useAppStore.getState().tabs[0].id)
+  })
+})
+
+describe('useAppMenuBindings', () => {
+  beforeEach(() => {
+    openMarkdownFileMock.mockReset()
+    menuCallbacks.openRecent = null
+    useAppStore.setState({
+      tabs: [],
+      activeTabId: null,
+      splitView: false,
+      primaryPaneTabId: null,
+      secondaryPaneTabId: null,
+      openingPath: null,
+    })
+  })
+
+  it('opens a recent file from the application menu', () => {
+    renderMenuBindings()
+
+    expect(menuCallbacks.openRecent).toBeTypeOf('function')
+    menuCallbacks.openRecent?.('/docs/recent.md')
+
+    expect(openMarkdownFileMock).toHaveBeenCalledWith('/docs/recent.md')
   })
 })

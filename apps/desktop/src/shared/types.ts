@@ -105,6 +105,7 @@ export const IPC = {
   THEME_CHANGED: 'theme:changed',
   MENU_OPEN_FILE: 'menu:open-file',
   MENU_OPEN_FOLDER: 'menu:open-folder',
+  MENU_OPEN_RECENT: 'menu:open-recent',
   MENU_FIND: 'menu:find',
   MENU_TOGGLE_SIDEBAR: 'menu:toggle-sidebar',
   MENU_ZOOM_IN: 'menu:zoom-in',
