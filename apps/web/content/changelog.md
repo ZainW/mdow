@@ -5,9 +5,16 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.5.0
+## v1.5.1
 
 Latest release.
+
+- Fixed Open Recent from the app menu so recent files open reliably
+- Added command palette actions for files, folders, search, layout, settings, and shortcuts
+- Added folder sidebar filtering with match counts
+- Refreshed docs and shortcut references for the current desktop app
+
+## v1.5.0
 
 - Open and render HTML documents alongside Markdown documents
 - Added sandboxed HTML previews for local files and document links
