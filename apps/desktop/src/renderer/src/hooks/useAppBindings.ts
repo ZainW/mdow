@@ -3,6 +3,7 @@ import { useAppStore } from '../store/app-store'
 import { invalidateRecents } from '../lib/query-keys'
 import { useOpenFileDialog } from './useOpenFileDialog'
 import { useOpenFolderDialog } from './useOpenFolderDialog'
+import { useOpenMarkdownFile } from './useOpenMarkdownFile'
 import { useQueryClient } from '@tanstack/react-query'
 
 function hashContent(content: string): string {
@@ -44,6 +45,7 @@ export function useAppMenuBindings(): void {
   const queryClient = useQueryClient()
   const openFileDialog = useOpenFileDialog()
   const openFolderDialog = useOpenFolderDialog()
+  const openMarkdownFile = useOpenMarkdownFile()
   const openTab = useAppStore((s) => s.openTab)
   const updateTabContent = useAppStore((s) => s.updateTabContent)
   const setTabError = useAppStore((s) => s.setTabError)
@@ -62,6 +64,10 @@ export function useAppMenuBindings(): void {
 
   const onMenuOpenFolder = useEffectEvent(() => {
     void openFolderDialog()
+  })
+
+  const onMenuOpenRecent = useEffectEvent((path: string) => {
+    void openMarkdownFile(path)
   })
 
   const onFileOpened = useEffectEvent((file: { path: string; content: string }) => {
@@ -97,6 +103,7 @@ export function useAppMenuBindings(): void {
     const unsubs = [
       window.api.onMenuOpenFile(() => onMenuOpenFile()),
       window.api.onMenuOpenFolder(() => onMenuOpenFolder()),
+      window.api.onMenuOpenRecent((path) => onMenuOpenRecent(path)),
       window.api.onFileOpened((file) => onFileOpened(file)),
       window.api.onFileChanged((data) => onFileChanged(data)),
       window.api.onFileDeleted((path) => onFileDeleted(path)),

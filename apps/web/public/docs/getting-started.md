@@ -7,13 +7,13 @@ order: 1
 
 # Getting Started
 
-Mdow is a quiet, beautiful markdown viewer for Mac, Windows, and Linux. Open any `.md`, `.markdown`, or `.mdx` file and read it the way it was meant to be read.
+Mdow is a quiet, beautiful document viewer for Mac, Windows, and Linux. Open Markdown or local HTML files and read them in a focused native app.
 
 ## Quick start
 
 1. [Download Mdow](/download) for your platform
 2. Install and launch the app
-3. Open a markdown file, open a folder, or drag files into the window
+3. Open a Markdown or HTML file, open a folder, or drag documents into the window
 
 > **Note:** Mdow is a viewer, not an editor. Pair it with your favorite text editor for the best workflow.
 
@@ -22,6 +22,11 @@ Mdow is a quiet, beautiful markdown viewer for Mac, Windows, and Linux. Open any
 - `.md` — standard Markdown
 - `.markdown` — alternative extension
 - `.mdx` — MDX files (rendered as Markdown)
+- `.html` / `.htm` — local HTML previews in a sandboxed viewer
+
+## Command palette
+
+Press `Cmd+K` (or `Ctrl+K`) to search open-folder files and run common actions such as opening a file, opening a folder, toggling the sidebar, switching wide mode, toggling split view, opening settings, or showing keyboard shortcuts.
 
 ## Keyboard shortcuts
 
