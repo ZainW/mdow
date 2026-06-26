@@ -8,8 +8,20 @@ import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateDocumentPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+import { createDefaultCompanionService, type CompanionService } from './companion/service'
+import {
+  IPC,
+  type CompanionProviderId,
+  type CompanionSendRequest,
+  type CompanionSettings,
+} from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
+type CompanionServiceEntry = {
+  service: CompanionService
+  sender: Electron.WebContents
+  destroyedListener: () => void
+}
 
 let updaterModulePromise: Promise<UpdaterModule> | null = null
 
@@ -43,7 +55,49 @@ function trackRecentFile(getMainWindow: () => BrowserWindow | null, filePath: st
   rebuildMenu(getMainWindow)
 }
 
-export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
+function getCompanionSettings(): CompanionSettings {
+  const state = getAppState()
+  return {
+    provider: state.companionProvider,
+    customCommand: state.companionCustomCommand,
+  }
+}
+
+export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): () => void {
+  const companionServices = new Map<number, CompanionServiceEntry>()
+
+  function companionServiceForSender(sender: Electron.WebContents): CompanionService {
+    const existing = companionServices.get(sender.id)
+    if (existing) {
+      return existing.service
+    }
+
+    const service = createDefaultCompanionService({
+      getSettings: getCompanionSettings,
+      emitUpdate: (update) => {
+        if (sender.isDestroyed()) return
+        sender.send(IPC.COMPANION_UPDATE, update)
+      },
+    })
+    const destroyedListener = () => {
+      service.shutdown()
+      companionServices.delete(sender.id)
+    }
+    companionServices.set(sender.id, { service, sender, destroyedListener })
+    sender.once('destroyed', destroyedListener)
+    return service
+  }
+
+  function removeCompanionService(sender: Electron.WebContents): void {
+    const entry = companionServices.get(sender.id)
+    if (!entry) {
+      return
+    }
+    entry.service.shutdown()
+    entry.sender.off('destroyed', entry.destroyedListener)
+    companionServices.delete(sender.id)
+  }
+
   ipcMain.handle('file:open-dialog', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
@@ -268,4 +322,91 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     const { installUpdate } = await loadInitializedUpdater(getMainWindow)
     installUpdate()
   })
+
+  ipcMain.handle('companion:detect-providers', (event) =>
+    companionServiceForSender(event.sender).detectProviders(),
+  )
+  ipcMain.handle('companion:get-settings', () => getCompanionSettings())
+  ipcMain.handle('companion:save-settings', (_, settings: unknown) => {
+    const companionSettings = validateCompanionSettings(settings)
+    saveAppState({
+      companionProvider: companionSettings.provider,
+      companionCustomCommand: companionSettings.customCommand,
+    })
+  })
+  ipcMain.handle('companion:send', (event, request: unknown) => {
+    const companionRequest = validateCompanionSendRequest(request)
+    return companionServiceForSender(event.sender).send(companionRequest)
+  })
+  ipcMain.handle('companion:cancel', (event) => {
+    companionServices.get(event.sender.id)?.service.cancel()
+  })
+  ipcMain.handle('companion:shutdown', (event) => {
+    removeCompanionService(event.sender)
+  })
+
+  return () => {
+    for (const entry of companionServices.values()) {
+      entry.service.shutdown()
+      entry.sender.off('destroyed', entry.destroyedListener)
+    }
+    companionServices.clear()
+  }
+}
+
+function validateCompanionSettings(value: unknown): CompanionSettings {
+  if (!isRecord(value)) {
+    throw new Error('invalid-companion-settings')
+  }
+  if (!isCompanionProviderId(value.provider) || typeof value.customCommand !== 'string') {
+    throw new Error('invalid-companion-settings')
+  }
+  return { provider: value.provider, customCommand: value.customCommand }
+}
+
+function validateCompanionSendRequest(value: unknown): CompanionSendRequest {
+  if (!isRecord(value)) {
+    throw new Error('invalid-companion-request')
+  }
+  if (
+    typeof value.messageId !== 'string' ||
+    value.messageId.trim() === '' ||
+    typeof value.text !== 'string' ||
+    value.text.trim() === '' ||
+    !isCompanionProviderId(value.provider) ||
+    !isNullableString(value.activePath) ||
+    !isNullableString(value.openFolderPath)
+  ) {
+    throw new Error('invalid-companion-request')
+  }
+  return {
+    messageId: value.messageId,
+    text: value.text,
+    provider: value.provider,
+    activePath: value.activePath,
+    openFolderPath: value.openFolderPath,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isCompanionProviderId(value: unknown): value is CompanionProviderId {
+  if (typeof value !== 'string') {
+    return false
+  }
+  switch (value) {
+    case 'auto':
+    case 'opencode':
+    case 'codex':
+    case 'custom':
+      return true
+    default:
+      return false
+  }
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
 }

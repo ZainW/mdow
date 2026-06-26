@@ -129,11 +129,17 @@ export function useAppKeyboardShortcuts(): void {
   const resetZoom = useAppStore((s) => s.resetZoom)
   const setShortcutsDialogOpen = useAppStore((s) => s.setShortcutsDialogOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const setCompanionOpen = useAppStore((s) => s.setCompanionOpen)
   const cycleTab = useAppStore((s) => s.cycleTab)
   const selectTabByIndex = useAppStore((s) => s.selectTabByIndex)
 
   const onKeyDown = useEffectEvent((e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      setCompanionOpen(!useAppStore.getState().companionOpen)
+      return
+    }
     if (mod && e.key === 'k') {
       e.preventDefault()
       setCommandPaletteOpen(true)

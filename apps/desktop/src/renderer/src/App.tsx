@@ -18,6 +18,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
+import { CompanionFullscreen } from './components/companion/CompanionFullscreen'
+import { CompanionPanel } from './components/companion/CompanionPanel'
 import { SidebarProvider } from './components/ui/sidebar'
 import { Button } from './components/ui/button'
 import { basename, isDocumentPath, isHtmlPath } from './lib/path-utils'
@@ -169,6 +171,8 @@ function MainApp(): React.JSX.Element {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const interfaceScale = useAppStore((s) => s.interfaceScale)
+  const companionOpen = useAppStore((s) => s.companionOpen)
+  const companionFullscreen = useAppStore((s) => s.companionFullscreen)
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
@@ -242,7 +246,7 @@ function MainApp(): React.JSX.Element {
         onDragOver={(e) => e.preventDefault()}
       >
         <TitlebarInset />
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
           <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
             <TabBar />
@@ -250,7 +254,9 @@ function MainApp(): React.JSX.Element {
             <MainContent activeTab={activeTab} />
             <UpdateBanner />
           </main>
+          {companionOpen && <CompanionPanel />}
           <CommandPalette />
+          {companionFullscreen && <CompanionFullscreen />}
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>

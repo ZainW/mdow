@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
 import {
@@ -11,13 +11,14 @@ import {
 } from '../lib/typography'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Switch } from './ui/switch'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { cn } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
-import type { InterfaceScale, ReadingWidth } from '../../../shared/types'
+import type { CompanionProviderId, InterfaceScale, ReadingWidth } from '../../../shared/types'
 
 const DEFAULTS = {
   theme: 'system' as const,
@@ -26,6 +27,8 @@ const DEFAULTS = {
   interfaceScale: 'compact' as const,
   readingWidth: 'standard' as const,
   autoUpdateEnabled: true,
+  companionProvider: 'auto' as const,
+  companionCustomCommand: '',
 }
 
 const THEME_OPTIONS = [
@@ -46,6 +49,13 @@ const READING_WIDTH_OPTIONS = [
   { value: 'wide', label: 'Wide' },
 ] as const satisfies readonly { value: ReadingWidth; label: string }[]
 
+const COMPANION_PROVIDER_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'opencode', label: 'opencode' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'custom', label: 'Custom' },
+] as const satisfies readonly { value: CompanionProviderId; label: string }[]
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -64,9 +74,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setReadingWidth = useAppStore((s) => s.setReadingWidth)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
+  const companionError = useAppStore((s) => s.companionError)
+  const companionProvider = useAppStore((s) => s.companionProvider)
+  const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
+  const setCompanionProvider = useAppStore((s) => s.setCompanionProvider)
+  const setCompanionCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
+  const setCompanionProviders = useAppStore((s) => s.setCompanionProviders)
+  const setCompanionError = useAppStore((s) => s.setCompanionError)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
+  const [companionCustomCommandDraftState, setCompanionCustomCommandDraftState] = useState({
+    committed: companionCustomCommand,
+    draft: companionCustomCommand,
+  })
+  const companionSettingsRequestRef = useRef(0)
+
+  let companionCustomCommandDraft = companionCustomCommandDraftState.draft
+  if (companionCustomCommandDraftState.committed !== companionCustomCommand) {
+    companionCustomCommandDraft = companionCustomCommand
+    setCompanionCustomCommandDraftState({
+      committed: companionCustomCommand,
+      draft: companionCustomCommand,
+    })
+  }
 
   const handleResetDefaults = () => {
     setTheme(DEFAULTS.theme)
@@ -75,11 +106,54 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setInterfaceScale(DEFAULTS.interfaceScale)
     setReadingWidth(DEFAULTS.readingWidth)
     setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
+    setCompanionProvider(DEFAULTS.companionProvider)
+    setCompanionCustomCommand(DEFAULTS.companionCustomCommand)
+    setCompanionCustomCommandDraftState({
+      committed: DEFAULTS.companionCustomCommand,
+      draft: DEFAULTS.companionCustomCommand,
+    })
+    void persistCompanionSettings(DEFAULTS.companionProvider, DEFAULTS.companionCustomCommand)
+  }
+
+  const persistCompanionSettings = async (provider: CompanionProviderId, customCommand: string) => {
+    const requestId = companionSettingsRequestRef.current + 1
+    companionSettingsRequestRef.current = requestId
+
+    try {
+      await window.api.saveCompanionSettings({ provider, customCommand })
+
+      const state = useAppStore.getState()
+      if (state.companionOpen || state.companionFullscreen) {
+        if (requestId !== companionSettingsRequestRef.current) return
+        const providers = await window.api.detectCompanionProviders()
+        if (requestId === companionSettingsRequestRef.current) {
+          setCompanionProviders(providers)
+        }
+      }
+      if (requestId === companionSettingsRequestRef.current) setCompanionError(null)
+    } catch (error) {
+      if (requestId !== companionSettingsRequestRef.current) return
+      setCompanionError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleCompanionProviderChange = (provider: CompanionProviderId) => {
+    setCompanionProvider(provider)
+    void persistCompanionSettings(provider, companionCustomCommand)
+  }
+
+  const handleCompanionCustomCommandCommit = () => {
+    const command = companionCustomCommandDraft
+    const state = useAppStore.getState()
+    if (command === state.companionCustomCommand) return
+
+    setCompanionCustomCommand(command)
+    void persistCompanionSettings(state.companionProvider, command)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5 sm:max-w-md">
+      <DialogContent className="max-h-[calc(100vh-2rem)] gap-5 overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Tune how markdown reads.</DialogDescription>
@@ -182,6 +256,52 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </section>
 
+        <section className="space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">Companion</h3>
+            <p className="text-sm text-muted-foreground">
+              Custom commands run as local subprocesses and should point to an ACP-compatible agent.
+            </p>
+          </div>
+          {companionError && (
+            <div
+              className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs"
+              role="alert"
+            >
+              {companionError}
+            </div>
+          )}
+          <Field label="Provider">
+            <PresetToggleGroup
+              groupLabel="Companion provider"
+              value={companionProvider}
+              options={COMPANION_PROVIDER_OPTIONS}
+              onChange={handleCompanionProviderChange}
+            />
+          </Field>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="settings-companion-custom-command" className="font-medium">
+              Custom ACP command
+            </Label>
+            <Input
+              id="settings-companion-custom-command"
+              aria-label="Custom ACP command"
+              value={companionCustomCommandDraft}
+              onChange={(event) =>
+                setCompanionCustomCommandDraftState({
+                  committed: companionCustomCommand,
+                  draft: event.currentTarget.value,
+                })
+              }
+              onBlur={handleCompanionCustomCommandCommit}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleCompanionCustomCommandCommit()
+              }}
+              placeholder="custom-acp --stdio"
+            />
+          </div>
+        </section>
+
         <div className="flex justify-end border-t border-border-subtle pt-3">
           <Button variant="outline" size="sm" onClick={handleResetDefaults}>
             Reset to defaults
@@ -213,7 +333,10 @@ function PresetToggleGroup<TValue extends string>({
       }}
       variant="outline"
       spacing={0}
-      className="grid w-full grid-cols-3 rounded-md bg-muted p-0.5"
+      className={cn(
+        'grid w-full rounded-md bg-muted p-0.5',
+        options.length === 4 ? 'grid-cols-4' : 'grid-cols-3',
+      )}
     >
       {options.map((opt) => (
         <ToggleGroupItem

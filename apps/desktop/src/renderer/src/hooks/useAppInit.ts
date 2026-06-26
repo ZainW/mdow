@@ -44,6 +44,17 @@ export function useAppInit(): void {
       ) {
         patch.readingWidth = state.readingWidth
       }
+      if (
+        state.companionProvider === 'auto' ||
+        state.companionProvider === 'opencode' ||
+        state.companionProvider === 'codex' ||
+        state.companionProvider === 'custom'
+      ) {
+        patch.companionProvider = state.companionProvider
+      }
+      if (typeof state.companionCustomCommand === 'string') {
+        patch.companionCustomCommand = state.companionCustomCommand
+      }
 
       if (Object.keys(patch).length > 0) {
         useAppStore.setState(patch)
