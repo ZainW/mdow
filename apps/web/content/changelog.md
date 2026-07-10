@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.5.1
+## v1.5.2
 
 Latest release.
+
+- Updated desktop and website dependencies, including Electron, TypeScript, Vite, and build tooling
+- Moved installs to pnpm 11's Rust-based engine for faster dependency setup
+- Kept Electron native dependency preparation reliable under the new install engine
+
+## v1.5.1
 
 - Fixed Open Recent from the app menu so recent files open reliably
 - Added command palette actions for files, folders, search, layout, settings, and shortcuts
