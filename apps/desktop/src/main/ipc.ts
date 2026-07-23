@@ -8,6 +8,8 @@ import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateDocumentPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+import { getCompanionService } from './companion/service'
+import type { CompanionProviderId, CompanionSendPayload, CompanionSettings } from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
 
@@ -267,5 +269,31 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('updater:install', async () => {
     const { installUpdate } = await loadInitializedUpdater(getMainWindow)
     installUpdate()
+  })
+
+  ipcMain.handle('companion:detect-providers', async () => {
+    return getCompanionService(getMainWindow).detectProviders()
+  })
+
+  ipcMain.handle('companion:get-settings', () => getCompanionService(getMainWindow).getSettings())
+
+  ipcMain.handle('companion:save-settings', (_, settings: Partial<CompanionSettings>) => {
+    getCompanionService(getMainWindow).saveSettings(settings)
+  })
+
+  ipcMain.handle('companion:start-session', async (_, providerId?: CompanionProviderId) => {
+    return getCompanionService(getMainWindow).startSession(providerId)
+  })
+
+  ipcMain.handle('companion:send', async (_, payload: CompanionSendPayload) => {
+    await getCompanionService(getMainWindow).send(payload)
+  })
+
+  ipcMain.handle('companion:cancel', async () => {
+    await getCompanionService(getMainWindow).cancel()
+  })
+
+  ipcMain.handle('companion:shutdown', async () => {
+    await getCompanionService(getMainWindow).shutdown()
   })
 }

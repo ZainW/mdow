@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AppState,
+  type CompanionProviderId,
+  type CompanionProviderStatus,
+  type CompanionSendPayload,
+  type CompanionSettings,
+  type CompanionStartResult,
+  type CompanionUpdate,
   type FileResult,
   type FolderOpenResult,
   type ScanResult,
@@ -10,6 +16,15 @@ import {
 
 export type {
   AppState,
+  CompanionCitation,
+  CompanionContextTag,
+  CompanionMessage,
+  CompanionProviderId,
+  CompanionProviderStatus,
+  CompanionSendPayload,
+  CompanionSettings,
+  CompanionStartResult,
+  CompanionUpdate,
   ErrorType,
   FileError,
   FileResult,
@@ -94,6 +109,15 @@ export interface ElectronAPI {
   onUpdateDownloaded: (callback: () => void) => Unsubscribe
   onUpdateError: (callback: (message: string) => void) => Unsubscribe
   onMenuCheckForUpdates: (callback: () => void) => Unsubscribe
+
+  detectCompanionProviders: () => Promise<CompanionProviderStatus[]>
+  getCompanionSettings: () => Promise<CompanionSettings>
+  saveCompanionSettings: (settings: Partial<CompanionSettings>) => Promise<void>
+  startCompanionSession: (providerId?: CompanionProviderId) => Promise<CompanionStartResult>
+  sendCompanionMessage: (payload: CompanionSendPayload) => Promise<void>
+  cancelCompanion: () => Promise<void>
+  shutdownCompanion: () => Promise<void>
+  onCompanionUpdate: (callback: (update: CompanionUpdate) => void) => Unsubscribe
 }
 
 const api: ElectronAPI = {
@@ -146,6 +170,16 @@ const api: ElectronAPI = {
     createIpcListener(IPC.UPDATER_DOWNLOAD_PROGRESS, callback),
   onUpdateDownloaded: (callback) => createIpcListener(IPC.UPDATER_UPDATE_DOWNLOADED, callback),
   onUpdateError: (callback) => createIpcListener(IPC.UPDATER_ERROR, callback),
+
+  detectCompanionProviders: () => ipcRenderer.invoke(IPC.COMPANION_DETECT_PROVIDERS),
+  getCompanionSettings: () => ipcRenderer.invoke(IPC.COMPANION_GET_SETTINGS),
+  saveCompanionSettings: (settings) => ipcRenderer.invoke(IPC.COMPANION_SAVE_SETTINGS, settings),
+  startCompanionSession: (providerId) =>
+    ipcRenderer.invoke(IPC.COMPANION_START_SESSION, providerId),
+  sendCompanionMessage: (payload) => ipcRenderer.invoke(IPC.COMPANION_SEND, payload),
+  cancelCompanion: () => ipcRenderer.invoke(IPC.COMPANION_CANCEL),
+  shutdownCompanion: () => ipcRenderer.invoke(IPC.COMPANION_SHUTDOWN),
+  onCompanionUpdate: (callback) => createIpcListener(IPC.COMPANION_UPDATE, callback),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -126,6 +126,7 @@
     --button-lg-icon-size: 1rem;
 
     --sidebar-drawer-width: 15.25rem;
+    --companion-drawer-width: 20rem;
     --sidebar-title-size: 0.6875rem;
     --sidebar-text-size: 0.75rem;
     --sidebar-row-padding-x: 0.375rem;
@@ -158,6 +159,7 @@
     --button-lg-icon-size: 1.125rem;
 
     --sidebar-drawer-width: 16.5rem;
+    --companion-drawer-width: 22rem;
     --sidebar-title-size: 0.75rem;
     --sidebar-text-size: 0.8125rem;
     --sidebar-row-padding-x: 0.5rem;
@@ -190,6 +192,7 @@
     --button-lg-icon-size: 1.25rem;
 
     --sidebar-drawer-width: 17.5rem;
+    --companion-drawer-width: 24rem;
     --sidebar-title-size: 0.8125rem;
     --sidebar-text-size: 0.875rem;
     --sidebar-row-padding-x: 0.625rem;

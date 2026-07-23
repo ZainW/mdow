@@ -129,6 +129,8 @@ describe('store', () => {
         interfaceScale: 'compact',
         readingWidth: 'standard',
         sidebarMode: 'recents',
+        companionPreferredProvider: null,
+        companionCustomCommand: '',
       })
     })
 

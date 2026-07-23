@@ -17,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { cn } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
-import type { InterfaceScale, ReadingWidth } from '../../../shared/types'
+import type { InterfaceScale, ReadingWidth, CompanionProviderId } from '../../../shared/types'
 
 const DEFAULTS = {
   theme: 'system' as const,
@@ -27,6 +27,12 @@ const DEFAULTS = {
   readingWidth: 'standard' as const,
   autoUpdateEnabled: true,
 }
+
+const PROVIDER_OPTIONS = [
+  { value: 'opencode', label: 'OpenCode' },
+  { value: 'codex-acp', label: 'Codex ACP' },
+  { value: 'custom', label: 'Custom' },
+] as const satisfies readonly { value: CompanionProviderId; label: string }[]
 
 const THEME_OPTIONS = [
   { value: 'system', label: 'System', Icon: Monitor },
@@ -64,6 +70,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setReadingWidth = useAppStore((s) => s.setReadingWidth)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
+  const companionPreferredProvider = useAppStore((s) => s.companionPreferredProvider)
+  const setCompanionPreferredProvider = useAppStore((s) => s.setCompanionPreferredProvider)
+  const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
+  const setCompanionCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
@@ -167,6 +177,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             ))}
           </FontGrid>
         </Field>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium">Companion</h3>
+          <p className="text-xs text-muted-foreground">
+            Local ACP agents only. OpenCode Go is configured inside OpenCode, not here.
+          </p>
+          <PresetToggleGroup
+            groupLabel="Companion provider"
+            value={companionPreferredProvider ?? 'opencode'}
+            options={PROVIDER_OPTIONS}
+            onChange={(value) => setCompanionPreferredProvider(value)}
+          />
+          {companionPreferredProvider === 'custom' && (
+            <label className="block space-y-1 text-xs">
+              <span className="text-muted-foreground">Custom ACP command</span>
+              <input
+                className="w-full rounded-md border border-border-subtle bg-background px-2 py-1.5 text-sm"
+                value={companionCustomCommand}
+                onChange={(e) => setCompanionCustomCommand(e.target.value)}
+                placeholder="path/to/agent --acp"
+              />
+            </label>
+          )}
+        </section>
 
         <section className="space-y-2">
           <h3 className="text-sm font-medium">Updates</h3>

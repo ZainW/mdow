@@ -27,6 +27,85 @@ export type InterfaceScale = 'compact' | 'comfortable' | 'large'
 export type ReadingWidth = 'standard' | 'comfortable' | 'wide'
 export type PaneId = 'primary' | 'secondary'
 
+export type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
+
+export type CompanionProviderAvailability = 'available' | 'missing' | 'failed'
+
+export interface CompanionProviderStatus {
+  id: CompanionProviderId
+  label: string
+  commandDisplay: string
+  availability: CompanionProviderAvailability
+  detail?: string
+}
+
+export interface CompanionSettings {
+  preferredProvider: CompanionProviderId | null
+  customCommand: string
+}
+
+export type CompanionContextTagKind = 'file' | 'folder'
+
+export interface CompanionContextTag {
+  kind: CompanionContextTagKind
+  path: string
+  sourceId: string
+}
+
+export interface CompanionCitation {
+  sourceId: string
+  path: string
+  headingId?: string
+  label: string
+}
+
+export type CompanionMessageRole = 'user' | 'assistant' | 'system'
+
+export interface CompanionMessage {
+  id: string
+  role: CompanionMessageRole
+  content: string
+  citations?: CompanionCitation[]
+  status?: 'streaming' | 'complete' | 'error' | 'cancelled'
+}
+
+export interface CompanionContextSource {
+  sourceId: string
+  path: string
+  headingId?: string
+  excerpt: string
+  bytes: number
+}
+
+export interface CompanionContextPacket {
+  sources: CompanionContextSource[]
+  warnings: string[]
+  summary: string
+}
+
+export type CompanionUpdate =
+  | { kind: 'delta'; text: string }
+  | { kind: 'status'; message: string }
+  | { kind: 'citation'; citation: CompanionCitation }
+  | { kind: 'warning'; message: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'done'; messageId: string }
+  | { kind: 'context'; summary: string; warnings: string[] }
+
+export interface CompanionSendPayload {
+  text: string
+  activePath: string | null
+  openFolderPath: string | null
+  tags: CompanionContextTag[]
+  providerId?: CompanionProviderId
+}
+
+export interface CompanionStartResult {
+  ok: boolean
+  providerId: CompanionProviderId | null
+  error?: string
+}
+
 export interface AppState {
   recents?: string[]
   zoomLevel: number
@@ -46,6 +125,8 @@ export interface AppState {
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
+  companionPreferredProvider: CompanionProviderId | null
+  companionCustomCommand: string
 }
 
 export interface FolderOpenResult extends ScanResult {
@@ -124,4 +205,12 @@ export const IPC = {
   UPDATER_DOWNLOAD_PROGRESS: 'updater:download-progress',
   UPDATER_UPDATE_DOWNLOADED: 'updater:update-downloaded',
   UPDATER_ERROR: 'updater:error',
+  COMPANION_DETECT_PROVIDERS: 'companion:detect-providers',
+  COMPANION_GET_SETTINGS: 'companion:get-settings',
+  COMPANION_SAVE_SETTINGS: 'companion:save-settings',
+  COMPANION_START_SESSION: 'companion:start-session',
+  COMPANION_SEND: 'companion:send',
+  COMPANION_CANCEL: 'companion:cancel',
+  COMPANION_SHUTDOWN: 'companion:shutdown',
+  COMPANION_UPDATE: 'companion:update',
 } as const

@@ -18,6 +18,11 @@ import { CommandPalette } from './components/CommandPalette'
 import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
+import {
+  CompanionFullscreen,
+  CompanionPanel,
+  useCompanionBootstrap,
+} from './components/companion/CompanionPanel'
 import { SidebarProvider } from './components/ui/sidebar'
 import { Button } from './components/ui/button'
 import { basename, isDocumentPath, isHtmlPath } from './lib/path-utils'
@@ -176,6 +181,7 @@ function MainApp(): React.JSX.Element {
   useFolderTree(openFolderPath)
   useAppMenuBindings()
   useAppKeyboardShortcuts()
+  useCompanionBootstrap()
 
   useEffect(() => {
     document.documentElement.dataset.uiScale = interfaceScale
@@ -250,7 +256,9 @@ function MainApp(): React.JSX.Element {
             <MainContent activeTab={activeTab} />
             <UpdateBanner />
           </main>
+          <CompanionPanel />
           <CommandPalette />
+          <CompanionFullscreen />
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>

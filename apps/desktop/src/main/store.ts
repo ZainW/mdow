@@ -16,6 +16,7 @@ interface WindowBounds {
 type SidebarMode = 'recents' | 'folder' | 'outline'
 type InterfaceScale = 'compact' | 'comfortable' | 'large'
 type ReadingWidth = 'standard' | 'comfortable' | 'wide'
+type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
 
 interface StoreSchema {
   recents: string[]
@@ -32,6 +33,8 @@ interface StoreSchema {
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
+  companionPreferredProvider: CompanionProviderId | null
+  companionCustomCommand: string
 }
 
 const store = new Store<StoreSchema>({
@@ -50,6 +53,8 @@ const store = new Store<StoreSchema>({
     interfaceScale: 'compact',
     readingWidth: 'standard',
     sidebarMode: 'recents',
+    companionPreferredProvider: null,
+    companionCustomCommand: '',
   },
 })
 
@@ -93,6 +98,8 @@ export function getAppState() {
     interfaceScale: store.get('interfaceScale'),
     readingWidth: store.get('readingWidth'),
     sidebarMode: store.get('sidebarMode'),
+    companionPreferredProvider: store.get('companionPreferredProvider'),
+    companionCustomCommand: store.get('companionCustomCommand'),
   }
 }
 
@@ -112,6 +119,34 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.interfaceScale !== undefined) store.set('interfaceScale', state.interfaceScale)
   if (state.readingWidth !== undefined) store.set('readingWidth', state.readingWidth)
   if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
+  if (state.companionPreferredProvider !== undefined) {
+    store.set('companionPreferredProvider', state.companionPreferredProvider)
+  }
+  if (state.companionCustomCommand !== undefined) {
+    store.set('companionCustomCommand', state.companionCustomCommand)
+  }
+}
+
+export function getCompanionSettings(): {
+  preferredProvider: CompanionProviderId | null
+  customCommand: string
+} {
+  return {
+    preferredProvider: store.get('companionPreferredProvider'),
+    customCommand: store.get('companionCustomCommand'),
+  }
+}
+
+export function saveCompanionSettings(settings: {
+  preferredProvider?: CompanionProviderId | null
+  customCommand?: string
+}): void {
+  if (settings.preferredProvider !== undefined) {
+    store.set('companionPreferredProvider', settings.preferredProvider)
+  }
+  if (settings.customCommand !== undefined) {
+    store.set('companionCustomCommand', settings.customCommand)
+  }
 }
 
 export function getWindowBounds(): WindowBounds | null {
