@@ -3,6 +3,7 @@ import type {
   CompanionCitation,
   CompanionContextTag,
   CompanionMessage,
+  CompanionPart,
   CompanionProviderId,
   CompanionProviderStatus,
   CompanionUpdate,
@@ -36,6 +37,89 @@ export interface CompanionSlice {
 }
 
 let streamingAssistantId: string | null = null
+
+function ensureAssistant(messages: CompanionMessage[]): {
+  messages: CompanionMessage[]
+  id: string
+} {
+  if (streamingAssistantId) {
+    return { messages, id: streamingAssistantId }
+  }
+  streamingAssistantId = crypto.randomUUID()
+  return {
+    id: streamingAssistantId,
+    messages: [
+      ...messages,
+      {
+        id: streamingAssistantId,
+        role: 'assistant',
+        content: '',
+        parts: [],
+        status: 'streaming',
+        citations: [],
+      },
+    ],
+  }
+}
+
+function mapAssistant(
+  messages: CompanionMessage[],
+  id: string,
+  map: (message: CompanionMessage) => CompanionMessage,
+): CompanionMessage[] {
+  return messages.map((m) => (m.id === id ? map(m) : m))
+}
+
+function upsertPart(parts: CompanionPart[], part: CompanionPart): CompanionPart[] {
+  if (part.kind === 'text') {
+    const last = parts.at(-1)
+    if (last?.kind === 'text') {
+      return [...parts.slice(0, -1), { kind: 'text', text: last.text + part.text }]
+    }
+    return [...parts, part]
+  }
+  if (part.kind === 'thinking') {
+    const idx = parts.findLastIndex((p) => p.kind === 'thinking')
+    if (idx >= 0) {
+      const existing = parts[idx]
+      if (existing.kind !== 'thinking') return [...parts, part]
+      if (existing.done) return [...parts, part]
+      const next = [...parts]
+      next[idx] = {
+        kind: 'thinking',
+        text: existing.text + part.text,
+        done: part.done,
+      }
+      return next
+    }
+    return [...parts, part]
+  }
+  if (part.kind === 'tool') {
+    const idx = parts.findIndex((p) => p.kind === 'tool' && p.toolCallId === part.toolCallId)
+    if (idx >= 0) {
+      const next = [...parts]
+      const existing = parts[idx]
+      if (existing.kind !== 'tool') return [...parts, part]
+      next[idx] = {
+        ...existing,
+        ...part,
+        input: part.input ?? existing.input,
+        output: part.output ?? existing.output,
+        error: part.error ?? existing.error,
+      }
+      return next
+    }
+    return [...parts, part]
+  }
+  return [...parts, part]
+}
+
+function textFromParts(parts: CompanionPart[]): string {
+  return parts
+    .filter((p): p is Extract<CompanionPart, { kind: 'text' }> => p.kind === 'text')
+    .map((p) => p.text)
+    .join('')
+}
 
 export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (
   set,
@@ -93,47 +177,91 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     })),
   appendCompanionMessage: (message) =>
     set((state) => ({
-      companionMessages: [...state.companionMessages, message],
+      companionMessages: [
+        ...state.companionMessages,
+        {
+          ...message,
+          parts:
+            message.parts ?? (message.content ? [{ kind: 'text', text: message.content }] : []),
+        },
+      ],
       companionError: message.role === 'user' ? null : state.companionError,
     })),
   applyCompanionUpdate: (update) => {
     switch (update.kind) {
       case 'delta':
         set((state) => {
-          if (!streamingAssistantId) {
-            streamingAssistantId = crypto.randomUUID()
-            return {
-              companionStreaming: true,
-              companionMessages: [
-                ...state.companionMessages,
-                {
-                  id: streamingAssistantId,
-                  role: 'assistant',
-                  content: update.text,
-                  status: 'streaming',
-                  citations: [],
-                },
-              ],
-            }
-          }
+          const ensured = ensureAssistant(state.companionMessages)
           return {
             companionStreaming: true,
-            companionMessages: state.companionMessages.map((m) =>
-              m.id === streamingAssistantId
-                ? { ...m, content: m.content + update.text, status: 'streaming' }
-                : m,
-            ),
+            companionMessages: mapAssistant(ensured.messages, ensured.id, (m) => {
+              const parts = upsertPart(m.parts, { kind: 'text', text: update.text })
+              return { ...m, parts, content: textFromParts(parts), status: 'streaming' }
+            }),
+          }
+        })
+        break
+      case 'thinking':
+        set((state) => {
+          const ensured = ensureAssistant(state.companionMessages)
+          return {
+            companionStreaming: true,
+            companionMessages: mapAssistant(ensured.messages, ensured.id, (m) => ({
+              ...m,
+              parts: upsertPart(m.parts, { kind: 'thinking', text: update.text, done: false }),
+              status: 'streaming',
+            })),
+          }
+        })
+        break
+      case 'thinking-done':
+        set((state) => {
+          if (!streamingAssistantId) return state
+          return {
+            companionMessages: mapAssistant(state.companionMessages, streamingAssistantId, (m) => ({
+              ...m,
+              parts: m.parts.map((p) => (p.kind === 'thinking' ? { ...p, done: true } : p)),
+            })),
+          }
+        })
+        break
+      case 'tool':
+        set((state) => {
+          const ensured = ensureAssistant(state.companionMessages)
+          return {
+            companionStreaming: true,
+            companionMessages: mapAssistant(ensured.messages, ensured.id, (m) => ({
+              ...m,
+              parts: upsertPart(m.parts, {
+                kind: 'tool',
+                toolCallId: update.toolCallId,
+                name: update.name,
+                state: update.state,
+                input: update.input,
+                output: update.output,
+                error: update.error,
+              }),
+              status: 'streaming',
+            })),
           }
         })
         break
       case 'status':
+        set((state) => {
+          const ensured = ensureAssistant(state.companionMessages)
+          return {
+            companionMessages: mapAssistant(ensured.messages, ensured.id, (m) => ({
+              ...m,
+              parts: upsertPart(m.parts, { kind: 'status', message: update.message }),
+            })),
+          }
+        })
         break
       case 'citation':
         set((state) => {
           if (!streamingAssistantId) return state
           return {
-            companionMessages: state.companionMessages.map((m) => {
-              if (m.id !== streamingAssistantId) return m
+            companionMessages: mapAssistant(state.companionMessages, streamingAssistantId, (m) => {
               const citations: CompanionCitation[] = [...(m.citations ?? []), update.citation]
               return { ...m, citations }
             }),
@@ -161,7 +289,11 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
           companionStreaming: false,
           companionMessages: state.companionMessages.map((m) =>
             m.id === update.messageId || m.status === 'streaming'
-              ? { ...m, status: 'complete' }
+              ? {
+                  ...m,
+                  status: 'complete',
+                  parts: m.parts.map((p) => (p.kind === 'thinking' ? { ...p, done: true } : p)),
+                }
               : m,
           ),
         }))

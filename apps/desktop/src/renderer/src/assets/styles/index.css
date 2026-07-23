@@ -753,3 +753,12 @@ mark.search-highlight.search-highlight-active {
   flex: 1 1 auto;
   min-height: 0;
 }
+
+@keyframes companion-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}

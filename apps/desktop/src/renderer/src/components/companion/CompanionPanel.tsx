@@ -8,7 +8,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { cn } from '@renderer/lib/utils'
 import { basename } from '../../lib/path-utils'
 import { fuzzySearch } from '../../lib/fuzzy-search'
-import type { CompanionProviderStatus, TreeNode } from '../../../../shared/types'
+import type { CompanionMessage, CompanionProviderStatus, TreeNode } from '../../../../shared/types'
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+} from '../ai-elements/conversation'
+import { Message, MessageContent, MessageResponse } from '../ai-elements/message'
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '../ai-elements/reasoning'
+import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from '../ai-elements/tool'
+import { Source, SourcesCollapsible } from '../ai-elements/sources'
 
 function flattenMarkdownPaths(nodes: TreeNode[]): { path: string; name: string }[] {
   const out: { path: string; name: string }[] = []
@@ -20,6 +29,14 @@ function flattenMarkdownPaths(nodes: TreeNode[]): { path: string; name: string }
   }
   walk(nodes)
   return out
+}
+
+function openCitation(path: string) {
+  window.dispatchEvent(
+    new CustomEvent('mdow:open-document-link', {
+      detail: { path },
+    }),
+  )
 }
 
 function CompanionSetup({ providers }: { providers: CompanionProviderStatus[] }) {
@@ -107,6 +124,68 @@ function CompanionSetup({ providers }: { providers: CompanionProviderStatus[] })
   )
 }
 
+function AssistantParts({ message }: { message: CompanionMessage }) {
+  const streaming = message.status === 'streaming'
+  const lastTextIndex = message.parts.findLastIndex((p) => p.kind === 'text')
+  return (
+    <>
+      {message.parts.map((part, index) => {
+        if (part.kind === 'thinking') {
+          return (
+            <Reasoning key={`${message.id}-think-${index}`} isStreaming={!part.done && streaming}>
+              <ReasoningTrigger />
+              <ReasoningContent>{part.text}</ReasoningContent>
+            </Reasoning>
+          )
+        }
+        if (part.kind === 'tool') {
+          return (
+            <Tool
+              key={part.toolCallId}
+              defaultOpen={part.state === 'running' || part.state === 'error'}
+            >
+              <ToolHeader name={part.name} state={part.state} />
+              <ToolContent>
+                <ToolInput input={part.input} />
+                <ToolOutput output={part.output} error={part.error} />
+              </ToolContent>
+            </Tool>
+          )
+        }
+        if (part.kind === 'status') {
+          return (
+            <p key={`${message.id}-status-${index}`} className="text-xs text-muted-foreground">
+              {part.message}
+            </p>
+          )
+        }
+        if (part.kind === 'text') {
+          return (
+            <MessageResponse
+              key={`${message.id}-text-${index}`}
+              streaming={streaming && index === lastTextIndex}
+            >
+              {part.text}
+            </MessageResponse>
+          )
+        }
+        return null
+      })}
+      {message.citations && message.citations.length > 0 && (
+        <SourcesCollapsible count={message.citations.length} defaultOpen>
+          {message.citations.map((c) => (
+            <Source
+              key={`${message.id}-${c.sourceId}`}
+              title={c.label}
+              onClick={() => openCitation(c.path)}
+            />
+          ))}
+        </SourcesCollapsible>
+      )}
+    </>
+  )
+}
+
 function CompanionMessages() {
   const messages = useAppStore((s) => s.companionMessages)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -117,47 +196,31 @@ function CompanionMessages() {
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-        Ask about the open docs. Use @ to tag a file.
-      </div>
+      <ConversationEmptyState
+        icon={<MessageSquare className="size-5 text-muted-foreground/60" />}
+        title="Ask about these docs"
+        description="Use @ to tag a file. Answers stream with thinking, tools, and source chips."
+      />
     )
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-      {messages.map((m) => (
-        <div
-          key={m.id}
-          className={cn(
-            'rounded-md px-2.5 py-2 text-sm leading-5',
-            m.role === 'user' ? 'bg-muted/60 text-foreground' : 'bg-transparent text-foreground',
-          )}
-        >
-          <p className="whitespace-pre-wrap">{m.content}</p>
-          {m.citations && m.citations.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {m.citations.map((c) => (
-                <button
-                  key={`${m.id}-${c.sourceId}`}
-                  type="button"
-                  className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent('mdow:open-document-link', {
-                        detail: { path: c.path },
-                      }),
-                    )
-                  }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-      <div ref={bottomRef} />
-    </div>
+    <Conversation>
+      <ConversationContent>
+        {messages.map((m) => (
+          <Message key={m.id} from={m.role === 'system' ? 'assistant' : m.role}>
+            <MessageContent>
+              {m.role === 'user' ? (
+                <p className="whitespace-pre-wrap">{m.content}</p>
+              ) : (
+                <AssistantParts message={m} />
+              )}
+            </MessageContent>
+          </Message>
+        ))}
+        <div ref={bottomRef} />
+      </ConversationContent>
+    </Conversation>
   )
 }
 
@@ -187,7 +250,13 @@ function CompanionComposer() {
     const trimmed = text.trim()
     if (!trimmed || streaming) return
     const id = crypto.randomUUID()
-    appendMessage({ id, role: 'user', content: trimmed, status: 'complete' })
+    appendMessage({
+      id,
+      role: 'user',
+      content: trimmed,
+      parts: [{ kind: 'text', text: trimmed }],
+      status: 'complete',
+    })
     setText('')
     setMentionQuery(null)
     try {
@@ -302,9 +371,10 @@ function CompanionBody({
 }) {
   const providers = useAppStore((s) => s.companionProviders)
   const preferred = useAppStore((s) => s.companionPreferredProvider)
+  const customCommand = useAppStore((s) => s.companionCustomCommand)
 
   const hasProvider =
-    preferred === 'custom' ||
+    (preferred === 'custom' && customCommand.trim().length > 0) ||
     providers.some((p) => p.id === preferred && p.availability === 'available') ||
     providers.some((p) => p.availability === 'available')
 

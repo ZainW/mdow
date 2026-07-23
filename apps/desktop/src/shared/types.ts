@@ -61,10 +61,27 @@ export interface CompanionCitation {
 
 export type CompanionMessageRole = 'user' | 'assistant' | 'system'
 
+export type CompanionToolState = 'pending' | 'running' | 'completed' | 'error' | 'cancelled'
+
+export type CompanionPart =
+  | { kind: 'text'; text: string }
+  | { kind: 'thinking'; text: string; done: boolean }
+  | {
+      kind: 'tool'
+      toolCallId: string
+      name: string
+      state: CompanionToolState
+      input?: string
+      output?: string
+      error?: string
+    }
+  | { kind: 'status'; message: string }
+
 export interface CompanionMessage {
   id: string
   role: CompanionMessageRole
   content: string
+  parts: CompanionPart[]
   citations?: CompanionCitation[]
   status?: 'streaming' | 'complete' | 'error' | 'cancelled'
 }
@@ -85,6 +102,17 @@ export interface CompanionContextPacket {
 
 export type CompanionUpdate =
   | { kind: 'delta'; text: string }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'thinking-done' }
+  | {
+      kind: 'tool'
+      toolCallId: string
+      name: string
+      state: CompanionToolState
+      input?: string
+      output?: string
+      error?: string
+    }
   | { kind: 'status'; message: string }
   | { kind: 'citation'; citation: CompanionCitation }
   | { kind: 'warning'; message: string }

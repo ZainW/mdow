@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { Readable, Writable } from 'stream'
 import { describe, expect, it, vi } from 'vitest'
+import type { CompanionUpdate } from '../../shared/types'
 import { AcpClient } from './acp-client'
 
 class FakeChild extends EventEmitter {
@@ -44,6 +45,36 @@ class FakeChild extends EventEmitter {
             params: {
               sessionId: 'sess_test',
               update: {
+                sessionUpdate: 'agent_thought_chunk',
+                content: { type: 'text', text: 'Thinking…' },
+              },
+            },
+          })}\n`,
+        )
+        this.stdout.push(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              sessionId: 'sess_test',
+              update: {
+                sessionUpdate: 'tool_call',
+                toolCallId: 'tool_1',
+                title: 'read',
+                status: 'completed',
+                rawInput: { path: 'a.md' },
+                rawOutput: 'ok',
+              },
+            },
+          })}\n`,
+        )
+        this.stdout.push(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              sessionId: 'sess_test',
+              update: {
                 sessionUpdate: 'agent_message_chunk',
                 content: { type: 'text', text: 'Hello from agent' },
               },
@@ -70,7 +101,7 @@ class FakeChild extends EventEmitter {
 
 describe('Companion ACP client', () => {
   it('initializes, creates a session, and streams prompt deltas', async () => {
-    const updates: { kind: string; text?: string }[] = []
+    const updates: CompanionUpdate[] = []
     const fake = new FakeChild()
     const client = new AcpClient({
       command: 'fake-agent',
@@ -84,6 +115,17 @@ describe('Companion ACP client', () => {
     await client.prompt('What is this?')
 
     expect(client.getSessionId()).toBe('sess_test')
+    expect(updates.some((u) => u.kind === 'thinking' && u.text === 'Thinking…')).toBe(true)
+    expect(updates.some((u) => u.kind === 'thinking-done')).toBe(true)
+    expect(
+      updates.some(
+        (u) =>
+          u.kind === 'tool' &&
+          u.toolCallId === 'tool_1' &&
+          u.name === 'read' &&
+          u.state === 'completed',
+      ),
+    ).toBe(true)
     expect(updates.some((u) => u.kind === 'delta' && u.text === 'Hello from agent')).toBe(true)
     await client.shutdown()
   })

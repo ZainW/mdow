@@ -60,19 +60,79 @@ function extractTextFromContent(content: unknown): string {
   return parts.join('')
 }
 
-function textFromSessionUpdate(update: unknown): string | null {
+function textFromSessionUpdate(
+  update: unknown,
+): { channel: 'message' | 'thinking'; text: string } | null {
   if (!isRecord(update)) return null
   const kind = update.sessionUpdate ?? update.type
-  if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
-    if (isRecord(update.content)) {
-      if (typeof update.content.text === 'string') return update.content.text
+  if (kind === 'agent_thought_chunk') {
+    let text = ''
+    if (isRecord(update.content) && typeof update.content.text === 'string') {
+      text = update.content.text
+    } else {
+      text = extractTextFromContent(update.content)
     }
-    const nested = extractTextFromContent(update.content)
-    if (nested) return nested
+    return text ? { channel: 'thinking', text } : null
   }
-  if (kind === 'message' && typeof update.text === 'string') return update.text
-  if (typeof update.text === 'string') return update.text
+  if (kind === 'agent_message_chunk' || kind === 'message') {
+    let text = ''
+    if (isRecord(update.content) && typeof update.content.text === 'string') {
+      text = update.content.text
+    } else if (typeof update.text === 'string') {
+      text = update.text
+    } else {
+      text = extractTextFromContent(update.content)
+    }
+    return text ? { channel: 'message', text } : null
+  }
+  if (typeof update.text === 'string') return { channel: 'message', text: update.text }
   return null
+}
+
+function toolFromSessionUpdate(update: unknown): CompanionUpdate | null {
+  if (!isRecord(update)) return null
+  const kind = update.sessionUpdate ?? update.type
+  if (kind !== 'tool_call' && kind !== 'tool_call_update') return null
+
+  const toolCallId =
+    (typeof update.toolCallId === 'string' && update.toolCallId) ||
+    (typeof update.id === 'string' && update.id) ||
+    crypto.randomUUID()
+  const name =
+    (typeof update.title === 'string' && update.title) ||
+    (typeof update.kind === 'string' && update.kind) ||
+    (typeof update.name === 'string' && update.name) ||
+    'tool'
+
+  let state: 'pending' | 'running' | 'completed' | 'error' | 'cancelled' = 'running'
+  const rawStatus = typeof update.status === 'string' ? update.status : ''
+  if (rawStatus === 'pending' || rawStatus === 'in_progress') state = 'running'
+  if (rawStatus === 'completed' || rawStatus === 'success') state = 'completed'
+  if (rawStatus === 'failed' || rawStatus === 'error') state = 'error'
+  if (rawStatus === 'cancelled') state = 'cancelled'
+  if (kind === 'tool_call' && !rawStatus) state = 'pending'
+
+  const input =
+    typeof update.rawInput === 'string'
+      ? update.rawInput
+      : update.rawInput !== undefined
+        ? JSON.stringify(update.rawInput, null, 2)
+        : undefined
+  const output =
+    typeof update.rawOutput === 'string'
+      ? update.rawOutput
+      : update.content !== undefined
+        ? JSON.stringify(update.content, null, 2)
+        : undefined
+
+  return {
+    kind: 'tool',
+    toolCallId,
+    name,
+    state,
+    input,
+    output,
+  }
 }
 
 export class AcpClient {
@@ -87,6 +147,7 @@ export class AcpClient {
   private readonly cwd: string | undefined
   private readonly spawnImpl: typeof spawn
   private closed = false
+  private lastTextChannel: 'message' | 'thinking' | null = null
 
   constructor(options: AcpClientOptions) {
     this.command = options.command
@@ -161,6 +222,7 @@ export class AcpClient {
 
   async prompt(text: string): Promise<void> {
     if (!this.sessionId) throw new Error('No ACP session')
+    this.lastTextChannel = null
     await this.request('session/prompt', {
       sessionId: this.sessionId,
       prompt: [{ type: 'text', text }],
@@ -240,8 +302,27 @@ export class AcpClient {
   ): Promise<void> {
     if (method === 'session/update') {
       if (isRecord(params)) {
-        const text = textFromSessionUpdate(params.update ?? params)
-        if (text) this.onUpdate({ kind: 'delta', text })
+        const update = params.update ?? params
+        const tool = toolFromSessionUpdate(update)
+        if (tool) {
+          if (this.lastTextChannel === 'thinking') {
+            this.onUpdate({ kind: 'thinking-done' })
+            this.lastTextChannel = null
+          }
+          this.onUpdate(tool)
+          return
+        }
+        const textUpdate = textFromSessionUpdate(update)
+        if (textUpdate?.channel === 'thinking') {
+          this.onUpdate({ kind: 'thinking', text: textUpdate.text })
+          this.lastTextChannel = 'thinking'
+        } else if (textUpdate?.channel === 'message') {
+          if (this.lastTextChannel === 'thinking') {
+            this.onUpdate({ kind: 'thinking-done' })
+          }
+          this.onUpdate({ kind: 'delta', text: textUpdate.text })
+          this.lastTextChannel = 'message'
+        }
       }
       return
     }
