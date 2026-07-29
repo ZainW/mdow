@@ -36,6 +36,29 @@ describe('Companion slice', () => {
     expect(useAppStore.getState().companionMessages[0].status).toBe('complete')
   })
 
+  it('enters a cancellable request state before the first agent update', () => {
+    useAppStore.getState().beginCompanionRequest()
+
+    const state = useAppStore.getState()
+    expect(state.companionStreaming).toBe(true)
+    expect(state.companionMessages).toHaveLength(1)
+    expect(state.companionMessages[0]).toMatchObject({
+      role: 'assistant',
+      status: 'streaming',
+      parts: [],
+    })
+  })
+
+  it('marks the active assistant response cancelled', () => {
+    useAppStore.getState().beginCompanionRequest()
+    const messageId = useAppStore.getState().companionMessages[0].id
+
+    useAppStore.getState().applyCompanionUpdate({ kind: 'cancelled', messageId })
+
+    expect(useAppStore.getState().companionStreaming).toBe(false)
+    expect(useAppStore.getState().companionMessages[0].status).toBe('cancelled')
+  })
+
   it('keeps thinking and tool parts separate from answer text', () => {
     useAppStore.getState().applyCompanionUpdate({ kind: 'thinking', text: 'hmm' })
     useAppStore.getState().applyCompanionUpdate({ kind: 'thinking', text: '…' })

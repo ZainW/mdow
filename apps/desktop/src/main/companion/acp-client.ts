@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import packageJson from '../../../package.json' with { type: 'json' }
 import type { CompanionUpdate } from '../../shared/types'
 
 type JsonRpcId = number | string
@@ -43,7 +44,10 @@ export interface AcpClientOptions {
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
+  timeout: ReturnType<typeof setTimeout>
 }
+
+const REQUEST_TIMEOUT_MS = 30_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -121,9 +125,11 @@ function toolFromSessionUpdate(update: unknown): CompanionUpdate | null {
   const output =
     typeof update.rawOutput === 'string'
       ? update.rawOutput
-      : update.content !== undefined
-        ? JSON.stringify(update.content, null, 2)
-        : undefined
+      : update.rawOutput !== undefined
+        ? JSON.stringify(update.rawOutput, null, 2)
+        : update.content !== undefined
+          ? JSON.stringify(update.content, null, 2)
+          : undefined
 
   return {
     kind: 'tool',
@@ -169,11 +175,7 @@ export class AcpClient {
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => this.onStdout(chunk))
     child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (chunk: string) => {
-      if (chunk.trim()) {
-        this.onUpdate({ kind: 'status', message: chunk.trim().slice(0, 240) })
-      }
-    })
+    child.stderr.on('data', () => undefined)
     child.on('error', (err) => {
       this.failAll(err)
       this.onUpdate({ kind: 'error', message: err.message })
@@ -190,18 +192,16 @@ export class AcpClient {
       clientInfo: {
         name: 'mdow',
         title: 'Mdow',
-        version: '1.5.1',
+        version: packageJson.version,
       },
       clientCapabilities: {
         fs: {
-          readTextFile: true,
+          readTextFile: false,
           writeTextFile: false,
         },
         terminal: false,
       },
     })
-
-    await this.notify('notifications/initialized', {})
   }
 
   async createSession(cwd: string): Promise<string> {
@@ -234,18 +234,22 @@ export class AcpClient {
     await this.notify('session/cancel', { sessionId: this.sessionId })
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> {
     this.closed = true
     this.failAll(new Error('ACP client shut down'))
     const child = this.process
     this.process = null
-    if (!child) return
+    if (!child) return Promise.resolve()
     child.stdin.end()
     child.kill()
+    return Promise.resolve()
   }
 
   private failAll(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error)
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeout)
+      pending.reject(error)
+    }
     this.pending.clear()
   }
 
@@ -278,6 +282,7 @@ export class AcpClient {
       const pending = this.pending.get(message.id)
       if (!pending) return
       this.pending.delete(message.id)
+      clearTimeout(pending.timeout)
       if ('error' in message && message.error) {
         pending.reject(new Error(message.error.message))
       } else if ('result' in message) {
@@ -287,19 +292,11 @@ export class AcpClient {
     }
 
     if ('method' in message && typeof message.method === 'string') {
-      void this.handleIncoming(
-        message.method,
-        message.params,
-        'id' in message ? message.id : undefined,
-      )
+      this.handleIncoming(message.method, message.params, 'id' in message ? message.id : undefined)
     }
   }
 
-  private async handleIncoming(
-    method: string,
-    params: unknown,
-    id: JsonRpcId | undefined,
-  ): Promise<void> {
+  private handleIncoming(method: string, params: unknown, id: JsonRpcId | undefined): void {
     if (method === 'session/update') {
       if (isRecord(params)) {
         const update = params.update ?? params
@@ -380,18 +377,24 @@ export class AcpClient {
     const id = this.nextId++
     const payload: JsonRpcRequest = { jsonrpc: '2.0', id, method, params }
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timeout = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`ACP ${method} timed out after ${REQUEST_TIMEOUT_MS}ms`))
+      }, REQUEST_TIMEOUT_MS)
+      this.pending.set(id, { resolve, reject, timeout })
       try {
         this.send(payload)
       } catch (err) {
+        clearTimeout(timeout)
         this.pending.delete(id)
         reject(err instanceof Error ? err : new Error(String(err)))
       }
     })
   }
 
-  private async notify(method: string, params: unknown): Promise<void> {
+  private notify(method: string, params: unknown): Promise<void> {
     this.send({ jsonrpc: '2.0', method, params })
+    return Promise.resolve()
   }
 
   private send(message: object): void {

@@ -6,7 +6,7 @@ import {
 import { cn } from '@renderer/lib/utils'
 import { BrainIcon, ChevronDownIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { CompanionMarkdown } from './markdown'
 import { Shimmer } from './shimmer'
 
@@ -34,26 +34,15 @@ export function Reasoning({
   isStreaming?: boolean
   defaultOpen?: boolean
 }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen ?? isStreaming)
-
-  useEffect(() => {
-    if (isStreaming) setIsOpen(true)
-  }, [isStreaming])
-
-  useEffect(() => {
-    if (!isStreaming && defaultOpen === undefined) {
-      const timer = window.setTimeout(() => setIsOpen(false), 800)
-      return () => window.clearTimeout(timer)
-    }
-    return undefined
-  }, [isStreaming, defaultOpen])
+  const [isOpen, setIsOpen] = useState(defaultOpen ?? false)
+  const context = useMemo(() => ({ isStreaming, isOpen, setIsOpen }), [isStreaming, isOpen])
 
   return (
-    <ReasoningContext.Provider value={{ isStreaming, isOpen, setIsOpen }}>
+    <ReasoningContext.Provider value={context}>
       <Collapsible
         open={isOpen}
         onOpenChange={setIsOpen}
-        className={cn('not-prose mb-2 w-full rounded-md border border-border-subtle', className)}
+        className={cn('not-prose w-full border-y border-border-subtle', className)}
         {...props}
       >
         {children}
@@ -71,7 +60,7 @@ export function ReasoningTrigger({
   return (
     <CollapsibleTrigger
       className={cn(
-        'flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs text-muted-foreground hover:text-foreground',
+        'flex w-full items-center gap-2 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground',
         className,
       )}
       {...props}
@@ -96,10 +85,7 @@ export function ReasoningContent({
   const { isStreaming } = useReasoning()
   return (
     <CollapsibleContent
-      className={cn(
-        'border-t border-border-subtle px-2.5 py-2 text-xs text-muted-foreground',
-        className,
-      )}
+      className={cn('border-t border-border-subtle py-2 text-xs text-muted-foreground', className)}
       {...props}
     >
       <CompanionMarkdown text={children} streaming={isStreaming} />

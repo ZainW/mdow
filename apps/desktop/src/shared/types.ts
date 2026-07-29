@@ -118,6 +118,7 @@ export type CompanionUpdate =
   | { kind: 'warning'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'done'; messageId: string }
+  | { kind: 'cancelled'; messageId: string }
   | { kind: 'context'; summary: string; warnings: string[] }
 
 export interface CompanionSendPayload {

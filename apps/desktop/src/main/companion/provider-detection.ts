@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-await-in-loop -- PATH candidates are checked in deterministic shell order. */
 import { access } from 'fs/promises'
 import { constants } from 'fs'
 import { delimiter, join } from 'path'
@@ -74,8 +75,8 @@ export function resolveProviderCommand(
       }
     }
     default: {
-      const _exhaustive: never = id
-      void _exhaustive
+      const exhaustive: never = id
+      void exhaustive
       return null
     }
   }

@@ -250,7 +250,7 @@ function MainApp(): React.JSX.Element {
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
-          <main aria-label="Document" className="flex flex-1 flex-col overflow-hidden">
+          <main aria-label="Document" className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <TabBar />
             {activeTab && !splitView && <DocumentBreadcrumb tab={activeTab} />}
             <MainContent activeTab={activeTab} />

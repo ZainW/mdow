@@ -16,10 +16,16 @@ class FakeChild extends EventEmitter {
   stderr = new Readable({ read() {} })
   written: string[] = []
   private requestCount = 0
+  ignoredMethods = new Set<string>()
 
   respondTo(chunk: string): void {
     for (const line of chunk.split('\n').filter(Boolean)) {
-      const msg = JSON.parse(line) as { id?: number; method?: string }
+      const msg = JSON.parse(line) as {
+        id?: number
+        method?: string
+        params?: Record<string, unknown>
+      }
+      if (msg.method && this.ignoredMethods.has(msg.method)) continue
       if (msg.method === 'initialize' && msg.id !== undefined) {
         this.stdout.push(
           `${JSON.stringify({
@@ -63,7 +69,7 @@ class FakeChild extends EventEmitter {
                 title: 'read',
                 status: 'completed',
                 rawInput: { path: 'a.md' },
-                rawOutput: 'ok',
+                rawOutput: { result: 'ok' },
               },
             },
           })}\n`,
@@ -111,6 +117,26 @@ describe('Companion ACP client', () => {
     })
 
     await client.start()
+    const writtenMessages = fake.written
+      .flatMap((chunk) => chunk.split('\n'))
+      .filter(Boolean)
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            method?: string
+            params?: {
+              clientInfo?: { version?: string }
+              clientCapabilities?: { fs?: { readTextFile?: boolean } }
+            }
+          },
+      )
+    const initialize = writtenMessages.find((message) => message.method === 'initialize')
+    expect(initialize?.params?.clientInfo?.version).toBe('1.5.2')
+    expect(initialize?.params?.clientCapabilities?.fs?.readTextFile).toBe(false)
+    expect(writtenMessages.map((message) => message.method)).not.toContain(
+      'notifications/initialized',
+    )
+
     await client.createSession('/tmp/docs')
     await client.prompt('What is this?')
 
@@ -123,11 +149,59 @@ describe('Companion ACP client', () => {
           u.kind === 'tool' &&
           u.toolCallId === 'tool_1' &&
           u.name === 'read' &&
-          u.state === 'completed',
+          u.state === 'completed' &&
+          u.output === '{\n  "result": "ok"\n}',
       ),
     ).toBe(true)
     expect(updates.some((u) => u.kind === 'delta' && u.text === 'Hello from agent')).toBe(true)
     await client.shutdown()
+  })
+
+  it('does not surface subprocess diagnostics as conversation status', async () => {
+    const updates: CompanionUpdate[] = []
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: (update) => updates.push(update),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+
+    await client.start()
+    fake.stderr.push('agent diagnostic output\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(updates).not.toContainEqual({
+      kind: 'status',
+      message: 'agent diagnostic output',
+    })
+    await client.shutdown()
+  })
+
+  it('times out unanswered ACP requests and clears them', async () => {
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: vi.fn(),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+    await client.start()
+    fake.ignoredMethods.add('session/new')
+    vi.useFakeTimers()
+
+    let rejection: Error | undefined
+    const pending = client.createSession('/tmp/docs').catch((error: unknown) => {
+      rejection = error instanceof Error ? error : new Error(String(error))
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(30_001)
+      expect(rejection?.message).toMatch(/session\/new timed out/i)
+    } finally {
+      await client.shutdown()
+      await pending
+      vi.useRealTimers()
+    }
   })
 
   it('refuses write and terminal requests from the agent', async () => {

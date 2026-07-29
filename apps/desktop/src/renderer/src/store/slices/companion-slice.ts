@@ -31,6 +31,8 @@ export interface CompanionSlice {
   addCompanionTag: (tag: CompanionContextTag) => void
   removeCompanionTag: (sourceId: string) => void
   appendCompanionMessage: (message: CompanionMessage) => void
+  beginCompanionRequest: () => void
+  cancelCompanionRequest: () => void
   applyCompanionUpdate: (update: CompanionUpdate) => void
   clearCompanionError: () => void
   resetCompanionConversation: () => void
@@ -187,6 +189,36 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
       ],
       companionError: message.role === 'user' ? null : state.companionError,
     })),
+  beginCompanionRequest: () =>
+    set((state) => {
+      if (state.companionStreaming) return state
+      const ensured = ensureAssistant(state.companionMessages)
+      return {
+        companionStreaming: true,
+        companionError: null,
+        companionMessages: mapAssistant(ensured.messages, ensured.id, (message) => ({
+          ...message,
+          status: 'streaming',
+        })),
+      }
+    }),
+  cancelCompanionRequest: () => {
+    streamingAssistantId = null
+    set((state) => ({
+      companionStreaming: false,
+      companionMessages: state.companionMessages.map((message) =>
+        message.status === 'streaming'
+          ? {
+              ...message,
+              status: 'cancelled',
+              parts: message.parts.map((part) =>
+                part.kind === 'thinking' ? { ...part, done: true } : part,
+              ),
+            }
+          : message,
+      ),
+    }))
+  },
   applyCompanionUpdate: (update) => {
     switch (update.kind) {
       case 'delta':
@@ -298,6 +330,23 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
           ),
         }))
         break
+      case 'cancelled':
+        streamingAssistantId = null
+        set((state) => ({
+          companionStreaming: false,
+          companionMessages: state.companionMessages.map((message) =>
+            message.id === update.messageId || message.status === 'streaming'
+              ? {
+                  ...message,
+                  status: 'cancelled',
+                  parts: message.parts.map((part) =>
+                    part.kind === 'thinking' ? { ...part, done: true } : part,
+                  ),
+                }
+              : message,
+          ),
+        }))
+        break
       case 'context':
         set({
           companionContextSummary: update.summary,
@@ -305,8 +354,8 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
         })
         break
       default: {
-        const _exhaustive: never = update
-        void _exhaustive
+        const exhaustive: never = update
+        void exhaustive
       }
     }
   },

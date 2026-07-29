@@ -35,7 +35,7 @@ const statusIcons: Record<CompanionToolState, ReactNode> = {
 export function Tool({ className, ...props }: ComponentProps<typeof Collapsible>) {
   return (
     <Collapsible
-      className={cn('not-prose mb-2 w-full rounded-md border border-border-subtle', className)}
+      className={cn('not-prose w-full border-b border-border-subtle', className)}
       {...props}
     />
   )
@@ -52,15 +52,12 @@ export function ToolHeader({
 }) {
   return (
     <CollapsibleTrigger
-      className={cn(
-        'flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-muted/40',
-        className,
-      )}
+      className={cn('flex w-full items-center gap-2 py-1.5 text-left text-xs', className)}
       {...props}
     >
       <WrenchIcon className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{name}</span>
-      <Badge variant="secondary" className="gap-1 font-normal">
+      <Badge variant="secondary" className="gap-1 py-0.5 pr-1.5 pl-0.5 font-normal">
         {statusIcons[state]}
         {statusLabels[state]}
       </Badge>
@@ -72,7 +69,7 @@ export function ToolHeader({
 export function ToolContent({ className, ...props }: ComponentProps<typeof CollapsibleContent>) {
   return (
     <CollapsibleContent
-      className={cn('border-t border-border-subtle px-2.5 py-2 text-xs', className)}
+      className={cn('border-t border-border-subtle py-2 text-xs', className)}
       {...props}
     />
   )

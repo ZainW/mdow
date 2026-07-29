@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { cn } from '@renderer/lib/utils'
 
 function escapeHtml(text: string): string {
@@ -116,11 +116,7 @@ export function CompanionMarkdown({
   streaming?: boolean
   className?: string
 }) {
-  const [html, setHtml] = useState('')
-
-  useEffect(() => {
-    setHtml(markdownToHtml(text))
-  }, [text])
+  const html = useMemo(() => markdownToHtml(text), [text])
 
   if (!text) return null
 

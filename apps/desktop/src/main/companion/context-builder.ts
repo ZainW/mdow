@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-await-in-loop -- Source order is semantic and each read updates the shared byte budget. */
 import { basename } from 'path'
 import { readFileContent } from '../file-service'
 import { scanFolder } from '../folder-service'

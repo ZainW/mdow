@@ -13,11 +13,85 @@ import { AcpClient } from './acp-client'
 import { buildCompanionContext, formatContextPrompt } from './context-builder'
 import { detectCompanionProviders, resolveProviderCommand } from './provider-detection'
 
+interface CitationStreamResult {
+  text: string
+  citationIds: string[]
+}
+
+export class CitationStream {
+  private buffer = ''
+  private readonly sourceIds: string[]
+  private readonly emittedIds = new Set<string>()
+
+  constructor(sourceIds: Iterable<string>) {
+    this.sourceIds = [...new Set(sourceIds)].toSorted((a, b) => b.length - a.length)
+  }
+
+  consume(text: string): CitationStreamResult {
+    this.buffer += text
+    const citationIds = this.removeKnownSourceIds()
+    this.buffer = this.removeEmptyCitationWrappers(this.buffer)
+
+    const carryLength = this.getCarryLength()
+    const visibleLength = this.buffer.length - carryLength
+    const visible = this.buffer.slice(0, visibleLength)
+    this.buffer = this.buffer.slice(visibleLength)
+    return { text: visible, citationIds }
+  }
+
+  flush(): CitationStreamResult {
+    const citationIds = this.removeKnownSourceIds()
+    const text = this.removeEmptyCitationWrappers(this.buffer)
+    this.buffer = ''
+    return { text, citationIds }
+  }
+
+  private removeKnownSourceIds(): string[] {
+    const citationIds: string[] = []
+    for (const sourceId of this.sourceIds) {
+      if (!this.buffer.includes(sourceId)) continue
+      this.buffer = this.buffer.replaceAll(sourceId, '')
+      if (!this.emittedIds.has(sourceId)) {
+        this.emittedIds.add(sourceId)
+        citationIds.push(sourceId)
+      }
+    }
+    return citationIds
+  }
+
+  private removeEmptyCitationWrappers(text: string): string {
+    return text.replace(/\(\s*\)/g, '').replace(/\[\s*\]/g, '')
+  }
+
+  private getCarryLength(): number {
+    let carryLength = 0
+    for (const sourceId of this.sourceIds) {
+      const maxPrefixLength = Math.min(sourceId.length - 1, this.buffer.length)
+      for (let length = maxPrefixLength; length > carryLength; length -= 1) {
+        if (this.buffer.endsWith(sourceId.slice(0, length))) {
+          carryLength = length
+          break
+        }
+      }
+    }
+
+    const carryStart = this.buffer.length - carryLength
+    if (carryLength > 0 && /[([]/.test(this.buffer.charAt(carryStart - 1))) {
+      carryLength += 1
+    } else if (carryLength === 0 && /[([]$/.test(this.buffer)) {
+      carryLength = 1
+    }
+    return carryLength
+  }
+}
+
 export class CompanionService {
   private client: AcpClient | null = null
   private activeProvider: CompanionProviderId | null = null
   private lastSources = new Map<string, { path: string; headingId?: string; label: string }>()
   private streamingMessageId: string | null = null
+  private citationStream = new CitationStream([])
+  private activeRequestToken: symbol | null = null
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
@@ -64,7 +138,7 @@ export class CompanionService {
       return { ok: true, providerId: preferred }
     }
 
-    await this.shutdown()
+    await this.shutdownClient()
 
     const client = new AcpClient({
       command: command.command,
@@ -92,99 +166,123 @@ export class CompanionService {
   }
 
   async send(payload: CompanionSendPayload): Promise<void> {
-    const cwd = payload.openFolderPath ?? process.cwd()
-    const start = await this.startSession(payload.providerId, cwd)
-    if (!start.ok || !this.client) {
+    if (this.activeRequestToken) {
       this.emit({
-        kind: 'error',
-        message: start.error ?? 'Companion provider failed to start',
+        kind: 'warning',
+        message: 'Wait for the current response or cancel it first.',
       })
       return
     }
 
-    const packet = await buildCompanionContext({
-      activePath: payload.activePath,
-      openFolderPath: payload.openFolderPath,
-      tags: payload.tags,
-    })
-
-    this.lastSources.clear()
-    for (const source of packet.sources) {
-      this.lastSources.set(source.sourceId, {
-        path: source.path,
-        headingId: source.headingId,
-        label: source.path.split(/[/\\]/).pop() ?? source.path,
-      })
-    }
-
-    this.emit({
-      kind: 'context',
-      summary: packet.summary,
-      warnings: packet.warnings,
-    })
-
-    this.streamingMessageId = randomUUID()
-    const prompt = formatContextPrompt(packet, payload.text)
+    const requestToken = Symbol('companion-request')
+    this.activeRequestToken = requestToken
+    let messageId: string | null = null
 
     try {
-      await this.client.prompt(prompt)
-      this.emit({ kind: 'done', messageId: this.streamingMessageId })
-    } catch (err) {
-      this.emit({
-        kind: 'error',
-        message: err instanceof Error ? err.message : 'Prompt failed',
+      const cwd = payload.openFolderPath ?? process.cwd()
+      const start = await this.startSession(payload.providerId, cwd)
+      if (!start.ok || !this.client) {
+        throw new Error(start.error ?? 'Companion provider failed to start')
+      }
+
+      const packet = await buildCompanionContext({
+        activePath: payload.activePath,
+        openFolderPath: payload.openFolderPath,
+        tags: payload.tags,
       })
+
+      this.lastSources.clear()
+      for (const source of packet.sources) {
+        this.lastSources.set(source.sourceId, {
+          path: source.path,
+          headingId: source.headingId,
+          label: source.path.split(/[/\\]/).pop() ?? source.path,
+        })
+      }
+
+      this.emit({
+        kind: 'context',
+        summary: packet.summary,
+        warnings: packet.warnings,
+      })
+
+      this.citationStream = new CitationStream(this.lastSources.keys())
+      messageId = randomUUID()
+      this.streamingMessageId = messageId
+      const prompt = formatContextPrompt(packet, payload.text)
+      await this.client.prompt(prompt)
+      if (this.activeRequestToken !== requestToken || this.streamingMessageId !== messageId) {
+        return
+      }
+      this.emitCitationResult(this.citationStream.flush())
+      this.emit({ kind: 'done', messageId })
+    } catch (err) {
+      if (this.activeRequestToken === requestToken) {
+        this.emit({
+          kind: 'error',
+          message: err instanceof Error ? err.message : 'Prompt failed',
+        })
+      }
     } finally {
-      this.streamingMessageId = null
+      if (messageId && this.streamingMessageId === messageId) {
+        this.streamingMessageId = null
+      }
+      if (this.activeRequestToken === requestToken) {
+        this.activeRequestToken = null
+      }
     }
   }
 
   async cancel(): Promise<void> {
+    const messageId = this.streamingMessageId
+    this.streamingMessageId = null
+    this.activeRequestToken = null
+    this.citationStream = new CitationStream([])
     await this.client?.cancel()
-    if (this.streamingMessageId) {
-      this.emit({ kind: 'done', messageId: this.streamingMessageId })
-      this.streamingMessageId = null
+    if (messageId) {
+      this.emit({ kind: 'cancelled', messageId })
     }
   }
 
   async shutdown(): Promise<void> {
+    this.activeRequestToken = null
+    await this.shutdownClient()
+  }
+
+  private async shutdownClient(): Promise<void> {
     const client = this.client
     this.client = null
     this.activeProvider = null
     this.streamingMessageId = null
+    this.citationStream = new CitationStream([])
     if (client) await client.shutdown()
   }
 
   private handleClientUpdate(update: CompanionUpdate): void {
     if (update.kind === 'delta') {
-      const citations = this.extractCitationIds(update.text)
-      this.emit(update)
-      for (const sourceId of citations) {
-        const source = this.lastSources.get(sourceId)
-        if (!source) continue
-        this.emit({
-          kind: 'citation',
-          citation: {
-            sourceId,
-            path: source.path,
-            headingId: source.headingId,
-            label: source.label,
-          },
-        })
-      }
+      this.emitCitationResult(this.citationStream.consume(update.text))
       return
     }
     this.emit(update)
   }
 
-  private extractCitationIds(text: string): string[] {
-    const matches = text.matchAll(/\b(src:[^\s)\]"'`]+)/g)
-    const ids: string[] = []
-    for (const match of matches) {
-      const id = match[1]
-      if (this.lastSources.has(id)) ids.push(id)
+  private emitCitationResult(result: CitationStreamResult): void {
+    if (result.text) {
+      this.emit({ kind: 'delta', text: result.text })
     }
-    return [...new Set(ids)]
+    for (const sourceId of result.citationIds) {
+      const source = this.lastSources.get(sourceId)
+      if (!source) continue
+      this.emit({
+        kind: 'citation',
+        citation: {
+          sourceId,
+          path: source.path,
+          headingId: source.headingId,
+          label: source.label,
+        },
+      })
+    }
   }
 }
 
