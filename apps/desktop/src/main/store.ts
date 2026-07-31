@@ -119,12 +119,6 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.interfaceScale !== undefined) store.set('interfaceScale', state.interfaceScale)
   if (state.readingWidth !== undefined) store.set('readingWidth', state.readingWidth)
   if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
-  if (state.companionPreferredProvider !== undefined) {
-    store.set('companionPreferredProvider', state.companionPreferredProvider)
-  }
-  if (state.companionCustomCommand !== undefined) {
-    store.set('companionCustomCommand', state.companionCustomCommand)
-  }
 }
 
 export function getCompanionSettings(): {

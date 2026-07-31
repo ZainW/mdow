@@ -161,12 +161,7 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     }
     set({ companionPreferredProvider: id })
   },
-  setCompanionCustomCommand: (command) => {
-    if (typeof window !== 'undefined' && window.api) {
-      void window.api.saveCompanionSettings({ customCommand: command })
-    }
-    set({ companionCustomCommand: command })
-  },
+  setCompanionCustomCommand: (command) => set({ companionCustomCommand: command }),
   setCompanionTags: (tags) => set({ companionTags: tags }),
   addCompanionTag: (tag) =>
     set((state) => {

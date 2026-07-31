@@ -204,6 +204,33 @@ describe('Companion ACP client', () => {
     }
   })
 
+  it('does not apply the setup timeout to a long-running prompt', async () => {
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: vi.fn(),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+    await client.start()
+    await client.createSession('/tmp/docs')
+    fake.ignoredMethods.add('session/prompt')
+    vi.useFakeTimers()
+
+    let settled = false
+    const pending = client.prompt('Take your time').finally(() => {
+      settled = true
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(30_001)
+      expect(settled).toBe(false)
+    } finally {
+      await client.shutdown()
+      await expect(pending).rejects.toThrow(/shut down/i)
+      vi.useRealTimers()
+    }
+  })
+
   it('refuses write and terminal requests from the agent', async () => {
     const updates: { kind: string; message?: string }[] = []
     const fake = new FakeChild()

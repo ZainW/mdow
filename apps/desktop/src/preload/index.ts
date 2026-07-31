@@ -1,3 +1,4 @@
+/* oxlint-disable typescript/no-unnecessary-type-assertion -- The listener overload implementation must narrow a zero-argument callback separately from a payload callback. */
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
@@ -112,7 +113,10 @@ export interface ElectronAPI {
 
   detectCompanionProviders: () => Promise<CompanionProviderStatus[]>
   getCompanionSettings: () => Promise<CompanionSettings>
-  saveCompanionSettings: (settings: Partial<CompanionSettings>) => Promise<void>
+  saveCompanionSettings: (
+    settings: Pick<Partial<CompanionSettings>, 'preferredProvider'>,
+  ) => Promise<void>
+  chooseCompanionCustomExecutable: () => Promise<string | null>
   startCompanionSession: (providerId?: CompanionProviderId) => Promise<CompanionStartResult>
   sendCompanionMessage: (payload: CompanionSendPayload) => Promise<void>
   cancelCompanion: () => Promise<void>
@@ -174,6 +178,7 @@ const api: ElectronAPI = {
   detectCompanionProviders: () => ipcRenderer.invoke(IPC.COMPANION_DETECT_PROVIDERS),
   getCompanionSettings: () => ipcRenderer.invoke(IPC.COMPANION_GET_SETTINGS),
   saveCompanionSettings: (settings) => ipcRenderer.invoke(IPC.COMPANION_SAVE_SETTINGS, settings),
+  chooseCompanionCustomExecutable: () => ipcRenderer.invoke(IPC.COMPANION_CHOOSE_CUSTOM_EXECUTABLE),
   startCompanionSession: (providerId) =>
     ipcRenderer.invoke(IPC.COMPANION_START_SESSION, providerId),
   sendCompanionMessage: (payload) => ipcRenderer.invoke(IPC.COMPANION_SEND, payload),

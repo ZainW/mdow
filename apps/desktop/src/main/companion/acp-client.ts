@@ -44,7 +44,7 @@ export interface AcpClientOptions {
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
-  timeout: ReturnType<typeof setTimeout>
+  timeout: ReturnType<typeof setTimeout> | null
 }
 
 const REQUEST_TIMEOUT_MS = 30_000
@@ -223,10 +223,14 @@ export class AcpClient {
   async prompt(text: string): Promise<void> {
     if (!this.sessionId) throw new Error('No ACP session')
     this.lastTextChannel = null
-    await this.request('session/prompt', {
-      sessionId: this.sessionId,
-      prompt: [{ type: 'text', text }],
-    })
+    await this.request(
+      'session/prompt',
+      {
+        sessionId: this.sessionId,
+        prompt: [{ type: 'text', text }],
+      },
+      null,
+    )
   }
 
   async cancel(): Promise<void> {
@@ -247,7 +251,7 @@ export class AcpClient {
 
   private failAll(error: Error): void {
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeout)
+      if (pending.timeout) clearTimeout(pending.timeout)
       pending.reject(error)
     }
     this.pending.clear()
@@ -282,7 +286,7 @@ export class AcpClient {
       const pending = this.pending.get(message.id)
       if (!pending) return
       this.pending.delete(message.id)
-      clearTimeout(pending.timeout)
+      if (pending.timeout) clearTimeout(pending.timeout)
       if ('error' in message && message.error) {
         pending.reject(new Error(message.error.message))
       } else if ('result' in message) {
@@ -373,19 +377,26 @@ export class AcpClient {
     }
   }
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  private request(
+    method: string,
+    params: unknown,
+    timeoutMs: number | null = REQUEST_TIMEOUT_MS,
+  ): Promise<unknown> {
     const id = this.nextId++
     const payload: JsonRpcRequest = { jsonrpc: '2.0', id, method, params }
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(`ACP ${method} timed out after ${REQUEST_TIMEOUT_MS}ms`))
-      }, REQUEST_TIMEOUT_MS)
+      const timeout =
+        timeoutMs === null
+          ? null
+          : setTimeout(() => {
+              this.pending.delete(id)
+              reject(new Error(`ACP ${method} timed out after ${timeoutMs}ms`))
+            }, timeoutMs)
       this.pending.set(id, { resolve, reject, timeout })
       try {
         this.send(payload)
       } catch (err) {
-        clearTimeout(timeout)
+        if (timeout) clearTimeout(timeout)
         this.pending.delete(id)
         reject(err instanceof Error ? err : new Error(String(err)))
       }

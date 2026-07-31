@@ -237,6 +237,7 @@ export const IPC = {
   COMPANION_DETECT_PROVIDERS: 'companion:detect-providers',
   COMPANION_GET_SETTINGS: 'companion:get-settings',
   COMPANION_SAVE_SETTINGS: 'companion:save-settings',
+  COMPANION_CHOOSE_CUSTOM_EXECUTABLE: 'companion:choose-custom-executable',
   COMPANION_START_SESSION: 'companion:start-session',
   COMPANION_SEND: 'companion:send',
   COMPANION_CANCEL: 'companion:cancel',

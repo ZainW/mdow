@@ -9,7 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { cn, isMac } from '@renderer/lib/utils'
 import { basename } from '../../lib/path-utils'
 import { fuzzySearch } from '../../lib/fuzzy-search'
-import type { CompanionMessage, CompanionProviderStatus, TreeNode } from '../../../../shared/types'
+import type {
+  CompanionMessage,
+  CompanionProviderId,
+  CompanionProviderStatus,
+  TreeNode,
+} from '../../../../shared/types'
 import {
   Conversation,
   ConversationContent,
@@ -40,12 +45,29 @@ function openCitation(path: string) {
   )
 }
 
+export function selectAvailableProvider(
+  providers: CompanionProviderStatus[],
+  preferred: CompanionProviderId | null,
+): CompanionProviderId | null {
+  const preferredStatus = providers.find((provider) => provider.id === preferred)
+  if (preferredStatus?.availability === 'available') return preferredStatus.id
+  return providers.find((provider) => provider.availability === 'available')?.id ?? null
+}
+
 function CompanionSetup({ providers }: { providers: CompanionProviderStatus[] }) {
   const customCommand = useAppStore((s) => s.companionCustomCommand)
   const setCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
   const preferred = useAppStore((s) => s.companionPreferredProvider)
   const setPreferred = useAppStore((s) => s.setCompanionPreferredProvider)
-  const [draft, setDraft] = useState(customCommand)
+
+  const chooseCustomExecutable = async () => {
+    const executablePath = await window.api.chooseCompanionCustomExecutable()
+    if (!executablePath) return
+    setCustomCommand(executablePath)
+    setPreferred('custom')
+    const list = await window.api.detectCompanionProviders()
+    useAppStore.getState().setCompanionProviders(list)
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3 text-sm">
@@ -85,29 +107,17 @@ function CompanionSetup({ providers }: { providers: CompanionProviderStatus[] })
         ))}
       </ul>
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="companion-custom-cmd">
-          Custom command
-        </label>
-        <Textarea
-          id="companion-custom-cmd"
-          value={draft}
-          rows={2}
-          placeholder="path/to/agent --acp"
-          onChange={(e) => setDraft(e.target.value)}
-          className="min-h-0 resize-none text-xs"
-        />
+        <p className="text-xs font-medium text-muted-foreground">Custom ACP executable</p>
+        {customCommand && (
+          <p className="break-all rounded-md border border-border-subtle bg-muted/40 p-2 font-mono text-xs">
+            {customCommand}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
-          Custom commands run as local subprocesses from the main process.
+          Choose one executable. Arguments and shell commands are not accepted.
         </p>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setCustomCommand(draft.trim())
-            setPreferred('custom')
-          }}
-        >
-          Save custom command
+        <Button size="sm" variant="secondary" onClick={() => void chooseCustomExecutable()}>
+          Choose executable…
         </Button>
       </div>
       <Button
@@ -237,7 +247,7 @@ function CompanionMessages() {
   )
 }
 
-function CompanionComposer() {
+function CompanionComposer({ providerId }: { providerId: CompanionProviderId }) {
   const streaming = useAppStore((s) => s.companionStreaming)
   const tags = useAppStore((s) => s.companionTags)
   const addTag = useAppStore((s) => s.addCompanionTag)
@@ -251,7 +261,6 @@ function CompanionComposer() {
   const folderTree = useAppStore((s) => s.folderTree)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
   const activeTab = useAppStore(selectActiveTab)
-  const preferred = useAppStore((s) => s.companionPreferredProvider)
   const [text, setText] = useState('')
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [activeMentionIndex, setActiveMentionIndex] = useState(-1)
@@ -294,7 +303,7 @@ function CompanionComposer() {
         activePath: activeTab?.path ?? null,
         openFolderPath,
         tags,
-        providerId: preferred ?? undefined,
+        providerId,
       })
     } catch (err) {
       useAppStore.getState().applyCompanionUpdate({
@@ -449,12 +458,7 @@ function CompanionBody({
 }) {
   const providers = useAppStore((s) => s.companionProviders)
   const preferred = useAppStore((s) => s.companionPreferredProvider)
-  const customCommand = useAppStore((s) => s.companionCustomCommand)
-
-  const hasProvider =
-    (preferred === 'custom' && customCommand.trim().length > 0) ||
-    providers.some((p) => p.id === preferred && p.availability === 'available') ||
-    providers.some((p) => p.availability === 'available')
+  const providerId = selectAvailableProvider(providers, preferred)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -482,10 +486,10 @@ function CompanionBody({
           </Button>
         )}
       </header>
-      {hasProvider ? (
+      {providerId ? (
         <>
           <CompanionMessages />
-          <CompanionComposer />
+          <CompanionComposer providerId={providerId} />
         </>
       ) : (
         <CompanionSetup providers={providers} />
@@ -503,15 +507,19 @@ export function useCompanionBootstrap() {
 }
 
 function refreshCompanionMeta() {
-  void window.api.detectCompanionProviders().then((list) => {
-    useAppStore.getState().setCompanionProviders(list)
-  })
-  void window.api.getCompanionSettings().then((settings) => {
-    useAppStore.setState({
-      companionPreferredProvider: settings.preferredProvider,
-      companionCustomCommand: settings.customCommand,
-    })
-  })
+  void Promise.all([window.api.detectCompanionProviders(), window.api.getCompanionSettings()]).then(
+    ([providers, settings]) => {
+      const preferredProvider = selectAvailableProvider(providers, settings.preferredProvider)
+      useAppStore.setState({
+        companionProviders: providers,
+        companionPreferredProvider: preferredProvider,
+        companionCustomCommand: settings.customCommand,
+      })
+      if (preferredProvider !== settings.preferredProvider) {
+        void window.api.saveCompanionSettings({ preferredProvider })
+      }
+    },
+  )
 }
 
 export function CompanionPanel() {

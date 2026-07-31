@@ -78,6 +78,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
 
+  const chooseCompanionExecutable = async () => {
+    const executablePath = await window.api.chooseCompanionCustomExecutable()
+    if (!executablePath) return
+    setCompanionCustomCommand(executablePath)
+    setCompanionPreferredProvider('custom')
+    const providers = await window.api.detectCompanionProviders()
+    useAppStore.getState().setCompanionProviders(providers)
+  }
+
   const handleResetDefaults = () => {
     setTheme(DEFAULTS.theme)
     setContentFont(DEFAULTS.contentFont)
@@ -190,15 +199,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             onChange={(value) => setCompanionPreferredProvider(value)}
           />
           {companionPreferredProvider === 'custom' && (
-            <label className="block space-y-1 text-xs">
-              <span className="text-muted-foreground">Custom ACP command</span>
-              <input
-                className="w-full rounded-md border border-border-subtle bg-background px-2 py-1.5 text-sm"
-                value={companionCustomCommand}
-                onChange={(e) => setCompanionCustomCommand(e.target.value)}
-                placeholder="path/to/agent --acp"
-              />
-            </label>
+            <div className="space-y-1.5 text-xs">
+              <p className="text-muted-foreground">Custom ACP executable</p>
+              {companionCustomCommand && (
+                <p className="break-all rounded-md border border-border-subtle bg-muted/40 p-2 font-mono">
+                  {companionCustomCommand}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void chooseCompanionExecutable()}
+              >
+                Choose executable…
+              </Button>
+            </div>
           )}
         </section>
 

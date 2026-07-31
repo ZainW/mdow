@@ -7,14 +7,23 @@ const mockReadFileContent = vi.hoisted(() => vi.fn())
 const mockUnwatchFile = vi.hoisted(() => vi.fn())
 const mockSetActiveFileWatch = vi.hoisted(() => vi.fn())
 const mockSaveAppState = vi.hoisted(() => vi.fn())
-const mockNativeTheme = vi.hoisted(() => ({ themeSource: 'system' as string }))
+const mockNativeTheme = vi.hoisted<{ themeSource: string }>(() => ({ themeSource: 'system' }))
 const mockApplyWindowChrome = vi.hoisted(() => vi.fn())
-const mockGetMainWindow = vi.hoisted(() =>
-  vi.fn(() => ({
-    isDestroyed: () => false,
-    webContents: { send: vi.fn() },
-  })),
-)
+const mockShowOpenDialog = vi.hoisted(() => vi.fn())
+const mockWindow = vi.hoisted(() => ({
+  isDestroyed: () => false,
+  webContents: { send: vi.fn() },
+}))
+const mockCompanionService = vi.hoisted(() => ({
+  detectProviders: vi.fn(),
+  getSettings: vi.fn(),
+  saveSettings: vi.fn(),
+  startSession: vi.fn(),
+  send: vi.fn(),
+  cancel: vi.fn(),
+  shutdown: vi.fn(),
+}))
+const mockGetMainWindow = vi.hoisted(() => vi.fn(() => mockWindow))
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -23,6 +32,7 @@ vi.mock('electron', () => ({
     },
   },
   shell: { showItemInFolder: vi.fn(), openExternal: vi.fn() },
+  dialog: { showOpenDialog: mockShowOpenDialog },
   BrowserWindow: Object.assign(vi.fn(), {
     fromWebContents: vi.fn(() => mockGetMainWindow()),
     getAllWindows: vi.fn(() => [mockGetMainWindow()]),
@@ -67,6 +77,9 @@ vi.mock('./allowed-paths', () => ({
   registerAllowedPath: vi.fn(),
 }))
 vi.mock('./menu', () => ({ rebuildMenu: vi.fn() }))
+vi.mock('./companion/service', () => ({
+  getCompanionService: vi.fn(() => mockCompanionService),
+}))
 
 import { registerIpcHandlers } from './ipc'
 
@@ -166,6 +179,49 @@ describe('ipc handlers', () => {
       expect(mockNativeTheme.themeSource).toBe('system')
       expect(mockSaveAppState).not.toHaveBeenCalled()
       expect(mockApplyWindowChrome).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('companion security and routing', () => {
+    it('does not accept a custom executable through generic renderer settings', async () => {
+      const handler = handlers.get('companion:save-settings')!
+      await handler({}, { preferredProvider: 'opencode', customCommand: '/bin/sh -c whoami' })
+
+      expect(mockCompanionService.saveSettings).toHaveBeenCalledWith({
+        preferredProvider: 'opencode',
+      })
+    })
+
+    it('does not persist companion commands through generic app state', async () => {
+      const handler = handlers.get('store:save-state')!
+      await handler({}, { wideMode: true, companionCustomCommand: '/bin/sh -c whoami' })
+
+      expect(mockSaveAppState).toHaveBeenCalledWith({ wideMode: true })
+    })
+
+    it('stores only an executable explicitly selected in the native dialog', async () => {
+      mockShowOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/bin/sh'] })
+      const handler = handlers.get('companion:choose-custom-executable')!
+
+      await expect(handler({ sender: {} })).resolves.toBe('/bin/sh')
+      expect(mockCompanionService.saveSettings).toHaveBeenCalledWith({
+        preferredProvider: 'custom',
+        customCommand: '/bin/sh',
+      })
+    })
+
+    it('routes prompt updates back to the sending window', async () => {
+      const sender = {}
+      const payload = {
+        text: 'Question',
+        activePath: null,
+        openFolderPath: null,
+        tags: [],
+      }
+      const handler = handlers.get('companion:send')!
+      await handler({ sender }, payload)
+
+      expect(mockCompanionService.send).toHaveBeenCalledWith(payload, mockGetMainWindow())
     })
   })
 })

@@ -17,11 +17,15 @@ describe('Companion provider detection', () => {
       args: [],
       display: 'codex-acp',
     })
-    expect(resolveProviderCommand('custom', 'my-agent --acp')).toEqual({
-      command: 'my-agent',
-      args: ['--acp'],
-      display: 'my-agent --acp',
+    expect(
+      resolveProviderCommand('custom', '/Applications/My Agent.app/Contents/MacOS/agent'),
+    ).toEqual({
+      command: '/Applications/My Agent.app/Contents/MacOS/agent',
+      args: [],
+      display: '/Applications/My Agent.app/Contents/MacOS/agent',
     })
+    expect(resolveProviderCommand('custom', 'my-agent --acp')).toBeNull()
+    expect(resolveProviderCommand('custom', 'relative/agent')).toBeNull()
     expect(resolveProviderCommand('custom', '   ')).toBeNull()
   })
 })

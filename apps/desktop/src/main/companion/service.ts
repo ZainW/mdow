@@ -49,8 +49,9 @@ export class CitationStream {
   private removeKnownSourceIds(): string[] {
     const citationIds: string[] = []
     for (const sourceId of this.sourceIds) {
-      if (!this.buffer.includes(sourceId)) continue
-      this.buffer = this.buffer.replaceAll(sourceId, '')
+      const withoutSourceId = this.buffer.replaceAll(sourceId, '')
+      if (withoutSourceId === this.buffer) continue
+      this.buffer = withoutSourceId
       if (!this.emittedIds.has(sourceId)) {
         this.emittedIds.add(sourceId)
         citationIds.push(sourceId)
@@ -92,11 +93,12 @@ export class CompanionService {
   private streamingMessageId: string | null = null
   private citationStream = new CitationStream([])
   private activeRequestToken: symbol | null = null
+  private activeWindow: BrowserWindow | null = null
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
-  private emit(update: CompanionUpdate): void {
-    const win = this.getMainWindow()
+  private emit(update: CompanionUpdate, targetWindow?: BrowserWindow | null): void {
+    const win = targetWindow ?? this.activeWindow ?? this.getMainWindow()
     if (!win || win.isDestroyed()) return
     win.webContents.send(IPC.COMPANION_UPDATE, update)
   }
@@ -119,9 +121,13 @@ export class CompanionService {
   ): Promise<CompanionStartResult> {
     const settings = getCompanionSettings()
     const providers = await detectCompanionProviders()
+    const savedProviderAvailable = providers.some(
+      (provider) =>
+        provider.id === settings.preferredProvider && provider.availability === 'available',
+    )
     const preferred =
       providerId ??
-      settings.preferredProvider ??
+      (savedProviderAvailable ? settings.preferredProvider : null) ??
       providers.find((p) => p.availability === 'available')?.id ??
       null
 
@@ -165,17 +171,24 @@ export class CompanionService {
     }
   }
 
-  async send(payload: CompanionSendPayload): Promise<void> {
+  async send(
+    payload: CompanionSendPayload,
+    targetWindow: BrowserWindow | null = this.getMainWindow(),
+  ): Promise<void> {
     if (this.activeRequestToken) {
-      this.emit({
-        kind: 'warning',
-        message: 'Wait for the current response or cancel it first.',
-      })
+      this.emit(
+        {
+          kind: 'warning',
+          message: 'Wait for the current response or cancel it first.',
+        },
+        targetWindow,
+      )
       return
     }
 
     const requestToken = Symbol('companion-request')
     this.activeRequestToken = requestToken
+    this.activeWindow = targetWindow
     let messageId: string | null = null
 
     try {
@@ -229,23 +242,38 @@ export class CompanionService {
       }
       if (this.activeRequestToken === requestToken) {
         this.activeRequestToken = null
+        this.activeWindow = null
       }
     }
   }
 
   async cancel(): Promise<void> {
     const messageId = this.streamingMessageId
+    const targetWindow = this.activeWindow
+    const client = this.client
     this.streamingMessageId = null
     this.activeRequestToken = null
     this.citationStream = new CitationStream([])
-    await this.client?.cancel()
-    if (messageId) {
-      this.emit({ kind: 'cancelled', messageId })
+    this.client = null
+    this.activeProvider = null
+    if (client) {
+      try {
+        await client.cancel()
+      } catch {
+        // The process may exit between the user's cancel action and the notification write.
+      } finally {
+        await client.shutdown()
+      }
     }
+    if (messageId) {
+      this.emit({ kind: 'cancelled', messageId }, targetWindow)
+    }
+    this.activeWindow = null
   }
 
   async shutdown(): Promise<void> {
     this.activeRequestToken = null
+    this.activeWindow = null
     await this.shutdownClient()
   }
 
@@ -258,7 +286,8 @@ export class CompanionService {
     if (client) await client.shutdown()
   }
 
-  private handleClientUpdate(update: CompanionUpdate): void {
+  handleClientUpdate(update: CompanionUpdate): void {
+    if (!this.activeRequestToken) return
     if (update.kind === 'delta') {
       this.emitCitationResult(this.citationStream.consume(update.text))
       return

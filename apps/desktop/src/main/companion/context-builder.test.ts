@@ -2,6 +2,7 @@ import { mkdtemp, writeFile, mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it, afterEach } from 'vitest'
+import type { CompanionContextTag } from '../../shared/types'
 import { buildCompanionContext, formatContextPrompt } from './context-builder'
 
 describe('Companion context builder', () => {
@@ -11,7 +12,7 @@ describe('Companion context builder', () => {
     if (dir) await rm(dir, { recursive: true, force: true })
   })
 
-  it('prioritizes tags, then active file, and assigns source ids', async () => {
+  it('prioritizes the active file, then tags, and assigns source ids', async () => {
     dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
     const active = join(dir, 'active.md')
     const tagged = join(dir, 'tagged.md')
@@ -26,10 +27,34 @@ describe('Companion context builder', () => {
       tags: [{ kind: 'file', path: tagged, sourceId: `tag:${tagged}` }],
     })
 
-    expect(packet.sources[0]?.path).toBe(tagged)
-    expect(packet.sources.some((s) => s.path === active)).toBe(true)
+    expect(packet.sources[0]?.path).toBe(active)
+    expect(packet.sources.some((s) => s.path === tagged)).toBe(true)
     expect(packet.sources.every((s) => s.sourceId.startsWith('src:'))).toBe(true)
     expect(packet.summary.toLowerCase()).toContain('using')
+  })
+
+  it('keeps the active file when tags consume the context budget', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'active.md')
+    await writeFile(active, '# Focused document\nmust be included')
+    const tagPaths = Array.from({ length: 6 }, (_, index) => join(dir, `tag-${index}.md`))
+    await Promise.all(tagPaths.map((path) => writeFile(path, 'x'.repeat(24_000))))
+    const tags: CompanionContextTag[] = tagPaths.map((path) => ({
+      kind: 'file',
+      path,
+      sourceId: `tag:${path}`,
+    }))
+
+    const packet = await buildCompanionContext({
+      activePath: active,
+      openFolderPath: null,
+      tags,
+    })
+
+    expect(packet.sources[0]?.path).toBe(active)
+    expect(packet.sources.find((source) => source.path === active)?.excerpt).toContain(
+      'must be included',
+    )
   })
 
   it('skips non-markdown paths with a warning', async () => {

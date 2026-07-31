@@ -1,4 +1,4 @@
-/* oxlint-disable eslint/no-await-in-loop -- Source order is semantic and each read updates the shared byte budget. */
+/* oxlint-disable eslint/no-await-in-loop, react-doctor/async-await-in-loop -- Source order is semantic and each read updates the shared byte budget. */
 import { basename } from 'path'
 import { readFileContent } from '../file-service'
 import { scanFolder } from '../folder-service'
@@ -96,6 +96,10 @@ export async function buildCompanionContext(
   const seen = new Set<string>()
   const budget = { used: 0 }
 
+  if (input.activePath) {
+    await addSource(sources, warnings, seen, input.activePath, budget, readFile)
+  }
+
   for (const tag of input.tags) {
     if (tag.kind === 'file') {
       await addSource(sources, warnings, seen, tag.path, budget, readFile)
@@ -113,10 +117,6 @@ export async function buildCompanionContext(
         warnings.push(`Could not scan folder tag ${tag.path}`)
       }
     }
-  }
-
-  if (input.activePath) {
-    await addSource(sources, warnings, seen, input.activePath, budget, readFile)
   }
 
   if (input.openFolderPath) {

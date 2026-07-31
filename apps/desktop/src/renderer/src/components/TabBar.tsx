@@ -101,9 +101,7 @@ export function TabBar() {
         className="relative flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto px-1.5 scrollbar-none"
         onDragOver={(e) => {
           if (dragIndex === null) return
-          const lastTab = (e.currentTarget as HTMLDivElement).querySelector<HTMLDivElement>(
-            '[data-tab]:last-of-type',
-          )
+          const lastTab = e.currentTarget.querySelector<HTMLDivElement>('[data-tab]:last-of-type')
           if (!lastTab) return
           const rect = lastTab.getBoundingClientRect()
           if (e.clientX > rect.right) {

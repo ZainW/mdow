@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubWindowApi } from '../../test/stubWindowApi'
 import { useAppStore } from '../../store/app-store'
@@ -81,6 +81,45 @@ describe('CompanionPanel', () => {
 
     expect(screen.getByText('@risks.md')).toBeVisible()
     expect(screen.queryByRole('listbox', { name: 'Document suggestions' })).not.toBeInTheDocument()
+  })
+
+  it('sends with an available provider when the saved provider is missing', async () => {
+    useAppStore.setState({
+      companionProviders: [
+        {
+          id: 'opencode',
+          label: 'OpenCode',
+          commandDisplay: 'opencode acp',
+          availability: 'available',
+        },
+        {
+          id: 'codex-acp',
+          label: 'Codex ACP',
+          commandDisplay: 'codex-acp',
+          availability: 'missing',
+        },
+      ],
+      companionPreferredProvider: 'codex-acp',
+    })
+    vi.mocked(window.api.detectCompanionProviders).mockResolvedValueOnce(
+      useAppStore.getState().companionProviders,
+    )
+    vi.mocked(window.api.getCompanionSettings).mockResolvedValueOnce({
+      preferredProvider: 'codex-acp',
+      customCommand: '',
+    })
+
+    render(<CompanionPanel />)
+    await waitFor(() => {
+      expect(useAppStore.getState().companionPreferredProvider).toBe('opencode')
+    })
+    const composer = screen.getByRole('textbox', { name: 'Ask about these docs' })
+    fireEvent.change(composer, { target: { value: 'Use the working provider' } })
+    fireEvent.keyDown(composer, { key: 'Enter' })
+
+    expect(sendCompanionMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'opencode' }),
+    )
   })
 
   it('uses an overlay on narrow windows instead of shrinking the document', () => {

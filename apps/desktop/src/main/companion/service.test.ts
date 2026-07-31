@@ -10,14 +10,16 @@ vi.mock('./provider-detection', async () => {
     await vi.importActual<typeof import('./provider-detection')>('./provider-detection')
   return {
     ...actual,
-    detectCompanionProviders: vi.fn(async () => [
-      {
-        id: 'opencode' as const,
-        label: 'OpenCode',
-        commandDisplay: 'opencode acp',
-        availability: 'available' as const,
-      },
-    ]),
+    detectCompanionProviders: vi.fn(() =>
+      Promise.resolve([
+        {
+          id: 'opencode' as const,
+          label: 'OpenCode',
+          commandDisplay: 'opencode acp',
+          availability: 'available' as const,
+        },
+      ]),
+    ),
   }
 })
 
@@ -76,7 +78,8 @@ describe('Companion service', () => {
 
   it('emits a cancelled terminal state without a later completed state', async () => {
     const sent: unknown[] = []
-    const cancel = vi.fn().mockResolvedValue(undefined)
+    const cancel = vi.fn().mockRejectedValue(new Error('process already exited'))
+    const shutdown = vi.fn().mockResolvedValue(undefined)
     const service = new CompanionService(
       () =>
         ({
@@ -87,15 +90,52 @@ describe('Companion service', () => {
         }) as never,
     )
     Object.assign(service, {
-      client: { cancel },
+      client: { cancel, shutdown },
       streamingMessageId: 'message-1',
+      activeRequestToken: Symbol('active-request'),
     })
 
-    await service.cancel()
+    await expect(service.cancel()).resolves.toBeUndefined()
+    service.handleClientUpdate({
+      kind: 'delta',
+      text: 'late chunk',
+    })
 
     expect(cancel).toHaveBeenCalledOnce()
+    expect(shutdown).toHaveBeenCalledOnce()
     expect(sent).toContainEqual({ kind: 'cancelled', messageId: 'message-1' })
+    expect(sent).not.toContainEqual({ kind: 'delta', text: 'late chunk' })
     expect(sent).not.toContainEqual({ kind: 'done', messageId: 'message-1' })
+  })
+
+  it('keeps a streaming response routed to the window that sent the prompt', () => {
+    const firstWindowUpdates: unknown[] = []
+    const focusedWindowUpdates: unknown[] = []
+    const firstWindow = {
+      isDestroyed: () => false,
+      webContents: {
+        send: (_channel: string, update: unknown) => firstWindowUpdates.push(update),
+      },
+    }
+    const focusedWindow = {
+      isDestroyed: () => false,
+      webContents: {
+        send: (_channel: string, update: unknown) => focusedWindowUpdates.push(update),
+      },
+    }
+    const service = new CompanionService(() => focusedWindow as never)
+    Object.assign(service, {
+      activeWindow: firstWindow,
+      activeRequestToken: Symbol('active-request'),
+    })
+
+    service.handleClientUpdate({
+      kind: 'delta',
+      text: 'same window',
+    })
+
+    expect(firstWindowUpdates).toContainEqual({ kind: 'delta', text: 'same window' })
+    expect(focusedWindowUpdates).toHaveLength(0)
   })
 
   it('rejects a second prompt while another request is being prepared', async () => {

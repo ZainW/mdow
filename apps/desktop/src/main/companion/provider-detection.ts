@@ -1,7 +1,7 @@
 /* oxlint-disable eslint/no-await-in-loop -- PATH candidates are checked in deterministic shell order. */
 import { access } from 'fs/promises'
 import { constants } from 'fs'
-import { delimiter, join } from 'path'
+import { delimiter, isAbsolute, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { CompanionProviderId, CompanionProviderStatus } from '../../shared/types'
@@ -14,12 +14,7 @@ async function pathExists(filePath: string): Promise<boolean> {
     await access(filePath, constants.X_OK)
     return true
   } catch {
-    try {
-      await access(filePath, constants.F_OK)
-      return true
-    } catch {
-      return false
-    }
+    return false
   }
 }
 
@@ -66,11 +61,10 @@ export function resolveProviderCommand(
       return { command: 'codex-acp', args: [], display: 'codex-acp' }
     case 'custom': {
       const trimmed = customCommand.trim()
-      if (!trimmed) return null
-      const parts = trimmed.split(/\s+/).filter(Boolean)
+      if (!trimmed || !isAbsolute(trimmed)) return null
       return {
-        command: parts[0],
-        args: parts.slice(1),
+        command: trimmed,
+        args: [],
         display: trimmed,
       }
     }
@@ -84,9 +78,12 @@ export function resolveProviderCommand(
 
 export async function detectCompanionProviders(): Promise<CompanionProviderStatus[]> {
   const settings = getCompanionSettings()
-  const opencodeAvailable = await commandResolves('opencode')
-  const codexAvailable = await commandResolves('codex-acp')
   const custom = settings.customCommand.trim()
+  const [opencodeAvailable, codexAvailable, customAvailable] = await Promise.all([
+    commandResolves('opencode'),
+    commandResolves('codex-acp'),
+    isAbsolute(custom) ? pathExists(custom) : Promise.resolve(false),
+  ])
 
   return [
     {
@@ -109,12 +106,12 @@ export async function detectCompanionProviders(): Promise<CompanionProviderStatu
     },
     {
       id: 'custom',
-      label: 'Custom command',
+      label: 'Custom executable',
       commandDisplay: custom || '(none)',
-      availability: custom ? 'available' : 'missing',
-      detail: custom
-        ? 'Runs as a local subprocess from the main process.'
-        : 'Enter a command that speaks ACP over stdio.',
+      availability: customAvailable ? 'available' : 'missing',
+      detail: customAvailable
+        ? 'Runs the executable you selected as a local ACP subprocess.'
+        : 'Choose an executable that speaks ACP over stdio.',
     },
   ]
 }
