@@ -1,5 +1,7 @@
-import { ipcMain, shell, BrowserWindow, nativeTheme, app } from 'electron'
-import { stat } from 'fs/promises'
+import { ipcMain, shell, BrowserWindow, nativeTheme, app, dialog } from 'electron'
+import { constants } from 'fs'
+import { access, stat } from 'fs/promises'
+import { isAbsolute } from 'path'
 import { openFileDialog, readFileContent, unwatchFile, setActiveFileWatch } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
@@ -8,10 +10,16 @@ import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateDocumentPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+import { getCompanionService } from './companion/service'
+import type { CompanionProviderId, CompanionSendPayload, CompanionSettings } from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
 
 let updaterModulePromise: Promise<UpdaterModule> | null = null
+
+function isCompanionProviderId(value: unknown): value is CompanionProviderId {
+  return value === 'opencode' || value === 'codex-acp' || value === 'custom'
+}
 
 function loadUpdater(): Promise<UpdaterModule> {
   updaterModulePromise ??= import('./updater')
@@ -192,9 +200,14 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('store:get-recents', () => getRecents())
 
   ipcMain.handle('store:get-state', () => getAppState())
-  ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) =>
-    saveAppState(state as Parameters<typeof saveAppState>[0]),
-  )
+  ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) => {
+    const {
+      companionCustomCommand: _customCommand,
+      companionPreferredProvider: _preferredProvider,
+      ...safeState
+    } = state
+    saveAppState(safeState)
+  })
 
   ipcMain.handle('theme:set', (_, theme: string) => {
     const valid: Array<typeof nativeTheme.themeSource> = ['light', 'dark', 'system']
@@ -267,5 +280,59 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   ipcMain.handle('updater:install', async () => {
     const { installUpdate } = await loadInitializedUpdater(getMainWindow)
     installUpdate()
+  })
+
+  ipcMain.handle('companion:detect-providers', async () => {
+    return getCompanionService(getMainWindow).detectProviders()
+  })
+
+  ipcMain.handle('companion:get-settings', () => getCompanionService(getMainWindow).getSettings())
+
+  ipcMain.handle('companion:save-settings', (_, settings: Partial<CompanionSettings>) => {
+    const preferredProvider =
+      settings.preferredProvider === null || isCompanionProviderId(settings.preferredProvider)
+        ? settings.preferredProvider
+        : undefined
+    if (preferredProvider !== undefined) {
+      getCompanionService(getMainWindow).saveSettings({ preferredProvider })
+    }
+  })
+
+  ipcMain.handle('companion:choose-custom-executable', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose ACP executable',
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const executablePath = result.filePaths[0]
+    if (!isAbsolute(executablePath)) throw new Error('invalid-executable')
+    const stats = await stat(executablePath)
+    if (!stats.isFile()) throw new Error('invalid-executable')
+    await access(executablePath, process.platform === 'win32' ? constants.F_OK : constants.X_OK)
+    getCompanionService(getMainWindow).saveSettings({
+      preferredProvider: 'custom',
+      customCommand: executablePath,
+    })
+    return executablePath
+  })
+
+  ipcMain.handle('companion:start-session', async (_, providerId?: CompanionProviderId) => {
+    return getCompanionService(getMainWindow).startSession(providerId)
+  })
+
+  ipcMain.handle('companion:send', async (event, payload: CompanionSendPayload) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('no-window')
+    await getCompanionService(getMainWindow).send(payload, win)
+  })
+
+  ipcMain.handle('companion:cancel', async () => {
+    await getCompanionService(getMainWindow).cancel()
+  })
+
+  ipcMain.handle('companion:shutdown', async () => {
+    await getCompanionService(getMainWindow).shutdown()
   })
 }

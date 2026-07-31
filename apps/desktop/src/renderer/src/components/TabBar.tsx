@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/app-store'
 import { cn, isMac } from '../lib/utils'
-import { FileText, X, AlertCircle, Columns2 } from 'lucide-react'
+import { FileText, X, AlertCircle, Columns2, MessageSquare } from 'lucide-react'
 import { iconStroke } from '../lib/icons'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { Button } from './ui/button'
@@ -27,6 +27,8 @@ export function TabBar() {
   const activePane = useAppStore((s) => s.activePane)
   const toggleSplitView = useAppStore((s) => s.toggleSplitView)
   const setPaneTab = useAppStore((s) => s.setPaneTab)
+  const companionOpen = useAppStore((s) => s.companionOpen)
+  const toggleCompanion = useAppStore((s) => s.toggleCompanion)
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -42,7 +44,23 @@ export function TabBar() {
     })
   }, [activeTabId])
 
-  if (tabs.length === 0) return null
+  if (tabs.length === 0) {
+    return (
+      <div className="flex h-(--tabbar-height) shrink-0 items-center justify-end border-b border-border-subtle bg-background px-1.5">
+        <Button
+          variant={companionOpen ? 'secondary' : 'ghost'}
+          size="icon-sm"
+          aria-label={companionOpen ? 'Close companion' : 'Open companion'}
+          title={companionOpen ? 'Close companion' : 'Open companion'}
+          aria-pressed={companionOpen}
+          onClick={toggleCompanion}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <MessageSquare />
+        </Button>
+      </div>
+    )
+  }
 
   const handleClose = (tabId: string) => closeTab(tabId)
 
@@ -83,9 +101,7 @@ export function TabBar() {
         className="relative flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto px-1.5 scrollbar-none"
         onDragOver={(e) => {
           if (dragIndex === null) return
-          const lastTab = (e.currentTarget as HTMLDivElement).querySelector<HTMLDivElement>(
-            '[data-tab]:last-of-type',
-          )
+          const lastTab = e.currentTarget.querySelector<HTMLDivElement>('[data-tab]:last-of-type')
           if (!lastTab) return
           const rect = lastTab.getBoundingClientRect()
           if (e.clientX > rect.right) {
@@ -244,7 +260,18 @@ export function TabBar() {
           )
         })}
       </div>
-      <div className="flex shrink-0 items-center border-l border-border-subtle px-1.5">
+      <div className="flex shrink-0 items-center gap-0.5 border-l border-border-subtle px-1.5">
+        <Button
+          variant={companionOpen ? 'secondary' : 'ghost'}
+          size="icon-sm"
+          aria-label={companionOpen ? 'Close companion' : 'Open companion'}
+          title={companionOpen ? 'Close companion' : 'Open companion'}
+          aria-pressed={companionOpen}
+          onClick={toggleCompanion}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <MessageSquare />
+        </Button>
         <Button
           variant={splitView ? 'secondary' : 'ghost'}
           size="icon-sm"

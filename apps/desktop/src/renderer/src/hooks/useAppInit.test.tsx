@@ -19,6 +19,8 @@ function appState(overrides: Partial<AppState> = {}): AppState {
     interfaceScale: 'compact',
     readingWidth: 'standard',
     sidebarMode: 'recents',
+    companionPreferredProvider: null,
+    companionCustomCommand: '',
     ...overrides,
   }
 }

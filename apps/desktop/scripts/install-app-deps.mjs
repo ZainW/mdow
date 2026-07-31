@@ -1,3 +1,4 @@
+/* oxlint-disable typescript/no-unsafe-assignment, typescript/no-unsafe-call, typescript/no-unsafe-member-access, typescript/no-unsafe-return -- React Doctor does not load Node's types for this typed ESM build script; install-app-deps.d.mts supplies its public type. */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
