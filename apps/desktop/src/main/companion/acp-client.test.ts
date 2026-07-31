@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { Readable, Writable } from 'stream'
 import { describe, expect, it, vi } from 'vitest'
+import packageJson from '../../../package.json' with { type: 'json' }
 import type { CompanionUpdate } from '../../shared/types'
 import { AcpClient } from './acp-client'
 
@@ -131,7 +132,7 @@ describe('Companion ACP client', () => {
           },
       )
     const initialize = writtenMessages.find((message) => message.method === 'initialize')
-    expect(initialize?.params?.clientInfo?.version).toBe('1.5.2')
+    expect(initialize?.params?.clientInfo?.version).toBe(packageJson.version)
     expect(initialize?.params?.clientCapabilities?.fs?.readTextFile).toBe(false)
     expect(writtenMessages.map((message) => message.method)).not.toContain(
       'notifications/initialized',

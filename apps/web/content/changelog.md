@@ -5,9 +5,16 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.5.2
+## v1.6.0
 
 Latest release.
+
+- Added a local, read-only AI Companion for asking questions about Markdown documents through installed ACP providers
+- Added focused-document, open-folder, and `@`-tagged context with clickable source citations
+- Streamed Markdown answers alongside collapsible thinking and tool activity in drawer and expanded views
+- Hardened long responses, cancellation, multi-window routing, provider fallback, and custom executable setup
+
+## v1.5.2
 
 - Updated desktop and website dependencies, including Electron, TypeScript, Vite, and build tooling
 - Moved installs to pnpm 11's Rust-based engine for faster dependency setup

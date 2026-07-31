@@ -6,13 +6,23 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.6.0</title>
+      <link>https://mdow.app/changelog#v1-6-0</link>
+      <guid isPermaLink="false">v1.6.0</guid>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
+      <description>Latest release.
+
+- Added a local, read-only AI Companion for asking questions about Markdown documents through installed ACP providers
+- Added focused-document, open-folder, and `@`-tagged context with clickable source citations
+- Streamed Markdown answers alongside collapsible thinking and tool activity in drawer and expanded views
+- Hardened long responses, cancellation, multi-window routing, provider fallback, and custom executable setup</description>
+    </item>
+    <item>
       <title>v1.5.2</title>
       <link>https://mdow.app/changelog#v1-5-2</link>
       <guid isPermaLink="false">v1.5.2</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
-      <description>Latest release.
-
-- Updated desktop and website dependencies, including Electron, TypeScript, Vite, and build tooling
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
+      <description>- Updated desktop and website dependencies, including Electron, TypeScript, Vite, and build tooling
 - Moved installs to pnpm 11's Rust-based engine for faster dependency setup
 - Kept Electron native dependency preparation reliable under the new install engine</description>
     </item>
@@ -20,7 +30,7 @@
       <title>v1.5.1</title>
       <link>https://mdow.app/changelog#v1-5-1</link>
       <guid isPermaLink="false">v1.5.1</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Fixed Open Recent from the app menu so recent files open reliably
 - Added command palette actions for files, folders, search, layout, settings, and shortcuts
 - Added folder sidebar filtering with match counts
@@ -30,7 +40,7 @@
       <title>v1.5.0</title>
       <link>https://mdow.app/changelog#v1-5-0</link>
       <guid isPermaLink="false">v1.5.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Open and render HTML documents alongside Markdown documents
 - Added sandboxed HTML previews for local files and document links
 - Added side-by-side document panes with pane targeting from tabs
@@ -40,7 +50,7 @@
       <title>v1.4.1</title>
       <link>https://mdow.app/changelog#v1-4-1</link>
       <guid isPermaLink="false">v1.4.1</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Added a native SwiftUI macOS beta build under the download page beta section
 - Published native Mac beta zip artifacts from the tagged release workflow
 - Kept the Electron macOS build as the recommended stable download</description>
@@ -49,7 +59,7 @@
       <title>v1.4.0</title>
       <link>https://mdow.app/changelog#v1-4-0</link>
       <guid isPermaLink="false">v1.4.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Redesigned sidebar mode navigation with a simpler, more focused menu
 - Added coverage for menu shortcuts and destroyed-window handling
 - Prevented stale folder scans from updating sidebar state after navigation
@@ -60,7 +70,7 @@
       <title>v1.3.0</title>
       <link>https://mdow.app/changelog#v1-3-0</link>
       <guid isPermaLink="false">v1.3.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Improved desktop startup performance and memory behavior
 - Reduced large-document rendering work with lazy markdown features
 - Tightened folder/sidebar loading behavior and markdown render caching
@@ -70,7 +80,7 @@
       <title>v1.2.1</title>
       <link>https://mdow.app/changelog#v1-2-1</link>
       <guid isPermaLink="false">v1.2.1</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Enabled the automatic update settings flow on macOS
 - Documented the in-app update download and restart flow across supported platforms</description>
     </item>
@@ -78,7 +88,7 @@
       <title>v1.2.0</title>
       <link>https://mdow.app/changelog#v1-2-0</link>
       <guid isPermaLink="false">v1.2.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- App-wide error boundary and clearer startup/read error handling
 - TTL-based render cache eviction for steadier memory use
 - Refined desktop scaling, spacing, typography, and warm paper palette
@@ -90,7 +100,7 @@
       <title>v1.1.0</title>
       <link>https://mdow.app/changelog#v1-1-0</link>
       <guid isPermaLink="false">v1.1.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- macOS code signing and notarization — no more Gatekeeper warnings
 - Multi-window support
 - Vault UX and security improvements
@@ -102,7 +112,7 @@
       <title>v1.0.5</title>
       <link>https://mdow.app/changelog#v1-0-5</link>
       <guid isPermaLink="false">v1.0.5</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>- Improved tab bar accessibility and keyboard navigation
 - Zoom indicator with stable layout across zoom levels
 - Refined sidebar modes (Recents, Outline, Folder)
@@ -113,7 +123,7 @@
       <title>v1.0.0</title>
       <link>https://mdow.app/changelog#v1-0-0</link>
       <guid isPermaLink="false">v1.0.0</guid>
-      <pubDate>Fri, 10 Jul 2026 17:55:25 GMT</pubDate>
+      <pubDate>Fri, 31 Jul 2026 02:36:50 GMT</pubDate>
       <description>Initial release.
 
 - Markdown rendering with md4x (WASM)
