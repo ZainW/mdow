@@ -75,6 +75,19 @@ pub struct AppModel {
     pub workspace_error: Option<UserFacingError>,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BatchOpenResult {
+    pub document_error: Option<UserFacingError>,
+    pub workspace_error: Option<UserFacingError>,
+    document_attempted: bool,
+}
+
+impl BatchOpenResult {
+    pub fn document_attempted(&self) -> bool {
+        self.document_attempted
+    }
+}
+
 impl AppModel {
     pub fn open_document(&mut self, path: &Path) -> Result<(), AppOpenError> {
         let loaded = load_source(path)?;
@@ -106,20 +119,35 @@ impl AppModel {
         }
     }
 
-    pub fn open_paths<I, P>(&mut self, paths: I) -> Result<(), AppOpenError>
+    pub fn open_paths<I, P>(&mut self, paths: I) -> BatchOpenResult
     where
         I: IntoIterator<Item = P>,
         P: AsRef<Path>,
     {
-        let mut first_error = None;
+        let mut result = BatchOpenResult::default();
+        let mut workspace_attempted = false;
         for path in paths {
-            if let Err(error) = self.open_path(path.as_ref())
-                && first_error.is_none()
-            {
-                first_error = Some(error);
+            let path = path.as_ref();
+            if path.is_dir() {
+                workspace_attempted = true;
+                if let Err(AppOpenError::Workspace(error)) = self.open_workspace(path)
+                    && result.workspace_error.is_none()
+                {
+                    result.workspace_error = Some(error);
+                }
+            } else {
+                result.document_attempted = true;
+                if let Err(AppOpenError::Document(error)) = self.open_document(path)
+                    && result.document_error.is_none()
+                {
+                    result.document_error = Some(error);
+                }
             }
         }
-        first_error.map_or(Ok(()), Err)
+        if workspace_attempted {
+            self.workspace_error = result.workspace_error.clone();
+        }
+        result
     }
 }
 
@@ -206,22 +234,9 @@ impl MdowApp {
     }
 
     fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
-        let mut opened_document = false;
-        let mut first_document_error = None;
-        for path in paths {
-            if path.is_dir() {
-                self.model.open_workspace(&path).ok();
-            } else {
-                opened_document = true;
-                if let Err(AppOpenError::Document(error)) = self.model.open_document(&path)
-                    && first_document_error.is_none()
-                {
-                    first_document_error = Some(error);
-                }
-            }
-        }
-        if opened_document {
-            self.open_error = first_document_error;
+        let result = self.model.open_paths(paths);
+        if result.document_attempted() {
+            self.open_error = result.document_error;
         }
         self.drop_state.dropped();
         cx.notify();
@@ -492,7 +507,7 @@ mod tests {
         FileDropEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
         VisualTestContext, point,
     };
-    use std::{fs, path::Path};
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
     fn markdown_workspace() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -588,13 +603,12 @@ mod tests {
         fs::write(&second, "# Second").unwrap();
         let mut model = AppModel::default();
 
-        let error = model
-            .open_paths([unsupported.as_path(), first.as_path(), second.as_path()])
-            .unwrap_err();
+        let result = model.open_paths([unsupported.as_path(), first.as_path(), second.as_path()]);
+        let error = result.document_error.as_ref().unwrap();
 
-        assert!(matches!(error, AppOpenError::Document(_)));
-        assert_eq!(error.view().title, "Unsupported file type");
-        assert_eq!(error.view().path, unsupported);
+        assert_eq!(error.title, "Unsupported file type");
+        assert_eq!(error.path, unsupported);
+        assert!(result.workspace_error.is_none());
         assert_eq!(
             model.tabs.paths().collect::<Vec<_>>(),
             vec![
@@ -662,6 +676,47 @@ mod tests {
             model.workspace.as_ref().unwrap().root.path,
             second.path().canonicalize().unwrap()
         );
+    }
+
+    #[test]
+    fn batch_keeps_first_workspace_failure_when_a_later_workspace_succeeds() {
+        let bad = markdown_workspace();
+        let good = markdown_workspace();
+        let bad_path = bad.path().canonicalize().unwrap();
+        fs::set_permissions(bad.path(), fs::Permissions::from_mode(0o000)).unwrap();
+        let mut model = AppModel::default();
+
+        let result = model.open_paths([bad.path(), good.path()]);
+        fs::set_permissions(bad.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let error = result.workspace_error.as_ref().unwrap();
+
+        assert_eq!(error.path, bad_path);
+        assert_eq!(model.workspace_error.as_ref(), Some(error));
+        assert!(result.document_error.is_none());
+        assert_eq!(
+            model.workspace.as_ref().unwrap().root.path,
+            good.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn batch_keeps_the_first_of_two_workspace_failures() {
+        let first = markdown_workspace();
+        let second = markdown_workspace();
+        let first_path = first.path().canonicalize().unwrap();
+        fs::set_permissions(first.path(), fs::Permissions::from_mode(0o000)).unwrap();
+        fs::set_permissions(second.path(), fs::Permissions::from_mode(0o000)).unwrap();
+        let mut model = AppModel::default();
+
+        let result = model.open_paths([first.path(), second.path()]);
+        fs::set_permissions(first.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(second.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let error = result.workspace_error.as_ref().unwrap();
+
+        assert_eq!(error.path, first_path);
+        assert_eq!(model.workspace_error.as_ref(), Some(error));
+        assert!(result.document_error.is_none());
+        assert!(model.workspace.is_none());
     }
 
     #[test]
