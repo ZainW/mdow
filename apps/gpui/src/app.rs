@@ -1,6 +1,6 @@
 use crate::{
     actions::{CloseTab, OpenFile, OpenFolder, ToggleSidebar, ToggleWideMode},
-    document::{DocumentError, load_source, parse_document},
+    document::{DocumentError, ParsedDocument, load_source, parse_document},
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
     ui::{
@@ -9,8 +9,8 @@ use crate::{
             render_sidebar, render_tab_bar,
         },
         reader::{
-            LinkRoute, ReaderLinkState, classify_link, clear_expired_code_copy_feedback,
-            document_link_focus_targets, render_document,
+            LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderLinkState, classify_link,
+            clear_expired_code_copy_feedback, document_link_focus_targets, render_document,
         },
         welcome::welcome,
     },
@@ -21,7 +21,7 @@ use gpui::{
     Render, ScrollHandle, Subscription, Timer, Window, div, prelude::*, px,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -207,10 +207,10 @@ pub struct MdowApp {
     pub drop_state: DropState,
     pub open_error: Option<UserFacingError>,
     copied_code: Option<(usize, Instant)>,
-    hovered_link: Option<(usize, usize)>,
-    focused_link: Option<(usize, usize)>,
+    hovered_link: Option<LinkFocusKey>,
+    focused_link: Option<LinkFocusKey>,
     reader_scroll_handles: HashMap<PathBuf, ScrollHandle>,
-    reader_link_focus_handles: HashMap<(PathBuf, usize, usize), FocusHandle>,
+    reader_link_focus_handles: HashMap<(PathBuf, LinkFocusKey), FocusHandle>,
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
@@ -391,21 +391,70 @@ impl MdowApp {
     }
 
     fn sync_focused_link(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let focused_link = self.reader_link_focus_handles.iter().find_map(
-            |((path, surface_id, link_index), handle)| {
-                (self
-                    .model
-                    .tabs
-                    .active()
-                    .is_some_and(|tab| tab.path() == path)
-                    && handle.is_focused(window))
-                .then_some((*surface_id, *link_index))
-            },
-        );
+        let focused_link =
+            self.reader_link_focus_handles
+                .iter()
+                .find_map(|((path, key), handle)| {
+                    (self
+                        .model
+                        .tabs
+                        .active()
+                        .is_some_and(|tab| tab.path() == path)
+                        && handle.is_focused(window))
+                    .then_some(*key)
+                });
         if self.focused_link != focused_link {
             self.focused_link = focused_link;
             cx.notify();
         }
+    }
+
+    fn reconcile_reader_link_focus_handles(
+        &mut self,
+        document: &ParsedDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> HashMap<LinkFocusKey, FocusHandle> {
+        let targets = document_link_focus_targets(document);
+        let active_keys = targets
+            .iter()
+            .map(|target| target.key)
+            .collect::<HashSet<_>>();
+        let mut removed_focused_handle = false;
+        self.reader_link_focus_handles
+            .retain(|(path, key), handle| {
+                let keep = path != &document.path || active_keys.contains(key);
+                if !keep && handle.is_focused(window) {
+                    removed_focused_handle = true;
+                }
+                keep
+            });
+        let focused_handle_key =
+            self.reader_link_focus_handles
+                .iter()
+                .find_map(|((path, key), handle)| {
+                    (path == &document.path && handle.is_focused(window)).then_some(*key)
+                });
+        let focus_state_mismatch = focused_handle_key != self.focused_link;
+        if removed_focused_handle || (focus_state_mismatch && focused_handle_key.is_some()) {
+            self.focus_handle.focus(window);
+        }
+        if removed_focused_handle || focus_state_mismatch {
+            self.focused_link = None;
+        }
+
+        targets
+            .into_iter()
+            .map(|target| {
+                let map_key = (document.path.clone(), target.key);
+                let handle = self
+                    .reader_link_focus_handles
+                    .entry(map_key)
+                    .or_insert_with(|| cx.focus_handle().tab_index(0).tab_stop(true))
+                    .clone();
+                (target.key, handle)
+            })
+            .collect()
     }
 
     pub fn close_active_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
@@ -413,7 +462,7 @@ impl MdowApp {
             self.model.tabs.close(&path);
             self.reader_scroll_handles.remove(&path);
             self.reader_link_focus_handles
-                .retain(|(document_path, _, _), _| document_path != &path);
+                .retain(|(document_path, _), _| document_path != &path);
             self.clear_reader_transient_state();
             cx.notify();
         }
@@ -442,7 +491,7 @@ impl MdowApp {
         if self.model.tabs.close(path).is_some() {
             self.reader_scroll_handles.remove(path);
             self.reader_link_focus_handles
-                .retain(|(document_path, _, _), _| document_path != path);
+                .retain(|(document_path, _), _| document_path != path);
             self.clear_reader_transient_state();
             cx.notify();
         }
@@ -474,7 +523,7 @@ impl MdowApp {
 
     pub(crate) fn set_hovered_link(
         &mut self,
-        hovered_link: Option<(usize, usize)>,
+        hovered_link: Option<LinkFocusKey>,
         cx: &mut Context<Self>,
     ) {
         if self.hovered_link != hovered_link {
@@ -485,13 +534,10 @@ impl MdowApp {
 
     pub(crate) fn clear_hovered_link_for_surface(
         &mut self,
-        surface_id: usize,
+        surface: LinkSurfaceKey,
         cx: &mut Context<Self>,
     ) {
-        if self
-            .hovered_link
-            .is_some_and(|(hovered_surface, _)| hovered_surface == surface_id)
-        {
+        if self.hovered_link.is_some_and(|key| key.surface == surface) {
             self.hovered_link = None;
             cx.notify();
         }
@@ -582,18 +628,8 @@ impl Render for MdowApp {
                 ));
             }
             let scroll_handle = self.reader_scroll_handles.entry(path).or_default().clone();
-            let active_focus_handles = document_link_focus_targets(&document)
-                .into_iter()
-                .map(|target| {
-                    let key = (document.path.clone(), target.surface_id, target.link_index);
-                    if !self.reader_link_focus_handles.contains_key(&key) {
-                        let handle = cx.focus_handle().tab_index(0).tab_stop(true);
-                        self.reader_link_focus_handles.insert(key.clone(), handle);
-                    }
-                    let handle = self.reader_link_focus_handles[&key].clone();
-                    ((target.surface_id, target.link_index), handle)
-                })
-                .collect::<HashMap<_, _>>();
+            let active_focus_handles =
+                self.reconcile_reader_link_focus_handles(&document, window, cx);
             let link_state = ReaderLinkState {
                 hovered: self.hovered_link,
                 focused: self.focused_link,
@@ -729,6 +765,10 @@ mod tests {
         visual.simulate_event(KeyUpEvent {
             keystroke: Keystroke::parse(key).unwrap(),
         });
+    }
+
+    fn block_link_key(block_index: usize, link_index: usize) -> LinkFocusKey {
+        LinkFocusKey::new(LinkSurfaceKey::block(block_index), link_index)
     }
 
     #[test]
@@ -1204,12 +1244,16 @@ mod tests {
                 is_held: false,
             });
             visual.update(|window, cx| window.draw(cx).clear());
-            if window.update(cx, |app, _, _| app.focused_link).unwrap() == Some((0, 0)) {
+            if window.update(cx, |app, _, _| app.focused_link).unwrap()
+                == Some(block_link_key(0, 0))
+            {
                 break;
             }
         }
         window
-            .update(cx, |app, _, _| assert_eq!(app.focused_link, Some((0, 0))))
+            .update(cx, |app, _, _| {
+                assert_eq!(app.focused_link, Some(block_link_key(0, 0)))
+            })
             .unwrap();
 
         activate_focused(&mut visual, "enter");
@@ -1269,8 +1313,8 @@ mod tests {
                     app.model = model;
                     app.open_error = None;
                     app.copied_code = Some((4, Instant::now()));
-                    app.hovered_link = Some((1, 0));
-                    app.focused_link = Some((1, 0));
+                    app.hovered_link = Some(block_link_key(1, 0));
+                    app.focused_link = Some(block_link_key(1, 0));
                     app
                 })
             })
@@ -1305,8 +1349,8 @@ mod tests {
                     let mut app = MdowApp::new(window, cx);
                     app.model.open_document(&first).unwrap();
                     app.copied_code = Some((2, Instant::now()));
-                    app.hovered_link = Some((3, 0));
-                    app.focused_link = Some((3, 0));
+                    app.hovered_link = Some(block_link_key(3, 0));
+                    app.focused_link = Some(block_link_key(3, 0));
                     app
                 })
             })
@@ -1445,9 +1489,14 @@ mod tests {
             }
         }
         let focused_links = focused_links.into_iter().flatten().collect::<Vec<_>>();
-        assert_eq!(focused_links, vec![(0, 0), (0, 1)]);
+        assert_eq!(
+            focused_links,
+            vec![block_link_key(0, 0), block_link_key(0, 1)]
+        );
         window
-            .update(cx, |app, _, _| assert_eq!(app.focused_link, Some((0, 1))))
+            .update(cx, |app, _, _| {
+                assert_eq!(app.focused_link, Some(block_link_key(0, 1)))
+            })
             .unwrap();
 
         activate_focused(&mut visual, "enter");
@@ -1485,7 +1534,9 @@ mod tests {
 
         visual.simulate_mouse_move(link_point, None, Modifiers::none());
         window
-            .update(cx, |app, _, _| assert_eq!(app.hovered_link, Some((0, 0))))
+            .update(cx, |app, _, _| {
+                assert_eq!(app.hovered_link, Some(block_link_key(0, 0)))
+            })
             .unwrap();
 
         visual.simulate_mouse_move(
@@ -1541,6 +1592,127 @@ mod tests {
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.reader_scroll_handles[&canonical].offset().y, px(0.0));
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn same_path_document_rebuild_reconciles_link_focus_handles(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reader.md");
+        let destination = directory.path().join("destination.md");
+        fs::write(&path, "[Old self link](reader.md)\n").unwrap();
+        fs::write(&destination, "# Destination\n").unwrap();
+        let canonical = path.canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.open_document(&path).unwrap();
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        for _ in 0..12 {
+            visual.simulate_event(KeyDownEvent {
+                keystroke: Keystroke::parse("tab").unwrap(),
+                is_held: false,
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+            if window.update(cx, |app, _, _| app.focused_link).unwrap()
+                == Some(block_link_key(0, 0))
+            {
+                break;
+            }
+        }
+        let old_handle = window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.reader_link_focus_handles.len(), 1);
+                app.reader_link_focus_handles
+                    .values()
+                    .next()
+                    .unwrap()
+                    .clone()
+            })
+            .unwrap();
+        window
+            .update(cx, |_, window, _| assert!(old_handle.is_focused(window)))
+            .unwrap();
+
+        activate_focused(&mut visual, "enter");
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, window, _| {
+                assert!(app.focused_link.is_none());
+                assert_eq!(app.reader_link_focus_handles.len(), 1);
+                assert!(!old_handle.is_focused(window));
+                assert_eq!(app.model.tabs.len(), 1);
+                assert_eq!(app.model.tabs.active().unwrap().path(), canonical);
+            })
+            .unwrap();
+
+        fs::write(&path, "No links remain.\n").unwrap();
+        window
+            .update(cx, |app, _, cx| app.open_path(&path, cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, window, _| {
+                assert!(app.focused_link.is_none());
+                assert!(app.reader_link_focus_handles.is_empty());
+                assert!(!old_handle.is_focused(window));
+                assert_eq!(app.model.tabs.len(), 1);
+                assert_eq!(app.model.tabs.active().unwrap().path(), canonical);
+            })
+            .unwrap();
+        activate_focused(&mut visual, "enter");
+        window
+            .update(cx, |app, _, _| assert_eq!(app.model.tabs.len(), 1))
+            .unwrap();
+
+        fs::write(
+            &path,
+            "The link moved to a later block.\n\n[New link](destination.md)\n",
+        )
+        .unwrap();
+        window
+            .update(cx, |app, _, cx| app.open_path(&path, cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.reader_link_focus_handles.len(), 1)
+            })
+            .unwrap();
+
+        for _ in 0..12 {
+            visual.simulate_event(KeyDownEvent {
+                keystroke: Keystroke::parse("tab").unwrap(),
+                is_held: false,
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+            if window.update(cx, |app, _, _| app.focused_link).unwrap()
+                == Some(block_link_key(1, 0))
+            {
+                break;
+            }
+        }
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.focused_link, Some(block_link_key(1, 0)))
+            })
+            .unwrap();
+        activate_focused(&mut visual, "enter");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(
+                    app.model.tabs.active().unwrap().path(),
+                    destination.canonicalize().unwrap(),
+                );
             })
             .unwrap();
     }

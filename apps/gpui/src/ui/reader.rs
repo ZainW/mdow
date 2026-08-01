@@ -174,17 +174,131 @@ pub struct InlineLink {
     pub node_id: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LinkSurfaceKey {
+    Block {
+        block_index: usize,
+    },
+    TableHeader {
+        block_index: usize,
+        column_index: usize,
+    },
+    TableCell {
+        block_index: usize,
+        row_index: usize,
+        column_index: usize,
+    },
+}
+
+impl LinkSurfaceKey {
+    pub const fn block(block_index: usize) -> Self {
+        Self::Block { block_index }
+    }
+
+    const fn table_header(block_index: usize, column_index: usize) -> Self {
+        Self::TableHeader {
+            block_index,
+            column_index,
+        }
+    }
+
+    const fn table_cell(block_index: usize, row_index: usize, column_index: usize) -> Self {
+        Self::TableCell {
+            block_index,
+            row_index,
+            column_index,
+        }
+    }
+
+    fn debug_selector(self) -> String {
+        match self {
+            Self::Block { block_index } => format!("reader-inline-{block_index}-0"),
+            Self::TableHeader {
+                block_index,
+                column_index,
+            } => format!("reader-inline-{block_index}-header-{column_index}"),
+            Self::TableCell {
+                block_index,
+                row_index,
+                column_index,
+            } => format!("reader-inline-{block_index}-cell-{row_index}-{column_index}"),
+        }
+    }
+
+    fn focus_debug_selector(self, link_index: usize) -> String {
+        match self {
+            Self::Block { block_index } => {
+                format!("reader-link-focus-{block_index}-{link_index}")
+            }
+            Self::TableHeader {
+                block_index,
+                column_index,
+            } => format!("reader-link-focus-{block_index}-header-{column_index}-{link_index}"),
+            Self::TableCell {
+                block_index,
+                row_index,
+                column_index,
+            } => format!(
+                "reader-link-focus-{block_index}-cell-{row_index}-{column_index}-{link_index}"
+            ),
+        }
+    }
+
+    fn identity_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(1 + 3 * size_of::<usize>());
+        match self {
+            Self::Block { block_index } => {
+                bytes.push(0);
+                bytes.extend_from_slice(&block_index.to_le_bytes());
+            }
+            Self::TableHeader {
+                block_index,
+                column_index,
+            } => {
+                bytes.push(1);
+                bytes.extend_from_slice(&block_index.to_le_bytes());
+                bytes.extend_from_slice(&column_index.to_le_bytes());
+            }
+            Self::TableCell {
+                block_index,
+                row_index,
+                column_index,
+            } => {
+                bytes.push(2);
+                bytes.extend_from_slice(&block_index.to_le_bytes());
+                bytes.extend_from_slice(&row_index.to_le_bytes());
+                bytes.extend_from_slice(&column_index.to_le_bytes());
+            }
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LinkFocusKey {
+    pub surface: LinkSurfaceKey,
+    pub link_index: usize,
+}
+
+impl LinkFocusKey {
+    pub const fn new(surface: LinkSurfaceKey, link_index: usize) -> Self {
+        Self {
+            surface,
+            link_index,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkFocusTarget {
-    pub surface_id: usize,
-    pub link_index: usize,
+    pub key: LinkFocusKey,
     pub target: String,
 }
 
 pub struct ReaderLinkState<'a> {
-    pub hovered: Option<(usize, usize)>,
-    pub focused: Option<(usize, usize)>,
-    pub focus_handles: &'a HashMap<(usize, usize), FocusHandle>,
+    pub hovered: Option<LinkFocusKey>,
+    pub focused: Option<LinkFocusKey>,
+    pub focus_handles: &'a HashMap<LinkFocusKey, FocusHandle>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -203,29 +317,28 @@ pub fn inline_layout(spans: &[InlineSpan]) -> InlineLayout {
 pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTarget> {
     let mut targets = Vec::new();
     for (block_index, block) in document.blocks.iter().enumerate() {
-        let mut surfaces: Vec<(usize, &[InlineSpan])> = Vec::new();
+        let mut surfaces: Vec<(LinkSurfaceKey, &[InlineSpan])> = Vec::new();
         match block {
             DocumentBlock::Heading { content, .. }
             | DocumentBlock::Paragraph(content)
             | DocumentBlock::ListItem { content, .. }
             | DocumentBlock::TaskItem { content, .. }
             | DocumentBlock::Blockquote(content) => {
-                surfaces.push((block_index * 1024, content));
+                surfaces.push((LinkSurfaceKey::block(block_index), content));
             }
             DocumentBlock::Table(table) => {
-                let column_count = table
-                    .headers
-                    .len()
-                    .max(table.rows.iter().map(Vec::len).max().unwrap_or(0))
-                    .max(1);
                 for (column_index, content) in table.headers.iter().enumerate() {
-                    surfaces.push((block_index * 1024 + column_index + 1, content));
+                    surfaces.push((
+                        LinkSurfaceKey::table_header(block_index, column_index),
+                        content,
+                    ));
                 }
                 for (row_index, row) in table.rows.iter().enumerate() {
                     for (column_index, content) in row.iter().enumerate() {
-                        let cell_index = row_index * column_count + column_index;
-                        surfaces
-                            .push((block_index * 1024 + column_count + cell_index + 1, content));
+                        surfaces.push((
+                            LinkSurfaceKey::table_cell(block_index, row_index, column_index),
+                            content,
+                        ));
                     }
                 }
             }
@@ -235,7 +348,7 @@ pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTa
             | DocumentBlock::RawText(_) => {}
         }
 
-        for (surface_id, spans) in surfaces {
+        for (surface, spans) in surfaces {
             let layout = inline_layout(spans);
             for (link_index, link) in layout
                 .links
@@ -249,8 +362,7 @@ pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTa
                 .enumerate()
             {
                 targets.push(LinkFocusTarget {
-                    surface_id,
-                    link_index,
+                    key: LinkFocusKey::new(surface, link_index),
                     target: link.target,
                 });
             }
@@ -442,6 +554,10 @@ fn restrict_scroll_to_axis<E: Styled>(mut element: E) -> E {
 }
 
 fn document_scoped_element_id(document_path: &Path, role: &str, block_index: usize) -> u64 {
+    document_scoped_identity_id(document_path, role, &block_index.to_le_bytes())
+}
+
+fn document_scoped_identity_id(document_path: &Path, role: &str, identity: &[u8]) -> u64 {
     // FNV-1a gives us a deterministic, inexpensive identity without retaining the full path in
     // GPUI's element-id tree.
     let mut hash = 0xcbf29ce484222325_u64;
@@ -449,12 +565,22 @@ fn document_scoped_element_id(document_path: &Path, role: &str, block_index: usi
         .as_bytes()
         .iter()
         .chain(document_path.as_os_str().as_encoded_bytes())
-        .chain(block_index.to_le_bytes().iter())
+        .chain(identity)
     {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x100000001b3);
     }
     hash
+}
+
+fn link_surface_element_id(document_path: &Path, role: &str, surface: LinkSurfaceKey) -> u64 {
+    document_scoped_identity_id(document_path, role, &surface.identity_bytes())
+}
+
+fn link_focus_element_id(document_path: &Path, role: &str, key: LinkFocusKey) -> u64 {
+    let mut identity = key.surface.identity_bytes();
+    identity.extend_from_slice(&key.link_index.to_le_bytes());
+    document_scoped_identity_id(document_path, role, &identity)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -651,8 +777,7 @@ fn render_block(
                 .child(render_inline_layout(
                     inline_layout_with_transform(content, style.uppercase),
                     document_path,
-                    block_index * 1024,
-                    block_index,
+                    LinkSurfaceKey::block(block_index),
                     style.font_weight,
                     if style.muted {
                         theme.muted_foreground
@@ -674,8 +799,7 @@ fn render_block(
             .child(render_inline(
                 content,
                 document_path,
-                block_index * 1024,
-                block_index,
+                LinkSurfaceKey::block(block_index),
                 400,
                 theme.foreground,
                 theme,
@@ -734,8 +858,7 @@ fn render_block(
                     .child(render_inline(
                         content,
                         document_path,
-                        block_index * 1024,
-                        block_index,
+                        LinkSurfaceKey::block(block_index),
                         400,
                         theme.muted_foreground,
                         theme,
@@ -787,8 +910,7 @@ fn render_block(
 pub fn render_inline(
     spans: &[InlineSpan],
     document_path: &Path,
-    surface_id: usize,
-    block_index: usize,
+    surface: LinkSurfaceKey,
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
@@ -798,8 +920,7 @@ pub fn render_inline(
     render_inline_layout(
         inline_layout(spans),
         document_path,
-        surface_id,
-        block_index,
+        surface,
         base_weight,
         base_color,
         theme,
@@ -813,8 +934,7 @@ pub fn render_inline(
 fn render_inline_layout(
     layout: InlineLayout,
     document_path: &Path,
-    surface_id: usize,
-    block_index: usize,
+    surface: LinkSurfaceKey,
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
@@ -830,12 +950,12 @@ fn render_inline_layout(
         .collect::<Vec<_>>();
     let hovered_link_index = link_state
         .hovered
-        .filter(|(hovered_surface, _)| *hovered_surface == surface_id)
-        .map(|(_, link_index)| link_index);
+        .filter(|key| key.surface == surface)
+        .map(|key| key.link_index);
     let focused_link_index = link_state
         .focused
-        .filter(|(focused_surface, _)| *focused_surface == surface_id)
-        .map(|(_, link_index)| link_index);
+        .filter(|key| key.surface == surface)
+        .map(|key| key.link_index);
     let runs = text_runs(
         &layout,
         &active_links,
@@ -863,28 +983,34 @@ fn render_inline_layout(
             .collect::<Vec<_>>();
         let hover_links = click_links.clone();
         let weak_app = cx.weak_entity();
-        InteractiveText::new(("reader-inline-text", surface_id), styled_text)
-            .on_click(
-                click_ranges,
-                cx.processor(move |this, link_index: usize, _, cx| {
-                    if let Some(target) = click_targets.get(link_index).map(String::as_str) {
-                        this.activate_link(&click_document_path, target, cx);
-                    }
-                }),
-            )
-            .on_hover(move |character_index, _, _, cx| {
-                let next = character_index
-                    .and_then(|character_index| {
-                        hover_links
-                            .iter()
-                            .position(|link| link.range.contains(&character_index))
-                    })
-                    .map(|link_index| (surface_id, link_index));
-                weak_app
-                    .update(cx, |this, cx| this.set_hovered_link(next, cx))
-                    .ok();
-            })
-            .into_any_element()
+        InteractiveText::new(
+            (
+                "reader-inline-text",
+                link_surface_element_id(&document_path, "reader-inline-text", surface),
+            ),
+            styled_text,
+        )
+        .on_click(
+            click_ranges,
+            cx.processor(move |this, link_index: usize, _, cx| {
+                if let Some(target) = click_targets.get(link_index).map(String::as_str) {
+                    this.activate_link(&click_document_path, target, cx);
+                }
+            }),
+        )
+        .on_hover(move |character_index, _, _, cx| {
+            let next = character_index
+                .and_then(|character_index| {
+                    hover_links
+                        .iter()
+                        .position(|link| link.range.contains(&character_index))
+                })
+                .map(|link_index| LinkFocusKey::new(surface, link_index));
+            weak_app
+                .update(cx, |this, cx| this.set_hovered_link(next, cx))
+                .ok();
+        })
+        .into_any_element()
     };
 
     let keyboard_links = active_links
@@ -893,21 +1019,18 @@ fn render_inline_layout(
         .filter_map(|(link_index, link)| {
             link_state
                 .focus_handles
-                .get(&(surface_id, link_index))
+                .get(&LinkFocusKey::new(surface, link_index))
                 .cloned()
                 .map(|handle| (link_index, link.target.clone(), handle))
         })
         .collect::<Vec<_>>();
     let weak_app = cx.weak_entity();
-    let mut surface = div()
-        .id(("reader-inline", surface_id))
-        .debug_selector(move || {
-            format!(
-                "reader-inline-{}-{}",
-                block_index,
-                surface_id.saturating_sub(block_index * 1024),
-            )
-        })
+    let mut surface_element = div()
+        .id((
+            "reader-inline",
+            link_surface_element_id(&document_path, "reader-inline", surface),
+        ))
+        .debug_selector(move || surface.debug_selector())
         .w_full()
         .min_w_0()
         .relative()
@@ -916,7 +1039,7 @@ fn render_inline_layout(
             if !*hovered {
                 weak_app
                     .update(cx, |this, cx| {
-                        this.clear_hovered_link_for_surface(surface_id, cx)
+                        this.clear_hovered_link_for_surface(surface, cx)
                     })
                     .ok();
             }
@@ -926,15 +1049,14 @@ fn render_inline_layout(
         .child(text);
     for (link_index, target, focus_handle) in keyboard_links {
         let keyboard_document_path = document_path.clone();
-        let focus_proxy_id = document_scoped_element_id(
-            &keyboard_document_path,
-            "reader-link-focus",
-            surface_id.wrapping_mul(1024).wrapping_add(link_index),
-        );
-        surface = surface.child(
+        let focus_key = LinkFocusKey::new(surface, link_index);
+        let focus_proxy_id =
+            link_focus_element_id(&keyboard_document_path, "reader-link-focus", focus_key);
+        let focus_debug_selector = surface.focus_debug_selector(link_index);
+        surface_element = surface_element.child(
             div()
                 .id(("reader-link-focus", focus_proxy_id))
-                .debug_selector(move || format!("reader-link-focus-{surface_id}-{link_index}"))
+                .debug_selector(move || focus_debug_selector.clone())
                 .absolute()
                 .top_0()
                 .left_0()
@@ -950,7 +1072,7 @@ fn render_inline_layout(
                 })),
         );
     }
-    surface.into_any_element()
+    surface_element.into_any_element()
 }
 
 fn text_runs(
@@ -1089,8 +1211,7 @@ fn render_list_item(
         .child(div().min_w_0().flex_grow().child(render_inline(
             content,
             document_path,
-            block_index * 1024,
-            block_index,
+            LinkSurfaceKey::block(block_index),
             400,
             theme.foreground,
             theme,
@@ -1142,8 +1263,7 @@ fn render_task_item(
         .child(div().min_w_0().flex_grow().child(render_inline(
             content,
             document_path,
-            block_index * 1024,
-            block_index,
+            LinkSurfaceKey::block(block_index),
             400,
             theme.foreground,
             theme,
@@ -1337,7 +1457,7 @@ fn render_table(
         .line_height(px(15.5 * 0.925 * 1.5));
     for column_index in 0..column_count {
         let content = table.headers.get(column_index).cloned().unwrap_or_default();
-        let surface_id = block_index * 1024 + column_index + 1;
+        let surface = LinkSurfaceKey::table_header(block_index, column_index);
         grid = grid.child(
             div()
                 .min_w_0()
@@ -1356,8 +1476,7 @@ fn render_table(
                 .child(render_inline_layout(
                     inline_layout_with_transform(&content, true),
                     document_path,
-                    surface_id,
-                    block_index,
+                    surface,
                     600,
                     theme.muted_foreground,
                     theme,
@@ -1370,8 +1489,7 @@ fn render_table(
     for (row_index, row) in table.rows.iter().enumerate() {
         for column_index in 0..column_count {
             let content = row.get(column_index).cloned().unwrap_or_default();
-            let cell_index = row_index * column_count + column_index;
-            let surface_id = block_index * 1024 + column_count + cell_index + 1;
+            let surface = LinkSurfaceKey::table_cell(block_index, row_index, column_index);
             let last_row = row_index + 1 == table.rows.len();
             grid = grid.child(
                 div()
@@ -1387,8 +1505,7 @@ fn render_table(
                     .child(render_inline(
                         &content,
                         document_path,
-                        surface_id,
-                        block_index,
+                        surface,
                         400,
                         theme.foreground,
                         theme,
@@ -1820,16 +1937,46 @@ mod tests {
             document_link_focus_targets(&document),
             vec![
                 LinkFocusTarget {
-                    surface_id: 0,
-                    link_index: 0,
+                    key: LinkFocusKey::new(LinkSurfaceKey::block(0), 0),
                     target: "one.md".into(),
                 },
                 LinkFocusTarget {
-                    surface_id: 0,
-                    link_index: 1,
+                    key: LinkFocusKey::new(LinkSurfaceKey::block(0), 1),
                     target: "two.md".into(),
                 },
             ],
         );
+    }
+
+    #[test]
+    fn large_table_and_following_block_have_distinct_link_focus_keys() {
+        let link = || {
+            vec![InlineSpan::Link {
+                label: vec![InlineSpan::Text("link".into())],
+                target: "target.md".into(),
+            }]
+        };
+        let document = ParsedDocument {
+            path: PathBuf::from("/tmp/large-table.md"),
+            title: "Large table".into(),
+            source: String::new(),
+            blocks: vec![
+                DocumentBlock::Table(TableBlock {
+                    headers: (0..32).map(|_| link()).collect(),
+                    rows: (0..31).map(|_| (0..32).map(|_| link()).collect()).collect(),
+                }),
+                DocumentBlock::Paragraph(link()),
+            ],
+            headings: vec![],
+        };
+
+        let targets = document_link_focus_targets(&document);
+        let distinct_keys = targets
+            .iter()
+            .map(|target| target.key)
+            .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(targets.len(), 1_025);
+        assert_eq!(distinct_keys.len(), targets.len());
     }
 }
