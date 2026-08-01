@@ -14,15 +14,17 @@ use crate::{
         },
         welcome::welcome,
     },
+    watcher::{FileWatcher, WatchMessage},
     workspace::{WorkspaceError, WorkspaceTree, scan_workspace},
 };
 use gpui::{
     ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, IntoElement, PathPromptOptions,
-    Render, ScrollHandle, Subscription, Timer, Window, div, prelude::*, px,
+    Render, ScrollHandle, Subscription, Task, Timer, Window, div, prelude::*, px,
 };
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, mpsc::Receiver},
     time::{Duration, Instant},
 };
 
@@ -106,6 +108,22 @@ impl AppModel {
         Ok(())
     }
 
+    pub fn reload_path(&mut self, path: &Path) -> Result<(), AppOpenError> {
+        let tab_path = canonical_file_identity(path);
+        let loaded = match load_source(path) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                let error = AppOpenError::from(error);
+                self.tabs
+                    .set_reload_error(&tab_path, error.view().body.clone());
+                return Err(error);
+            }
+        };
+        let document = parse_document(loaded.canonical_path, loaded.source);
+        self.tabs.replace_document(document);
+        Ok(())
+    }
+
     pub fn open_workspace(&mut self, path: &Path) -> Result<(), AppOpenError> {
         match scan_workspace(path) {
             Ok(workspace) => {
@@ -171,6 +189,15 @@ impl AppModel {
     }
 }
 
+fn canonical_file_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        path.parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .and_then(|parent| path.file_name().map(|name| parent.join(name)))
+            .unwrap_or_else(|| path.to_owned())
+    })
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DropState {
     active: bool,
@@ -211,6 +238,9 @@ pub struct MdowApp {
     focused_link: Option<LinkFocusKey>,
     reader_scroll_handles: HashMap<PathBuf, ScrollHandle>,
     reader_link_focus_handles: HashMap<(PathBuf, LinkFocusKey), FocusHandle>,
+    file_watcher: FileWatcher,
+    _watch_messages: Arc<Mutex<Receiver<WatchMessage>>>,
+    _watch_poll_task: Task<()>,
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
@@ -224,29 +254,55 @@ impl MdowApp {
             this.theme = Theme::for_appearance(window.appearance());
             cx.notify();
         });
-
-        let mut model = AppModel::default();
-        let open_error = std::env::args_os().nth(1).and_then(|path| {
-            model.open_path(Path::new(&path)).err().and_then(|error| {
-                if matches!(error, AppOpenError::Document(_)) {
-                    Some(error.into_view())
-                } else {
-                    None
+        let file_watcher = FileWatcher::new().expect("create Mdow file watcher");
+        let watch_messages = file_watcher.messages();
+        let poll_messages = watch_messages.clone();
+        let watch_poll_task = cx.spawn(async move |this, cx| {
+            loop {
+                Timer::after(Duration::from_millis(100)).await;
+                let messages = {
+                    let Ok(receiver) = poll_messages.lock() else {
+                        break;
+                    };
+                    receiver.try_iter().collect::<Vec<_>>()
+                };
+                if messages.is_empty() {
+                    continue;
                 }
-            })
+                if this
+                    .update(cx, |this, cx| {
+                        let mut changed = false;
+                        for WatchMessage::Reload(path) in messages {
+                            if this.model.tabs.get(&path).is_some() {
+                                let _ = this.model.reload_path(&path);
+                                changed = true;
+                            }
+                        }
+                        if changed {
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         });
 
         Self {
-            model,
+            model: AppModel::default(),
             sidebar_open: true,
             wide_mode: false,
             drop_state: DropState::default(),
-            open_error,
+            open_error: None,
             copied_code: None,
             hovered_link: None,
             focused_link: None,
             reader_scroll_handles: HashMap::new(),
             reader_link_focus_handles: HashMap::new(),
+            file_watcher,
+            _watch_messages: watch_messages,
+            _watch_poll_task: watch_poll_task,
             theme: Theme::for_appearance(window.appearance()),
             focus_handle,
             _appearance_subscription: appearance_subscription,
@@ -256,7 +312,13 @@ impl MdowApp {
     pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         match self.model.open_path(path) {
             Ok(()) if !path.is_dir() => {
-                self.open_error = None;
+                let watch_error = self
+                    .model
+                    .tabs
+                    .active()
+                    .map(|tab| tab.path().to_owned())
+                    .and_then(|path| self.watch_document(&path).err());
+                self.open_error = watch_error;
                 self.clear_reader_transient_state();
             }
             Ok(()) => {}
@@ -269,14 +331,45 @@ impl MdowApp {
     fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
         let result = self.model.open_paths(paths);
         let document_opened = result.document_opened();
+        let watch_error = document_opened
+            .then(|| self.watch_all_documents())
+            .flatten();
         if result.document_attempted() {
-            self.open_error = result.document_error;
+            self.open_error = result.document_error.or(watch_error);
         }
         if document_opened {
             self.clear_reader_transient_state();
         }
         self.drop_state.dropped();
         cx.notify();
+    }
+
+    fn watch_all_documents(&mut self) -> Option<UserFacingError> {
+        let paths = self
+            .model
+            .tabs
+            .paths()
+            .map(Path::to_owned)
+            .collect::<Vec<_>>();
+        let mut first_error = None;
+        for path in paths {
+            if let Err(error) = self.watch_document(&path)
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error
+    }
+
+    fn watch_document(&mut self, path: &Path) -> Result<(), UserFacingError> {
+        self.file_watcher
+            .watch(path)
+            .map_err(|error| UserFacingError {
+                title: "Couldn't watch this file".into(),
+                body: error.to_string(),
+                path: path.to_owned(),
+            })
     }
 
     fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
@@ -732,7 +825,7 @@ mod tests {
         FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
         VisualTestContext, point,
     };
-    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path, sync::Arc};
 
     fn markdown_workspace() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -740,6 +833,13 @@ mod tests {
         fs::write(root.path().join("README.md"), "# Home").unwrap();
         fs::write(root.path().join("guides/start.md"), "# Start").unwrap();
         root
+    }
+
+    fn watcher_workspace() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("mdow-app-watch-")
+            .tempdir_in("/private/tmp")
+            .unwrap()
     }
 
     fn click_debug(visual: &mut VisualTestContext, selector: &'static str) {
@@ -782,6 +882,54 @@ mod tests {
 
         assert_eq!(model.tabs.len(), 1);
         assert_eq!(model.tabs.active().unwrap().document.title, "Guide");
+    }
+
+    #[test]
+    fn successful_reload_replaces_content_without_reordering_or_reactivating_tabs() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.md");
+        let second = dir.path().join("second.md");
+        fs::write(&first, "# First").unwrap();
+        fs::write(&second, "# Second").unwrap();
+        let mut model = AppModel::default();
+        model.open_document(&first).unwrap();
+        model.open_document(&second).unwrap();
+        let before = model.tabs.paths().map(Path::to_owned).collect::<Vec<_>>();
+        let active_before = model.tabs.active().unwrap().path().to_owned();
+        fs::write(&first, "# Changed").unwrap();
+
+        model.reload_path(&first).unwrap();
+
+        assert_eq!(
+            model.tabs.paths().map(Path::to_owned).collect::<Vec<_>>(),
+            before
+        );
+        assert_eq!(model.tabs.active().unwrap().path(), active_before);
+        assert_eq!(model.tabs.get(&first).unwrap().document.title, "Changed");
+        assert!(model.tabs.get(&first).unwrap().reload_error.is_none());
+    }
+
+    #[test]
+    fn failed_reload_preserves_the_last_document_and_sets_a_readable_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("guide.md");
+        fs::write(&path, "# Last good").unwrap();
+        let mut model = AppModel::default();
+        model.open_document(&path).unwrap();
+        let before = model.tabs.active().unwrap().document.clone();
+        fs::remove_file(&path).unwrap();
+
+        let error = model.reload_path(&path).unwrap_err();
+
+        let tab = model.tabs.active().unwrap();
+        assert!(Arc::ptr_eq(&tab.document, &before));
+        assert_eq!(tab.document.title, "Last good");
+        assert_eq!(
+            tab.reload_error.as_deref(),
+            Some(error.view().body.as_str())
+        );
+        assert_eq!(error.view().title, "File not found");
+        assert!(!error.view().body.contains("DocumentError"));
     }
 
     #[test]
@@ -962,6 +1110,131 @@ mod tests {
         assert!(state.enter());
         assert!(state.dropped());
         assert!(!state.is_active());
+    }
+
+    #[gpui::test]
+    fn open_paths_registers_live_reload_without_changing_tab_or_scroll_state(
+        cx: &mut TestAppContext,
+    ) {
+        let dir = watcher_workspace();
+        let first = dir.path().join("first.md");
+        let second = dir.path().join("second.md");
+        fs::write(
+            &first,
+            format!(
+                "# First\n\n{}",
+                "A paragraph for scrolling.\n\n".repeat(200)
+            ),
+        )
+        .unwrap();
+        fs::write(&second, "# Second").unwrap();
+        let first = first.canonicalize().unwrap();
+        let second = second.canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        window
+            .update(cx, |app, _, cx| {
+                app.open_paths([first.clone(), second.clone()], cx);
+                app.activate_tab(&first, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        {
+            let mut visual = VisualTestContext::from_window((*window).into(), cx);
+            visual.update(|window, cx| window.draw(cx).clear());
+        }
+        let scroll_handle = window
+            .update(cx, |app, _, _| {
+                app.reader_scroll_handles.get(&first).unwrap().clone()
+            })
+            .unwrap();
+        let before = window
+            .update(cx, |app, _, _| {
+                app.model
+                    .tabs
+                    .paths()
+                    .map(Path::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+
+        fs::write(
+            &first,
+            format!(
+                "# Reloaded\n\n{}",
+                "A paragraph for scrolling.\n\n".repeat(200)
+            ),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(350));
+        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.run_until_parked();
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(
+                    app.model
+                        .tabs
+                        .paths()
+                        .map(Path::to_owned)
+                        .collect::<Vec<_>>(),
+                    before
+                );
+                assert_eq!(app.model.tabs.active().unwrap().path(), first);
+                assert_eq!(
+                    app.model.tabs.get(&first).unwrap().document.title,
+                    "Reloaded"
+                );
+                app.reader_scroll_handles
+                    .get(&first)
+                    .unwrap()
+                    .set_offset(point(px(0.0), px(-64.0)));
+            })
+            .unwrap();
+        assert_eq!(scroll_handle.offset(), point(px(0.0), px(-64.0)));
+    }
+
+    #[gpui::test]
+    fn batch_open_watches_valid_files_after_a_stale_tab_watch_failure(cx: &mut TestAppContext) {
+        let dir = watcher_workspace();
+        let stale = dir.path().join("stale.md");
+        let valid = dir.path().join("valid.md");
+        fs::write(&stale, "# Stale").unwrap();
+        fs::write(&valid, "# Valid").unwrap();
+        let stale = stale.canonicalize().unwrap();
+        let valid = valid.canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        window
+            .update(cx, |app, _, cx| app.open_path(&stale, cx))
+            .unwrap();
+        fs::remove_file(&stale).unwrap();
+
+        window
+            .update(cx, |app, _, cx| app.open_paths([valid.clone()], cx))
+            .unwrap();
+        cx.run_until_parked();
+        fs::write(&valid, "# Watched").unwrap();
+        std::thread::sleep(Duration::from_millis(350));
+        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.run_until_parked();
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(
+                    app.model.tabs.get(&valid).unwrap().document.title,
+                    "Watched"
+                );
+            })
+            .unwrap();
     }
 
     #[gpui::test]
