@@ -82,6 +82,34 @@ pub fn icon_button(
         )
 }
 
+pub fn compact_icon_button(
+    id: &'static str,
+    icon_path: &'static str,
+    target_size: f32,
+    icon_size: f32,
+    theme: Theme,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .debug_selector(move || id.to_string())
+        .tab_index(0)
+        .focusable()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(target_size))
+        .flex_none()
+        .rounded(px(5.0))
+        .text_color(theme.muted_foreground)
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.muted).text_color(theme.foreground))
+        .active(|style| style.opacity(0.8))
+        .focus(move |style| style.border_1().border_color(theme.primary))
+        .on_click(on_click)
+        .child(icon(icon_path, theme.muted_foreground, icon_size))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

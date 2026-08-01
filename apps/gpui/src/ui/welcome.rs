@@ -1,5 +1,6 @@
 use crate::{
     actions::{OpenFile, OpenFolder},
+    app::UserFacingError,
     theme::{Metrics, Theme},
     ui::primitives::{brand_logo, icon, outline_button},
 };
@@ -146,6 +147,82 @@ pub fn welcome(theme: Theme, drop_active: bool) -> AnyElement {
                                 ),
                         ),
                 ),
+        )
+        .into_any_element()
+}
+
+pub fn error_state(theme: Theme, error: &UserFacingError, drop_active: bool) -> AnyElement {
+    let background = if drop_active {
+        theme.primary.opacity(0.06)
+    } else {
+        theme.background
+    };
+
+    div()
+        .flex()
+        .flex_grow()
+        .min_w_0()
+        .min_h_0()
+        .items_center()
+        .justify_center()
+        .px(px(32.0))
+        .py(px(36.0))
+        .bg(background)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .w_full()
+                .max_w(px(520.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size(px(48.0))
+                        .rounded(px(24.0))
+                        .bg(theme.muted)
+                        .child(icon("icons/alert-circle.svg", theme.muted_foreground, 22.0)),
+                )
+                .child(
+                    div()
+                        .mt(px(16.0))
+                        .font_family(Metrics::FONT_SANS)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_size(px(16.0))
+                        .line_height(px(21.0))
+                        .text_color(theme.foreground)
+                        .child(error.title.clone()),
+                )
+                .child(
+                    div()
+                        .mt(px(7.0))
+                        .max_w(px(430.0))
+                        .text_center()
+                        .font_family(Metrics::FONT_SANS)
+                        .text_size(px(14.0))
+                        .line_height(px(21.0))
+                        .text_color(theme.muted_foreground)
+                        .child(error.body.clone()),
+                )
+                .child(
+                    div()
+                        .mt(px(10.0))
+                        .max_w(px(430.0))
+                        .truncate()
+                        .font_family(Metrics::FONT_MONO)
+                        .text_size(px(11.0))
+                        .text_color(theme.muted_foreground.opacity(0.72))
+                        .child(error.path.to_string_lossy().into_owned()),
+                )
+                .child(div().mt(px(18.0)).child(outline_button(
+                    "error-open-file",
+                    "Open File",
+                    "icons/file.svg",
+                    theme,
+                    |_, _, cx| cx.dispatch_action(&OpenFile),
+                ))),
         )
         .into_any_element()
 }
