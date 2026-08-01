@@ -1,0 +1,15 @@
+[package]
+name = "mdow-gpui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+gpui = "=0.2.2"
+notify = "=8.2.0"
+open = "=5.4.0"
+pulldown-cmark = { version = "=0.13.4", default-features = false }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
