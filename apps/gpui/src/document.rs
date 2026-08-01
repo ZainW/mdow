@@ -226,6 +226,47 @@ enum InlineContainer {
 struct InlineFrame {
     container: InlineContainer,
     spans: Vec<InlineSpan>,
+    pending_image: Option<ImageData>,
+}
+
+#[derive(Debug)]
+struct ImageData {
+    alt: String,
+    source: String,
+}
+
+impl InlineFrame {
+    fn new(container: InlineContainer) -> Self {
+        Self {
+            container,
+            spans: Vec::new(),
+            pending_image: None,
+        }
+    }
+
+    fn push_span(&mut self, span: InlineSpan) {
+        self.flush_pending_image();
+        self.spans.push(span);
+    }
+
+    fn into_spans(mut self) -> Vec<InlineSpan> {
+        self.flush_pending_image();
+        self.spans
+    }
+
+    fn take_standalone_image(&mut self) -> Option<ImageData> {
+        if self.spans.is_empty() {
+            self.pending_image.take()
+        } else {
+            None
+        }
+    }
+
+    fn flush_pending_image(&mut self) {
+        if let Some(image) = self.pending_image.take() {
+            self.spans.push(InlineSpan::Text(image.alt));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -291,79 +332,113 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     let mut html_block = None::<String>;
 
     for event in Parser::new_ext(&source, options) {
-        if let Some(code) = code_block.as_mut() {
+        if code_block.is_some() {
             match event {
                 Event::End(TagEnd::CodeBlock) => {
-                    blocks.push(DocumentBlock::CodeBlock {
-                        language: code.language.take(),
-                        code: std::mem::take(&mut code.code),
-                    });
-                    code_block = None;
+                    let code = code_block.take().expect("code block is present");
+                    push_block(
+                        DocumentBlock::CodeBlock {
+                            language: code.language,
+                            code: code.code,
+                        },
+                        &mut blocks,
+                        &mut item_stack,
+                        &mut blockquotes,
+                    );
                 }
                 Event::Text(text)
                 | Event::Code(text)
                 | Event::Html(text)
-                | Event::InlineHtml(text) => code.code.push_str(&text),
-                Event::SoftBreak | Event::HardBreak => code.code.push('\n'),
+                | Event::InlineHtml(text) => code_block
+                    .as_mut()
+                    .expect("code block is present")
+                    .code
+                    .push_str(&text),
+                Event::SoftBreak | Event::HardBreak => code_block
+                    .as_mut()
+                    .expect("code block is present")
+                    .code
+                    .push('\n'),
                 _ => {}
             }
             continue;
         }
 
-        if let Some(raw) = html_block.as_mut() {
+        if html_block.is_some() {
             match event {
                 Event::End(TagEnd::HtmlBlock) => {
-                    blocks.push(DocumentBlock::RawText(std::mem::take(raw)));
-                    html_block = None;
+                    push_block(
+                        DocumentBlock::RawText(html_block.take().expect("HTML block is present")),
+                        &mut blocks,
+                        &mut item_stack,
+                        &mut blockquotes,
+                    );
                 }
-                Event::Html(text) | Event::InlineHtml(text) | Event::Text(text) => {
-                    raw.push_str(&text)
-                }
-                Event::SoftBreak | Event::HardBreak => raw.push('\n'),
+                Event::Html(text) | Event::InlineHtml(text) | Event::Text(text) => html_block
+                    .as_mut()
+                    .expect("HTML block is present")
+                    .push_str(&text),
+                Event::SoftBreak | Event::HardBreak => html_block
+                    .as_mut()
+                    .expect("HTML block is present")
+                    .push('\n'),
                 _ => {}
             }
             continue;
         }
 
         match event {
-            Event::Start(Tag::Paragraph) => inline_stack.push(InlineFrame {
-                container: InlineContainer::Flatten,
-                spans: Vec::new(),
-            }),
+            Event::Start(Tag::Paragraph) => {
+                inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
+            }
             Event::End(TagEnd::Paragraph) => {
+                if let Some(mut frame) = inline_stack.pop() {
+                    if let Some(image) = frame.take_standalone_image() {
+                        push_block(
+                            DocumentBlock::Image {
+                                alt: image.alt,
+                                source: image.source,
+                            },
+                            &mut blocks,
+                            &mut item_stack,
+                            &mut blockquotes,
+                        );
+                    } else {
+                        push_paragraph_content(
+                            frame.into_spans(),
+                            &mut blocks,
+                            &mut item_stack,
+                            &mut blockquotes,
+                        );
+                    }
+                }
+            }
+            Event::Start(Tag::Heading { .. }) => {
+                inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
+            }
+            Event::End(TagEnd::Heading(level)) => {
                 if let Some(frame) = inline_stack.pop() {
-                    push_paragraph_content(
-                        frame.spans,
+                    let content = frame.into_spans();
+                    let level = level as u8;
+                    let text = plain_text_for_spans(&content);
+                    headings.push(Heading { level, text });
+                    push_block(
+                        DocumentBlock::Heading { level, content },
                         &mut blocks,
                         &mut item_stack,
                         &mut blockquotes,
                     );
                 }
             }
-            Event::Start(Tag::Heading { .. }) => inline_stack.push(InlineFrame {
-                container: InlineContainer::Flatten,
-                spans: Vec::new(),
-            }),
-            Event::End(TagEnd::Heading(level)) => {
-                if let Some(frame) = inline_stack.pop() {
-                    let content = frame.spans;
-                    let level = level as u8;
-                    let text = plain_text_for_spans(&content);
-                    if level == 1 {
-                        headings.push(Heading {
-                            level,
-                            text: text.clone(),
-                        });
-                    } else {
-                        headings.push(Heading { level, text });
-                    }
-                    blocks.push(DocumentBlock::Heading { level, content });
-                }
-            }
             Event::Start(Tag::BlockQuote(_)) => blockquotes.push(Vec::new()),
             Event::End(TagEnd::BlockQuote(_)) => {
                 if let Some(content) = blockquotes.pop() {
-                    blocks.push(DocumentBlock::Blockquote(content));
+                    push_block(
+                        DocumentBlock::Blockquote(content),
+                        &mut blocks,
+                        &mut item_stack,
+                        &mut blockquotes,
+                    );
                 }
             }
             Event::Start(Tag::CodeBlock(kind)) => {
@@ -408,7 +483,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             }
             Event::End(TagEnd::Item) => {
                 if let (Some(frame), Some(item)) = (inline_stack.pop(), item_stack.last_mut()) {
-                    append_inline_content(&mut item.content, frame.spans);
+                    append_inline_content(&mut item.content, frame.into_spans());
                 }
                 if let Some(item) = item_stack.pop() {
                     let block = match item.checked {
@@ -428,14 +503,21 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     if let Some(parent) = item_stack.last_mut() {
                         parent.children.extend(item_blocks);
                     } else {
-                        blocks.extend(item_blocks);
+                        for block in item_blocks {
+                            push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
+                        }
                     }
                 }
             }
             Event::Start(Tag::Table(_)) => table = Some(TableContext::default()),
             Event::End(TagEnd::Table) => {
                 if let Some(table) = table.take() {
-                    blocks.push(DocumentBlock::Table(table.table));
+                    push_block(
+                        DocumentBlock::Table(table.table),
+                        &mut blocks,
+                        &mut item_stack,
+                        &mut blockquotes,
+                    );
                 }
             }
             Event::Start(Tag::TableHead) => {
@@ -445,6 +527,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             }
             Event::End(TagEnd::TableHead) => {
                 if let Some(table) = table.as_mut() {
+                    table.table.headers = std::mem::take(&mut table.row);
                     table.in_header = false;
                 }
             }
@@ -463,39 +546,42 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     }
                 }
             }
-            Event::Start(Tag::TableCell) => inline_stack.push(InlineFrame {
-                container: InlineContainer::Flatten,
-                spans: Vec::new(),
-            }),
+            Event::Start(Tag::TableCell) => {
+                inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
+            }
             Event::End(TagEnd::TableCell) => {
                 if let (Some(frame), Some(table)) = (inline_stack.pop(), table.as_mut()) {
-                    table.row.push(frame.spans);
+                    table.row.push(frame.into_spans());
                 }
             }
             Event::Start(Tag::Emphasis) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Emphasis)
             }
-            Event::End(TagEnd::Emphasis) => pop_inline_frame(&mut inline_stack, &mut blocks),
+            Event::End(TagEnd::Emphasis) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Strong) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Strong)
             }
-            Event::End(TagEnd::Strong) => pop_inline_frame(&mut inline_stack, &mut blocks),
+            Event::End(TagEnd::Strong) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Strikethrough | Tag::Superscript | Tag::Subscript) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Flatten)
             }
             Event::End(TagEnd::Strikethrough | TagEnd::Superscript | TagEnd::Subscript) => {
-                pop_inline_frame(&mut inline_stack, &mut blocks)
+                pop_inline_frame(&mut inline_stack)
             }
             Event::Start(Tag::Link { dest_url, .. }) => push_inline_frame(
                 &mut inline_stack,
                 InlineContainer::Link(dest_url.into_string()),
             ),
-            Event::End(TagEnd::Link) => pop_inline_frame(&mut inline_stack, &mut blocks),
+            Event::End(TagEnd::Link) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Image { dest_url, .. }) => push_inline_frame(
                 &mut inline_stack,
                 InlineContainer::Image(dest_url.into_string()),
             ),
-            Event::End(TagEnd::Image) => pop_inline_frame(&mut inline_stack, &mut blocks),
+            Event::End(TagEnd::Image) => {
+                if let Some(image) = pop_image_frame(&mut inline_stack) {
+                    push_block(image, &mut blocks, &mut item_stack, &mut blockquotes);
+                }
+            }
             Event::Text(text) => {
                 push_inline_span(&mut inline_stack, InlineSpan::Text(text.into_string()))
             }
@@ -505,10 +591,20 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             Event::InlineHtml(html) => {
                 push_inline_span(&mut inline_stack, InlineSpan::Text(html.into_string()))
             }
-            Event::Html(html) => blocks.push(DocumentBlock::RawText(html.into_string())),
+            Event::Html(html) => push_block(
+                DocumentBlock::RawText(html.into_string()),
+                &mut blocks,
+                &mut item_stack,
+                &mut blockquotes,
+            ),
             Event::SoftBreak => push_inline_span(&mut inline_stack, InlineSpan::SoftBreak),
             Event::HardBreak => push_inline_span(&mut inline_stack, InlineSpan::HardBreak),
-            Event::Rule => blocks.push(DocumentBlock::ThematicBreak),
+            Event::Rule => push_block(
+                DocumentBlock::ThematicBreak,
+                &mut blocks,
+                &mut item_stack,
+                &mut blockquotes,
+            ),
             Event::TaskListMarker(checked) => {
                 if let Some(item) = item_stack.last_mut() {
                     item.checked = Some(checked);
@@ -578,7 +674,30 @@ fn push_paragraph_content(
     } else if let Some(blockquote) = blockquotes.last_mut() {
         append_inline_content(blockquote, content);
     } else {
-        blocks.push(DocumentBlock::Paragraph(content));
+        push_block(
+            DocumentBlock::Paragraph(content),
+            blocks,
+            item_stack,
+            blockquotes,
+        );
+    }
+}
+
+fn push_block(
+    block: DocumentBlock,
+    blocks: &mut Vec<DocumentBlock>,
+    item_stack: &mut [ItemContext],
+    blockquotes: &mut [Vec<InlineSpan>],
+) {
+    if let Some(item) = item_stack.last_mut() {
+        item.children.push(block);
+    } else if let Some(blockquote) = blockquotes.last_mut() {
+        let text = block.plain_text();
+        if !text.is_empty() {
+            append_inline_content(blockquote, vec![InlineSpan::Text(text)]);
+        }
+    } else {
+        blocks.push(block);
     }
 }
 
@@ -590,42 +709,64 @@ fn append_inline_content(destination: &mut Vec<InlineSpan>, content: Vec<InlineS
 }
 
 fn push_inline_frame(stack: &mut Vec<InlineFrame>, container: InlineContainer) {
-    stack.push(InlineFrame {
-        container,
-        spans: Vec::new(),
-    });
+    stack.push(InlineFrame::new(container));
 }
 
-fn pop_inline_frame(stack: &mut Vec<InlineFrame>, blocks: &mut Vec<DocumentBlock>) {
+fn pop_inline_frame(stack: &mut Vec<InlineFrame>) {
     let Some(frame) = stack.pop() else {
         return;
     };
 
-    match frame.container {
-        InlineContainer::Emphasis => push_inline_span(stack, InlineSpan::Emphasis(frame.spans)),
-        InlineContainer::Strong => push_inline_span(stack, InlineSpan::Strong(frame.spans)),
+    match frame.container.clone() {
+        InlineContainer::Emphasis => {
+            push_inline_span(stack, InlineSpan::Emphasis(frame.into_spans()))
+        }
+        InlineContainer::Strong => push_inline_span(stack, InlineSpan::Strong(frame.into_spans())),
         InlineContainer::Link(target) => push_inline_span(
             stack,
             InlineSpan::Link {
-                label: frame.spans,
+                label: frame.into_spans(),
                 target,
             },
         ),
-        InlineContainer::Image(source) => blocks.push(DocumentBlock::Image {
-            alt: plain_text_for_spans(&frame.spans),
-            source,
-        }),
+        InlineContainer::Image(_) => unreachable!("images are ended by pop_image_frame"),
         InlineContainer::Flatten => {
             if let Some(parent) = stack.last_mut() {
-                parent.spans.extend(frame.spans);
+                parent.spans.extend(frame.into_spans());
             }
         }
     }
 }
 
+fn pop_image_frame(stack: &mut Vec<InlineFrame>) -> Option<DocumentBlock> {
+    let frame = stack.pop()?;
+    let InlineContainer::Image(source) = frame.container.clone() else {
+        return None;
+    };
+    let image = ImageData {
+        alt: plain_text_for_spans(&frame.into_spans()),
+        source,
+    };
+
+    if let Some(parent) = stack.last_mut() {
+        if parent.spans.is_empty() && parent.pending_image.is_none() {
+            parent.pending_image = Some(image);
+        } else {
+            parent.flush_pending_image();
+            parent.spans.push(InlineSpan::Text(image.alt));
+        }
+        None
+    } else {
+        Some(DocumentBlock::Image {
+            alt: image.alt,
+            source: image.source,
+        })
+    }
+}
+
 fn push_inline_span(stack: &mut [InlineFrame], span: InlineSpan) {
     if let Some(frame) = stack.last_mut() {
-        frame.spans.push(span);
+        frame.push_span(span);
     }
 }
 
@@ -786,6 +927,75 @@ mod tests {
                     content: vec![InlineSpan::Text("Child".into())],
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn preserves_table_headers_and_body_rows() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/table.md"),
+            "| Name | Value |\n| --- | --- |\n| one | 1 |\n| two | 2 |\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks,
+            vec![DocumentBlock::Table(TableBlock {
+                headers: vec![
+                    vec![InlineSpan::Text("Name".into())],
+                    vec![InlineSpan::Text("Value".into())],
+                ],
+                rows: vec![
+                    vec![
+                        vec![InlineSpan::Text("one".into())],
+                        vec![InlineSpan::Text("1".into())],
+                    ],
+                    vec![
+                        vec![InlineSpan::Text("two".into())],
+                        vec![InlineSpan::Text("2".into())],
+                    ],
+                ],
+            })]
+        );
+    }
+
+    #[test]
+    fn keeps_blockquote_nested_blocks_inert_and_in_source_order() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/quote.md"),
+            "> Intro\n>\n> - Item\n>\n> ```rust\n> let n = 1;\n> ```\n>\n> <aside>Raw</aside>\n>\n> > Nested\n\nAfter\n"
+                .into(),
+        );
+
+        assert!(matches!(parsed.blocks[0], DocumentBlock::Blockquote(_)));
+        assert!(matches!(parsed.blocks[1], DocumentBlock::Paragraph(_)));
+        assert_eq!(parsed.blocks.len(), 2);
+
+        let quote = parsed.blocks[0].plain_text();
+        let positions = [
+            "Intro",
+            "Item",
+            "let n = 1;",
+            "<aside>Raw</aside>",
+            "Nested",
+        ]
+        .map(|text| quote.find(text).unwrap());
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn keeps_inline_images_in_their_paragraph_order() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/image.md"),
+            "before ![alt](image.png) after".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks,
+            vec![DocumentBlock::Paragraph(vec![
+                InlineSpan::Text("before ".into()),
+                InlineSpan::Text("alt".into()),
+                InlineSpan::Text(" after".into()),
+            ])]
         );
     }
 }
