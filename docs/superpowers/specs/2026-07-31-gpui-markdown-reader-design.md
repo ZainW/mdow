@@ -56,10 +56,10 @@ The package has four focused areas:
 4. `ui` renders the Mdow window, welcome state, sidebar, tabs, breadcrumb, errors, and document
    blocks with custom GPUI elements and shared design tokens.
 
-GPUI is consumed as the published crate compatible with the installed stable Rust toolchain and
-the exact dependency graph is committed in `Cargo.lock`. The prototype does not depend on
-`gpui-component`; the small visible control set is implemented directly so Mdow's metrics and
-states remain authoritative. `rfd` provides native macOS file and folder dialogs.
+GPUI is pinned to the published `0.2.2` crate and the exact dependency graph is committed in
+`Cargo.lock`. The prototype does not depend on `gpui-component`; the small visible control set is
+implemented directly so Mdow's metrics and states remain authoritative. GPUI's asynchronous
+`prompt_for_paths` API provides native macOS file and folder dialogs.
 
 Bundled Inter and Geist Mono font assets are copied from the Electron renderer into the GPUI
 package and registered at application startup. The required Lucide icons are bundled as SVG
