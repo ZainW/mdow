@@ -14,9 +14,12 @@ use crate::{
 };
 use gpui::{
     Context, ExternalPaths, FocusHandle, Focusable, IntoElement, PathPromptOptions, Render,
-    Subscription, Window, div, prelude::*, px,
+    Subscription, Timer, Window, div, prelude::*, px,
 };
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserFacingError {
@@ -26,31 +29,42 @@ pub struct UserFacingError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppOpenError {
-    pub view: UserFacingError,
+pub enum AppOpenError {
+    Document(UserFacingError),
+    Workspace(UserFacingError),
+}
+
+impl AppOpenError {
+    pub fn view(&self) -> &UserFacingError {
+        match self {
+            Self::Document(view) | Self::Workspace(view) => view,
+        }
+    }
+
+    pub fn into_view(self) -> UserFacingError {
+        match self {
+            Self::Document(view) | Self::Workspace(view) => view,
+        }
+    }
 }
 
 impl From<DocumentError> for AppOpenError {
     fn from(error: DocumentError) -> Self {
-        Self {
-            view: UserFacingError {
-                title: error.title().into(),
-                body: error.body().into(),
-                path: error.path().to_owned(),
-            },
-        }
+        Self::Document(UserFacingError {
+            title: error.title().into(),
+            body: error.body().into(),
+            path: error.path().to_owned(),
+        })
     }
 }
 
 impl From<WorkspaceError> for AppOpenError {
     fn from(error: WorkspaceError) -> Self {
-        Self {
-            view: UserFacingError {
-                title: error.title().into(),
-                body: error.body().into(),
-                path: error.path().to_owned(),
-            },
-        }
+        Self::Workspace(UserFacingError {
+            title: error.title().into(),
+            body: error.body().into(),
+            path: error.path().to_owned(),
+        })
     }
 }
 
@@ -58,19 +72,38 @@ impl From<WorkspaceError> for AppOpenError {
 pub struct AppModel {
     pub tabs: TabSet,
     pub workspace: Option<WorkspaceTree>,
+    pub workspace_error: Option<UserFacingError>,
 }
 
 impl AppModel {
+    pub fn open_document(&mut self, path: &Path) -> Result<(), AppOpenError> {
+        let loaded = load_source(path)?;
+        self.tabs
+            .open(parse_document(loaded.canonical_path, loaded.source));
+        Ok(())
+    }
+
+    pub fn open_workspace(&mut self, path: &Path) -> Result<(), AppOpenError> {
+        match scan_workspace(path) {
+            Ok(workspace) => {
+                self.workspace = Some(workspace);
+                self.workspace_error = None;
+                Ok(())
+            }
+            Err(error) => {
+                let error = AppOpenError::from(error);
+                self.workspace_error = Some(error.view().clone());
+                Err(error)
+            }
+        }
+    }
+
     pub fn open_path(&mut self, path: &Path) -> Result<(), AppOpenError> {
         if path.is_dir() {
-            let workspace = scan_workspace(path)?;
-            self.workspace = Some(workspace);
+            self.open_workspace(path)
         } else {
-            let loaded = load_source(path)?;
-            self.tabs
-                .open(parse_document(loaded.canonical_path, loaded.source));
+            self.open_document(path)
         }
-        Ok(())
     }
 
     pub fn open_paths<I, P>(&mut self, paths: I) -> Result<(), AppOpenError>
@@ -90,11 +123,40 @@ impl AppModel {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DropState {
+    active: bool,
+}
+
+impl DropState {
+    pub fn is_active(self) -> bool {
+        self.active
+    }
+
+    pub fn enter(&mut self) -> bool {
+        self.set_active(true)
+    }
+
+    pub fn leave(&mut self) -> bool {
+        self.set_active(false)
+    }
+
+    pub fn dropped(&mut self) -> bool {
+        self.leave()
+    }
+
+    fn set_active(&mut self, active: bool) -> bool {
+        let changed = self.active != active;
+        self.active = active;
+        changed
+    }
+}
+
 pub struct MdowApp {
     pub model: AppModel,
     pub sidebar_open: bool,
     pub wide_mode: bool,
-    pub drop_active: bool,
+    pub drop_state: DropState,
     pub open_error: Option<UserFacingError>,
     theme: Theme,
     focus_handle: FocusHandle,
@@ -112,17 +174,20 @@ impl MdowApp {
 
         let mut model = AppModel::default();
         let open_error = std::env::args_os().nth(1).and_then(|path| {
-            model
-                .open_path(Path::new(&path))
-                .err()
-                .map(|error| error.view)
+            model.open_path(Path::new(&path)).err().and_then(|error| {
+                if matches!(error, AppOpenError::Document(_)) {
+                    Some(error.into_view())
+                } else {
+                    None
+                }
+            })
         });
 
         Self {
             model,
             sidebar_open: true,
             wide_mode: false,
-            drop_active: false,
+            drop_state: DropState::default(),
             open_error,
             theme: Theme::for_appearance(window.appearance()),
             focus_handle,
@@ -132,19 +197,62 @@ impl MdowApp {
 
     pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         match self.model.open_path(path) {
-            Ok(()) => self.open_error = None,
-            Err(error) => self.open_error = Some(error.view),
+            Ok(()) if !path.is_dir() => self.open_error = None,
+            Ok(()) => {}
+            Err(AppOpenError::Document(error)) => self.open_error = Some(error),
+            Err(AppOpenError::Workspace(_)) => {}
         }
         cx.notify();
     }
 
     fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
-        match self.model.open_paths(paths) {
-            Ok(()) => self.open_error = None,
-            Err(error) => self.open_error = Some(error.view),
+        let mut opened_document = false;
+        let mut first_document_error = None;
+        for path in paths {
+            if path.is_dir() {
+                self.model.open_workspace(&path).ok();
+            } else {
+                opened_document = true;
+                if let Err(AppOpenError::Document(error)) = self.model.open_document(&path)
+                    && first_document_error.is_none()
+                {
+                    first_document_error = Some(error);
+                }
+            }
         }
-        self.drop_active = false;
+        if opened_document {
+            self.open_error = first_document_error;
+        }
+        self.drop_state.dropped();
         cx.notify();
+    }
+
+    fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.model.open_workspace(path).ok();
+        cx.notify();
+    }
+
+    fn drag_moved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.drop_state.enter() {
+            return;
+        }
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                Timer::after(Duration::from_millis(16)).await;
+                let drag_is_active = cx.update(|_, cx| cx.has_active_drag()).unwrap_or(false);
+                if !drag_is_active {
+                    this.update(cx, |this, cx| {
+                        if this.drop_state.leave() {
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     pub fn open_file_prompt(&mut self, cx: &mut Context<Self>) {
@@ -183,12 +291,17 @@ impl MdowApp {
         });
         cx.spawn(async move |this, cx| match receiver.await {
             Ok(Ok(Some(paths))) => {
-                this.update(cx, |this, cx| this.open_paths(paths, cx)).ok();
+                this.update(cx, |this, cx| {
+                    if let Some(path) = paths.first() {
+                        this.open_workspace_path(path, cx);
+                    }
+                })
+                .ok();
             }
             Ok(Ok(None)) => {}
             Ok(Err(_)) | Err(_) => {
                 this.update(cx, |this, cx| {
-                    this.open_error = Some(UserFacingError {
+                    this.model.workspace_error = Some(UserFacingError {
                         title: "Couldn't open folder picker".into(),
                         body: "The system folder picker could not be opened. Try again.".into(),
                         path: PathBuf::new(),
@@ -269,6 +382,7 @@ impl Render for MdowApp {
         let sidebar = render_sidebar(
             self.theme,
             self.model.workspace.as_ref(),
+            self.model.workspace_error.as_ref(),
             active_path.as_deref(),
             layout.sidebar.width,
             cx,
@@ -277,9 +391,9 @@ impl Render for MdowApp {
         let breadcrumb = render_breadcrumb(self.theme, self);
         let content = if self.model.tabs.is_empty() {
             if let Some(error) = self.open_error.as_ref() {
-                render_error_state(self.theme, error, self.drop_active)
+                render_error_state(self.theme, error, self.drop_state.is_active())
             } else {
-                welcome(self.theme, self.drop_active)
+                welcome(self.theme, self.drop_state.is_active())
             }
         } else {
             let mut surface = div()
@@ -299,11 +413,31 @@ impl Render for MdowApp {
         div()
             .id("mdow-root")
             .track_focus(&self.focus_handle)
+            .capture_key_down(|event, window, cx| {
+                let modifiers = event.keystroke.modifiers;
+                if event.keystroke.key == "tab"
+                    && !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.platform
+                    && !modifiers.function
+                {
+                    if modifiers.shift {
+                        window.focus_prev();
+                    } else {
+                        window.focus_next();
+                    }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            })
             .on_action(cx.listener(Self::open_file))
             .on_action(cx.listener(Self::open_folder))
             .on_action(cx.listener(Self::toggle_sidebar))
             .on_action(cx.listener(Self::close_active_tab))
             .on_action(cx.listener(Self::toggle_wide_mode))
+            .on_drag_move::<ExternalPaths>(cx.listener(|this, _, window, cx| {
+                this.drag_moved(window, cx);
+            }))
             .drag_over::<ExternalPaths>(move |style, _, _, _| {
                 style
                     .bg(drop_theme.primary.opacity(0.06))
@@ -354,6 +488,10 @@ impl Render for MdowApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::{
+        FileDropEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
+        VisualTestContext, point,
+    };
     use std::{fs, path::Path};
 
     fn markdown_workspace() -> tempfile::TempDir {
@@ -362,6 +500,31 @@ mod tests {
         fs::write(root.path().join("README.md"), "# Home").unwrap();
         fs::write(root.path().join("guides/start.md"), "# Start").unwrap();
         root
+    }
+
+    fn click_debug(visual: &mut VisualTestContext, selector: &'static str) {
+        visual.update(|window, cx| window.draw(cx).clear());
+        let center = visual
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("{selector} should be painted"))
+            .center();
+        visual.simulate_mouse_move(center, None, Modifiers::none());
+        visual.simulate_mouse_down(center, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(center, MouseButton::Left, Modifiers::none());
+    }
+
+    fn focus_next(visual: &mut VisualTestContext, count: usize) {
+        visual.update(|window, cx| window.draw(cx).clear());
+        for _ in 0..count {
+            visual.update(|window, _| window.focus_next());
+        }
+        visual.update(|window, cx| window.draw(cx).clear());
+    }
+
+    fn activate_focused(visual: &mut VisualTestContext, key: &str) {
+        visual.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse(key).unwrap(),
+        });
     }
 
     #[test]
@@ -403,8 +566,9 @@ mod tests {
 
         let error = model.open_path(&invalid).unwrap_err();
 
-        assert_eq!(error.view.title, "This file is not UTF-8");
-        assert_eq!(error.view.path, invalid);
+        assert!(matches!(error, AppOpenError::Document(_)));
+        assert_eq!(error.view().title, "This file is not UTF-8");
+        assert_eq!(error.view().path, invalid);
         assert_eq!(
             model.workspace.as_ref().unwrap().root.path,
             root.path().canonicalize().unwrap()
@@ -428,8 +592,9 @@ mod tests {
             .open_paths([unsupported.as_path(), first.as_path(), second.as_path()])
             .unwrap_err();
 
-        assert_eq!(error.view.title, "Unsupported file type");
-        assert_eq!(error.view.path, unsupported);
+        assert!(matches!(error, AppOpenError::Document(_)));
+        assert_eq!(error.view().title, "Unsupported file type");
+        assert_eq!(error.view().path, unsupported);
         assert_eq!(
             model.tabs.paths().collect::<Vec<_>>(),
             vec![
@@ -451,9 +616,251 @@ mod tests {
 
         let error = model.open_path(missing).unwrap_err();
 
-        assert_eq!(error.view.title, "File not found");
-        assert_eq!(error.view.body, "This file may have been moved or renamed.");
-        assert_eq!(error.view.path, missing);
-        assert!(!error.view.body.contains("DocumentError"));
+        assert!(matches!(error, AppOpenError::Document(_)));
+        assert_eq!(error.view().title, "File not found");
+        assert_eq!(
+            error.view().body,
+            "This file may have been moved or renamed."
+        );
+        assert_eq!(error.view().path, missing);
+        assert!(!error.view().body.contains("DocumentError"));
+    }
+
+    #[test]
+    fn workspace_failure_uses_sidebar_error_without_replacing_workspace_or_tabs() {
+        let root = markdown_workspace();
+        let file = root.path().join("README.md");
+        let missing = root.path().join("missing-folder");
+        let mut model = AppModel::default();
+        model.open_path(root.path()).unwrap();
+        model.open_path(&file).unwrap();
+        let workspace_path = model.workspace.as_ref().unwrap().root.path.clone();
+
+        let error = model.open_workspace(&missing).unwrap_err();
+
+        assert!(matches!(error, AppOpenError::Workspace(_)));
+        assert_eq!(error.view().path, missing);
+        assert_eq!(model.workspace.as_ref().unwrap().root.path, workspace_path);
+        assert_eq!(model.tabs.len(), 1);
+        assert_eq!(model.workspace_error.as_ref(), Some(error.view()));
+    }
+
+    #[test]
+    fn successful_workspace_open_clears_only_the_sidebar_error() {
+        let first = markdown_workspace();
+        let second = markdown_workspace();
+        let missing = first.path().join("missing-folder");
+        let mut model = AppModel::default();
+
+        model.open_workspace(&missing).unwrap_err();
+        assert!(model.workspace_error.is_some());
+
+        model.open_workspace(second.path()).unwrap();
+
+        assert!(model.workspace_error.is_none());
+        assert_eq!(
+            model.workspace.as_ref().unwrap().root.path,
+            second.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn drop_state_tracks_enter_leave_and_drop_idempotently() {
+        let mut state = DropState::default();
+
+        assert!(!state.is_active());
+        assert!(state.enter());
+        assert!(state.is_active());
+        assert!(!state.enter());
+        assert!(state.leave());
+        assert!(!state.is_active());
+        assert!(!state.leave());
+        assert!(state.enter());
+        assert!(state.dropped());
+        assert!(!state.is_active());
+    }
+
+    #[gpui::test]
+    fn tab_close_target_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let first = root.path().join("README.md");
+        let second = root.path().join("guides/start.md");
+        let mut model = AppModel::default();
+        model.open_document(&first).unwrap();
+        model.open_document(&second).unwrap();
+        model.tabs.activate(&first.canonicalize().unwrap());
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+
+        // The nested close target follows the top-level controls in GPUI's grouped tab order.
+        focus_next(&mut visual, 6);
+        activate_focused(&mut visual, "space");
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.len(), 1);
+                assert_eq!(
+                    app.model.tabs.active().unwrap().path(),
+                    second.canonicalize().unwrap()
+                );
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn inactive_tab_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let first = root.path().join("README.md");
+        let second = root.path().join("guides/start.md");
+        let mut model = AppModel::default();
+        model.open_document(&first).unwrap();
+        model.open_document(&second).unwrap();
+        model.tabs.activate(&first.canonicalize().unwrap());
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+
+        // Open-folder, sidebar-toggle, first tab, then second tab.
+        focus_next(&mut visual, 4);
+        activate_focused(&mut visual, "enter");
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.len(), 2);
+                assert_eq!(
+                    app.model.tabs.active().unwrap().path(),
+                    second.canonicalize().unwrap()
+                );
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn disclosure_click_and_keyboard_activation_toggle_once_each(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let mut model = AppModel::default();
+        model.open_workspace(root.path()).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+
+        // The nested disclosure follows the top-level controls in GPUI's grouped tab order.
+        focus_next(&mut visual, 7);
+        activate_focused(&mut visual, "space");
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.model.workspace.as_ref().unwrap().visible_rows()[0].expanded);
+            })
+            .unwrap();
+
+        click_debug(&mut visual, "workspace-disclosure-0");
+
+        window
+            .update(cx, |app, _, _| {
+                assert!(!app.model.workspace.as_ref().unwrap().visible_rows()[0].expanded);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn external_drag_enter_and_exit_update_the_rendered_drop_state(cx: &mut TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        visual.simulate_event(FileDropEvent::Entered {
+            position: point(px(12.0), px(12.0)),
+            paths: ExternalPaths::default(),
+        });
+
+        window
+            .update(cx, |app, _, _| assert!(app.drop_state.is_active()))
+            .unwrap();
+        visual.run_until_parked();
+
+        visual.simulate_event(FileDropEvent::Exited);
+        std::thread::sleep(Duration::from_millis(20));
+        visual.run_until_parked();
+
+        window
+            .update(cx, |app, _, _| assert!(!app.drop_state.is_active()))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn folder_failure_preserves_main_error_workspace_and_tabs(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let missing = root.path().join("missing-folder");
+        let file = root.path().join("README.md");
+        let main_error = UserFacingError {
+            title: "File error".into(),
+            body: "Keep this in the document surface.".into(),
+            path: file.clone(),
+        };
+        let mut model = AppModel::default();
+        model.open_workspace(root.path()).unwrap();
+        model.open_document(&file).unwrap();
+        let workspace_path = model.workspace.as_ref().unwrap().root.path.clone();
+        let expected_main_error = main_error.clone();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = Some(main_error);
+                    app
+                })
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |app, _, cx| app.open_workspace_path(&missing, cx))
+            .unwrap();
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.open_error.as_ref(), Some(&expected_main_error));
+                assert_eq!(app.model.workspace_error.as_ref().unwrap().path, missing);
+                assert_eq!(
+                    app.model.workspace.as_ref().unwrap().root.path,
+                    workspace_path
+                );
+                assert_eq!(app.model.tabs.len(), 1);
+            })
+            .unwrap();
     }
 }

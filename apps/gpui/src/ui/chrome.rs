@@ -48,6 +48,7 @@ pub fn breadcrumb_segments(path: &Path) -> Vec<BreadcrumbSegment> {
 pub fn render_sidebar(
     theme: Theme,
     workspace: Option<&WorkspaceTree>,
+    workspace_error: Option<&UserFacingError>,
     active_path: Option<&Path>,
     width: f32,
     cx: &Context<MdowApp>,
@@ -66,6 +67,7 @@ pub fn render_sidebar(
         .flex_grow()
         .min_h_0()
         .overflow_y_scroll()
+        .scrollbar_width(px(4.0))
         .px(px(4.0))
         .py(px(4.0));
 
@@ -120,10 +122,15 @@ pub fn render_sidebar(
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.muted))
                 .when(directory, |button| {
-                    button.on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.toggle_directory(&row_path, cx);
-                    }))
+                    button
+                        .tab_index(0)
+                        .focusable()
+                        .active(|style| style.opacity(0.78))
+                        .focus(move |style| style.border_1().border_color(theme.primary))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.toggle_directory(&row_path, cx);
+                        }))
                 })
                 .when(!directory, |space| space.cursor_default())
                 .child(
@@ -140,6 +147,7 @@ pub fn render_sidebar(
                 .id(("workspace-row", index))
                 .debug_selector(move || format!("workspace-row-{index}"))
                 .tab_index(0)
+                .tab_group()
                 .focusable()
                 .flex()
                 .w_full()
@@ -152,6 +160,7 @@ pub fn render_sidebar(
                 })
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.sidebar_accent))
+                .active(|style| style.opacity(0.82))
                 .focus(move |style| style.border_1().border_color(theme.primary))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if directory {
@@ -240,6 +249,47 @@ pub fn render_sidebar(
                     |_, _, cx| cx.dispatch_action(&OpenFolder),
                 )),
         )
+        .when_some(workspace_error.cloned(), |sidebar, error| {
+            sidebar.child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(7.0))
+                    .mx(px(8.0))
+                    .mt(px(8.0))
+                    .px(px(8.0))
+                    .py(px(7.0))
+                    .flex_none()
+                    .rounded(px(6.0))
+                    .border_1()
+                    .border_color(theme.destructive.opacity(0.32))
+                    .bg(theme.destructive.opacity(0.08))
+                    .font_family(Metrics::FONT_SANS)
+                    .text_size(px(11.0))
+                    .child(icon("icons/alert-circle.svg", theme.destructive, 13.0))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_grow()
+                            .flex()
+                            .flex_col()
+                            .gap(px(1.0))
+                            .child(
+                                div()
+                                    .truncate()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(theme.foreground)
+                                    .child(error.title),
+                            )
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_color(theme.muted_foreground)
+                                    .child(error.body),
+                            ),
+                    ),
+            )
+        })
         .child(tree)
         .into_any_element()
 }
@@ -261,7 +311,8 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .h_full()
         .gap(px(1.0))
         .px(px(6.0))
-        .overflow_x_scroll();
+        .overflow_x_scroll()
+        .scrollbar_width(px(6.0));
 
     if tab_paths.is_empty() {
         tabs = tabs.child(
@@ -287,7 +338,8 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
             let tab = div()
                 .id(("document-tab", index))
                 .debug_selector(move || format!("document-tab-{index}"))
-                .tab_index(if is_active { 0 } else { -1 })
+                .tab_index(0)
+                .tab_group()
                 .focusable()
                 .flex()
                 .items_center()
@@ -318,6 +370,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                 })
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.muted))
+                .active(|style| style.opacity(0.82))
                 .focus(move |style| style.border_color(theme.primary))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.activate_tab(&activate_path, cx);
@@ -343,6 +396,8 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                     div()
                         .id(("close-document-tab", index))
                         .debug_selector(move || format!("close-document-tab-{index}"))
+                        .tab_index(0)
+                        .focusable()
                         .flex()
                         .items_center()
                         .justify_center()
@@ -351,7 +406,10 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                         .flex_none()
                         .rounded(px(4.0))
                         .text_color(theme.muted_foreground)
+                        .cursor_pointer()
                         .hover(move |style| style.bg(theme.muted).text_color(theme.foreground))
+                        .active(|style| style.opacity(0.76))
+                        .focus(move |style| style.border_1().border_color(theme.primary))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.close_tab(&close_path, cx);
