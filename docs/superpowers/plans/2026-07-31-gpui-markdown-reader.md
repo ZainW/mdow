@@ -428,33 +428,41 @@ git commit -m "feat(gpui): add workspace tree and document tabs"
 - Consumes: `TabSet`, `WorkspaceTree`, `DocumentError`
 - Produces: `MdowAssets: AssetSource`
 - Produces: `Theme::for_appearance(WindowAppearance) -> Theme`
-- Produces: `Metrics` constants used by every UI module
+- Produces: `Metrics` constants used by every UI module and `ShellLayout::for_width`
 - Produces: `MdowApp: Render`
 - Produces: `actions::{OpenFile, OpenFolder, ToggleSidebar, CloseTab, ToggleWideMode, Quit}`
 
-- [ ] **Step 1: Write failing theme-contract tests**
+- [ ] **Step 1: Write failing shell-layout behavior tests**
 
-In `theme.rs`, add tests for the non-negotiable measurements:
+In `theme.rs`, test the consumer-visible regions produced by the compact shell layout rather than
+testing constants in isolation:
 
 ```rust
 #[test]
-fn compact_metrics_match_the_established_ui() {
-    assert_eq!(Metrics::SIDEBAR_WIDTH, 244.0);
-    assert_eq!(Metrics::TAB_BAR_HEIGHT, 36.0);
-    assert_eq!(Metrics::TAB_HEIGHT, 28.0);
-    assert_eq!(Metrics::BREADCRUMB_HEIGHT, 28.0);
-    assert_eq!(Metrics::READING_WIDTH, 768.0);
-    assert_eq!(Metrics::READING_PADDING_X, 48.0);
-    assert_eq!(Metrics::BODY_FONT_SIZE, 15.5);
-    assert_eq!(Metrics::BODY_LINE_HEIGHT, 1.65);
+fn compact_shell_allocates_established_chrome_and_reader_regions() {
+    let layout = ShellLayout::for_width(1120.0, true, false);
+
+    assert_eq!(layout.sidebar, Region { x: 0.0, width: 244.0 });
+    assert_eq!(layout.main, Region { x: 244.0, width: 876.0 });
+    assert_eq!(layout.tab_bar_height, 36.0);
+    assert_eq!(layout.tab_height, 28.0);
+    assert_eq!(layout.breadcrumb_height, 28.0);
+    assert_eq!(layout.reader, Region { x: 298.0, width: 768.0 });
+}
+
+#[test]
+fn wide_mode_uses_the_available_main_width_with_fixed_insets() {
+    let layout = ShellLayout::for_width(1120.0, true, true);
+
+    assert_eq!(layout.reader, Region { x: 292.0, width: 780.0 });
 }
 ```
 
 - [ ] **Step 2: Run the theme test and confirm failure**
 
-Run: `cargo test --manifest-path apps/gpui/Cargo.toml compact_metrics_match_the_established_ui`
+Run: `cargo test --manifest-path apps/gpui/Cargo.toml compact_shell_allocates_established_chrome_and_reader_regions`
 
-Expected: compilation fails because `theme.rs` and `Metrics` do not exist.
+Expected: compilation fails because `theme.rs`, `ShellLayout`, and `Region` do not exist.
 
 - [ ] **Step 3: Prepare native font and SVG assets**
 
@@ -514,11 +522,11 @@ Use `actions!` and `cx.bind_keys` for `cmd-o`, `cmd-shift-o`, `cmd-b`, `cmd-w`, 
 Run:
 
 ```bash
-cargo test --manifest-path apps/gpui/Cargo.toml compact_metrics_match_the_established_ui
+cargo test --manifest-path apps/gpui/Cargo.toml compact_shell_allocates_established_chrome_and_reader_regions
 cargo build --manifest-path apps/gpui/Cargo.toml
 ```
 
-Expected: the metric test passes and the GPUI executable builds.
+Expected: the shell-layout behavior tests pass and the GPUI executable builds.
 
 Commit:
 
