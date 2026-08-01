@@ -281,7 +281,55 @@ struct ItemContext {
     depth: usize,
     checked: Option<bool>,
     content: Vec<InlineSpan>,
-    children: Vec<DocumentBlock>,
+    parts: Vec<ItemPart>,
+}
+
+#[derive(Debug)]
+enum ItemPart {
+    Content(Vec<InlineSpan>),
+    Block(DocumentBlock),
+}
+
+impl ItemContext {
+    fn push_content(&mut self, content: Vec<InlineSpan>) {
+        if !content.is_empty() {
+            append_inline_content(&mut self.content, content);
+        }
+    }
+
+    fn push_block(&mut self, block: DocumentBlock) {
+        self.flush_content();
+        self.parts.push(ItemPart::Block(block));
+    }
+
+    fn into_blocks(mut self) -> Vec<DocumentBlock> {
+        self.flush_content();
+        self.parts
+            .into_iter()
+            .map(|part| match part {
+                ItemPart::Content(content) => match self.checked {
+                    Some(checked) => DocumentBlock::TaskItem {
+                        checked,
+                        depth: self.depth,
+                        content,
+                    },
+                    None => DocumentBlock::ListItem {
+                        kind: self.kind.clone(),
+                        depth: self.depth,
+                        content,
+                    },
+                },
+                ItemPart::Block(block) => block,
+            })
+            .collect()
+    }
+
+    fn flush_content(&mut self) {
+        if !self.content.is_empty() {
+            self.parts
+                .push(ItemPart::Content(std::mem::take(&mut self.content)));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -477,31 +525,21 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     depth,
                     checked: None,
                     content: Vec::new(),
-                    children: Vec::new(),
+                    parts: Vec::new(),
                 });
                 push_inline_frame(&mut inline_stack, InlineContainer::Flatten);
             }
             Event::End(TagEnd::Item) => {
                 if let (Some(frame), Some(item)) = (inline_stack.pop(), item_stack.last_mut()) {
-                    append_inline_content(&mut item.content, frame.into_spans());
+                    item.push_content(frame.into_spans());
                 }
                 if let Some(item) = item_stack.pop() {
-                    let block = match item.checked {
-                        Some(checked) => DocumentBlock::TaskItem {
-                            checked,
-                            depth: item.depth,
-                            content: item.content,
-                        },
-                        None => DocumentBlock::ListItem {
-                            kind: item.kind,
-                            depth: item.depth,
-                            content: item.content,
-                        },
-                    };
-                    let mut item_blocks = vec![block];
-                    item_blocks.extend(item.children);
+                    let item_blocks = item.into_blocks();
                     if let Some(parent) = item_stack.last_mut() {
-                        parent.children.extend(item_blocks);
+                        flush_item_inline_frame(&mut inline_stack, parent);
+                        for block in item_blocks {
+                            parent.push_block(block);
+                        }
                     } else {
                         for block in item_blocks {
                             push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
@@ -670,7 +708,7 @@ fn push_paragraph_content(
         return;
     }
     if let Some(item) = item_stack.last_mut() {
-        append_inline_content(&mut item.content, content);
+        item.push_content(content);
     } else if let Some(blockquote) = blockquotes.last_mut() {
         append_inline_content(blockquote, content);
     } else {
@@ -690,7 +728,7 @@ fn push_block(
     blockquotes: &mut [Vec<InlineSpan>],
 ) {
     if let Some(item) = item_stack.last_mut() {
-        item.children.push(block);
+        item.push_block(block);
     } else if let Some(blockquote) = blockquotes.last_mut() {
         let text = block.plain_text();
         if !text.is_empty() {
@@ -698,6 +736,13 @@ fn push_block(
         }
     } else {
         blocks.push(block);
+    }
+}
+
+fn flush_item_inline_frame(stack: &mut [InlineFrame], item: &mut ItemContext) {
+    if let Some(frame) = stack.last_mut() {
+        frame.flush_pending_image();
+        item.push_content(std::mem::take(&mut frame.spans));
     }
 }
 
@@ -997,5 +1042,34 @@ mod tests {
                 InlineSpan::Text(" after".into()),
             ])]
         );
+    }
+
+    #[test]
+    fn preserves_interleaved_list_content_and_code_order() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/interleaved-list.md"),
+            "- before\n\n  ```rust\n  let n = 1;\n  ```\n\n  after\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks,
+            vec![
+                DocumentBlock::ListItem {
+                    kind: ListKind::Unordered,
+                    depth: 0,
+                    content: vec![InlineSpan::Text("before".into())],
+                },
+                DocumentBlock::CodeBlock {
+                    language: Some("rust".into()),
+                    code: "let n = 1;\n".into(),
+                },
+                DocumentBlock::ListItem {
+                    kind: ListKind::Unordered,
+                    depth: 0,
+                    content: vec![InlineSpan::Text("after".into())],
+                },
+            ]
+        );
+        assert_eq!(parsed.plain_text(), "before\nlet n = 1;\n\nafter");
     }
 }
