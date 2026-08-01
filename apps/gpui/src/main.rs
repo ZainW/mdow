@@ -1,6 +1,6 @@
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
-    WindowBounds, WindowOptions, point, px, size,
+    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType,
+    TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 use mdow_gpui::{
     actions::{CloseTab, OpenFile, OpenFolder, Quit, ToggleSidebar, ToggleWideMode},
@@ -17,17 +17,25 @@ fn launch_path_from_args(args: impl IntoIterator<Item = OsString>) -> Option<Pat
 }
 
 fn app_menus() -> Vec<Menu> {
-    vec![Menu {
-        name: "File".into(),
-        items: vec![
-            MenuItem::action("Open File…", OpenFile),
-            MenuItem::action("Open Folder…", OpenFolder),
-            MenuItem::separator(),
-            MenuItem::action("Close Tab", CloseTab),
-            MenuItem::separator(),
-            MenuItem::action("Quit Mdow", Quit),
-        ],
-    }]
+    vec![
+        Menu {
+            name: "Mdow".into(),
+            items: vec![
+                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::separator(),
+                MenuItem::action("Quit Mdow", Quit),
+            ],
+        },
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("Open File…", OpenFile),
+                MenuItem::action("Open Folder…", OpenFolder),
+                MenuItem::separator(),
+                MenuItem::action("Close Tab", CloseTab),
+            ],
+        },
+    ]
 }
 
 fn main() {
@@ -110,9 +118,26 @@ mod tests {
     }
 
     #[test]
-    fn file_menu_dispatches_the_registered_native_actions_once() {
-        let menu = app_menus().into_iter().next().unwrap().owned();
-        let actions = menu
+    fn native_menus_keep_quit_once_and_file_actions_in_a_distinct_file_menu() {
+        let menus = app_menus().into_iter().map(Menu::owned).collect::<Vec<_>>();
+        let names = menus
+            .iter()
+            .map(|menu| menu.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["Mdow", "File"]);
+        assert!(matches!(
+            &menus[0].items[0],
+            OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"
+        ));
+        assert!(matches!(menus[0].items[1], OwnedMenuItem::Separator));
+        assert!(matches!(
+            &menus[0].items[2],
+            OwnedMenuItem::Action { name, action, .. }
+                if name == "Quit Mdow" && action.as_any().is::<Quit>()
+        ));
+
+        let file_actions = menus[1]
             .items
             .iter()
             .filter_map(|item| match item {
@@ -122,16 +147,24 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
+        assert_eq!(file_actions.len(), 3);
+        assert_eq!(file_actions[0].0, "Open File…");
+        assert!(file_actions[0].1.as_any().is::<OpenFile>());
+        assert_eq!(file_actions[1].0, "Open Folder…");
+        assert!(file_actions[1].1.as_any().is::<OpenFolder>());
+        assert_eq!(file_actions[2].0, "Close Tab");
+        assert!(file_actions[2].1.as_any().is::<CloseTab>());
 
-        assert_eq!(menu.name.as_ref(), "File");
-        assert_eq!(actions.len(), 4);
-        assert_eq!(actions[0].0, "Open File…");
-        assert!(actions[0].1.as_any().is::<OpenFile>());
-        assert_eq!(actions[1].0, "Open Folder…");
-        assert!(actions[1].1.as_any().is::<OpenFolder>());
-        assert_eq!(actions[2].0, "Close Tab");
-        assert!(actions[2].1.as_any().is::<CloseTab>());
-        assert_eq!(actions[3].0, "Quit Mdow");
-        assert!(actions[3].1.as_any().is::<Quit>());
+        let quit_count = menus
+            .iter()
+            .flat_map(|menu| &menu.items)
+            .filter(|item| {
+                matches!(
+                    item,
+                    OwnedMenuItem::Action { action, .. } if action.as_any().is::<Quit>()
+                )
+            })
+            .count();
+        assert_eq!(quit_count, 1);
     }
 }
