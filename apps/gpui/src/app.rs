@@ -825,7 +825,12 @@ mod tests {
         FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
         VisualTestContext, point,
     };
-    use std::{fs, os::unix::fs::PermissionsExt, path::Path, sync::Arc};
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
 
     fn markdown_workspace() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -840,6 +845,32 @@ mod tests {
             .prefix("mdow-app-watch-")
             .tempdir_in("/private/tmp")
             .unwrap()
+    }
+
+    struct PermissionRestore {
+        path: PathBuf,
+        mode: u32,
+    }
+
+    impl PermissionRestore {
+        fn deny(path: &Path) -> Self {
+            let mut permissions = fs::metadata(path).unwrap().permissions();
+            let mode = permissions.mode();
+            permissions.set_mode(0o000);
+            fs::set_permissions(path, permissions).unwrap();
+            Self {
+                path: path.to_owned(),
+                mode,
+            }
+        }
+    }
+
+    impl Drop for PermissionRestore {
+        fn drop(&mut self) {
+            let mut permissions = fs::metadata(&self.path).unwrap().permissions();
+            permissions.set_mode(self.mode);
+            fs::set_permissions(&self.path, permissions).unwrap();
+        }
     }
 
     fn click_debug(visual: &mut VisualTestContext, selector: &'static str) {
@@ -1033,6 +1064,31 @@ mod tests {
         assert_eq!(error.view().path, missing);
         assert_eq!(model.workspace.as_ref().unwrap().root.path, workspace_path);
         assert_eq!(model.tabs.len(), 1);
+        assert_eq!(model.workspace_error.as_ref(), Some(error.view()));
+    }
+
+    #[test]
+    fn nested_workspace_read_failure_preserves_workspace_and_tabs_with_sidebar_error() {
+        let root = markdown_workspace();
+        let file = root.path().join("README.md");
+        let failing = tempfile::tempdir().unwrap();
+        let denied = failing.path().join("denied");
+        fs::create_dir(&denied).unwrap();
+        fs::write(denied.join("hidden.md"), "# Hidden").unwrap();
+        let canonical_denied = denied.canonicalize().unwrap();
+        let _restore = PermissionRestore::deny(&denied);
+        let mut model = AppModel::default();
+        model.open_workspace(root.path()).unwrap();
+        model.open_document(&file).unwrap();
+        let workspace_path = model.workspace.as_ref().unwrap().root.path.clone();
+
+        let error = model.open_workspace(failing.path()).unwrap_err();
+
+        assert_eq!(error.view().title, "Couldn't read folder");
+        assert_eq!(error.view().path, canonical_denied);
+        assert_eq!(model.workspace.as_ref().unwrap().root.path, workspace_path);
+        assert_eq!(model.tabs.len(), 1);
+        assert_eq!(model.tabs.active().unwrap().document.title, "Home");
         assert_eq!(model.workspace_error.as_ref(), Some(error.view()));
     }
 

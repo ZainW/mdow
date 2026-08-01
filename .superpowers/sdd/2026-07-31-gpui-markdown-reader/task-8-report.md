@@ -135,3 +135,14 @@ the installed Electron app rather than this unbundled debug process.
   test verifies HTTP classification/routing without claiming a browser launch.
 
 No visual correction was warranted by the captured evidence.
+
+## Post-completion Review Fix
+
+A final broad review found that nested `read_dir`, directory-entry, metadata, and canonicalization
+failures could be silently converted into a successful but incomplete workspace tree. A focused TDD
+fix now propagates the first genuine nested failure as `WorkspaceError::Read` with the failing path.
+The app-model regression proves the previous workspace and open tab remain intact while the concise
+sidebar error is set. Ignored names, broken symlinks, and symlink-cycle handling remain non-fatal and
+covered. The original RED returned a partial tree containing only `visible.md`; the focused GREEN
+workspace group passes 5/5. Fresh final verification passes 90 library + 2 binary tests, Cargo
+format check, and Cargo check for all targets.
