@@ -8,11 +8,13 @@ use crate::{
     ui::primitives::icon,
 };
 use gpui::{
-    AnyElement, Context, Font, FontFeatures, FontStyle, FontWeight, InteractiveElement,
-    InteractiveText, IntoElement, ParentElement, ScrollHandle, StatefulInteractiveElement, Styled,
-    StyledImage, StyledText, TextRun, UnderlineStyle, div, font, img, prelude::*, px,
+    AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
+    InteractiveElement, InteractiveText, IntoElement, ParentElement, ScrollHandle,
+    StatefulInteractiveElement, Styled, StyledImage, StyledText, TextRun, UnderlineStyle, div,
+    font, img, prelude::*, px, relative,
 };
 use std::{
+    collections::HashMap,
     ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
@@ -86,6 +88,13 @@ impl BlockStyle {
         }
     }
 
+    pub fn blockquote() -> Self {
+        Self {
+            padding: [6.2, 16.0],
+            ..Self::body()
+        }
+    }
+
     fn body() -> Self {
         Self {
             font_size: 15.5,
@@ -116,6 +125,7 @@ pub struct InlineStyleRange {
     pub strong: bool,
     pub code: bool,
     pub link_target: Option<String>,
+    pub link_node_id: Option<usize>,
 }
 
 impl InlineStyleRange {
@@ -125,6 +135,7 @@ impl InlineStyleRange {
         strong: bool,
         code: bool,
         link_target: Option<String>,
+        link_node_id: Option<usize>,
     ) -> Self {
         Self {
             range,
@@ -132,6 +143,7 @@ impl InlineStyleRange {
             strong,
             code,
             link_target,
+            link_node_id,
         }
     }
 }
@@ -139,19 +151,19 @@ impl InlineStyleRange {
 #[cfg(test)]
 impl InlineStyleRange {
     fn emphasis(range: Range<usize>) -> Self {
-        Self::new(range, true, false, false, None)
+        Self::new(range, true, false, false, None, None)
     }
 
     fn emphasis_strong(range: Range<usize>) -> Self {
-        Self::new(range, true, true, false, None)
+        Self::new(range, true, true, false, None, None)
     }
 
     fn code(range: Range<usize>) -> Self {
-        Self::new(range, false, false, true, None)
+        Self::new(range, false, false, true, None, None)
     }
 
     fn link(range: Range<usize>, target: &str) -> Self {
-        Self::new(range, false, false, false, Some(target.to_owned()))
+        Self::new(range, false, false, false, Some(target.to_owned()), Some(0))
     }
 }
 
@@ -159,6 +171,20 @@ impl InlineStyleRange {
 pub struct InlineLink {
     pub range: Range<usize>,
     pub target: String,
+    pub node_id: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkFocusTarget {
+    pub surface_id: usize,
+    pub link_index: usize,
+    pub target: String,
+}
+
+pub struct ReaderLinkState<'a> {
+    pub hovered: Option<(usize, usize)>,
+    pub focused: Option<(usize, usize)>,
+    pub focus_handles: &'a HashMap<(usize, usize), FocusHandle>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -167,10 +193,70 @@ struct InlineStyleContext<'a> {
     strong: bool,
     code: bool,
     link_target: Option<&'a str>,
+    link_node_id: Option<usize>,
 }
 
 pub fn inline_layout(spans: &[InlineSpan]) -> InlineLayout {
     inline_layout_with_transform(spans, false)
+}
+
+pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTarget> {
+    let mut targets = Vec::new();
+    for (block_index, block) in document.blocks.iter().enumerate() {
+        let mut surfaces: Vec<(usize, &[InlineSpan])> = Vec::new();
+        match block {
+            DocumentBlock::Heading { content, .. }
+            | DocumentBlock::Paragraph(content)
+            | DocumentBlock::ListItem { content, .. }
+            | DocumentBlock::TaskItem { content, .. }
+            | DocumentBlock::Blockquote(content) => {
+                surfaces.push((block_index * 1024, content));
+            }
+            DocumentBlock::Table(table) => {
+                let column_count = table
+                    .headers
+                    .len()
+                    .max(table.rows.iter().map(Vec::len).max().unwrap_or(0))
+                    .max(1);
+                for (column_index, content) in table.headers.iter().enumerate() {
+                    surfaces.push((block_index * 1024 + column_index + 1, content));
+                }
+                for (row_index, row) in table.rows.iter().enumerate() {
+                    for (column_index, content) in row.iter().enumerate() {
+                        let cell_index = row_index * column_count + column_index;
+                        surfaces
+                            .push((block_index * 1024 + column_count + cell_index + 1, content));
+                    }
+                }
+            }
+            DocumentBlock::CodeBlock { .. }
+            | DocumentBlock::Image { .. }
+            | DocumentBlock::ThematicBreak
+            | DocumentBlock::RawText(_) => {}
+        }
+
+        for (surface_id, spans) in surfaces {
+            let layout = inline_layout(spans);
+            for (link_index, link) in layout
+                .links
+                .into_iter()
+                .filter(|link| {
+                    !matches!(
+                        classify_link(&document.path, &link.target),
+                        LinkRoute::Inert
+                    )
+                })
+                .enumerate()
+            {
+                targets.push(LinkFocusTarget {
+                    surface_id,
+                    link_index,
+                    target: link.target,
+                });
+            }
+        }
+    }
+    targets
 }
 
 fn inline_layout_with_transform(spans: &[InlineSpan], uppercase: bool) -> InlineLayout {
@@ -179,7 +265,14 @@ fn inline_layout_with_transform(spans: &[InlineSpan], uppercase: bool) -> Inline
         styles: Vec::new(),
         links: Vec::new(),
     };
-    append_inline_spans(spans, InlineStyleContext::default(), uppercase, &mut layout);
+    let mut next_link_node_id = 0;
+    append_inline_spans(
+        spans,
+        InlineStyleContext::default(),
+        uppercase,
+        &mut next_link_node_id,
+        &mut layout,
+    );
     layout
 }
 
@@ -187,6 +280,7 @@ fn append_inline_spans<'a>(
     spans: &'a [InlineSpan],
     style: InlineStyleContext<'a>,
     uppercase: bool,
+    next_link_node_id: &mut usize,
     layout: &mut InlineLayout,
 ) {
     for span in spans {
@@ -199,6 +293,7 @@ fn append_inline_spans<'a>(
                     ..style
                 },
                 uppercase,
+                next_link_node_id,
                 layout,
             ),
             InlineSpan::Strong(content) => append_inline_spans(
@@ -208,6 +303,7 @@ fn append_inline_spans<'a>(
                     ..style
                 },
                 uppercase,
+                next_link_node_id,
                 layout,
             ),
             InlineSpan::Code(code) => append_inline_text(
@@ -219,15 +315,21 @@ fn append_inline_spans<'a>(
                 uppercase,
                 layout,
             ),
-            InlineSpan::Link { label, target } => append_inline_spans(
-                label,
-                InlineStyleContext {
-                    link_target: Some(target),
-                    ..style
-                },
-                uppercase,
-                layout,
-            ),
+            InlineSpan::Link { label, target } => {
+                let link_node_id = *next_link_node_id;
+                *next_link_node_id += 1;
+                append_inline_spans(
+                    label,
+                    InlineStyleContext {
+                        link_target: Some(target),
+                        link_node_id: Some(link_node_id),
+                        ..style
+                    },
+                    uppercase,
+                    next_link_node_id,
+                    layout,
+                )
+            }
             InlineSpan::SoftBreak => append_inline_text(" ", style, false, layout),
             InlineSpan::HardBreak => append_inline_text("\n", style, false, layout),
         }
@@ -257,11 +359,12 @@ fn append_inline_text(
             style.strong,
             style.code,
             style.link_target.map(str::to_owned),
+            style.link_node_id,
         ));
     }
     if let Some(target) = style.link_target {
         if let Some(link) = layout.links.last_mut()
-            && link.target == target
+            && Some(link.node_id) == style.link_node_id
             && link.range.end == range.start
         {
             link.range.end = range.end;
@@ -269,6 +372,9 @@ fn append_inline_text(
             layout.links.push(InlineLink {
                 range,
                 target: target.to_owned(),
+                node_id: style
+                    .link_node_id
+                    .expect("link text always carries its source-node identity"),
             });
         }
     }
@@ -330,12 +436,140 @@ pub fn clear_expired_code_copy_feedback(
     }
 }
 
+fn restrict_scroll_to_axis<E: Styled>(mut element: E) -> E {
+    element.style().restrict_scroll_to_axis = Some(true);
+    element
+}
+
+fn document_scoped_element_id(document_path: &Path, role: &str, block_index: usize) -> u64 {
+    // FNV-1a gives us a deterministic, inexpensive identity without retaining the full path in
+    // GPUI's element-id tree.
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in role
+        .as_bytes()
+        .iter()
+        .chain(document_path.as_os_str().as_encoded_bytes())
+        .chain(block_index.to_le_bytes().iter())
+    {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockSpacing {
+    pub before: f32,
+    pub after: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BlockMargins {
+    top: f32,
+    bottom: f32,
+}
+
+fn is_list_block(block: &DocumentBlock) -> bool {
+    matches!(
+        block,
+        DocumentBlock::ListItem { .. } | DocumentBlock::TaskItem { .. }
+    )
+}
+
+fn block_margins(
+    block: &DocumentBlock,
+    previous: Option<&DocumentBlock>,
+    next: Option<&DocumentBlock>,
+) -> BlockMargins {
+    if is_list_block(block) {
+        return BlockMargins {
+            top: if previous.is_some_and(is_list_block) {
+                3.875
+            } else {
+                15.5
+            },
+            bottom: if next.is_some_and(is_list_block) {
+                3.875
+            } else {
+                15.5
+            },
+        };
+    }
+
+    match block {
+        DocumentBlock::Heading { level, .. } => {
+            let style = BlockStyle::heading(*level);
+            BlockMargins {
+                top: style.font_size * style.margin_top_em,
+                bottom: style.font_size * style.margin_bottom_em,
+            }
+        }
+        DocumentBlock::CodeBlock { .. } | DocumentBlock::Table(_) => BlockMargins {
+            top: 19.375,
+            bottom: 19.375,
+        },
+        DocumentBlock::ThematicBreak => BlockMargins {
+            top: 31.0,
+            bottom: 31.0,
+        },
+        DocumentBlock::Paragraph(_)
+        | DocumentBlock::Blockquote(_)
+        | DocumentBlock::Image { .. }
+        | DocumentBlock::RawText(_) => BlockMargins {
+            top: 0.0,
+            bottom: 15.5,
+        },
+        DocumentBlock::ListItem { .. } | DocumentBlock::TaskItem { .. } => unreachable!(),
+    }
+}
+
+pub fn block_sequence_spacing(blocks: &[DocumentBlock]) -> Vec<BlockSpacing> {
+    let margins = blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            block_margins(
+                block,
+                index
+                    .checked_sub(1)
+                    .and_then(|previous| blocks.get(previous)),
+                blocks.get(index + 1),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    margins
+        .iter()
+        .enumerate()
+        .map(|(index, margin)| BlockSpacing {
+            before: if index == 0
+                && matches!(
+                    blocks.first(),
+                    Some(DocumentBlock::Heading { level: 1, .. })
+                ) {
+                0.0
+            } else if let Some(previous) = index.checked_sub(1).and_then(|i| margins.get(i)) {
+                previous.bottom.max(margin.top)
+            } else {
+                margin.top
+            },
+            after: (index + 1 == margins.len())
+                .then_some(margin.bottom)
+                .unwrap_or(0.0),
+        })
+        .collect()
+}
+
+fn style_reader_image(image: Img) -> Img {
+    image.max_w(relative(1.0)).rounded(px(8.0))
+}
+
 pub fn render_document(
     document: Arc<ParsedDocument>,
     wide_mode: bool,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     scroll_handle: &ScrollHandle,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
@@ -358,15 +592,16 @@ pub fn render_document(
             column.max_w(px(Metrics::READER_MAX_WIDTH)).mx_auto()
         });
 
+    let spacing = block_sequence_spacing(&document.blocks);
     for (block_index, block) in document.blocks.iter().enumerate() {
         column = column.child(render_block(
             block,
             block_index,
-            block_index == 0,
+            spacing[block_index],
             &document.path,
             theme,
             copied_code,
-            hovered_link,
+            link_state,
             cx,
         ));
     }
@@ -390,14 +625,14 @@ pub fn render_document(
 fn render_block(
     block: &DocumentBlock,
     block_index: usize,
-    first_block: bool,
+    spacing: BlockSpacing,
     document_path: &Path,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
-    match block {
+    let content = match block {
         DocumentBlock::Heading { level, content } => {
             let style = BlockStyle::heading(*level);
             div()
@@ -405,12 +640,6 @@ fn render_block(
                 .debug_selector(move || format!("reader-block-{block_index}"))
                 .w_full()
                 .min_w_0()
-                .mt(px(if first_block {
-                    0.0
-                } else {
-                    style.font_size * style.margin_top_em
-                }))
-                .mb(px(style.font_size * style.margin_bottom_em))
                 .font_weight(FontWeight(style.font_weight as f32))
                 .text_size(px(style.font_size))
                 .line_height(px(style.font_size * style.line_height))
@@ -432,7 +661,7 @@ fn render_block(
                     },
                     theme,
                     false,
-                    hovered_link,
+                    link_state,
                     cx,
                 ))
                 .into_any_element()
@@ -442,7 +671,6 @@ fn render_block(
             .debug_selector(move || format!("reader-block-{block_index}"))
             .w_full()
             .min_w_0()
-            .mb(px(15.5))
             .child(render_inline(
                 content,
                 document_path,
@@ -451,7 +679,7 @@ fn render_block(
                 400,
                 theme.foreground,
                 theme,
-                hovered_link,
+                link_state,
                 cx,
             ))
             .into_any_element(),
@@ -466,7 +694,7 @@ fn render_block(
             block_index,
             document_path,
             theme,
-            hovered_link,
+            link_state,
             cx,
         ),
         DocumentBlock::TaskItem {
@@ -480,7 +708,7 @@ fn render_block(
             block_index,
             document_path,
             theme,
-            hovered_link,
+            link_state,
             cx,
         ),
         DocumentBlock::Blockquote(content) => div()
@@ -489,7 +717,6 @@ fn render_block(
             .flex()
             .w_full()
             .min_w_0()
-            .mb(px(15.5))
             .py(px(6.2))
             .text_color(theme.muted_foreground)
             .child(
@@ -503,7 +730,7 @@ fn render_block(
                 div()
                     .min_w_0()
                     .flex_grow()
-                    .pl(px(16.0))
+                    .px(px(BlockStyle::blockquote().padding[1]))
                     .child(render_inline(
                         content,
                         document_path,
@@ -512,7 +739,7 @@ fn render_block(
                         400,
                         theme.muted_foreground,
                         theme,
-                        hovered_link,
+                        link_state,
                         cx,
                     )),
             )
@@ -521,19 +748,19 @@ fn render_block(
             .id(("reader-block", block_index))
             .debug_selector(move || format!("reader-block-{block_index}"))
             .w_full()
-            .py(px(31.0))
             .child(div().h(px(1.0)).w_full().bg(theme.border))
             .into_any_element(),
         DocumentBlock::CodeBlock { language, code } => render_code_block(
             language.as_deref(),
             code,
             block_index,
+            document_path,
             theme,
             copied_code,
             cx,
         ),
         DocumentBlock::Table(table) => {
-            render_table(table, block_index, document_path, theme, hovered_link, cx)
+            render_table(table, block_index, document_path, theme, link_state, cx)
         }
         DocumentBlock::Image { alt, source } => {
             render_image(alt, source, block_index, document_path, theme)
@@ -543,10 +770,17 @@ fn render_block(
             .debug_selector(move || format!("reader-block-{block_index}"))
             .w_full()
             .min_w_0()
-            .mb(px(15.5))
             .child(StyledText::new(text.clone()))
             .into_any_element(),
-    }
+    };
+
+    div()
+        .w_full()
+        .min_w_0()
+        .mt(px(spacing.before))
+        .mb(px(spacing.after))
+        .child(content)
+        .into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -558,7 +792,7 @@ pub fn render_inline(
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     render_inline_layout(
@@ -570,7 +804,7 @@ pub fn render_inline(
         base_color,
         theme,
         false,
-        hovered_link,
+        link_state,
         cx,
     )
 }
@@ -585,7 +819,7 @@ fn render_inline_layout(
     base_color: gpui::Hsla,
     theme: Theme,
     tabular_numbers: bool,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let active_links = layout
@@ -594,13 +828,19 @@ fn render_inline_layout(
         .filter(|link| !matches!(classify_link(document_path, &link.target), LinkRoute::Inert))
         .cloned()
         .collect::<Vec<_>>();
-    let hovered_link_index = hovered_link
+    let hovered_link_index = link_state
+        .hovered
         .filter(|(hovered_surface, _)| *hovered_surface == surface_id)
+        .map(|(_, link_index)| link_index);
+    let focused_link_index = link_state
+        .focused
+        .filter(|(focused_surface, _)| *focused_surface == surface_id)
         .map(|(_, link_index)| link_index);
     let runs = text_runs(
         &layout,
         &active_links,
         hovered_link_index,
+        focused_link_index,
         base_weight,
         base_color,
         theme,
@@ -647,9 +887,19 @@ fn render_inline_layout(
             .into_any_element()
     };
 
-    let keyboard_link = (active_links.len() == 1).then(|| active_links[0].target.clone());
-    let keyboard_document_path = document_path;
-    div()
+    let keyboard_links = active_links
+        .iter()
+        .enumerate()
+        .filter_map(|(link_index, link)| {
+            link_state
+                .focus_handles
+                .get(&(surface_id, link_index))
+                .cloned()
+                .map(|handle| (link_index, link.target.clone(), handle))
+        })
+        .collect::<Vec<_>>();
+    let weak_app = cx.weak_entity();
+    let mut surface = div()
         .id(("reader-inline", surface_id))
         .debug_selector(move || {
             format!(
@@ -660,30 +910,54 @@ fn render_inline_layout(
         })
         .w_full()
         .min_w_0()
+        .relative()
         .whitespace_normal()
-        .when_some(keyboard_link, |surface, target| {
-            surface
+        .on_hover(move |hovered, _, cx| {
+            if !*hovered {
+                weak_app
+                    .update(cx, |this, cx| {
+                        this.clear_hovered_link_for_surface(surface_id, cx)
+                    })
+                    .ok();
+            }
+        })
+        // Keep every inline style in one StyledText/InteractiveText layout so wrapping remains
+        // native text wrapping rather than flex-fragment wrapping.
+        .child(text);
+    for (link_index, target, focus_handle) in keyboard_links {
+        let keyboard_document_path = document_path.clone();
+        let focus_proxy_id = document_scoped_element_id(
+            &keyboard_document_path,
+            "reader-link-focus",
+            surface_id.wrapping_mul(1024).wrapping_add(link_index),
+        );
+        surface = surface.child(
+            div()
+                .id(("reader-link-focus", focus_proxy_id))
+                .debug_selector(move || format!("reader-link-focus-{surface_id}-{link_index}"))
+                .absolute()
+                .top_0()
+                .left_0()
+                .size(px(0.0))
                 .tab_index(0)
-                .focusable()
-                .rounded(px(2.0))
-                .focus(move |style| style.bg(theme.primary.opacity(0.07)))
+                .tab_group()
+                .track_focus(&focus_handle)
                 .on_key_up(cx.listener(move |this, event: &gpui::KeyUpEvent, _, cx| {
                     if matches!(event.keystroke.key.as_str(), "enter" | "space" | " ") {
                         this.activate_link(&keyboard_document_path, &target, cx);
                         cx.stop_propagation();
                     }
-                }))
-        })
-        // Keep every inline style in one StyledText/InteractiveText layout so wrapping remains
-        // native text wrapping rather than flex-fragment wrapping.
-        .child(text)
-        .into_any_element()
+                })),
+        );
+    }
+    surface.into_any_element()
 }
 
 fn text_runs(
     layout: &InlineLayout,
     active_links: &[InlineLink],
     hovered_link: Option<usize>,
+    focused_link: Option<usize>,
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
@@ -719,7 +993,9 @@ fn text_runs(
             },
             style.emphasis,
             style.code,
-            link_index.is_some_and(|link_index| hovered_link == Some(link_index)),
+            link_index.is_some_and(|link_index| {
+                hovered_link == Some(link_index) || focused_link == Some(link_index)
+            }),
             tabular_numbers,
             theme,
         ));
@@ -786,15 +1062,11 @@ fn render_list_item(
     block_index: usize,
     document_path: &Path,
     theme: Theme,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let marker = match kind {
-        ListKind::Unordered => match depth % 3 {
-            0 => "•".to_owned(),
-            1 => "◦".to_owned(),
-            _ => "▪".to_owned(),
-        },
+        ListKind::Unordered => unordered_marker(depth).to_owned(),
         ListKind::Ordered { number } => format_ordered_marker(*number, depth),
     };
     div()
@@ -806,7 +1078,6 @@ fn render_list_item(
         .min_w_0()
         .gap(px(8.0))
         .ml(px(depth as f32 * 24.8))
-        .my(px(3.875))
         .child(
             div()
                 .w(px(18.0))
@@ -823,7 +1094,7 @@ fn render_list_item(
             400,
             theme.foreground,
             theme,
-            hovered_link,
+            link_state,
             cx,
         )))
         .into_any_element()
@@ -837,7 +1108,7 @@ fn render_task_item(
     block_index: usize,
     document_path: &Path,
     theme: Theme,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let checkbox = div()
@@ -867,7 +1138,6 @@ fn render_task_item(
         .min_w_0()
         .gap(px(8.0))
         .ml(px(depth as f32 * 24.8))
-        .my(px(3.875))
         .child(checkbox)
         .child(div().min_w_0().flex_grow().child(render_inline(
             content,
@@ -877,21 +1147,39 @@ fn render_task_item(
             400,
             theme.foreground,
             theme,
-            hovered_link,
+            link_state,
             cx,
         )))
         .into_any_element()
 }
 
 fn format_ordered_marker(number: u64, depth: usize) -> String {
-    match depth % 3 {
+    match depth {
         0 => format!("{number}."),
-        1 => {
-            let letter = ((number.saturating_sub(1) % 26) as u8 + b'a') as char;
-            format!("{letter}.")
-        }
+        1 => format!("{}.", to_lower_alpha(number)),
         _ => format!("{}.", to_lower_roman(number)),
     }
+}
+
+fn unordered_marker(depth: usize) -> &'static str {
+    match depth {
+        0 => "•",
+        1 => "◦",
+        _ => "▪",
+    }
+}
+
+fn to_lower_alpha(mut number: u64) -> String {
+    if number == 0 {
+        return "0".into();
+    }
+    let mut output = Vec::new();
+    while number > 0 {
+        number -= 1;
+        output.push((b'a' + (number % 26) as u8) as char);
+        number /= 26;
+    }
+    output.into_iter().rev().collect()
 }
 
 fn to_lower_roman(mut number: u64) -> String {
@@ -923,6 +1211,7 @@ fn render_code_block(
     language: Option<&str>,
     code: &str,
     block_index: usize,
+    document_path: &Path,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     cx: &Context<MdowApp>,
@@ -966,7 +1255,6 @@ fn render_code_block(
         .debug_selector(move || format!("reader-block-{block_index}"))
         .relative()
         .w_full()
-        .my(px(19.375))
         .rounded(px(10.0))
         .border_1()
         .border_color(theme.border)
@@ -1007,8 +1295,11 @@ fn render_code_block(
                 .child(copy_button),
         )
         .child(
-            div()
-                .id(("code-scroll", block_index))
+            restrict_scroll_to_axis(div())
+                .id((
+                    "code-scroll",
+                    document_scoped_element_id(document_path, "code-scroll", block_index),
+                ))
                 .w_full()
                 .overflow_x_scroll()
                 .scrollbar_width(px(6.0))
@@ -1029,7 +1320,7 @@ fn render_table(
     block_index: usize,
     document_path: &Path,
     theme: Theme,
-    hovered_link: Option<(usize, usize)>,
+    link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let column_count = table
@@ -1071,7 +1362,7 @@ fn render_table(
                     theme.muted_foreground,
                     theme,
                     true,
-                    hovered_link,
+                    link_state,
                     cx,
                 )),
         );
@@ -1101,21 +1392,24 @@ fn render_table(
                         400,
                         theme.foreground,
                         theme,
-                        hovered_link,
+                        link_state,
                         cx,
                     )),
             );
         }
     }
     div()
-        .id(("reader-block", block_index))
+        .id((
+            "table-scroll",
+            document_scoped_element_id(document_path, "table-scroll", block_index),
+        ))
         .debug_selector(move || format!("reader-block-{block_index}"))
         .w_full()
-        .my(px(19.375))
         .rounded(px(8.0))
         .border_1()
         .border_color(theme.border)
         .overflow_x_scroll()
+        .map(restrict_scroll_to_axis)
         .scrollbar_width(px(6.0))
         .child(grid)
         .into_any_element()
@@ -1131,9 +1425,7 @@ fn render_image(
     let alt_owned = alt.to_owned();
     let fallback = move || image_fallback(alt_owned.clone(), theme, block_index);
     let content = if let Some(path) = resolve_image_target(document_path, source) {
-        img(Arc::<Path>::from(path))
-            .w_full()
-            .rounded(px(8.0))
+        style_reader_image(img(Arc::<Path>::from(path)))
             .with_fallback(fallback)
             .into_any_element()
     } else {
@@ -1143,7 +1435,6 @@ fn render_image(
         .id(("reader-block", block_index))
         .debug_selector(move || format!("reader-block-{block_index}"))
         .w_full()
-        .mb(px(15.5))
         .child(content)
         .into_any_element()
 }
@@ -1262,7 +1553,132 @@ mod tests {
             vec![InlineLink {
                 range: 28..32,
                 target: "guide.md".into(),
+                node_id: 0,
             }],
+        );
+    }
+
+    #[test]
+    fn adjacent_same_target_links_keep_distinct_source_identity() {
+        let layout = inline_layout(&[
+            InlineSpan::Link {
+                label: vec![InlineSpan::Text("one".into())],
+                target: "same.md".into(),
+            },
+            InlineSpan::Link {
+                label: vec![InlineSpan::Text("two".into())],
+                target: "same.md".into(),
+            },
+        ]);
+
+        assert_eq!(layout.text, "onetwo");
+        assert_eq!(layout.links.len(), 2);
+        assert_eq!(layout.links[0].range, 0..3);
+        assert_eq!(layout.links[1].range, 3..6);
+        assert_ne!(layout.links[0].node_id, layout.links[1].node_id);
+    }
+
+    #[test]
+    fn nested_horizontal_scrollers_restrict_plain_wheel_events_to_the_vertical_axis() {
+        let mut scroller = restrict_scroll_to_axis(div());
+
+        assert_eq!(scroller.style().restrict_scroll_to_axis, Some(true));
+    }
+
+    #[test]
+    fn horizontal_scroll_ids_include_document_identity() {
+        assert_ne!(
+            document_scoped_element_id(Path::new("/tmp/one.md"), "code-scroll", 4),
+            document_scoped_element_id(Path::new("/tmp/two.md"), "code-scroll", 4),
+        );
+        assert_eq!(
+            document_scoped_element_id(Path::new("/tmp/one.md"), "code-scroll", 4),
+            document_scoped_element_id(Path::new("/tmp/one.md"), "code-scroll", 4),
+        );
+    }
+
+    #[test]
+    fn nested_list_markers_stop_cycling_and_ordered_alpha_extends_past_z() {
+        assert_eq!(unordered_marker(0), "•");
+        assert_eq!(unordered_marker(1), "◦");
+        assert_eq!(unordered_marker(2), "▪");
+        assert_eq!(unordered_marker(5), "▪");
+        assert_eq!(format_ordered_marker(27, 1), "aa.");
+        assert_eq!(format_ordered_marker(52, 1), "az.");
+        assert_eq!(format_ordered_marker(53, 1), "ba.");
+        assert_eq!(format_ordered_marker(9, 2), "ix.");
+        assert_eq!(format_ordered_marker(9, 8), "ix.");
+        assert_eq!(format_ordered_marker(4_000, 2), "mmmm.");
+    }
+
+    #[test]
+    fn block_sequence_spacing_collapses_adjacent_margins_and_groups_lists() {
+        let blocks = vec![
+            DocumentBlock::Heading {
+                level: 1,
+                content: vec![InlineSpan::Text("Title".into())],
+            },
+            DocumentBlock::CodeBlock {
+                language: None,
+                code: "one".into(),
+            },
+            DocumentBlock::Table(TableBlock {
+                headers: vec![],
+                rows: vec![],
+            }),
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("one".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("two".into())],
+            },
+        ];
+
+        let spacing = block_sequence_spacing(&blocks);
+
+        assert_eq!(
+            spacing[0].before, 0.0,
+            "only a first H1 resets its top margin"
+        );
+        assert_eq!(spacing[1].before, 19.375);
+        assert_eq!(
+            spacing[2].before, 19.375,
+            "code/table margins collapse to max"
+        );
+        assert_eq!(spacing[3].before, 19.375);
+        assert_eq!(
+            spacing[4].before, 3.875,
+            "items keep compact internal rhythm"
+        );
+        assert_eq!(
+            spacing[4].after, 15.5,
+            "the list group retains a 1em outer margin"
+        );
+
+        let first_h2 = block_sequence_spacing(&[DocumentBlock::Heading {
+            level: 2,
+            content: vec![InlineSpan::Text("Section".into())],
+        }]);
+        assert_eq!(first_h2[0].before, BlockStyle::heading(2).font_size * 1.8);
+    }
+
+    #[test]
+    fn blockquote_style_has_equal_sixteen_pixel_inline_insets() {
+        assert_eq!(BlockStyle::blockquote().padding, [6.2, 16.0]);
+    }
+
+    #[test]
+    fn image_style_preserves_intrinsic_width_with_a_full_width_cap() {
+        let mut image = style_reader_image(img(Arc::<Path>::from(PathBuf::from("tiny.png"))));
+
+        assert!(image.style().size.width.is_none());
+        assert_eq!(
+            image.style().max_size.width,
+            Some(gpui::relative(1.0).into())
         );
     }
 
@@ -1342,11 +1758,78 @@ mod tests {
         let theme = Theme::for_appearance(gpui::WindowAppearance::Dark);
         let layout = inline_layout(&[InlineSpan::Text("123".into())]);
 
-        let runs = text_runs(&layout, &[], None, 400, theme.foreground, theme, true);
+        let runs = text_runs(&layout, &[], None, None, 400, theme.foreground, theme, true);
 
         assert_eq!(
             runs[0].font.features.tag_value_list(),
             &[("tnum".to_owned(), 1)],
+        );
+    }
+
+    #[test]
+    fn focused_link_range_is_underlined_without_splitting_the_text_surface() {
+        let theme = Theme::for_appearance(gpui::WindowAppearance::Dark);
+        let layout = inline_layout(&[
+            InlineSpan::Link {
+                label: vec![InlineSpan::Text("one".into())],
+                target: "one.md".into(),
+            },
+            InlineSpan::Text(" and ".into()),
+            InlineSpan::Link {
+                label: vec![InlineSpan::Text("two".into())],
+                target: "two.md".into(),
+            },
+        ]);
+
+        let runs = text_runs(
+            &layout,
+            &layout.links,
+            None,
+            Some(1),
+            400,
+            theme.foreground,
+            theme,
+            false,
+        );
+
+        assert!(runs[0].underline.is_none());
+        assert!(runs[2].underline.is_some());
+    }
+
+    #[test]
+    fn document_link_focus_targets_include_each_active_source_link() {
+        let document = ParsedDocument {
+            path: PathBuf::from("/tmp/links.md"),
+            title: "Links".into(),
+            source: String::new(),
+            blocks: vec![DocumentBlock::Paragraph(vec![
+                InlineSpan::Link {
+                    label: vec![InlineSpan::Text("one".into())],
+                    target: "one.md".into(),
+                },
+                InlineSpan::Text(" ".into()),
+                InlineSpan::Link {
+                    label: vec![InlineSpan::Text("two".into())],
+                    target: "two.md".into(),
+                },
+            ])],
+            headings: vec![],
+        };
+
+        assert_eq!(
+            document_link_focus_targets(&document),
+            vec![
+                LinkFocusTarget {
+                    surface_id: 0,
+                    link_index: 0,
+                    target: "one.md".into(),
+                },
+                LinkFocusTarget {
+                    surface_id: 0,
+                    link_index: 1,
+                    target: "two.md".into(),
+                },
+            ],
         );
     }
 }

@@ -547,6 +547,57 @@ pub fn render_error_banner(theme: Theme, error: &UserFacingError) -> AnyElement 
         .into_any_element()
 }
 
+pub fn render_reload_error_banner(
+    theme: Theme,
+    error: &UserFacingError,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    div()
+        .id("reload-error-banner")
+        .debug_selector(|| "reload-error-banner".into())
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .mx(px(10.0))
+                .mt(px(8.0))
+                .px(px(10.0))
+                .py(px(7.0))
+                .flex_none()
+                .rounded(px(7.0))
+                .border_1()
+                .border_color(theme.destructive.opacity(0.35))
+                .bg(theme.destructive.opacity(0.08))
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(11.0))
+                .text_color(theme.foreground)
+                .child(icon("icons/alert-circle.svg", theme.destructive, 14.0))
+                .child(
+                    div()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(error.title.clone()),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_grow()
+                        .truncate()
+                        .text_color(theme.muted_foreground)
+                        .child(error.body.clone()),
+                )
+                .child(compact_icon_button(
+                    "dismiss-reload-error",
+                    "icons/x.svg",
+                    22.0,
+                    12.0,
+                    theme,
+                    cx.listener(|this, _, _, cx| this.dismiss_reload_error(cx)),
+                )),
+        )
+        .into_any_element()
+}
+
 pub fn render_error_state(theme: Theme, error: &UserFacingError, drop_active: bool) -> AnyElement {
     error_state(theme, error, drop_active)
 }

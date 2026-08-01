@@ -5,10 +5,13 @@ use crate::{
     theme::{Metrics, ShellLayout, Theme},
     ui::{
         chrome::{
-            render_breadcrumb, render_error_banner, render_error_state, render_sidebar,
-            render_tab_bar,
+            render_breadcrumb, render_error_banner, render_error_state, render_reload_error_banner,
+            render_sidebar, render_tab_bar,
         },
-        reader::{LinkRoute, classify_link, clear_expired_code_copy_feedback, render_document},
+        reader::{
+            LinkRoute, ReaderLinkState, classify_link, clear_expired_code_copy_feedback,
+            document_link_focus_targets, render_document,
+        },
         welcome::welcome,
     },
     workspace::{WorkspaceError, WorkspaceTree, scan_workspace},
@@ -82,11 +85,16 @@ pub struct BatchOpenResult {
     pub document_error: Option<UserFacingError>,
     pub workspace_error: Option<UserFacingError>,
     document_attempted: bool,
+    document_opened: bool,
 }
 
 impl BatchOpenResult {
     pub fn document_attempted(&self) -> bool {
         self.document_attempted
+    }
+
+    pub fn document_opened(&self) -> bool {
+        self.document_opened
     }
 }
 
@@ -139,10 +147,13 @@ impl AppModel {
                 }
             } else {
                 result.document_attempted = true;
-                if let Err(AppOpenError::Document(error)) = self.open_document(path)
-                    && result.document_error.is_none()
-                {
-                    result.document_error = Some(error);
+                match self.open_document(path) {
+                    Ok(()) => result.document_opened = true,
+                    Err(AppOpenError::Document(error)) if result.document_error.is_none() => {
+                        result.document_error = Some(error);
+                    }
+                    Err(AppOpenError::Document(_)) => {}
+                    Err(AppOpenError::Workspace(_)) => unreachable!(),
                 }
             }
         }
@@ -150,6 +161,13 @@ impl AppModel {
             self.workspace_error = result.workspace_error.clone();
         }
         result
+    }
+
+    pub fn dismiss_active_reload_error(&mut self) -> bool {
+        let Some(tab) = self.tabs.active().filter(|tab| tab.reload_error.is_some()) else {
+            return false;
+        };
+        self.tabs.replace_document((*tab.document).clone())
     }
 }
 
@@ -190,7 +208,9 @@ pub struct MdowApp {
     pub open_error: Option<UserFacingError>,
     copied_code: Option<(usize, Instant)>,
     hovered_link: Option<(usize, usize)>,
+    focused_link: Option<(usize, usize)>,
     reader_scroll_handles: HashMap<PathBuf, ScrollHandle>,
+    reader_link_focus_handles: HashMap<(PathBuf, usize, usize), FocusHandle>,
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
@@ -224,7 +244,9 @@ impl MdowApp {
             open_error,
             copied_code: None,
             hovered_link: None,
+            focused_link: None,
             reader_scroll_handles: HashMap::new(),
+            reader_link_focus_handles: HashMap::new(),
             theme: Theme::for_appearance(window.appearance()),
             focus_handle,
             _appearance_subscription: appearance_subscription,
@@ -235,8 +257,7 @@ impl MdowApp {
         match self.model.open_path(path) {
             Ok(()) if !path.is_dir() => {
                 self.open_error = None;
-                self.copied_code = None;
-                self.hovered_link = None;
+                self.clear_reader_transient_state();
             }
             Ok(()) => {}
             Err(AppOpenError::Document(error)) => self.open_error = Some(error),
@@ -247,8 +268,12 @@ impl MdowApp {
 
     fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
         let result = self.model.open_paths(paths);
+        let document_opened = result.document_opened();
         if result.document_attempted() {
             self.open_error = result.document_error;
+        }
+        if document_opened {
+            self.clear_reader_transient_state();
         }
         self.drop_state.dropped();
         cx.notify();
@@ -359,11 +384,37 @@ impl MdowApp {
         cx.notify();
     }
 
+    fn clear_reader_transient_state(&mut self) {
+        self.copied_code = None;
+        self.hovered_link = None;
+        self.focused_link = None;
+    }
+
+    fn sync_focused_link(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let focused_link = self.reader_link_focus_handles.iter().find_map(
+            |((path, surface_id, link_index), handle)| {
+                (self
+                    .model
+                    .tabs
+                    .active()
+                    .is_some_and(|tab| tab.path() == path)
+                    && handle.is_focused(window))
+                .then_some((*surface_id, *link_index))
+            },
+        );
+        if self.focused_link != focused_link {
+            self.focused_link = focused_link;
+            cx.notify();
+        }
+    }
+
     pub fn close_active_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) {
             self.model.tabs.close(&path);
-            self.copied_code = None;
-            self.hovered_link = None;
+            self.reader_scroll_handles.remove(&path);
+            self.reader_link_focus_handles
+                .retain(|(document_path, _, _), _| document_path != &path);
+            self.clear_reader_transient_state();
             cx.notify();
         }
     }
@@ -382,16 +433,23 @@ impl MdowApp {
     pub(crate) fn activate_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.model.tabs.activate(path) {
             self.open_error = None;
-            self.copied_code = None;
-            self.hovered_link = None;
+            self.clear_reader_transient_state();
             cx.notify();
         }
     }
 
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.model.tabs.close(path).is_some() {
-            self.copied_code = None;
-            self.hovered_link = None;
+            self.reader_scroll_handles.remove(path);
+            self.reader_link_focus_handles
+                .retain(|(document_path, _, _), _| document_path != path);
+            self.clear_reader_transient_state();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn dismiss_reload_error(&mut self, cx: &mut Context<Self>) {
+        if self.model.dismiss_active_reload_error() {
             cx.notify();
         }
     }
@@ -421,6 +479,20 @@ impl MdowApp {
     ) {
         if self.hovered_link != hovered_link {
             self.hovered_link = hovered_link;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn clear_hovered_link_for_surface(
+        &mut self,
+        surface_id: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .hovered_link
+            .is_some_and(|(hovered_surface, _)| hovered_surface == surface_id)
+        {
+            self.hovered_link = None;
             cx.notify();
         }
     }
@@ -499,28 +571,41 @@ impl Render for MdowApp {
             let (document, path, reload_error) =
                 active_tab.expect("a non-empty tab set always has an active document");
             if let Some(body) = reload_error {
-                surface = surface.child(
-                    div()
-                        .id("reload-error-banner")
-                        .debug_selector(|| "reload-error-banner".into())
-                        .child(render_error_banner(
-                            self.theme,
-                            &UserFacingError {
-                                title: "Couldn't reload this file".into(),
-                                body,
-                                path: path.clone(),
-                            },
-                        )),
-                );
+                surface = surface.child(render_reload_error_banner(
+                    self.theme,
+                    &UserFacingError {
+                        title: "Couldn't reload this file".into(),
+                        body,
+                        path: path.clone(),
+                    },
+                    cx,
+                ));
             }
             let scroll_handle = self.reader_scroll_handles.entry(path).or_default().clone();
+            let active_focus_handles = document_link_focus_targets(&document)
+                .into_iter()
+                .map(|target| {
+                    let key = (document.path.clone(), target.surface_id, target.link_index);
+                    if !self.reader_link_focus_handles.contains_key(&key) {
+                        let handle = cx.focus_handle().tab_index(0).tab_stop(true);
+                        self.reader_link_focus_handles.insert(key.clone(), handle);
+                    }
+                    let handle = self.reader_link_focus_handles[&key].clone();
+                    ((target.surface_id, target.link_index), handle)
+                })
+                .collect::<HashMap<_, _>>();
+            let link_state = ReaderLinkState {
+                hovered: self.hovered_link,
+                focused: self.focused_link,
+                focus_handles: &active_focus_handles,
+            };
             surface
                 .child(render_document(
                     document,
                     self.wide_mode,
                     self.theme,
                     self.copied_code,
-                    self.hovered_link,
+                    &link_state,
                     &scroll_handle,
                     cx,
                 ))
@@ -531,7 +616,7 @@ impl Render for MdowApp {
         div()
             .id("mdow-root")
             .track_focus(&self.focus_handle)
-            .capture_key_down(|event, window, cx| {
+            .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 let modifiers = event.keystroke.modifiers;
                 if event.keystroke.key == "tab"
                     && !modifiers.control
@@ -544,10 +629,11 @@ impl Render for MdowApp {
                     } else {
                         window.focus_next();
                     }
+                    this.sync_focused_link(window, cx);
                     window.prevent_default();
                     cx.stop_propagation();
                 }
-            })
+            }))
             .on_action(cx.listener(Self::open_file))
             .on_action(cx.listener(Self::open_folder))
             .on_action(cx.listener(Self::toggle_sidebar))
@@ -607,7 +693,7 @@ impl Render for MdowApp {
 mod tests {
     use super::*;
     use gpui::{
-        FileDropEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
+        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
         VisualTestContext, point,
     };
     use std::{fs, os::unix::fs::PermissionsExt, path::Path};
@@ -1111,14 +1197,20 @@ mod tests {
         });
         let mut visual = VisualTestContext::from_window((*window).into(), cx);
         visual.update(|window, cx| window.draw(cx).clear());
-        let link_surface = visual
-            .debug_bounds("reader-inline-0-0")
-            .expect("single-link inline surface should be painted");
-        let blank_focus_point = point(link_surface.right() - px(2.0), link_surface.center().y);
-        visual.simulate_mouse_move(blank_focus_point, None, Modifiers::none());
-        visual.simulate_mouse_down(blank_focus_point, MouseButton::Left, Modifiers::none());
-        visual.simulate_mouse_up(blank_focus_point, MouseButton::Left, Modifiers::none());
-        assert!(visual.update(|window, cx| window.focused(cx).is_some()));
+        assert!(visual.debug_bounds("reader-link-focus-0-0").is_some());
+        for _ in 0..12 {
+            visual.simulate_event(KeyDownEvent {
+                keystroke: Keystroke::parse("tab").unwrap(),
+                is_held: false,
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+            if window.update(cx, |app, _, _| app.focused_link).unwrap() == Some((0, 0)) {
+                break;
+            }
+        }
+        window
+            .update(cx, |app, _, _| assert_eq!(app.focused_link, Some((0, 0))))
+            .unwrap();
 
         activate_focused(&mut visual, "enter");
 
@@ -1178,6 +1270,7 @@ mod tests {
                     app.open_error = None;
                     app.copied_code = Some((4, Instant::now()));
                     app.hovered_link = Some((1, 0));
+                    app.focused_link = Some((1, 0));
                     app
                 })
             })
@@ -1194,6 +1287,260 @@ mod tests {
             .update(cx, |app, _, _| {
                 assert!(app.copied_code.is_none());
                 assert!(app.hovered_link.is_none());
+                assert!(app.focused_link.is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn batch_document_open_clears_reader_transient_state(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first.md");
+        let second = directory.path().join("second.md");
+        fs::write(&first, "# First\n").unwrap();
+        fs::write(&second, "# Second\n").unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.open_document(&first).unwrap();
+                    app.copied_code = Some((2, Instant::now()));
+                    app.hovered_link = Some((3, 0));
+                    app.focused_link = Some((3, 0));
+                    app
+                })
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |app, _, cx| app.open_paths(vec![second.clone()], cx))
+            .unwrap();
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(
+                    app.model.tabs.active().unwrap().path(),
+                    second.canonicalize().unwrap()
+                );
+                assert!(app.copied_code.is_none());
+                assert!(app.hovered_link.is_none());
+                assert!(app.focused_link.is_none());
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn dismissing_active_reload_error_preserves_the_last_good_document() {
+        let path = PathBuf::from("/tmp/reload-dismiss.md");
+        let mut model = AppModel::default();
+        model
+            .tabs
+            .open(parse_document(path.clone(), "# Last good\n".into()));
+        assert!(model.tabs.set_reload_error(&path, "Broken update".into()));
+
+        assert!(model.dismiss_active_reload_error());
+
+        let tab = model.tabs.active().unwrap();
+        assert_eq!(tab.document.title, "Last good");
+        assert_eq!(tab.document.source, "# Last good\n");
+        assert!(tab.reload_error.is_none());
+    }
+
+    #[gpui::test]
+    fn reload_error_close_is_focusable_and_preserves_the_reader(cx: &mut TestAppContext) {
+        let path = PathBuf::from("/tmp/reload-dismiss-ui.md");
+        let mut model = AppModel::default();
+        model
+            .tabs
+            .open(parse_document(path.clone(), "# Last good\n".into()));
+        assert!(model.tabs.set_reload_error(&path, "Broken update".into()));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+
+        click_debug(&mut visual, "dismiss-reload-error");
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.model.tabs.active().unwrap().reload_error.is_none());
+            })
+            .unwrap();
+        assert!(visual.debug_bounds("reader-block-0").is_some());
+        window
+            .update(cx, |app, _, _| {
+                let tab = app.model.tabs.active().unwrap();
+                assert_eq!(tab.document.title, "Last good");
+                assert!(tab.reload_error.is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn two_inline_links_are_sequential_focus_targets_and_blank_space_is_inert(
+        cx: &mut TestAppContext,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let start = directory.path().join("start.md");
+        let first = directory.path().join("first.md");
+        let second = directory.path().join("second.md");
+        fs::write(&start, "[First](first.md) and [Second](second.md)\n").unwrap();
+        fs::write(&first, "# First\n").unwrap();
+        fs::write(&second, "# Second\n").unwrap();
+        let start_canonical = start.canonicalize().unwrap();
+        let mut model = AppModel::default();
+        model.open_document(&start).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let blank = visual
+            .debug_bounds("reader-inline-0-0")
+            .expect("inline surface should be painted");
+        assert!(visual.debug_bounds("reader-link-focus-0-0").is_some());
+        assert!(visual.debug_bounds("reader-link-focus-0-1").is_some());
+        let blank_point = point(blank.right() - px(4.0), blank.center().y);
+        visual.simulate_mouse_move(blank_point, None, Modifiers::none());
+        visual.simulate_mouse_down(blank_point, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(blank_point, MouseButton::Left, Modifiers::none());
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.len(), 1);
+                assert_eq!(app.model.tabs.active().unwrap().path(), start_canonical);
+            })
+            .unwrap();
+
+        let mut focused_links = Vec::new();
+        for _ in 0..16 {
+            visual.simulate_event(KeyDownEvent {
+                keystroke: Keystroke::parse("tab").unwrap(),
+                is_held: false,
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+            let focused = window.update(cx, |app, _, _| app.focused_link).unwrap();
+            if focused.is_some() && focused_links.last() != Some(&focused) {
+                focused_links.push(focused);
+            }
+            if focused_links.len() == 2 {
+                break;
+            }
+        }
+        let focused_links = focused_links.into_iter().flatten().collect::<Vec<_>>();
+        assert_eq!(focused_links, vec![(0, 0), (0, 1)]);
+        window
+            .update(cx, |app, _, _| assert_eq!(app.focused_link, Some((0, 1))))
+            .unwrap();
+
+        activate_focused(&mut visual, "enter");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(
+                    app.model.tabs.active().unwrap().path(),
+                    second.canonicalize().unwrap()
+                );
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn leaving_an_inline_surface_clears_its_hovered_link(cx: &mut TestAppContext) {
+        let path = PathBuf::from("/tmp/hover-leave.md");
+        let mut model = AppModel::default();
+        model
+            .tabs
+            .open(parse_document(path, "[Link](next.md)\n".into()));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        let bounds = visual.debug_bounds("reader-inline-0-0").unwrap();
+        let link_point = point(bounds.left() + px(8.0), bounds.center().y);
+
+        visual.simulate_mouse_move(link_point, None, Modifiers::none());
+        window
+            .update(cx, |app, _, _| assert_eq!(app.hovered_link, Some((0, 0))))
+            .unwrap();
+
+        visual.simulate_mouse_move(
+            point(bounds.right() + px(8.0), bounds.bottom() + px(8.0)),
+            None,
+            Modifiers::none(),
+        );
+        window
+            .update(cx, |app, _, _| assert!(app.hovered_link.is_none()))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn closing_and_reopening_a_document_uses_a_fresh_scroll_handle(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("scroll.md");
+        fs::write(&path, "# Scroll\n\nparagraph\n".repeat(80)).unwrap();
+        let canonical = path.canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.open_document(&path).unwrap();
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, _, _| {
+                app.reader_scroll_handles[&canonical].set_offset(point(px(0.0), px(-120.0)));
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, window, cx| {
+                app.close_active_tab(&CloseTab, window, cx)
+            })
+            .unwrap();
+        window
+            .update(cx, |app, _, _| {
+                assert!(!app.reader_scroll_handles.contains_key(&canonical));
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, _, cx| app.open_path(&path, cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.reader_scroll_handles[&canonical].offset().y, px(0.0));
             })
             .unwrap();
     }
