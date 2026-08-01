@@ -12,4 +12,5 @@ open = "=5.4.0"
 pulldown-cmark = { version = "=0.13.4", default-features = false }
 
 [dev-dependencies]
+gpui = { version = "=0.2.2", features = ["test-support"] }
 tempfile = "=3.27.0"

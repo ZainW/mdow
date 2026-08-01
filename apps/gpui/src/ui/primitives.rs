@@ -22,6 +22,8 @@ pub fn outline_button(
 ) -> impl IntoElement {
     div()
         .id(id)
+        .debug_selector(move || id.to_string())
+        // GPUI converts Enter/Space key-up events on a focused clickable element into clicks.
         .tab_index(0)
         .focusable()
         .flex()
@@ -58,6 +60,9 @@ pub fn icon_button(
 ) -> impl IntoElement {
     div()
         .id(id)
+        .debug_selector(move || id.to_string())
+        .group(id)
+        // Keep this focusable: GPUI's clickable element behavior supplies keyboard activation.
         .tab_index(0)
         .focusable()
         .flex()
@@ -71,5 +76,69 @@ pub fn icon_button(
         .active(|style| style.opacity(0.8))
         .focus(move |style| style.border_1().border_color(theme.primary))
         .on_click(on_click)
-        .child(icon(icon_path, theme.muted_foreground, Metrics::ICON_SIZE))
+        .child(
+            icon(icon_path, theme.muted_foreground, Metrics::ICON_SIZE)
+                .group_hover(id, move |style| style.text_color(theme.foreground)),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{
+        Context, KeyUpEvent, Keystroke, Modifiers, MouseButton, Render, TestAppContext,
+        VisualTestContext, WindowAppearance,
+    };
+    use std::{cell::Cell, rc::Rc};
+
+    struct ButtonHarness {
+        activation_count: Rc<Cell<usize>>,
+    }
+
+    impl Render for ButtonHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let activation_count = self.activation_count.clone();
+            outline_button(
+                "keyboard-test-button",
+                "Open File",
+                "icons/file.svg",
+                Theme::for_appearance(WindowAppearance::Dark),
+                move |_, _, _| activation_count.set(activation_count.get() + 1),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn focused_button_activates_with_enter_and_space(cx: &mut TestAppContext) {
+        let activation_count = Rc::new(Cell::new(0));
+        let window = cx.update(|cx| {
+            let activation_count = activation_count.clone();
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|_| ButtonHarness { activation_count })
+            })
+            .unwrap()
+        });
+
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        let button_center = visual
+            .debug_bounds("keyboard-test-button")
+            .expect("button should be painted")
+            .center();
+        visual.simulate_mouse_move(button_center, None, Modifiers::none());
+        visual.simulate_mouse_down(button_center, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(button_center, MouseButton::Left, Modifiers::none());
+        assert_eq!(activation_count.get(), 1);
+        assert!(visual.update(|window, cx| window.focused(cx).is_some()));
+        activation_count.set(0);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse("enter").unwrap(),
+        });
+        visual.simulate_event(KeyUpEvent {
+            keystroke: Keystroke::parse("space").unwrap(),
+        });
+
+        assert_eq!(activation_count.get(), 2);
+    }
 }

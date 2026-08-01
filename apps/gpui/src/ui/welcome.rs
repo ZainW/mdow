@@ -81,37 +81,69 @@ pub fn welcome(theme: Theme, drop_active: bool) -> AnyElement {
                         .child(outline_button(
                             "welcome-open-folder",
                             "Open Folder",
-                            "icons/folder.svg",
+                            "icons/folder-open.svg",
                             theme,
                             |_, _, cx| cx.dispatch_action(&OpenFolder),
                         )),
                 )
                 .child(
                     div()
-                        .mt(px(28.0))
+                        .mt(px(24.0))
                         .flex()
-                        .flex_col()
                         .items_center()
-                        .justify_center()
-                        .gap(px(7.0))
+                        .gap(px(12.0))
                         .w_full()
-                        .h(px(106.0))
+                        .max_w(px(448.0))
+                        .h(px(76.0))
+                        .px(px(16.0))
                         .rounded(px(Metrics::RADIUS))
                         .border_1()
                         .border_dashed()
                         .border_color(drop_border)
                         .bg(drop_background)
                         .text_color(theme.muted_foreground)
-                        .child(icon("icons/file.svg", theme.muted_foreground, 18.0))
                         .child(
                             div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .size(px(32.0))
+                                .flex_none()
+                                .rounded(px(7.0))
+                                .bg(theme.muted)
+                                .child(icon("icons/file.svg", theme.muted_foreground, 17.0)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(3.0))
                                 .font_family(Metrics::FONT_SANS)
-                                .text_size(px(12.0))
-                                .child(if drop_active {
-                                    "Release to open in Mdow"
-                                } else {
-                                    "Drop a Markdown file or folder"
-                                }),
+                                .child(
+                                    div()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_size(px(12.0))
+                                        .text_color(theme.foreground)
+                                        .child(if drop_active {
+                                            "Release to open in Mdow"
+                                        } else {
+                                            "Anywhere in this window"
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .text_size(px(11.0))
+                                        .child("Drop ")
+                                        .child(
+                                            div()
+                                                .font_family(Metrics::FONT_MONO)
+                                                .text_color(theme.foreground)
+                                                .child(".md"),
+                                        )
+                                        .child(" files or a folder"),
+                                ),
                         ),
                 ),
         )

@@ -9,6 +9,7 @@ impl Metrics {
     pub const CONTROL_FONT_SIZE: f32 = 12.0;
     pub const ICON_SIZE: f32 = 16.0;
     pub const SIDEBAR_WIDTH: f32 = 244.0;
+    pub const MIN_MAIN_WIDTH_WITH_SIDEBAR: f32 = 320.0;
     pub const TITLEBAR_INSET: f32 = 28.0;
     pub const TAB_BAR_HEIGHT: f32 = 36.0;
     pub const TAB_HEIGHT: f32 = 28.0;
@@ -40,8 +41,10 @@ pub struct ShellLayout {
 impl ShellLayout {
     pub fn for_width(window_width: f32, sidebar_open: bool, wide_mode: bool) -> Self {
         let window_width = window_width.max(0.0);
-        let sidebar_width = if sidebar_open {
-            Metrics::SIDEBAR_WIDTH.min(window_width)
+        let sidebar_width = if sidebar_open
+            && window_width >= Metrics::SIDEBAR_WIDTH + Metrics::MIN_MAIN_WIDTH_WITH_SIDEBAR
+        {
+            Metrics::SIDEBAR_WIDTH
         } else {
             0.0
         };
@@ -206,28 +209,22 @@ mod tests {
     }
 
     #[test]
-    fn narrow_windows_never_produce_negative_region_widths() {
+    fn narrow_windows_auto_collapse_the_sidebar_to_keep_the_main_region_usable() {
         let layout = ShellLayout::for_width(180.0, true, false);
 
+        assert_eq!(layout.sidebar, Region { x: 0.0, width: 0.0 });
         assert_eq!(
-            layout.sidebar,
+            layout.main,
             Region {
                 x: 0.0,
                 width: 180.0
             }
         );
         assert_eq!(
-            layout.main,
-            Region {
-                x: 180.0,
-                width: 0.0
-            }
-        );
-        assert_eq!(
             layout.reader,
             Region {
-                x: 180.0,
-                width: 0.0
+                x: 0.0,
+                width: 180.0
             }
         );
     }

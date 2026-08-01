@@ -207,7 +207,7 @@ impl Render for MdowApp {
                     .flex()
                     .flex_grow()
                     .min_h_0()
-                    .when(self.sidebar_open && layout.sidebar.width > 0.0, |shell| {
+                    .when(layout.sidebar.width > 0.0, |shell| {
                         shell.child(self.render_sidebar(layout.sidebar.width))
                     })
                     .child(
