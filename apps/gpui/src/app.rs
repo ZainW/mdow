@@ -20,7 +20,7 @@ use crate::{
 };
 use gpui::{
     ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, IntoElement, PathPromptOptions,
-    Render, ScrollHandle, Subscription, Task, Timer, Window, div, prelude::*, px,
+    Render, ScrollHandle, Subscription, Task, Timer, Window, div, point, prelude::*, px,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -245,6 +245,17 @@ pub struct MdowApp {
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
+}
+
+fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option<f32> {
+    let page = viewport * 0.9;
+    match key {
+        "home" => Some(0.0),
+        "end" => Some(-max),
+        "pageup" => Some((current + page).min(0.0)),
+        "pagedown" => Some((current - page).max(-max)),
+        _ => None,
+    }
 }
 
 impl MdowApp {
@@ -581,6 +592,26 @@ impl MdowApp {
         }
     }
 
+    fn scroll_active_reader(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) else {
+            return false;
+        };
+        let Some(handle) = self.reader_scroll_handles.get(&path) else {
+            return false;
+        };
+        let Some(target) = reader_key_target(
+            key,
+            f32::from(handle.offset().y),
+            f32::from(handle.bounds().size.height),
+            f32::from(handle.max_offset().height),
+        ) else {
+            return false;
+        };
+        handle.set_offset(point(px(0.0), px(target)));
+        cx.notify();
+        true
+    }
+
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.model.tabs.close(path).is_some() {
             self.reader_scroll_handles.remove(path);
@@ -748,6 +779,15 @@ impl Render for MdowApp {
             .track_focus(&self.focus_handle)
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 let modifiers = event.keystroke.modifiers;
+                if !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.platform
+                    && !modifiers.function
+                    && this.scroll_active_reader(&event.keystroke.key, cx)
+                {
+                    cx.stop_propagation();
+                    return;
+                }
                 if event.keystroke.key == "tab"
                     && !modifiers.control
                     && !modifiers.alt
@@ -823,8 +863,8 @@ impl Render for MdowApp {
 mod tests {
     use super::*;
     use gpui::{
-        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, TestAppContext,
-        VisualTestContext, point,
+        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, ScrollDelta,
+        ScrollWheelEvent, TestAppContext, VisualTestContext, point,
     };
     use std::{
         fs,
@@ -1169,6 +1209,23 @@ mod tests {
         assert!(!state.is_active());
     }
 
+    #[test]
+    fn reader_key_targets_are_clamped_to_scroll_extent() {
+        assert_eq!(reader_key_target("home", -240.0, 600.0, 1600.0), Some(0.0));
+        assert_eq!(
+            reader_key_target("end", -240.0, 600.0, 1600.0),
+            Some(-1600.0)
+        );
+        assert_eq!(
+            reader_key_target("pagedown", -240.0, 600.0, 1600.0),
+            Some(-780.0)
+        );
+        assert_eq!(
+            reader_key_target("pageup", -240.0, 600.0, 1600.0),
+            Some(0.0)
+        );
+    }
+
     #[gpui::test]
     fn open_paths_registers_live_reload_without_changing_tab_or_scroll_state(
         cx: &mut TestAppContext,
@@ -1487,7 +1544,7 @@ mod tests {
             format!(
                 "# Reader\n\nThis paragraph has *emphasis*, **strong text**, `inline code`, and [a local link](next.md). {}",
                 "A deliberately long sentence keeps flowing through the same inline text surface. "
-                    .repeat(8),
+                    .repeat(48),
             ),
         );
         let window = cx.update(|cx| {
@@ -1504,12 +1561,36 @@ mod tests {
         let mut visual = VisualTestContext::from_window((*window).into(), cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
-        assert!(visual.debug_bounds("reader-scroll").is_some());
+        let bounds = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        let column_bounds = visual.debug_bounds("reader-column").expect("reader column");
         assert!(visual.debug_bounds("reader-block-0").is_some());
         let paragraph = visual
             .debug_bounds("reader-inline-1-0")
             .expect("paragraph inline surface should be painted");
         assert!(paragraph.size.height > px(40.0));
+        let handle = window
+            .update(cx, |app, _, _| {
+                app.reader_scroll_handles.values().next().unwrap().clone()
+            })
+            .unwrap();
+
+        assert!(
+            handle.max_offset().height > px(0.0),
+            "reader viewport height {:?}, column height {:?}, max offset {:?}",
+            bounds.size.height,
+            column_bounds.size.height,
+            handle.max_offset().height,
+        );
+        visual.simulate_event(ScrollWheelEvent {
+            position: bounds.center(),
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-180.0))),
+            ..Default::default()
+        });
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        assert!(handle.offset().y < px(0.0));
     }
 
     #[gpui::test]
@@ -1952,6 +2033,55 @@ mod tests {
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.reader_scroll_handles[&canonical].offset().y, px(0.0));
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn switching_tabs_retains_each_reader_scroll_offset(cx: &mut TestAppContext) {
+        let first = PathBuf::from("/tmp/scroll-first.md");
+        let second = PathBuf::from("/tmp/scroll-second.md");
+        let mut model = AppModel::default();
+        model.tabs.open(parse_document(
+            first.clone(),
+            "# First\n\nA paragraph for scrolling.\n\n".repeat(80),
+        ));
+        model.tabs.open(parse_document(
+            second.clone(),
+            "# Second\n\nAnother paragraph for scrolling.\n\n".repeat(80),
+        ));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, _, cx| app.activate_tab(&first, cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        window
+            .update(cx, |app, _, cx| {
+                app.activate_tab(&first, cx);
+                app.reader_scroll_handles[&first].set_offset(point(px(0.0), px(-120.0)));
+                app.activate_tab(&second, cx);
+                app.reader_scroll_handles[&second].set_offset(point(px(0.0), px(-260.0)));
+                app.activate_tab(&first, cx);
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.reader_scroll_handles[&first].offset().y, px(-120.0));
+                assert_eq!(app.reader_scroll_handles[&second].offset().y, px(-260.0));
+                assert_eq!(app.model.tabs.active().unwrap().path(), first);
             })
             .unwrap();
     }
