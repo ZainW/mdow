@@ -1,6 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import packageJson from '../../../package.json' with { type: 'json' }
-import type { CompanionUpdate } from '../../shared/types'
+import type {
+  CompanionModelOption,
+  CompanionModelProvider,
+  CompanionModelState,
+  CompanionUpdate,
+} from '../../shared/types'
 
 type JsonRpcId = number | string
 
@@ -59,10 +64,124 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout> | null
 }
 
+interface AcpConfigOptionValue {
+  value: string
+  name: string
+  description?: string
+}
+
+interface AcpConfigOption {
+  id: string
+  name: string
+  category?: string
+  type: string
+  currentValue: string | boolean
+  options?: AcpConfigOptionValue[]
+}
+
 const REQUEST_TIMEOUT_MS = 30_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function parseConfigOptions(value: unknown): AcpConfigOption[] {
+  if (!Array.isArray(value)) return []
+  const options: AcpConfigOption[] = []
+  for (const candidate of value) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== 'string' ||
+      typeof candidate.name !== 'string' ||
+      typeof candidate.type !== 'string' ||
+      (typeof candidate.currentValue !== 'string' && typeof candidate.currentValue !== 'boolean')
+    ) {
+      continue
+    }
+    const values = Array.isArray(candidate.options)
+      ? candidate.options.flatMap((option) => {
+          if (!isRecord(option) || typeof option.value !== 'string') return []
+          return [
+            {
+              value: option.value,
+              name: typeof option.name === 'string' ? option.name : option.value,
+              ...(typeof option.description === 'string'
+                ? { description: option.description }
+                : {}),
+            },
+          ]
+        })
+      : undefined
+    options.push({
+      id: candidate.id,
+      name: candidate.name,
+      ...(typeof candidate.category === 'string' ? { category: candidate.category } : {}),
+      type: candidate.type,
+      currentValue: candidate.currentValue,
+      ...(values ? { options: values } : {}),
+    })
+  }
+  return options
+}
+
+function modelProvider(value: string): CompanionModelProvider | null {
+  if (value.startsWith('openai/')) return 'openai'
+  if (value.startsWith('opencode-go/')) return 'opencode-go'
+  if (value.startsWith('opencode/')) return 'opencode'
+  return null
+}
+
+function modelOptionFrom(configOptions: AcpConfigOption[]): AcpConfigOption | null {
+  return (
+    configOptions.find((option) => option.category === 'model') ??
+    configOptions.find((option) => option.id === 'model') ??
+    null
+  )
+}
+
+function toModelState(configOptions: AcpConfigOption[], hasSession: boolean): CompanionModelState {
+  if (!hasSession) {
+    return {
+      options: [],
+      currentValue: null,
+      stale: true,
+      unavailableReason: 'Start Companion to load models',
+    }
+  }
+  const modelConfig = modelOptionFrom(configOptions)
+  if (!modelConfig || modelConfig.type !== 'select') {
+    return {
+      options: [],
+      currentValue: null,
+      stale: false,
+      unavailableReason: 'The current provider does not expose model selection',
+    }
+  }
+  const options: CompanionModelOption[] = (modelConfig.options ?? []).flatMap((option) => {
+    const provider = modelProvider(option.value)
+    if (!provider) return []
+    return [
+      {
+        value: option.value,
+        name: option.name,
+        ...(option.description ? { description: option.description } : {}),
+        provider,
+      },
+    ]
+  })
+  const currentValue =
+    typeof modelConfig.currentValue === 'string' &&
+    options.some((option) => option.value === modelConfig.currentValue)
+      ? modelConfig.currentValue
+      : null
+  return {
+    options,
+    currentValue,
+    stale: false,
+    ...(options.length === 0
+      ? { unavailableReason: 'No supported OpenCode models are live in this session' }
+      : {}),
+  }
 }
 
 function extractTextFromContent(content: unknown): string {
@@ -166,6 +285,7 @@ export class AcpClient {
   private readonly spawnImpl: typeof spawn
   private closed = false
   private lastTextChannel: 'message' | 'thinking' | null = null
+  private configOptions: AcpConfigOption[] = []
 
   constructor(options: AcpClientOptions) {
     this.command = options.command
@@ -225,14 +345,38 @@ export class AcpClient {
       throw new Error('ACP session/new missing sessionId')
     }
     this.sessionId = result.sessionId
+    this.configOptions = parseConfigOptions(result.configOptions)
     return {
       sessionId: result.sessionId,
-      configOptions: Array.isArray(result.configOptions) ? result.configOptions : [],
+      configOptions: this.configOptions,
     }
   }
 
   getSessionId(): string | null {
     return this.sessionId
+  }
+
+  getModelState(): CompanionModelState {
+    return toModelState(this.configOptions, Boolean(this.sessionId))
+  }
+
+  async setModel(value: string): Promise<CompanionModelState> {
+    if (!this.sessionId) throw new Error('No ACP session')
+    const modelConfig = modelOptionFrom(this.configOptions)
+    const state = this.getModelState()
+    if (!modelConfig || !state.options.some((option) => option.value === value)) {
+      throw new Error(`Model is not available in this session: ${value}`)
+    }
+    const result = await this.request('session/set_config_option', {
+      sessionId: this.sessionId,
+      configId: modelConfig.id,
+      value,
+    })
+    if (!isRecord(result) || !Array.isArray(result.configOptions)) {
+      throw new Error('ACP session/set_config_option missing configOptions')
+    }
+    this.configOptions = parseConfigOptions(result.configOptions)
+    return this.getModelState()
   }
 
   async prompt(text: string): Promise<void> {
@@ -255,6 +399,8 @@ export class AcpClient {
 
   shutdown(): Promise<void> {
     this.closed = true
+    this.configOptions = []
+    this.sessionId = null
     this.failAll(new Error('ACP client shut down'))
     const child = this.process
     this.process = null
@@ -319,6 +465,14 @@ export class AcpClient {
     if (method === 'session/update') {
       if (isRecord(params)) {
         const update = params.update ?? params
+        if (
+          isRecord(update) &&
+          (update.sessionUpdate === 'config_option_update' ||
+            update.type === 'config_option_update')
+        ) {
+          this.configOptions = parseConfigOptions(update.configOptions)
+          return
+        }
         const tool = toolFromSessionUpdate(update)
         if (tool) {
           if (this.lastTextChannel === 'thinking') {

@@ -322,6 +322,17 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return getCompanionService(getMainWindow).startSession(providerId)
   })
 
+  ipcMain.handle('companion:get-models', () => {
+    return getCompanionService(getMainWindow).getModels()
+  })
+
+  ipcMain.handle('companion:set-model', async (_, value: string) => {
+    if (typeof value !== 'string' || !/^[\w./:+-]{1,200}$/.test(value)) {
+      throw new Error('invalid-model')
+    }
+    return getCompanionService(getMainWindow).setModel(value)
+  })
+
   ipcMain.handle('companion:send', async (event, payload: CompanionSendPayload) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('no-window')

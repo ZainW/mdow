@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubWindowApi } from '../../test/stubWindowApi'
 import { useAppStore } from '../../store/app-store'
-import { CompanionFullscreen, CompanionPanel } from './CompanionPanel'
+import { CompanionPanel, CompanionShell, CompanionWorkspace } from './CompanionPanel'
 
 const sendCompanionMessage = vi.fn(() => new Promise<void>(() => undefined))
 
@@ -17,7 +17,7 @@ stubWindowApi(() => ({
   ]),
   getCompanionSettings: vi
     .fn()
-    .mockResolvedValue({ preferredProvider: 'opencode', customCommand: '' }),
+    .mockResolvedValue({ preferredProvider: 'opencode', customCommand: '', lastModel: null }),
   saveCompanionSettings: vi.fn().mockResolvedValue(undefined),
   sendCompanionMessage,
   cancelCompanion: vi.fn().mockResolvedValue(undefined),
@@ -27,8 +27,7 @@ beforeEach(() => {
   sendCompanionMessage.mockClear()
   useAppStore.getState().resetCompanionConversation()
   useAppStore.setState({
-    companionOpen: true,
-    companionFullscreen: false,
+    companionPresentation: 'drawer',
     companionProviders: [
       {
         id: 'opencode',
@@ -107,6 +106,7 @@ describe('CompanionPanel', () => {
     vi.mocked(window.api.getCompanionSettings).mockResolvedValueOnce({
       preferredProvider: 'codex-acp',
       customCommand: '',
+      lastModel: null,
     })
 
     render(<CompanionPanel />)
@@ -131,17 +131,30 @@ describe('CompanionPanel', () => {
     )
   })
 
-  it('allows the expanded dialog to exceed the base small-dialog width', () => {
-    useAppStore.setState({ companionFullscreen: true })
-    const { container } = render(
-      <>
-        <CompanionPanel />
-        <CompanionFullscreen />
-      </>,
+  it('renders the expanded companion as a workspace instead of a dialog', () => {
+    useAppStore.setState({ companionPresentation: 'workspace' })
+    render(<CompanionWorkspace />)
+
+    expect(screen.getByRole('region', { name: 'AI companion workspace' })).toBeVisible()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to document' }))
+    expect(useAppStore.getState().companionPresentation).toBe('drawer')
+  })
+
+  it('replaces the reader shell while workspace mode is active', () => {
+    useAppStore.setState({ companionPresentation: 'workspace' })
+    render(
+      <CompanionShell>
+        <main aria-label="Test document">Reader content</main>
+      </CompanionShell>,
     )
 
-    expect(screen.getByRole('dialog')).toHaveClass('sm:max-w-none')
-    expect(container.querySelector('aside[aria-label="AI companion"]')).toHaveAttribute('inert')
+    expect(screen.getByRole('region', { name: 'AI companion workspace' })).toBeVisible()
+    expect(screen.queryByRole('main', { name: 'Test document' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to document' }))
+    expect(screen.getByRole('main', { name: 'Test document' })).toBeVisible()
   })
 
   it('keeps thinking and tool details collapsed while activity streams', () => {

@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { IPC } from '../../shared/types'
 import type {
+  CompanionModelState,
   CompanionProviderId,
   CompanionSendPayload,
   CompanionSettings,
@@ -125,6 +126,24 @@ export class CompanionService {
     saveCompanionSettings(settings)
   }
 
+  getModels(): CompanionModelState {
+    return (
+      this.client?.getModelState() ?? {
+        options: [],
+        currentValue: null,
+        stale: true,
+        unavailableReason: 'Start Companion to load models',
+      }
+    )
+  }
+
+  async setModel(value: string): Promise<CompanionModelState> {
+    if (!this.client) throw new Error('Start Companion to choose a model')
+    const state = await this.client.setModel(value)
+    if (state.currentValue) saveCompanionSettings({ lastModel: state.currentValue })
+    return state
+  }
+
   async startSession(
     providerId?: CompanionProviderId,
     cwd = process.cwd(),
@@ -172,6 +191,16 @@ export class CompanionService {
       await client.start()
       const fffServer = preferred === 'opencode' ? await resolveFffMcp() : null
       await client.createSession(cwd, fffServer ? [fffServer] : [])
+      if (
+        settings.lastModel &&
+        client.getModelState().options.some((option) => option.value === settings.lastModel)
+      ) {
+        try {
+          await client.setModel(settings.lastModel)
+        } catch {
+          // A live agent may change available configuration between session setup and selection.
+        }
+      }
       this.client = client
       this.activeProvider = preferred
       this.activeCwd = cwd

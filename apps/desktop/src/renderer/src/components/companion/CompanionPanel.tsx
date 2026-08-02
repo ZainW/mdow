@@ -1,11 +1,10 @@
 /* oxlint-disable jsx-a11y/no-noninteractive-element-to-interactive-role, jsx-a11y/prefer-tag-over-role -- The custom mention popup follows the ARIA combobox/listbox pattern. */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CircleEllipsis, Expand, MessageSquare, Minimize2, Send, Square, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowLeft, CircleEllipsis, Expand, MessageSquare, Send, Square, X } from 'lucide-react'
 import { useAppStore, selectActiveTab } from '../../store/app-store'
 import { Button } from '../ui/button'
 import { Textarea } from '../ui/textarea'
 import { Badge } from '../ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 import { cn, isMac } from '@renderer/lib/utils'
 import { basename } from '../../lib/path-utils'
 import { fuzzySearch } from '../../lib/fuzzy-search'
@@ -448,12 +447,14 @@ function CompanionComposer({ providerId }: { providerId: CompanionProviderId }) 
 }
 
 function CompanionBody({
+  layout = 'drawer',
   onExpand,
-  onCollapse,
+  onBack,
   onClose,
 }: {
+  layout?: 'drawer' | 'workspace'
   onExpand?: () => void
-  onCollapse?: () => void
+  onBack?: () => void
   onClose?: () => void
 }) {
   const providers = useAppStore((s) => s.companionProviders)
@@ -462,22 +463,28 @@ function CompanionBody({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-(--tabbar-height) shrink-0 items-center gap-1 border-b border-border-subtle px-2">
+      <header
+        className={cn(
+          'flex h-(--tabbar-height) shrink-0 items-center gap-1 border-b border-border-subtle',
+          layout === 'workspace' ? 'px-4' : 'px-2',
+        )}
+      >
+        {onBack && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="mr-2 gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={onBack}
+          >
+            <ArrowLeft />
+            Back to document
+          </Button>
+        )}
         <MessageSquare className="size-3.5 text-muted-foreground" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Companion</h2>
         {onExpand && (
           <Button size="icon-xs" variant="ghost" aria-label="Expand companion" onClick={onExpand}>
             <Expand />
-          </Button>
-        )}
-        {onCollapse && (
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Collapse companion"
-            onClick={onCollapse}
-          >
-            <Minimize2 />
           </Button>
         )}
         {onClose && (
@@ -486,14 +493,21 @@ function CompanionBody({
           </Button>
         )}
       </header>
-      {providerId ? (
-        <>
-          <CompanionMessages />
-          <CompanionComposer providerId={providerId} />
-        </>
-      ) : (
-        <CompanionSetup providers={providers} />
-      )}
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col',
+          layout === 'workspace' && 'mx-auto w-full max-w-4xl',
+        )}
+      >
+        {providerId ? (
+          <>
+            <CompanionMessages />
+            <CompanionComposer providerId={providerId} />
+          </>
+        ) : (
+          <CompanionSetup providers={providers} />
+        )}
+      </div>
     </div>
   )
 }
@@ -523,10 +537,9 @@ function refreshCompanionMeta() {
 }
 
 export function CompanionPanel() {
-  const open = useAppStore((s) => s.companionOpen)
-  const fullscreen = useAppStore((s) => s.companionFullscreen)
-  const setOpen = useAppStore((s) => s.setCompanionOpen)
-  const setFullscreen = useAppStore((s) => s.setCompanionFullscreen)
+  const presentation = useAppStore((s) => s.companionPresentation)
+  const setPresentation = useAppStore((s) => s.setCompanionPresentation)
+  const open = presentation === 'drawer'
 
   useEffect(() => {
     if (open) refreshCompanionMeta()
@@ -544,32 +557,40 @@ export function CompanionPanel() {
           ? 'max-lg:w-[min(24rem,calc(100vw-1rem))] lg:w-(--companion-drawer-width)'
           : 'w-0 max-lg:pointer-events-none',
       )}
-      aria-hidden={!open || fullscreen}
-      inert={!open || fullscreen ? true : undefined}
+      aria-hidden={!open}
+      inert={!open ? true : undefined}
     >
       <div className="flex h-full w-full flex-col lg:w-(--companion-drawer-width)">
-        <CompanionBody onExpand={() => setFullscreen(true)} onClose={() => setOpen(false)} />
+        <CompanionBody
+          onExpand={() => setPresentation('workspace')}
+          onClose={() => setPresentation('closed')}
+        />
       </div>
     </aside>
   )
 }
 
-export function CompanionFullscreen() {
-  const open = useAppStore((s) => s.companionFullscreen)
-  const setFullscreen = useAppStore((s) => s.setCompanionFullscreen)
+export function CompanionWorkspace() {
+  const presentation = useAppStore((s) => s.companionPresentation)
+  const setPresentation = useAppStore((s) => s.setCompanionPresentation)
 
   useEffect(() => {
-    if (open) refreshCompanionMeta()
-  }, [open])
+    if (presentation === 'workspace') refreshCompanionMeta()
+  }, [presentation])
+
+  if (presentation !== 'workspace') return null
 
   return (
-    <Dialog open={open} onOpenChange={setFullscreen}>
-      <DialogContent className="flex h-[min(90vh,52rem)] w-[min(96vw,48rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
-        <DialogHeader className="sr-only">
-          <DialogTitle>Companion</DialogTitle>
-        </DialogHeader>
-        <CompanionBody onCollapse={() => setFullscreen(false)} />
-      </DialogContent>
-    </Dialog>
+    <section
+      aria-label="AI companion workspace"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
+    >
+      <CompanionBody layout="workspace" onBack={() => setPresentation('drawer')} />
+    </section>
   )
+}
+
+export function CompanionShell({ children }: { children: ReactNode }) {
+  const presentation = useAppStore((s) => s.companionPresentation)
+  return presentation === 'workspace' ? <CompanionWorkspace /> : children
 }

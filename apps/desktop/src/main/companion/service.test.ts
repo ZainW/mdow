@@ -4,7 +4,11 @@ import { tmpdir } from 'os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../store', () => ({
-  getCompanionSettings: vi.fn(() => ({ preferredProvider: null, customCommand: '' })),
+  getCompanionSettings: vi.fn(() => ({
+    preferredProvider: null,
+    customCommand: '',
+    lastModel: null,
+  })),
   saveCompanionSettings: vi.fn(),
 }))
 
@@ -28,6 +32,7 @@ vi.mock('./provider-detection', async () => {
 
 import { CitationStream, CompanionService } from './service'
 import { detectCompanionProviders } from './provider-detection'
+import { saveCompanionSettings } from '../store'
 
 describe('Companion service', () => {
   let dir: string
@@ -205,5 +210,32 @@ describe('Companion service', () => {
     expect(prompts[0]).toContain('important detail')
     expect(prompts[1]).toContain('Content unchanged from earlier in this session')
     expect(prompts[1]).not.toContain('important detail')
+  })
+
+  it('exposes live models and persists only the confirmed selection', async () => {
+    const selectedState = {
+      options: [
+        {
+          value: 'openai/gpt-5.4',
+          name: 'GPT-5.4',
+          provider: 'openai' as const,
+        },
+      ],
+      currentValue: 'openai/gpt-5.4',
+      stale: false,
+    }
+    const setModel = vi.fn().mockResolvedValue(selectedState)
+    const service = new CompanionService(() => null)
+    Object.assign(service, {
+      client: {
+        getModelState: () => selectedState,
+        setModel,
+      },
+    })
+
+    expect(service.getModels()).toEqual(selectedState)
+    await expect(service.setModel('openai/gpt-5.4')).resolves.toEqual(selectedState)
+    expect(setModel).toHaveBeenCalledWith('openai/gpt-5.4')
+    expect(saveCompanionSettings).toHaveBeenCalledWith({ lastModel: 'openai/gpt-5.4' })
   })
 })

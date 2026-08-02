@@ -19,6 +19,24 @@ class FakeChild extends EventEmitter {
   private requestCount = 0
   ignoredMethods = new Set<string>()
 
+  private modelConfig(currentValue = 'opencode/claude-sonnet-4-5') {
+    return [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue,
+        options: [
+          { value: 'openai/gpt-5.4', name: 'GPT-5.4' },
+          { value: 'opencode/claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+          { value: 'opencode-go/kimi-k2.5', name: 'Kimi K2.5' },
+          { value: 'anthropic/claude-opus-4', name: 'Hidden direct provider' },
+        ],
+      },
+    ]
+  }
+
   respondTo(chunk: string): void {
     for (const line of chunk.split('\n').filter(Boolean)) {
       const msg = JSON.parse(line) as {
@@ -40,7 +58,17 @@ class FakeChild extends EventEmitter {
           `${JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,
-            result: { sessionId: 'sess_test' },
+            result: { sessionId: 'sess_test', configOptions: this.modelConfig() },
+          })}\n`,
+        )
+      } else if (msg.method === 'session/set_config_option' && msg.id !== undefined) {
+        this.stdout.push(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: {
+              configOptions: this.modelConfig(String(msg.params?.value ?? '')),
+            },
           })}\n`,
         )
       } else if (msg.method === 'session/prompt' && msg.id !== undefined) {
@@ -190,6 +218,70 @@ describe('Companion ACP client', () => {
         env: [],
       },
     ])
+    await client.shutdown()
+  })
+
+  it('reads and changes the live model configuration exposed by the agent', async () => {
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: vi.fn(),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+    await client.start()
+    await client.createSession('/tmp/docs')
+
+    expect(client.getModelState()).toEqual({
+      options: [
+        {
+          value: 'openai/gpt-5.4',
+          name: 'GPT-5.4',
+          provider: 'openai',
+        },
+        {
+          value: 'opencode/claude-sonnet-4-5',
+          name: 'Claude Sonnet 4.5',
+          provider: 'opencode',
+        },
+        {
+          value: 'opencode-go/kimi-k2.5',
+          name: 'Kimi K2.5',
+          provider: 'opencode-go',
+        },
+      ],
+      currentValue: 'opencode/claude-sonnet-4-5',
+      stale: false,
+    })
+
+    await expect(client.setModel('openai/gpt-5.4')).resolves.toMatchObject({
+      currentValue: 'openai/gpt-5.4',
+    })
+    const setRequest = fake.written
+      .flatMap((chunk) => chunk.split('\n'))
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { method?: string; params?: Record<string, unknown> })
+      .find((message) => message.method === 'session/set_config_option')
+    expect(setRequest?.params).toMatchObject({
+      sessionId: 'sess_test',
+      configId: 'model',
+      value: 'openai/gpt-5.4',
+    })
+    await client.shutdown()
+  })
+
+  it('rejects a model value that is not live in the current session', async () => {
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: vi.fn(),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+    await client.start()
+    await client.createSession('/tmp/docs')
+
+    await expect(client.setModel('anthropic/claude-opus-4')).rejects.toThrow(/not available/i)
     await client.shutdown()
   })
 

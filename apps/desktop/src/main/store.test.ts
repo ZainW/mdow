@@ -131,6 +131,7 @@ describe('store', () => {
         sidebarMode: 'recents',
         companionPreferredProvider: null,
         companionCustomCommand: '',
+        companionLastModel: null,
       })
     })
 

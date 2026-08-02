@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveProviderCommand } from './provider-detection'
 
 vi.mock('../store', () => ({
-  getCompanionSettings: () => ({ preferredProvider: null, customCommand: 'my-agent --acp' }),
+  getCompanionSettings: () => ({
+    preferredProvider: null,
+    customCommand: 'my-agent --acp',
+    lastModel: null,
+  }),
 }))
 
 describe('Companion provider detection', () => {

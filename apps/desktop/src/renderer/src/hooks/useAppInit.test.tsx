@@ -21,6 +21,7 @@ function appState(overrides: Partial<AppState> = {}): AppState {
     sidebarMode: 'recents',
     companionPreferredProvider: null,
     companionCustomCommand: '',
+    companionLastModel: null,
     ...overrides,
   }
 }

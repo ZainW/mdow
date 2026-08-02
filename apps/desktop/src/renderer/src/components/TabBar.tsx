@@ -27,7 +27,7 @@ export function TabBar() {
   const activePane = useAppStore((s) => s.activePane)
   const toggleSplitView = useAppStore((s) => s.toggleSplitView)
   const setPaneTab = useAppStore((s) => s.setPaneTab)
-  const companionOpen = useAppStore((s) => s.companionOpen)
+  const companionOpen = useAppStore((s) => s.companionPresentation !== 'closed')
   const toggleCompanion = useAppStore((s) => s.toggleCompanion)
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)

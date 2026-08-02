@@ -42,6 +42,23 @@ export interface CompanionProviderStatus {
 export interface CompanionSettings {
   preferredProvider: CompanionProviderId | null
   customCommand: string
+  lastModel: string | null
+}
+
+export type CompanionModelProvider = 'openai' | 'opencode' | 'opencode-go'
+
+export interface CompanionModelOption {
+  value: string
+  name: string
+  description?: string
+  provider: CompanionModelProvider
+}
+
+export interface CompanionModelState {
+  options: CompanionModelOption[]
+  currentValue: string | null
+  stale: boolean
+  unavailableReason?: string
 }
 
 export type CompanionContextTagKind = 'file' | 'folder'
@@ -179,6 +196,7 @@ export interface AppState {
   sidebarMode: SidebarMode
   companionPreferredProvider: CompanionProviderId | null
   companionCustomCommand: string
+  companionLastModel: string | null
 }
 
 export interface FolderOpenResult extends ScanResult {
@@ -262,6 +280,8 @@ export const IPC = {
   COMPANION_SAVE_SETTINGS: 'companion:save-settings',
   COMPANION_CHOOSE_CUSTOM_EXECUTABLE: 'companion:choose-custom-executable',
   COMPANION_START_SESSION: 'companion:start-session',
+  COMPANION_GET_MODELS: 'companion:get-models',
+  COMPANION_SET_MODEL: 'companion:set-model',
   COMPANION_SEND: 'companion:send',
   COMPANION_CANCEL: 'companion:cancel',
   COMPANION_SHUTDOWN: 'companion:shutdown',

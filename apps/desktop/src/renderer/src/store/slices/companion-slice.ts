@@ -9,9 +9,10 @@ import type {
   CompanionUpdate,
 } from '../../../../shared/types'
 
+export type CompanionPresentation = 'closed' | 'drawer' | 'workspace'
+
 export interface CompanionSlice {
-  companionOpen: boolean
-  companionFullscreen: boolean
+  companionPresentation: CompanionPresentation
   companionMessages: CompanionMessage[]
   companionStreaming: boolean
   companionProviders: CompanionProviderStatus[]
@@ -21,9 +22,8 @@ export interface CompanionSlice {
   companionWarnings: string[]
   companionTags: CompanionContextTag[]
   companionError: string | null
-  setCompanionOpen: (open: boolean) => void
+  setCompanionPresentation: (presentation: CompanionPresentation) => void
   toggleCompanion: () => void
-  setCompanionFullscreen: (open: boolean) => void
   setCompanionProviders: (providers: CompanionProviderStatus[]) => void
   setCompanionPreferredProvider: (id: CompanionProviderId | null) => void
   setCompanionCustomCommand: (command: string) => void
@@ -125,10 +125,8 @@ function textFromParts(parts: CompanionPart[]): string {
 
 export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (
   set,
-  get,
 ) => ({
-  companionOpen: false,
-  companionFullscreen: false,
+  companionPresentation: 'closed',
   companionMessages: [],
   companionStreaming: false,
   companionProviders: [],
@@ -139,21 +137,11 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
   companionTags: [],
   companionError: null,
 
-  setCompanionOpen: (open) =>
-    set({
-      companionOpen: open,
-      companionFullscreen: open ? get().companionFullscreen : false,
-    }),
+  setCompanionPresentation: (presentation) => set({ companionPresentation: presentation }),
   toggleCompanion: () =>
     set((state) => ({
-      companionOpen: !state.companionOpen,
-      companionFullscreen: state.companionOpen ? false : state.companionFullscreen,
+      companionPresentation: state.companionPresentation === 'closed' ? 'drawer' : 'closed',
     })),
-  setCompanionFullscreen: (open) =>
-    set({
-      companionFullscreen: open,
-      companionOpen: open || get().companionOpen,
-    }),
   setCompanionProviders: (providers) => set({ companionProviders: providers }),
   setCompanionPreferredProvider: (id) => {
     if (typeof window !== 'undefined' && window.api) {

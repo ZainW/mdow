@@ -35,28 +35,35 @@ interface StoreSchema {
   sidebarMode: SidebarMode
   companionPreferredProvider: CompanionProviderId | null
   companionCustomCommand: string
+  companionLastModel: string | null
 }
 
-const store = new Store<StoreSchema>({
-  defaults: {
-    recents: [],
-    lastFolder: null,
-    zoomLevel: 100,
-    windowBounds: null,
-    sessionTabs: [],
-    sessionActiveTabPath: null,
-    contentFont: 'inter',
-    codeFont: 'geist-mono',
-    theme: 'system',
-    autoUpdateEnabled: true,
-    wideMode: false,
-    interfaceScale: 'compact',
-    readingWidth: 'standard',
-    sidebarMode: 'recents',
-    companionPreferredProvider: null,
-    companionCustomCommand: '',
-  },
-})
+const storeDefaults: StoreSchema = {
+  recents: [],
+  lastFolder: null,
+  zoomLevel: 100,
+  windowBounds: null,
+  sessionTabs: [],
+  sessionActiveTabPath: null,
+  contentFont: 'inter',
+  codeFont: 'geist-mono',
+  theme: 'system',
+  autoUpdateEnabled: true,
+  wideMode: false,
+  interfaceScale: 'compact',
+  readingWidth: 'standard',
+  sidebarMode: 'recents',
+  companionPreferredProvider: null,
+  companionCustomCommand: '',
+  companionLastModel: null,
+}
+
+let store: Store<StoreSchema> | null = null
+
+function getStore(): Store<StoreSchema> {
+  store ??= new Store<StoreSchema>({ defaults: storeDefaults })
+  return store
+}
 
 const MAX_RECENTS = 20
 
@@ -65,10 +72,10 @@ function filterExistingRecents(recents: string[]): string[] {
 }
 
 function pruneRecentsList(): string[] {
-  const recents = store.get('recents')
+  const recents = getStore().get('recents')
   const existing = filterExistingRecents(recents)
   if (existing.length !== recents.length) {
-    store.set('recents', existing)
+    getStore().set('recents', existing)
   }
   return existing
 }
@@ -78,90 +85,104 @@ export function getRecents(): string[] {
 }
 
 export function addRecent(filePath: string): void {
-  const recents = store.get('recents').filter((r) => r !== filePath)
+  const recents = getStore()
+    .get('recents')
+    .filter((r) => r !== filePath)
   recents.unshift(filePath)
-  store.set('recents', recents.slice(0, MAX_RECENTS))
+  getStore().set('recents', recents.slice(0, MAX_RECENTS))
 }
 
 export function getAppState() {
+  const appStore = getStore()
   return {
-    zoomLevel: store.get('zoomLevel'),
-    lastFolder: store.get('lastFolder'),
-    windowBounds: store.get('windowBounds'),
-    sessionTabs: store.get('sessionTabs'),
-    sessionActiveTabPath: store.get('sessionActiveTabPath'),
-    contentFont: store.get('contentFont'),
-    codeFont: store.get('codeFont'),
-    theme: store.get('theme'),
-    autoUpdateEnabled: store.get('autoUpdateEnabled'),
-    wideMode: store.get('wideMode'),
-    interfaceScale: store.get('interfaceScale'),
-    readingWidth: store.get('readingWidth'),
-    sidebarMode: store.get('sidebarMode'),
-    companionPreferredProvider: store.get('companionPreferredProvider'),
-    companionCustomCommand: store.get('companionCustomCommand'),
+    zoomLevel: appStore.get('zoomLevel'),
+    lastFolder: appStore.get('lastFolder'),
+    windowBounds: appStore.get('windowBounds'),
+    sessionTabs: appStore.get('sessionTabs'),
+    sessionActiveTabPath: appStore.get('sessionActiveTabPath'),
+    contentFont: appStore.get('contentFont'),
+    codeFont: appStore.get('codeFont'),
+    theme: appStore.get('theme'),
+    autoUpdateEnabled: appStore.get('autoUpdateEnabled'),
+    wideMode: appStore.get('wideMode'),
+    interfaceScale: appStore.get('interfaceScale'),
+    readingWidth: appStore.get('readingWidth'),
+    sidebarMode: appStore.get('sidebarMode'),
+    companionPreferredProvider: appStore.get('companionPreferredProvider'),
+    companionCustomCommand: appStore.get('companionCustomCommand'),
+    companionLastModel: appStore.get('companionLastModel'),
   }
 }
 
 export function saveAppState(state: Partial<StoreSchema>): void {
-  if (state.zoomLevel !== undefined) store.set('zoomLevel', state.zoomLevel)
-  if (state.lastFolder !== undefined) store.set('lastFolder', state.lastFolder)
-  if (state.windowBounds !== undefined) store.set('windowBounds', state.windowBounds)
-  if (state.recents !== undefined) store.set('recents', state.recents)
-  if (state.sessionTabs !== undefined) store.set('sessionTabs', state.sessionTabs)
+  const appStore = getStore()
+  if (state.zoomLevel !== undefined) appStore.set('zoomLevel', state.zoomLevel)
+  if (state.lastFolder !== undefined) appStore.set('lastFolder', state.lastFolder)
+  if (state.windowBounds !== undefined) appStore.set('windowBounds', state.windowBounds)
+  if (state.recents !== undefined) appStore.set('recents', state.recents)
+  if (state.sessionTabs !== undefined) appStore.set('sessionTabs', state.sessionTabs)
   if (state.sessionActiveTabPath !== undefined)
-    store.set('sessionActiveTabPath', state.sessionActiveTabPath)
-  if (state.contentFont !== undefined) store.set('contentFont', state.contentFont)
-  if (state.codeFont !== undefined) store.set('codeFont', state.codeFont)
-  if (state.theme !== undefined) store.set('theme', state.theme)
-  if (state.autoUpdateEnabled !== undefined) store.set('autoUpdateEnabled', state.autoUpdateEnabled)
-  if (state.wideMode !== undefined) store.set('wideMode', state.wideMode)
-  if (state.interfaceScale !== undefined) store.set('interfaceScale', state.interfaceScale)
-  if (state.readingWidth !== undefined) store.set('readingWidth', state.readingWidth)
-  if (state.sidebarMode !== undefined) store.set('sidebarMode', state.sidebarMode)
+    appStore.set('sessionActiveTabPath', state.sessionActiveTabPath)
+  if (state.contentFont !== undefined) appStore.set('contentFont', state.contentFont)
+  if (state.codeFont !== undefined) appStore.set('codeFont', state.codeFont)
+  if (state.theme !== undefined) appStore.set('theme', state.theme)
+  if (state.autoUpdateEnabled !== undefined)
+    appStore.set('autoUpdateEnabled', state.autoUpdateEnabled)
+  if (state.wideMode !== undefined) appStore.set('wideMode', state.wideMode)
+  if (state.interfaceScale !== undefined) appStore.set('interfaceScale', state.interfaceScale)
+  if (state.readingWidth !== undefined) appStore.set('readingWidth', state.readingWidth)
+  if (state.sidebarMode !== undefined) appStore.set('sidebarMode', state.sidebarMode)
 }
 
 export function getCompanionSettings(): {
   preferredProvider: CompanionProviderId | null
   customCommand: string
+  lastModel: string | null
 } {
+  const appStore = getStore()
   return {
-    preferredProvider: store.get('companionPreferredProvider'),
-    customCommand: store.get('companionCustomCommand'),
+    preferredProvider: appStore.get('companionPreferredProvider'),
+    customCommand: appStore.get('companionCustomCommand'),
+    lastModel: appStore.get('companionLastModel'),
   }
 }
 
 export function saveCompanionSettings(settings: {
   preferredProvider?: CompanionProviderId | null
   customCommand?: string
+  lastModel?: string | null
 }): void {
+  const appStore = getStore()
   if (settings.preferredProvider !== undefined) {
-    store.set('companionPreferredProvider', settings.preferredProvider)
+    appStore.set('companionPreferredProvider', settings.preferredProvider)
   }
   if (settings.customCommand !== undefined) {
-    store.set('companionCustomCommand', settings.customCommand)
+    appStore.set('companionCustomCommand', settings.customCommand)
+  }
+  if (settings.lastModel !== undefined) {
+    appStore.set('companionLastModel', settings.lastModel)
   }
 }
 
 export function getWindowBounds(): WindowBounds | null {
-  return store.get('windowBounds')
+  return getStore().get('windowBounds')
 }
 
 export function saveWindowBounds(
   bounds: { x: number; y: number; width: number; height: number },
   isMaximized?: boolean,
 ) {
-  store.set('windowBounds', { ...bounds, isMaximized: isMaximized ?? false })
+  getStore().set('windowBounds', { ...bounds, isMaximized: isMaximized ?? false })
 }
 
 export function getLastFolder(): string | null {
-  return store.get('lastFolder')
+  return getStore().get('lastFolder')
 }
 
 export function setLastFolder(folder: string | null): void {
-  store.set('lastFolder', folder)
+  getStore().set('lastFolder', folder)
 }
 
 export function isAutoUpdateEnabled(): boolean {
-  return store.get('autoUpdateEnabled')
+  return getStore().get('autoUpdateEnabled')
 }

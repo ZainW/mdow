@@ -5,8 +5,7 @@ describe('Companion slice', () => {
   beforeEach(() => {
     useAppStore.getState().resetCompanionConversation()
     useAppStore.setState({
-      companionOpen: false,
-      companionFullscreen: false,
+      companionPresentation: 'closed',
       companionTags: [],
       companionProviders: [],
       companionPreferredProvider: null,
@@ -14,11 +13,31 @@ describe('Companion slice', () => {
     })
   })
 
-  it('toggles open without changing unrelated UI flags', () => {
+  it('toggles the drawer without changing unrelated UI flags', () => {
     const beforeSidebar = useAppStore.getState().sidebarMode
     useAppStore.getState().toggleCompanion()
-    expect(useAppStore.getState().companionOpen).toBe(true)
+    expect(useAppStore.getState().companionPresentation).toBe('drawer')
     expect(useAppStore.getState().sidebarMode).toBe(beforeSidebar)
+
+    useAppStore.getState().toggleCompanion()
+    expect(useAppStore.getState().companionPresentation).toBe('closed')
+  })
+
+  it('moves between the drawer and workspace without resetting the conversation', () => {
+    useAppStore.getState().appendCompanionMessage({
+      id: 'user-1',
+      role: 'user',
+      content: 'Keep this message',
+      parts: [{ kind: 'text', text: 'Keep this message' }],
+      status: 'complete',
+    })
+
+    useAppStore.getState().setCompanionPresentation('workspace')
+    expect(useAppStore.getState().companionPresentation).toBe('workspace')
+
+    useAppStore.getState().setCompanionPresentation('drawer')
+    expect(useAppStore.getState().companionPresentation).toBe('drawer')
+    expect(useAppStore.getState().companionMessages[0]?.content).toBe('Keep this message')
   })
 
   it('applies streaming deltas into one assistant message', () => {

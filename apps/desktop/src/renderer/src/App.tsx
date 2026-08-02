@@ -19,8 +19,8 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import {
-  CompanionFullscreen,
   CompanionPanel,
+  CompanionShell,
   useCompanionBootstrap,
 } from './components/companion/CompanionPanel'
 import { SidebarProvider } from './components/ui/sidebar'
@@ -249,16 +249,17 @@ function MainApp(): React.JSX.Element {
       >
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar />
-          <main aria-label="Document" className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <TabBar />
-            {activeTab && !splitView && <DocumentBreadcrumb tab={activeTab} />}
-            <MainContent activeTab={activeTab} />
-            <UpdateBanner />
-          </main>
-          <CompanionPanel />
+          <CompanionShell>
+            <Sidebar />
+            <main aria-label="Document" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <TabBar />
+              {activeTab && !splitView && <DocumentBreadcrumb tab={activeTab} />}
+              <MainContent activeTab={activeTab} />
+              <UpdateBanner />
+            </main>
+            <CompanionPanel />
+          </CompanionShell>
           <CommandPalette />
-          <CompanionFullscreen />
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>

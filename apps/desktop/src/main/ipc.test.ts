@@ -18,6 +18,8 @@ const mockCompanionService = vi.hoisted(() => ({
   detectProviders: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
+  getModels: vi.fn(),
+  setModel: vi.fn(),
   startSession: vi.fn(),
   send: vi.fn(),
   cancel: vi.fn(),
@@ -222,6 +224,15 @@ describe('ipc handlers', () => {
       await handler({ sender }, payload)
 
       expect(mockCompanionService.send).toHaveBeenCalledWith(payload, mockGetMainWindow())
+    })
+
+    it('routes valid live model selections and rejects malformed values', async () => {
+      const handler = handlers.get('companion:set-model')!
+      mockCompanionService.setModel.mockResolvedValueOnce({ currentValue: 'openai/gpt-5.4' })
+
+      await handler({}, 'openai/gpt-5.4')
+      expect(mockCompanionService.setModel).toHaveBeenCalledWith('openai/gpt-5.4')
+      await expect(handler({}, 'openai/gpt-5.4\nterminal')).rejects.toThrow(/invalid-model/i)
     })
   })
 })

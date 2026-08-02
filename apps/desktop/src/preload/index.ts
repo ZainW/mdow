@@ -5,6 +5,7 @@ import {
   type AppState,
   type CompanionProviderId,
   type CompanionProviderStatus,
+  type CompanionModelState,
   type CompanionSendPayload,
   type CompanionSettings,
   type CompanionStartResult,
@@ -20,6 +21,9 @@ export type {
   CompanionCitation,
   CompanionContextTag,
   CompanionMessage,
+  CompanionModelOption,
+  CompanionModelProvider,
+  CompanionModelState,
   CompanionProviderId,
   CompanionProviderStatus,
   CompanionSendPayload,
@@ -118,6 +122,8 @@ export interface ElectronAPI {
   ) => Promise<void>
   chooseCompanionCustomExecutable: () => Promise<string | null>
   startCompanionSession: (providerId?: CompanionProviderId) => Promise<CompanionStartResult>
+  getCompanionModels: () => Promise<CompanionModelState>
+  setCompanionModel: (value: string) => Promise<CompanionModelState>
   sendCompanionMessage: (payload: CompanionSendPayload) => Promise<void>
   cancelCompanion: () => Promise<void>
   shutdownCompanion: () => Promise<void>
@@ -181,6 +187,8 @@ const api: ElectronAPI = {
   chooseCompanionCustomExecutable: () => ipcRenderer.invoke(IPC.COMPANION_CHOOSE_CUSTOM_EXECUTABLE),
   startCompanionSession: (providerId) =>
     ipcRenderer.invoke(IPC.COMPANION_START_SESSION, providerId),
+  getCompanionModels: () => ipcRenderer.invoke(IPC.COMPANION_GET_MODELS),
+  setCompanionModel: (value) => ipcRenderer.invoke(IPC.COMPANION_SET_MODEL, value),
   sendCompanionMessage: (payload) => ipcRenderer.invoke(IPC.COMPANION_SEND, payload),
   cancelCompanion: () => ipcRenderer.invoke(IPC.COMPANION_CANCEL),
   shutdownCompanion: () => ipcRenderer.invoke(IPC.COMPANION_SHUTDOWN),

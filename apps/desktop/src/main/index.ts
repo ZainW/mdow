@@ -11,6 +11,7 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 import { join } from 'path'
+import { mkdirSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc'
@@ -22,6 +23,7 @@ import { isMac, isLinux } from './platform'
 import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
 import { isDocumentPath, validateDocumentPath, validatePath } from './path-validation'
 import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
+import { getDevelopmentUserDataPath } from './runtime-paths'
 
 const windows = new Set<BrowserWindow>()
 const windowPaths = new Map<BrowserWindow, string>()
@@ -201,6 +203,13 @@ function scheduleAutoUpdaterInit(): void {
   setTimeout(() => {
     void import('./updater').then(({ initAutoUpdater }) => initAutoUpdater(getMainWindow))
   }, AUTO_UPDATER_INIT_DELAY_MS)
+}
+
+if (is.dev) {
+  const developmentUserDataPath = getDevelopmentUserDataPath(app.getPath('appData'))
+  mkdirSync(developmentUserDataPath, { recursive: true })
+  app.setPath('userData', developmentUserDataPath)
+  app.setPath('sessionData', developmentUserDataPath)
 }
 
 const gotTheLock = app.requestSingleInstanceLock()
