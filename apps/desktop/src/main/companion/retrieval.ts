@@ -152,7 +152,7 @@ export async function retrieveMarkdownRanges(
   const excluded = new Set(input.excludedPaths.map((path) => validatePath(path)))
   const paths: string[] = []
 
-  for (const root of [...new Set(input.roots)]) {
+  for (const root of new Set(input.roots)) {
     try {
       const result = await scan(validatePath(root))
       collectMarkdownPaths(result.tree, paths)

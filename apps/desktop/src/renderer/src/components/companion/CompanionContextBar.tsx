@@ -21,6 +21,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_024).toFixed(1)} KB`
 }
 
+function groupTraceItems(trace: CompanionContextTrace) {
+  const grouped = new Map<string, CompanionContextTrace['items'][number]>()
+  for (const item of trace.items) {
+    const key = `${item.path}:${item.reason}`
+    const existing = grouped.get(key)
+    grouped.set(key, existing ? { ...existing, bytes: existing.bytes + item.bytes } : item)
+  }
+  return grouped
+}
+
 export function CompanionContextBar({
   trace,
   warnings,
@@ -30,6 +40,8 @@ export function CompanionContextBar({
 }) {
   if (!trace) return null
   const focused = trace.items.find((item) => item.reason === 'focused')
+  const groupedItems = groupTraceItems(trace)
+  const uniqueWarnings = new Set(warnings)
   const adaptiveLabel =
     trace.retrievalMode === 'adaptive-fff'
       ? 'Adaptive · FFF'
@@ -61,8 +73,8 @@ export function CompanionContextBar({
             </PopoverDescription>
           </PopoverHeader>
           <div className="space-y-1.5">
-            {trace.items.map((item, index) => (
-              <div key={`${item.path}:${item.reason}:${index}`} className="flex gap-2">
+            {Array.from(groupedItems, ([key, item]) => (
+              <div key={key} className="flex gap-2">
                 <span className="min-w-0 flex-1 truncate" title={item.path}>
                   {basename(item.path)} · {item.reason}
                 </span>
@@ -72,8 +84,8 @@ export function CompanionContextBar({
           </div>
           {warnings.length > 0 && (
             <div className="border-t border-border-subtle pt-2 text-amber-600 dark:text-amber-400">
-              {warnings.map((warning, index) => (
-                <p key={`${warning}:${index}`}>{warning}</p>
+              {Array.from(uniqueWarnings, (warning) => (
+                <p key={warning}>{warning}</p>
               ))}
             </div>
           )}

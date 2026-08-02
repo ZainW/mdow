@@ -28,7 +28,7 @@ async function findFffExecutable(): Promise<string | null> {
     `/usr/local/bin/fff-mcp${extension}`,
   ]
 
-  for (const candidate of [...new Set(candidates)]) {
+  for (const candidate of new Set(candidates)) {
     if (await isExecutable(candidate)) return candidate
   }
   return null

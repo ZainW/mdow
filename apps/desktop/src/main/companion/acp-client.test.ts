@@ -62,12 +62,13 @@ class FakeChild extends EventEmitter {
           })}\n`,
         )
       } else if (msg.method === 'session/set_config_option' && msg.id !== undefined) {
+        const value = msg.params?.value
         this.stdout.push(
           `${JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,
             result: {
-              configOptions: this.modelConfig(String(msg.params?.value ?? '')),
+              configOptions: this.modelConfig(typeof value === 'string' ? value : ''),
             },
           })}\n`,
         )
