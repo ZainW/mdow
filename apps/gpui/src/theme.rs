@@ -80,8 +80,15 @@ impl ShellLayout {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColorScheme {
+    Light,
+    Dark,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Theme {
+    pub color_scheme: ColorScheme,
     pub background: Hsla,
     pub foreground: Hsla,
     pub card: Hsla,
@@ -106,6 +113,7 @@ impl Theme {
 
     fn light() -> Self {
         Self {
+            color_scheme: ColorScheme::Light,
             background: hsla(0.08672199, 0.39970066, 0.97152986, 1.0),
             foreground: hsla(0.04368636, 0.69489038, 0.03135708, 1.0),
             card: hsla(0.08672199, 0.39970066, 0.97152986, 1.0),
@@ -123,6 +131,7 @@ impl Theme {
 
     fn dark() -> Self {
         Self {
+            color_scheme: ColorScheme::Dark,
             background: hsla(0.0, 0.0, 0.03545248, 1.0),
             foreground: hsla(0.0, 0.0, 0.89557687, 1.0),
             card: hsla(0.0, 0.0, 0.03545248, 1.0),
@@ -235,6 +244,7 @@ mod tests {
         let vibrant = Theme::for_appearance(WindowAppearance::VibrantLight);
 
         assert_eq!(light, vibrant);
+        assert_eq!(light.color_scheme, ColorScheme::Light);
         assert_eq!(
             light.background,
             hsla(0.08672199, 0.39970066, 0.97152986, 1.0)
@@ -256,6 +266,7 @@ mod tests {
         let vibrant = Theme::for_appearance(WindowAppearance::VibrantDark);
 
         assert_eq!(dark, vibrant);
+        assert_eq!(dark.color_scheme, ColorScheme::Dark);
         assert_eq!(dark.background, hsla(0.0, 0.0, 0.03545248, 1.0));
         assert_eq!(dark.foreground, hsla(0.0, 0.0, 0.89557687, 1.0));
         assert_eq!(dark.border, hsla(0.0, 0.0, 0.15033225, 1.0));

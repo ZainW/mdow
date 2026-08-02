@@ -731,7 +731,7 @@ impl Render for MdowApp {
             };
             surface
                 .child(render_document(
-                    Arc::new((**document).clone()),
+                    document,
                     self.wide_mode,
                     self.theme,
                     self.copied_code,
@@ -1543,6 +1543,36 @@ mod tests {
         window
             .update(cx, |app, _, _| assert_eq!(app.copied_code.unwrap().0, 0))
             .unwrap();
+    }
+
+    #[gpui::test]
+    fn prepared_code_renders_and_copy_keeps_original_source(cx: &mut TestAppContext) {
+        let code = "fn main() {\n    println!(\"Hello\");\n}\n";
+        let document = prepare_document(parse_document(
+            PathBuf::from("/tmp/highlighted.md"),
+            format!("```rust\n{code}```\n"),
+        ));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open_prepared(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        assert!(visual.debug_bounds("reader-code-0").is_some());
+        click_debug(&mut visual, "copy-code-0");
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            Some(code.to_owned()),
+        );
     }
 
     #[gpui::test]

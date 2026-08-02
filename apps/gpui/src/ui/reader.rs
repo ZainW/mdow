@@ -4,7 +4,8 @@ use crate::{
         DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock, is_supported_markdown,
         resolve_local_target,
     },
-    theme::{Metrics, Theme},
+    syntax::{HighlightedCode, PreparedDocument},
+    theme::{ColorScheme, Metrics, Theme},
     ui::primitives::icon,
 };
 use gpui::{
@@ -691,7 +692,7 @@ fn style_reader_image(image: Img) -> Img {
 }
 
 pub fn render_document(
-    document: Arc<ParsedDocument>,
+    document: Arc<PreparedDocument>,
     wide_mode: bool,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
@@ -722,6 +723,7 @@ pub fn render_document(
     for (block_index, block) in document.blocks.iter().enumerate() {
         column = column.child(render_block(
             block,
+            document.code_block(block_index),
             block_index,
             spacing[block_index],
             &document.path,
@@ -750,6 +752,7 @@ pub fn render_document(
 #[allow(clippy::too_many_arguments)]
 fn render_block(
     block: &DocumentBlock,
+    highlighted: Option<&HighlightedCode>,
     block_index: usize,
     spacing: BlockSpacing,
     document_path: &Path,
@@ -876,6 +879,7 @@ fn render_block(
         DocumentBlock::CodeBlock { language, code } => render_code_block(
             language.as_deref(),
             code,
+            highlighted,
             block_index,
             document_path,
             theme,
@@ -1327,9 +1331,41 @@ fn to_lower_roman(mut number: u64) -> String {
     output
 }
 
+fn highlighted_text_runs(highlighted: &HighlightedCode, dark: bool) -> Vec<TextRun> {
+    let source = if dark {
+        &highlighted.dark_runs
+    } else {
+        &highlighted.light_runs
+    };
+    source
+        .iter()
+        .map(|run| {
+            let hex = ((run.color.red as u32) << 16)
+                | ((run.color.green as u32) << 8)
+                | run.color.blue as u32;
+            let mut run_font = font(Metrics::FONT_MONO);
+            run_font.weight = FontWeight::NORMAL;
+            run_font.style = if run.italic {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            };
+            TextRun {
+                len: run.len,
+                font: run_font,
+                color: gpui::Hsla::from(gpui::rgb(hex)),
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            }
+        })
+        .collect()
+}
+
 fn render_code_block(
     language: Option<&str>,
     code: &str,
+    highlighted: Option<&HighlightedCode>,
     block_index: usize,
     document_path: &Path,
     theme: Theme,
@@ -1338,6 +1374,17 @@ fn render_code_block(
 ) -> AnyElement {
     let copied = code_copy_feedback_is_active(copied_code, block_index, Instant::now());
     let code_to_copy = code.to_owned();
+    let display_language = highlighted
+        .map(|value| value.normalized_language.as_deref())
+        .unwrap_or(language);
+    let highlighted_text = highlighted
+        .map(|value| {
+            StyledText::new(value.text.clone()).with_runs(highlighted_text_runs(
+                value,
+                theme.color_scheme == ColorScheme::Dark,
+            ))
+        })
+        .unwrap_or_else(|| StyledText::new(code.to_owned()));
     let copy_button = div()
         .id(("copy-code", block_index))
         .debug_selector(move || format!("copy-code-{block_index}"))
@@ -1389,7 +1436,7 @@ fn render_code_block(
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .when_some(language.map(str::to_owned), |row, language| {
+                .when_some(display_language.map(str::to_owned), |row, language| {
                     row.child(
                         div()
                             .font_family(Metrics::FONT_MONO)
@@ -1420,6 +1467,7 @@ fn render_code_block(
                     "code-scroll",
                     document_scoped_element_id(document_path, "code-scroll", block_index),
                 ))
+                .debug_selector(move || format!("reader-code-{block_index}"))
                 .w_full()
                 .overflow_x_scroll()
                 .scrollbar_width(px(6.0))
@@ -1430,7 +1478,7 @@ fn render_code_block(
                 .text_size(px(15.5 * 0.875))
                 .line_height(px(15.5 * 0.875 * 1.6))
                 .whitespace_nowrap()
-                .child(code.to_owned()),
+                .child(highlighted_text),
         )
         .into_any_element()
 }
@@ -1586,6 +1634,7 @@ fn image_fallback(alt: String, theme: Theme, block_index: usize) -> AnyElement {
 mod tests {
     use super::*;
     use crate::document::InlineSpan;
+    use crate::syntax::highlight_code;
     use std::time::{Duration, Instant};
     use std::{
         fs,
@@ -1600,6 +1649,28 @@ mod tests {
         assert_eq!(BlockStyle::code_block().radius, 10.0);
         assert_eq!(BlockStyle::code_block().padding, [14.0, 18.0]);
         assert_eq!(BlockStyle::table_cell().padding, [10.0, 14.0]);
+    }
+
+    #[test]
+    fn highlighted_runs_keep_lengths_fonts_and_theme_colors() {
+        let highlighted = highlight_code(Some("rust"), "fn main() {}\n");
+        let light = highlighted_text_runs(&highlighted, false);
+        let dark = highlighted_text_runs(&highlighted, true);
+
+        assert_eq!(
+            light.iter().map(|run| run.len).sum::<usize>(),
+            highlighted.text.len()
+        );
+        assert_eq!(
+            dark.iter().map(|run| run.len).sum::<usize>(),
+            highlighted.text.len()
+        );
+        assert!(
+            light
+                .iter()
+                .all(|run| run.font.family.as_ref() == Metrics::FONT_MONO)
+        );
+        assert_ne!(light[0].color, dark[0].color);
     }
 
     #[test]
