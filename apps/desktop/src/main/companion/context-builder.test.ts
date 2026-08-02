@@ -4,7 +4,11 @@ import { tmpdir } from 'os'
 import { describe, expect, it, afterEach } from 'vitest'
 import type { CompanionContextTag } from '../../shared/types'
 import { ContextLedger } from './context-ledger'
-import { buildCompanionContext, formatContextPrompt } from './context-builder'
+import {
+  appendRetrievedContext,
+  buildCompanionContext,
+  formatContextPrompt,
+} from './context-builder'
 
 describe('Companion context builder', () => {
   let dir: string
@@ -125,7 +129,10 @@ describe('Companion context builder', () => {
   it('sends identity metadata instead of unchanged document content within a session', async () => {
     dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
     const active = join(dir, 'active.md')
-    await writeFile(active, `# Active\nprivate body that should not be repeated\n${'detail '.repeat(400)}`)
+    await writeFile(
+      active,
+      `# Active\nprivate body that should not be repeated\n${'detail '.repeat(400)}`,
+    )
     const ledger = new ContextLedger()
     const input = {
       activePath: active,
@@ -142,6 +149,46 @@ describe('Companion context builder', () => {
     expect(second.sources[0]?.excerpt).toContain('Content unchanged from earlier in this session')
     expect(second.sources[0]?.excerpt).not.toContain('private body')
     expect(second.trace.injectedBytes).toBeLessThan(first.trace.injectedBytes)
+  })
+
+  it('appends bounded retrieved ranges with an honest adaptive trace', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'active.md')
+    const related = join(dir, 'related.md')
+    await writeFile(active, '# Active\nFocused content')
+    const packet = await buildCompanionContext({
+      activePath: active,
+      openFolderPath: dir,
+      tags: [],
+      question: 'Compare related.md',
+    })
+
+    const expanded = appendRetrievedContext(
+      packet,
+      [
+        {
+          path: related,
+          excerpt: '## Related\nRetrieved content',
+          startLine: 8,
+          endLine: 9,
+          bytes: 28,
+          score: 10,
+        },
+      ],
+      'adaptive-local',
+    )
+
+    expect(expanded.sources[1]).toMatchObject({
+      path: related,
+      headingId: 'L8-L9',
+      sourceId: `src:${related}#L8-L9`,
+    })
+    expect(expanded.trace).toMatchObject({
+      searchedCount: 1,
+      readRangeCount: 1,
+      retrievalMode: 'adaptive-local',
+    })
+    expect(expanded.trace.items.at(-1)?.reason).toBe('retrieved')
   })
 
   it('skips non-markdown paths with a warning', async () => {
@@ -189,5 +236,4 @@ describe('Companion context builder', () => {
     expect(prompt).toContain('Summarize this')
     expect(prompt).toContain('read-only')
   })
-
 })

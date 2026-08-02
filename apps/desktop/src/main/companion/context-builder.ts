@@ -10,9 +10,11 @@ import type {
 } from '../../shared/types'
 import type { ContextLedger } from './context-ledger'
 import { selectInitialMarkdown } from './context-selection'
+import type { RetrievedRange } from './retrieval'
 
 const MAX_INITIAL_SOURCE_BYTES = 16_384
 const MAX_INITIAL_TOTAL_BYTES = 16_384
+const MAX_TURN_SOURCE_BYTES = 32_768
 
 export interface BuildContextInput {
   activePath: string | null
@@ -84,20 +86,12 @@ async function addSource(
 
   try {
     const raw = await readFile(resolved)
-    const remaining = Math.min(
-      MAX_INITIAL_SOURCE_BYTES,
-      MAX_INITIAL_TOTAL_BYTES - budget.used,
-    )
+    const remaining = Math.min(MAX_INITIAL_SOURCE_BYTES, MAX_INITIAL_TOTAL_BYTES - budget.used)
     const selected = selectInitialMarkdown(raw, question, remaining)
     const ledgerRecord = ledger?.record(resolved, raw)
     const excerpt = ledgerRecord?.alreadySent
       ? truncateToBytes(
-          formatUnchangedSource(
-            resolved,
-            ledgerRecord.hash,
-            selected.headings,
-            selected.links,
-          ),
+          formatUnchangedSource(resolved, ledgerRecord.hash, selected.headings, selected.links),
           remaining,
         )
       : selected.excerpt
@@ -181,6 +175,51 @@ export async function buildCompanionContext(
       estimatedTokens: Math.ceil(injectedBytes / 4),
       retrievalMode: 'focused-only',
       items: traceItems,
+    },
+  }
+}
+
+export function appendRetrievedContext(
+  packet: CompanionContextPacket,
+  ranges: RetrievedRange[],
+  retrievalMode: 'adaptive-local' | 'adaptive-fff',
+): CompanionContextPacket {
+  const sources = [...packet.sources]
+  const items = [...packet.trace.items]
+  let injectedBytes = packet.trace.injectedBytes
+  let readRangeCount = 0
+
+  for (const range of ranges.slice(0, 3)) {
+    const remaining = MAX_TURN_SOURCE_BYTES - injectedBytes
+    if (remaining <= 0) break
+    const excerpt = truncateToBytes(range.excerpt, Math.min(4_096, remaining))
+    const bytes = Buffer.byteLength(excerpt, 'utf8')
+    if (bytes === 0) continue
+    const headingId = `L${range.startLine}-L${range.endLine}`
+    sources.push({
+      sourceId: sourceIdFor(range.path, headingId),
+      path: range.path,
+      headingId,
+      excerpt,
+      bytes,
+    })
+    items.push({ path: range.path, reason: 'retrieved', bytes })
+    injectedBytes += bytes
+    readRangeCount += 1
+  }
+
+  return {
+    ...packet,
+    sources,
+    summary: `${packet.trace.focusedCount} focused · searched 1 · read ${readRangeCount}`,
+    trace: {
+      ...packet.trace,
+      searchedCount: 1,
+      readRangeCount,
+      injectedBytes,
+      estimatedTokens: Math.ceil(injectedBytes / 4),
+      retrievalMode,
+      items,
     },
   }
 }

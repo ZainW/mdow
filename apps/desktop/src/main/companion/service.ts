@@ -10,8 +10,15 @@ import type {
 } from '../../shared/types'
 import { getCompanionSettings, saveCompanionSettings } from '../store'
 import { AcpClient } from './acp-client'
-import { buildCompanionContext, formatContextPrompt } from './context-builder'
+import {
+  appendRetrievedContext,
+  buildCompanionContext,
+  formatContextPrompt,
+} from './context-builder'
+import { ContextLedger } from './context-ledger'
+import { resolveFffMcp } from './fff'
 import { detectCompanionProviders, resolveProviderCommand } from './provider-detection'
+import { retrieveMarkdownRanges, shouldRetrieve } from './retrieval'
 
 interface CitationStreamResult {
   text: string
@@ -94,6 +101,9 @@ export class CompanionService {
   private citationStream = new CitationStream([])
   private activeRequestToken: symbol | null = null
   private activeWindow: BrowserWindow | null = null
+  private activeCwd: string | null = null
+  private fffConnected = false
+  private readonly contextLedger = new ContextLedger()
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
@@ -140,7 +150,12 @@ export class CompanionService {
       return { ok: false, providerId: preferred, error: 'Provider command is not configured' }
     }
 
-    if (this.client && this.activeProvider === preferred && this.client.getSessionId()) {
+    if (
+      this.client &&
+      this.activeProvider === preferred &&
+      this.activeCwd === cwd &&
+      this.client.getSessionId()
+    ) {
       return { ok: true, providerId: preferred }
     }
 
@@ -155,14 +170,21 @@ export class CompanionService {
 
     try {
       await client.start()
-      await client.createSession(cwd)
+      const fffServer = preferred === 'opencode' ? await resolveFffMcp() : null
+      await client.createSession(cwd, fffServer ? [fffServer] : [])
       this.client = client
       this.activeProvider = preferred
+      this.activeCwd = cwd
+      this.fffConnected = Boolean(fffServer)
+      this.contextLedger.clear()
       return { ok: true, providerId: preferred }
     } catch (err) {
       await client.shutdown()
       this.client = null
       this.activeProvider = null
+      this.activeCwd = null
+      this.fffConnected = false
+      this.contextLedger.clear()
       return {
         ok: false,
         providerId: preferred,
@@ -198,11 +220,30 @@ export class CompanionService {
         throw new Error(start.error ?? 'Companion provider failed to start')
       }
 
-      const packet = await buildCompanionContext({
+      let packet = await buildCompanionContext({
         activePath: payload.activePath,
         openFolderPath: payload.openFolderPath,
         tags: payload.tags,
+        question: payload.text,
+        ledger: this.contextLedger,
       })
+
+      if (shouldRetrieve(payload.text, payload.activePath, payload.tags)) {
+        const roots = [
+          ...payload.tags.filter((tag) => tag.kind === 'folder').map((tag) => tag.path),
+          ...(payload.openFolderPath ? [payload.openFolderPath] : []),
+        ]
+        const ranges = await retrieveMarkdownRanges({
+          question: payload.text,
+          roots,
+          excludedPaths: packet.sources.map((source) => source.path),
+        })
+        packet = appendRetrievedContext(
+          packet,
+          ranges,
+          this.fffConnected ? 'adaptive-fff' : 'adaptive-local',
+        )
+      }
 
       this.lastSources.clear()
       for (const source of packet.sources) {
@@ -257,6 +298,9 @@ export class CompanionService {
     this.citationStream = new CitationStream([])
     this.client = null
     this.activeProvider = null
+    this.activeCwd = null
+    this.fffConnected = false
+    this.contextLedger.clear()
     if (client) {
       try {
         await client.cancel()
@@ -282,6 +326,9 @@ export class CompanionService {
     const client = this.client
     this.client = null
     this.activeProvider = null
+    this.activeCwd = null
+    this.fffConnected = false
+    this.contextLedger.clear()
     this.streamingMessageId = null
     this.citationStream = new CitationStream([])
     if (client) await client.shutdown()

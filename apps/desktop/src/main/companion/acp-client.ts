@@ -41,6 +41,18 @@ export interface AcpClientOptions {
   spawnImpl?: typeof spawn
 }
 
+export interface AcpMcpServer {
+  name: string
+  command: string
+  args: string[]
+  env: Array<{ name: string; value: string }>
+}
+
+export interface AcpSessionState {
+  sessionId: string
+  configOptions: unknown[]
+}
+
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
@@ -204,16 +216,19 @@ export class AcpClient {
     })
   }
 
-  async createSession(cwd: string): Promise<string> {
+  async createSession(cwd: string, mcpServers: AcpMcpServer[] = []): Promise<AcpSessionState> {
     const result = await this.request('session/new', {
       cwd,
-      mcpServers: [],
+      mcpServers,
     })
     if (!isRecord(result) || typeof result.sessionId !== 'string') {
       throw new Error('ACP session/new missing sessionId')
     }
     this.sessionId = result.sessionId
-    return result.sessionId
+    return {
+      sessionId: result.sessionId,
+      configOptions: Array.isArray(result.configOptions) ? result.configOptions : [],
+    }
   }
 
   getSessionId(): string | null {

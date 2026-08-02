@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../store', () => ({
   getCompanionSettings: vi.fn(() => ({ preferredProvider: null, customCommand: '' })),
@@ -27,8 +30,14 @@ import { CitationStream, CompanionService } from './service'
 import { detectCompanionProviders } from './provider-detection'
 
 describe('Companion service', () => {
+  let dir: string
+
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true })
   })
 
   it('reports detection via detectProviders', async () => {
@@ -163,5 +172,38 @@ describe('Companion service', () => {
       kind: 'warning',
       message: 'Wait for the current response or cancel it first.',
     })
+  })
+
+  it('reuses unchanged focused content by hash within the live provider session', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-service-'))
+    const active = join(dir, 'active.md')
+    await writeFile(active, `# Active\n${'important detail '.repeat(300)}`)
+    const prompts: string[] = []
+    const fakeClient = {
+      getSessionId: () => 'session-1',
+      prompt: async (prompt: string) => {
+        prompts.push(prompt)
+      },
+    }
+    const service = new CompanionService(() => null)
+    Object.assign(service, {
+      client: fakeClient,
+      activeProvider: 'opencode',
+      activeCwd: dir,
+    })
+    const payload = {
+      text: 'Summarize this',
+      activePath: active,
+      openFolderPath: dir,
+      tags: [],
+      providerId: 'opencode' as const,
+    }
+
+    await service.send(payload)
+    await service.send(payload)
+
+    expect(prompts[0]).toContain('important detail')
+    expect(prompts[1]).toContain('Content unchanged from earlier in this session')
+    expect(prompts[1]).not.toContain('important detail')
   })
 })

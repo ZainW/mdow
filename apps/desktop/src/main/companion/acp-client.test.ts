@@ -158,6 +158,41 @@ describe('Companion ACP client', () => {
     await client.shutdown()
   })
 
+  it('passes optional read-only MCP servers into session setup', async () => {
+    const fake = new FakeChild()
+    const client = new AcpClient({
+      command: 'fake-agent',
+      args: [],
+      onUpdate: vi.fn(),
+      spawnImpl: (() => fake) as unknown as typeof import('child_process').spawn,
+    })
+    await client.start()
+
+    await client.createSession('/tmp/docs', [
+      {
+        name: 'fff',
+        command: '/opt/homebrew/bin/fff-mcp',
+        args: [],
+        env: [],
+      },
+    ])
+
+    const sessionRequest = fake.written
+      .flatMap((chunk) => chunk.split('\n'))
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { method?: string; params?: Record<string, unknown> })
+      .find((message) => message.method === 'session/new')
+    expect(sessionRequest?.params?.mcpServers).toEqual([
+      {
+        name: 'fff',
+        command: '/opt/homebrew/bin/fff-mcp',
+        args: [],
+        env: [],
+      },
+    ])
+    await client.shutdown()
+  })
+
   it('does not surface subprocess diagnostics as conversation status', async () => {
     const updates: CompanionUpdate[] = []
     const fake = new FakeChild()

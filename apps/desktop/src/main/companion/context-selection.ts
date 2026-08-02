@@ -142,7 +142,11 @@ function countOccurrences(text: string, term: string): number {
   return count
 }
 
-function buildSections(lines: string[], headings: HeadingPosition[], terms: string[]): MarkdownSection[] {
+function buildSections(
+  lines: string[],
+  headings: HeadingPosition[],
+  terms: string[],
+): MarkdownSection[] {
   const sections: MarkdownSection[] = []
   for (let index = 0; index < headings.length; index += 1) {
     const heading = headings[index]
@@ -171,7 +175,8 @@ function buildSections(lines: string[], headings: HeadingPosition[], terms: stri
 function formatHeadingMap(headings: MarkdownHeading[]): string {
   if (headings.length === 0) return ''
   const rows = headings.map(
-    (heading) => `${'  '.repeat(Math.max(heading.depth - 1, 0))}- ${heading.text} (line ${heading.line})`,
+    (heading) =>
+      `${'  '.repeat(Math.max(heading.depth - 1, 0))}- ${heading.text} (line ${heading.line})`,
   )
   return truncateUtf8(`## Document map\n${rows.join('\n')}`, MAX_MAP_BYTES)
 }
