@@ -3,6 +3,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it, afterEach } from 'vitest'
 import type { CompanionContextTag } from '../../shared/types'
+import { ContextLedger } from './context-ledger'
 import { buildCompanionContext, formatContextPrompt } from './context-builder'
 
 describe('Companion context builder', () => {
@@ -99,6 +100,48 @@ describe('Companion context builder', () => {
     expect(packet.sources.find((source) => source.path === active)?.excerpt).toContain(
       'must be included',
     )
+  })
+
+  it('selects a relevant section instead of truncating a large focused document from the top', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'handbook.md')
+    await writeFile(
+      active,
+      `# Handbook\n\n## Background\n${'x'.repeat(20_000)}\n\n## Authentication\nRotate tokens daily.`,
+    )
+
+    const packet = await buildCompanionContext({
+      activePath: active,
+      openFolderPath: dir,
+      tags: [],
+      question: 'How does authentication work?',
+    })
+
+    expect(packet.sources[0]?.excerpt).toContain('## Authentication')
+    expect(packet.sources[0]?.excerpt).toContain('Rotate tokens daily')
+    expect(packet.sources[0]?.bytes).toBeLessThanOrEqual(16_384)
+  })
+
+  it('sends identity metadata instead of unchanged document content within a session', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'active.md')
+    await writeFile(active, `# Active\nprivate body that should not be repeated\n${'detail '.repeat(400)}`)
+    const ledger = new ContextLedger()
+    const input = {
+      activePath: active,
+      openFolderPath: dir,
+      tags: [],
+      question: 'Summarize this',
+      ledger,
+    }
+
+    const first = await buildCompanionContext(input)
+    const second = await buildCompanionContext(input)
+
+    expect(first.sources[0]?.excerpt).toContain('private body')
+    expect(second.sources[0]?.excerpt).toContain('Content unchanged from earlier in this session')
+    expect(second.sources[0]?.excerpt).not.toContain('private body')
+    expect(second.trace.injectedBytes).toBeLessThan(first.trace.injectedBytes)
   })
 
   it('skips non-markdown paths with a warning', async () => {
