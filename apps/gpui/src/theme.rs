@@ -14,10 +14,19 @@ impl Metrics {
     pub const TAB_BAR_HEIGHT: f32 = 36.0;
     pub const TAB_HEIGHT: f32 = 28.0;
     pub const TAB_MAX_WIDTH: f32 = 200.0;
+    pub const TAB_LIST_INSET: f32 = 6.0;
+    pub const TAB_GAP: f32 = 1.0;
+    pub const TAB_RADIUS: f32 = 6.0;
+    pub const TAB_CONTENT_INSET: f32 = 10.0;
+    pub const TAB_CONTENT_GAP: f32 = 6.0;
+    pub const TAB_ICON_SIZE: f32 = 14.0;
+    pub const TAB_CLOSE_SIZE: f32 = 24.0;
+    pub const TAB_CLOSE_END_MARGIN: f32 = 4.0;
+    pub const TAB_TOGGLE_SLOT: f32 = 36.0;
     pub const BREADCRUMB_HEIGHT: f32 = 28.0;
     pub const READER_MAX_WIDTH: f32 = 768.0;
     pub const READER_INSET: f32 = 48.0;
-    pub const READER_TOP_PADDING: f32 = 22.0;
+    pub const READER_TOP_PADDING: f32 = 32.0;
     pub const READER_BOTTOM_PADDING: f32 = 40.0;
     pub const RADIUS: f32 = 8.0;
 }
@@ -173,7 +182,10 @@ mod tests {
         );
         assert_eq!(layout.tab_bar_height, 36.0);
         assert_eq!(layout.tab_height, 28.0);
+        assert_eq!((Metrics::TAB_BAR_HEIGHT - Metrics::TAB_HEIGHT) / 2.0, 4.0);
+        assert_eq!(Metrics::TAB_RADIUS, 6.0);
         assert_eq!(layout.breadcrumb_height, 28.0);
+        assert_eq!(Metrics::READER_TOP_PADDING, 32.0);
         assert_eq!(
             layout.reader,
             Region {

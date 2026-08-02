@@ -1426,6 +1426,40 @@ mod tests {
     }
 
     #[gpui::test]
+    fn tab_rail_keeps_the_sidebar_toggle_and_tab_list_in_measured_slots(cx: &mut TestAppContext) {
+        let document = parse_document(
+            PathBuf::from("/tmp/measured-tab.md"),
+            "# Measured tab\n".into(),
+        );
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let toggle_slot = visual
+            .debug_bounds("sidebar-toggle-slot")
+            .expect("fixed sidebar toggle slot");
+        let tabs = visual.debug_bounds("tabs-scroll").expect("tab list");
+        let tab = visual
+            .debug_bounds("document-tab-0")
+            .expect("first document tab");
+
+        assert_eq!(toggle_slot.size.width, px(36.0));
+        assert_eq!(tabs.origin.x, toggle_slot.origin.x + toggle_slot.size.width);
+        assert_eq!(tab.origin.x, tabs.origin.x + px(6.0));
+        assert_eq!(tab.size.height, px(28.0));
+    }
+
+    #[gpui::test]
     fn disclosure_click_and_keyboard_activation_toggle_once_each(cx: &mut TestAppContext) {
         let root = markdown_workspace();
         let mut model = AppModel::default();

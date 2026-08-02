@@ -1991,6 +1991,7 @@ mod tests {
         let document = ParsedDocument {
             path: PathBuf::from("/tmp/links.md"),
             title: "Links".into(),
+            frontmatter_title: None,
             source: String::new(),
             blocks: vec![DocumentBlock::Paragraph(vec![
                 InlineSpan::Link {
@@ -2032,6 +2033,7 @@ mod tests {
         let document = ParsedDocument {
             path: PathBuf::from("/tmp/large-table.md"),
             title: "Large table".into(),
+            frontmatter_title: None,
             source: String::new(),
             blocks: vec![
                 DocumentBlock::Table(TableBlock {

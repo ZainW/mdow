@@ -92,6 +92,7 @@ pub fn load_source(path: &Path) -> Result<LoadedSource, DocumentError> {
 pub struct ParsedDocument {
     pub path: PathBuf,
     pub title: String,
+    pub frontmatter_title: Option<String>,
     pub source: String,
     pub blocks: Vec<DocumentBlock>,
     pub headings: Vec<Heading>,
@@ -358,6 +359,33 @@ impl Default for TableContext {
     }
 }
 
+fn split_frontmatter(source: &str) -> (Option<String>, &str) {
+    let Some(rest) = source
+        .strip_prefix("---\n")
+        .or_else(|| source.strip_prefix("---\r\n"))
+    else {
+        return (None, source);
+    };
+    let mut consumed = source.len() - rest.len();
+    let mut title = None;
+    for line in rest.split_inclusive('\n') {
+        consumed += line.len();
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed == "---" {
+            return (title, &source[consumed..]);
+        }
+        if title.is_none()
+            && let Some(value) = trimmed.strip_prefix("title:")
+        {
+            let value = value.trim().trim_matches(['\'', '"']);
+            if !value.is_empty() {
+                title = Some(value.to_owned());
+            }
+        }
+    }
+    (None, source)
+}
+
 /// Parses Markdown into the model consumed by the native reader.
 pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     let mut options = Options::empty();
@@ -378,8 +406,9 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     let mut code_block = None::<CodeContext>;
     let mut table = None::<TableContext>;
     let mut html_block = None::<String>;
+    let (frontmatter_title, markdown_body) = split_frontmatter(&source);
 
-    for event in Parser::new_ext(&source, options) {
+    for event in Parser::new_ext(markdown_body, options) {
         if code_block.is_some() {
             match event {
                 Event::End(TagEnd::CodeBlock) => {
@@ -673,6 +702,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     ParsedDocument {
         path,
         title,
+        frontmatter_title,
         source,
         blocks,
         headings,
@@ -855,6 +885,18 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn frontmatter_title_is_extracted_and_not_rendered_as_markdown() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/showcase.md"),
+            "---\ntitle: Reader title\n---\n# Visible heading\n".into(),
+        );
+
+        assert_eq!(parsed.frontmatter_title.as_deref(), Some("Reader title"));
+        assert_eq!(parsed.blocks.len(), 1);
+        assert_eq!(parsed.title, "Visible heading");
+    }
 
     #[test]
     fn recognizes_supported_extensions_case_insensitively() {

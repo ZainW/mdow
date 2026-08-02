@@ -1,6 +1,7 @@
 use crate::{
     actions::{OpenFolder, ToggleSidebar, ToggleWideMode},
     app::{MdowApp, UserFacingError},
+    tabs::DocumentTab,
     theme::{Metrics, Theme},
     ui::{
         primitives::{compact_icon_button, icon, icon_button},
@@ -18,6 +19,31 @@ use std::path::{Path, PathBuf};
 pub struct BreadcrumbSegment {
     pub name: String,
     pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreadcrumbDisplay {
+    pub primary: String,
+    pub secondary: Option<String>,
+}
+
+pub fn breadcrumb_display(tab: &DocumentTab) -> BreadcrumbDisplay {
+    let filename = tab
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_owned();
+    match tab.document.frontmatter_title.as_ref() {
+        Some(title) => BreadcrumbDisplay {
+            primary: title.clone(),
+            secondary: Some(filename),
+        },
+        None => BreadcrumbDisplay {
+            primary: filename,
+            secondary: None,
+        },
+    }
 }
 
 pub fn breadcrumb_segments(path: &Path) -> Vec<BreadcrumbSegment> {
@@ -304,13 +330,14 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .collect::<Vec<_>>();
     let mut tabs = div()
         .id("tabs-scroll")
+        .debug_selector(|| "tabs-scroll".into())
         .flex()
         .items_center()
         .min_w_0()
         .flex_grow()
         .h_full()
-        .gap(px(1.0))
-        .px(px(6.0))
+        .gap(px(Metrics::TAB_GAP))
+        .px(px(Metrics::TAB_LIST_INSET))
         .overflow_x_scroll()
         .scrollbar_width(px(6.0));
 
@@ -347,7 +374,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                 .max_w(px(Metrics::TAB_MAX_WIDTH))
                 .min_w(px(92.0))
                 .flex_none()
-                .rounded(px(Metrics::RADIUS))
+                .rounded(px(Metrics::TAB_RADIUS))
                 .border_1()
                 .border_color(if is_active {
                     theme.border_subtle
@@ -381,14 +408,14 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                         .items_center()
                         .min_w_0()
                         .flex_grow()
-                        .gap(px(6.0))
-                        .pl(px(10.0))
+                        .gap(px(Metrics::TAB_CONTENT_GAP))
+                        .pl(px(Metrics::TAB_CONTENT_INSET))
                         .child(icon(
                             "icons/file.svg",
                             theme
                                 .muted_foreground
                                 .opacity(if is_active { 0.82 } else { 0.62 }),
-                            14.0,
+                            Metrics::TAB_ICON_SIZE,
                         ))
                         .child(div().min_w_0().flex_grow().truncate().child(filename)),
                 )
@@ -401,8 +428,8 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                         .flex()
                         .items_center()
                         .justify_center()
-                        .size(px(24.0))
-                        .mr(px(2.0))
+                        .size(px(Metrics::TAB_CLOSE_SIZE))
+                        .mr(px(Metrics::TAB_CLOSE_END_MARGIN))
                         .flex_none()
                         .rounded(px(4.0))
                         .text_color(theme.muted_foreground)
@@ -420,6 +447,23 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         }
     }
 
+    let toggle_slot = div()
+        .debug_selector(|| "sidebar-toggle-slot".into())
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(Metrics::TAB_TOGGLE_SLOT))
+        .h_full()
+        .flex_none()
+        .border_r_1()
+        .border_color(theme.border_subtle)
+        .child(icon_button(
+            "toggle-sidebar",
+            "icons/sidebar.svg",
+            theme,
+            |_, _, cx| cx.dispatch_action(&ToggleSidebar),
+        ));
+
     div()
         .flex()
         .items_center()
@@ -428,12 +472,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.background)
-        .child(icon_button(
-            "toggle-sidebar",
-            "icons/sidebar.svg",
-            theme,
-            |_, _, cx| cx.dispatch_action(&ToggleSidebar),
-        ))
+        .child(toggle_slot)
         .child(tabs)
         .into_any_element()
 }
@@ -456,6 +495,7 @@ pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
     };
 
     let segments = breadcrumb_segments(tab.path());
+    let display = breadcrumb_display(tab);
     let mut trail = div()
         .flex()
         .items_center()
@@ -478,15 +518,33 @@ pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
                 10.0,
             ));
     }
-    trail = trail.child(
-        div()
-            .min_w_0()
-            .truncate()
-            .px(px(2.0))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(theme.foreground.opacity(0.88))
-            .child(tab.document.title.clone()),
-    );
+    let mut current = div()
+        .flex()
+        .items_center()
+        .min_w_0()
+        .px(px(2.0))
+        .font_weight(FontWeight::MEDIUM)
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(px(11.0))
+                .text_color(theme.foreground.opacity(0.85))
+                .child(display.primary),
+        );
+    if let Some(filename) = display.secondary {
+        current = current.child(
+            div()
+                .ml(px(4.0))
+                .min_w_0()
+                .truncate()
+                .text_size(px(10.0))
+                .font_weight(FontWeight::NORMAL)
+                .text_color(theme.muted_foreground.opacity(0.60))
+                .child(filename),
+        );
+    }
+    trail = trail.child(current);
 
     div()
         .flex()
@@ -605,6 +663,42 @@ pub fn render_error_state(theme: Theme, error: &UserFacingError, drop_active: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{document::parse_document, syntax::PreparedDocument, tabs::DocumentTab};
+    use std::sync::Arc;
+
+    fn document_tab(path: &str, source: &str) -> DocumentTab {
+        let parsed = parse_document(PathBuf::from(path), source.to_owned());
+        let last_source = Arc::from(parsed.source.clone());
+        DocumentTab {
+            document: Arc::new(PreparedDocument::plain(parsed)),
+            last_source,
+            reload_error: None,
+        }
+    }
+
+    #[test]
+    fn breadcrumb_uses_filename_until_frontmatter_supplies_a_title() {
+        let plain = document_tab("/tmp/showcase.md", "# Heading\n");
+        assert_eq!(
+            breadcrumb_display(&plain),
+            BreadcrumbDisplay {
+                primary: "showcase.md".into(),
+                secondary: None,
+            }
+        );
+
+        let titled = document_tab(
+            "/tmp/showcase.md",
+            "---\ntitle: Reader title\n---\n# Heading\n",
+        );
+        assert_eq!(
+            breadcrumb_display(&titled),
+            BreadcrumbDisplay {
+                primary: "Reader title".into(),
+                secondary: Some("showcase.md".into()),
+            }
+        );
+    }
 
     #[test]
     fn breadcrumb_keeps_only_the_final_three_parent_segments() {
