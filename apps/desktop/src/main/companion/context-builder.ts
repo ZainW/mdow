@@ -1,23 +1,22 @@
-/* oxlint-disable eslint/no-await-in-loop, react-doctor/async-await-in-loop -- Source order is semantic and each read updates the shared byte budget. */
 import { basename } from 'path'
 import { readFileContent } from '../file-service'
-import { scanFolder } from '../folder-service'
-import { validateMarkdownPath, validatePath } from '../path-validation'
-import { isMarkdownPath } from '../../shared/types'
+import type { scanFolder } from '../folder-service'
+import { validateMarkdownPath } from '../path-validation'
 import type {
   CompanionContextPacket,
   CompanionContextSource,
   CompanionContextTag,
+  CompanionContextTraceItem,
 } from '../../shared/types'
 
-const MAX_SOURCE_BYTES = 24_000
-const MAX_TOTAL_BYTES = 120_000
-const MAX_FOLDER_FILES = 20
+const MAX_INITIAL_SOURCE_BYTES = 16_384
+const MAX_INITIAL_TOTAL_BYTES = 16_384
 
 export interface BuildContextInput {
   activePath: string | null
   openFolderPath: string | null
   tags: CompanionContextTag[]
+  question?: string
   readFile?: (path: string) => Promise<string>
   scan?: typeof scanFolder
 }
@@ -40,6 +39,8 @@ async function addSource(
   path: string,
   budget: { used: number },
   readFile: (path: string) => Promise<string>,
+  reason: CompanionContextTraceItem['reason'],
+  traceItems: CompanionContextTraceItem[],
 ): Promise<void> {
   let resolved: string
   try {
@@ -49,14 +50,17 @@ async function addSource(
     return
   }
   if (seen.has(resolved)) return
-  if (budget.used >= MAX_TOTAL_BYTES) {
+  if (budget.used >= MAX_INITIAL_TOTAL_BYTES) {
     warnings.push('Context budget reached; additional files omitted')
     return
   }
 
   try {
     const raw = await readFile(resolved)
-    const remaining = Math.min(MAX_SOURCE_BYTES, MAX_TOTAL_BYTES - budget.used)
+    const remaining = Math.min(
+      MAX_INITIAL_SOURCE_BYTES,
+      MAX_INITIAL_TOTAL_BYTES - budget.used,
+    )
     const { text, truncated } = truncate(raw, remaining)
     const bytes = Buffer.byteLength(text, 'utf8')
     budget.used += bytes
@@ -67,22 +71,10 @@ async function addSource(
       excerpt: text,
       bytes,
     })
+    traceItems.push({ path: resolved, reason, bytes })
     if (truncated) warnings.push(`Truncated ${basename(resolved)}`)
   } catch {
     warnings.push(`Could not read ${path}`)
-  }
-}
-
-function collectMarkdownPaths(
-  nodes: { path: string; isDirectory: boolean; children?: unknown[] }[],
-  out: string[],
-): void {
-  for (const node of nodes) {
-    if (node.isDirectory && Array.isArray(node.children)) {
-      collectMarkdownPaths(node.children as typeof nodes, out)
-    } else if (!node.isDirectory && isMarkdownPath(node.path)) {
-      out.push(node.path)
-    }
   }
 }
 
@@ -90,54 +82,37 @@ export async function buildCompanionContext(
   input: BuildContextInput,
 ): Promise<CompanionContextPacket> {
   const readFile = input.readFile ?? readFileContent
-  const scan = input.scan ?? scanFolder
   const sources: CompanionContextSource[] = []
   const warnings: string[] = []
+  const traceItems: CompanionContextTraceItem[] = []
   const seen = new Set<string>()
   const budget = { used: 0 }
 
   if (input.activePath) {
-    await addSource(sources, warnings, seen, input.activePath, budget, readFile)
+    await addSource(
+      sources,
+      warnings,
+      seen,
+      input.activePath,
+      budget,
+      readFile,
+      'focused',
+      traceItems,
+    )
   }
 
   for (const tag of input.tags) {
     if (tag.kind === 'file') {
-      await addSource(sources, warnings, seen, tag.path, budget, readFile)
-    } else if (tag.kind === 'folder') {
-      try {
-        const resolved = validatePath(tag.path)
-        const { tree, truncated } = await scan(resolved)
-        if (truncated) warnings.push(`Folder scan truncated for ${tag.path}`)
-        const paths: string[] = []
-        collectMarkdownPaths(tree, paths)
-        for (const path of paths.slice(0, MAX_FOLDER_FILES)) {
-          await addSource(sources, warnings, seen, path, budget, readFile)
-        }
-      } catch {
-        warnings.push(`Could not scan folder tag ${tag.path}`)
-      }
-    }
-  }
-
-  if (input.openFolderPath) {
-    try {
-      const resolved = validatePath(input.openFolderPath)
-      const { tree, truncated } = await scan(resolved)
-      if (truncated) warnings.push('Open folder tree was truncated')
-      const paths: string[] = []
-      collectMarkdownPaths(tree, paths)
-      let added = 0
-      for (const path of paths) {
-        if (added >= MAX_FOLDER_FILES) {
-          warnings.push(`Included first ${MAX_FOLDER_FILES} folder docs only`)
-          break
-        }
-        const before = sources.length
-        await addSource(sources, warnings, seen, path, budget, readFile)
-        if (sources.length > before) added += 1
-      }
-    } catch {
-      warnings.push('Could not scan open folder for context')
+      await addSource(
+        sources,
+        warnings,
+        seen,
+        tag.path,
+        budget,
+        readFile,
+        'attached',
+        traceItems,
+      )
     }
   }
 
@@ -147,7 +122,22 @@ export async function buildCompanionContext(
       ? 'No docs in context'
       : `Using ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` + ${names.length - 3} more` : ''}`
 
-  return { sources, warnings, summary }
+  const injectedBytes = traceItems.reduce((total, item) => total + item.bytes, 0)
+  return {
+    sources,
+    warnings,
+    summary,
+    trace: {
+      focusedCount: traceItems.filter((item) => item.reason === 'focused').length,
+      attachedCount: traceItems.filter((item) => item.reason === 'attached').length,
+      searchedCount: 0,
+      readRangeCount: 0,
+      injectedBytes,
+      estimatedTokens: Math.ceil(injectedBytes / 4),
+      retrievalMode: 'focused-only',
+      items: traceItems,
+    },
+  }
 }
 
 export function formatContextPrompt(packet: CompanionContextPacket, question: string): string {
@@ -160,7 +150,9 @@ export function formatContextPrompt(packet: CompanionContextPacket, question: st
     'Answer using the provided markdown sources.',
     'Cite source IDs like src:/absolute/path.md when making doc-specific claims.',
     'If the docs do not contain enough information, say so.',
-    'Do not edit files, run commands, or request tools.',
+    'Search linked files or attached folders only when the question requires more context.',
+    'Use only read-only context or search tools made available by Mdow.',
+    'Do not edit files, use write tools, run terminal commands, or grant permissions.',
     '',
     '## Docs context',
     blocks || '(no sources)',

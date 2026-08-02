@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, mkdir, rm } from 'fs/promises'
+import { mkdtemp, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, expect, it, afterEach } from 'vitest'
@@ -31,6 +31,50 @@ describe('Companion context builder', () => {
     expect(packet.sources.some((s) => s.path === tagged)).toBe(true)
     expect(packet.sources.every((s) => s.sourceId.startsWith('src:'))).toBe(true)
     expect(packet.summary.toLowerCase()).toContain('using')
+  })
+
+  it('does not inject unrelated files from the open folder', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'active.md')
+    const unrelated = join(dir, 'unrelated.md')
+    await writeFile(active, '# Active\nactive body')
+    await writeFile(unrelated, '# Unrelated\nshould stay out')
+
+    const packet = await buildCompanionContext({
+      activePath: active,
+      openFolderPath: dir,
+      tags: [],
+      question: 'Summarize this document',
+    })
+
+    expect(packet.sources.map((source) => source.path)).toEqual([active])
+    expect(packet.trace).toMatchObject({
+      focusedCount: 1,
+      searchedCount: 0,
+      readRangeCount: 0,
+    })
+  })
+
+  it('keeps explicit file attachments but does not expand a folder tag eagerly', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
+    const active = join(dir, 'active.md')
+    const tagged = join(dir, 'tagged.md')
+    const unrelated = join(dir, 'unrelated.md')
+    await writeFile(active, '# Active')
+    await writeFile(tagged, '# Tagged')
+    await writeFile(unrelated, '# Unrelated')
+
+    const packet = await buildCompanionContext({
+      activePath: active,
+      openFolderPath: dir,
+      tags: [
+        { kind: 'file', path: tagged, sourceId: `tag:${tagged}` },
+        { kind: 'folder', path: dir, sourceId: `tag:${dir}` },
+      ],
+      question: 'Compare the focused and attached file',
+    })
+
+    expect(packet.sources.map((source) => source.path)).toEqual([active, tagged])
   })
 
   it('keeps the active file when tags consume the context budget', async () => {
@@ -85,6 +129,16 @@ describe('Companion context builder', () => {
         ],
         warnings: [],
         summary: 'Using a.md',
+        trace: {
+          focusedCount: 1,
+          attachedCount: 0,
+          searchedCount: 0,
+          readRangeCount: 0,
+          injectedBytes: 5,
+          estimatedTokens: 2,
+          retrievalMode: 'focused-only',
+          items: [{ path: '/docs/a.md', reason: 'focused', bytes: 5 }],
+        },
       },
       'Summarize this',
     )
@@ -93,19 +147,4 @@ describe('Companion context builder', () => {
     expect(prompt).toContain('read-only')
   })
 
-  it('includes tagged folder markdown files', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'mdow-companion-'))
-    const nested = join(dir, 'notes')
-    await mkdir(nested)
-    const doc = join(nested, 'note.md')
-    await writeFile(doc, '# Note')
-
-    const packet = await buildCompanionContext({
-      activePath: null,
-      openFolderPath: null,
-      tags: [{ kind: 'folder', path: nested, sourceId: `tag:${nested}` }],
-    })
-
-    expect(packet.sources.some((s) => s.path === doc)).toBe(true)
-  })
 })

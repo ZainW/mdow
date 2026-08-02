@@ -94,10 +94,28 @@ export interface CompanionContextSource {
   bytes: number
 }
 
+export interface CompanionContextTraceItem {
+  path: string
+  reason: 'focused' | 'attached' | 'retrieved'
+  bytes: number
+}
+
+export interface CompanionContextTrace {
+  focusedCount: number
+  attachedCount: number
+  searchedCount: number
+  readRangeCount: number
+  injectedBytes: number
+  estimatedTokens: number
+  retrievalMode: 'focused-only' | 'adaptive-local' | 'adaptive-fff'
+  items: CompanionContextTraceItem[]
+}
+
 export interface CompanionContextPacket {
   sources: CompanionContextSource[]
   warnings: string[]
   summary: string
+  trace: CompanionContextTrace
 }
 
 export type CompanionUpdate =
@@ -119,7 +137,12 @@ export type CompanionUpdate =
   | { kind: 'error'; message: string }
   | { kind: 'done'; messageId: string }
   | { kind: 'cancelled'; messageId: string }
-  | { kind: 'context'; summary: string; warnings: string[] }
+  | {
+      kind: 'context'
+      summary: string
+      warnings: string[]
+      trace: CompanionContextTrace
+    }
 
 export interface CompanionSendPayload {
   text: string

@@ -217,6 +217,7 @@ export class CompanionService {
         kind: 'context',
         summary: packet.summary,
         warnings: packet.warnings,
+        trace: packet.trace,
       })
 
       this.citationStream = new CitationStream(this.lastSources.keys())
