@@ -1,6 +1,7 @@
 use crate::{
     actions::{CloseTab, OpenFile, OpenFolder, ToggleSidebar, ToggleWideMode},
     document::{DocumentError, ParsedDocument, load_source, parse_document},
+    syntax::prepare_document,
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
     ui::{
@@ -103,8 +104,8 @@ impl BatchOpenResult {
 impl AppModel {
     pub fn open_document(&mut self, path: &Path) -> Result<(), AppOpenError> {
         let loaded = load_source(path)?;
-        self.tabs
-            .open(parse_document(loaded.canonical_path, loaded.source));
+        let parsed = parse_document(loaded.canonical_path, loaded.source);
+        self.tabs.open_prepared(prepare_document(parsed));
         Ok(())
     }
 
@@ -119,8 +120,8 @@ impl AppModel {
                 return Err(error);
             }
         };
-        let document = parse_document(loaded.canonical_path, loaded.source);
-        self.tabs.replace_document(document);
+        let parsed = parse_document(loaded.canonical_path, loaded.source);
+        self.tabs.replace_prepared(prepare_document(parsed));
         Ok(())
     }
 
@@ -185,7 +186,7 @@ impl AppModel {
         let Some(tab) = self.tabs.active().filter(|tab| tab.reload_error.is_some()) else {
             return false;
         };
-        self.tabs.replace_document((*tab.document).clone())
+        self.tabs.replace_prepared((*tab.document).clone())
     }
 }
 
@@ -730,7 +731,7 @@ impl Render for MdowApp {
             };
             surface
                 .child(render_document(
-                    document,
+                    Arc::new((**document).clone()),
                     self.wide_mode,
                     self.theme,
                     self.copied_code,

@@ -1,10 +1,13 @@
-use crate::document::ParsedDocument;
+use crate::{
+    document::ParsedDocument,
+    syntax::PreparedDocument,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct DocumentTab {
-    pub document: Arc<ParsedDocument>,
+    pub document: Arc<PreparedDocument>,
     pub last_source: Arc<str>,
     pub reload_error: Option<String>,
 }
@@ -23,7 +26,11 @@ pub struct TabSet {
 
 impl TabSet {
     pub fn open(&mut self, document: ParsedDocument) {
-        let document = canonical_document(document);
+        self.open_prepared(PreparedDocument::plain(document));
+    }
+
+    pub fn open_prepared(&mut self, document: PreparedDocument) {
+        let document = canonical_prepared_document(document);
         let path = document.path.clone();
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path() == path) {
             tab.last_source = Arc::from(document.source.clone());
@@ -42,7 +49,11 @@ impl TabSet {
     }
 
     pub fn replace_document(&mut self, document: ParsedDocument) -> bool {
-        let document = canonical_document(document);
+        self.replace_prepared(PreparedDocument::plain(document))
+    }
+
+    pub fn replace_prepared(&mut self, document: PreparedDocument) -> bool {
+        let document = canonical_prepared_document(document);
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path() == document.path) else {
             return false;
         };
@@ -109,8 +120,9 @@ impl TabSet {
     }
 }
 
-fn canonical_document(mut document: ParsedDocument) -> ParsedDocument {
-    document.path = path_identity(&document.path);
+fn canonical_prepared_document(mut document: PreparedDocument) -> PreparedDocument {
+    let path = path_identity(&document.path);
+    document.set_path(path);
     document
 }
 
@@ -122,6 +134,7 @@ fn path_identity(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::document::{ParsedDocument, parse_document};
+    use crate::syntax::prepare_document;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
@@ -135,6 +148,38 @@ mod tests {
         tabs.open(document("/tmp/b.md", "B"));
         tabs.open(document("/tmp/c.md", "C"));
         tabs
+    }
+
+    #[test]
+    fn prepared_open_keeps_highlights_on_the_tab() {
+        let prepared = prepare_document(parse_document(
+            PathBuf::from("/tmp/a.md"),
+            "```rust\nlet n = 1;\n```\n".into(),
+        ));
+        let mut tabs = TabSet::default();
+
+        tabs.open_prepared(prepared);
+
+        assert!(tabs.active().unwrap().document.code_block(0).is_some());
+    }
+
+    #[test]
+    fn prepared_reload_replaces_highlights_without_changing_selection() {
+        let mut tabs = three_tabs();
+        tabs.activate(Path::new("/tmp/b.md"));
+        let replacement = prepare_document(parse_document(
+            PathBuf::from("/tmp/a.md"),
+            "```javascript\nconst n = 2;\n```\n".into(),
+        ));
+
+        assert!(tabs.replace_prepared(replacement));
+        assert_eq!(tabs.active().unwrap().path(), Path::new("/tmp/b.md"));
+        assert!(tabs
+            .get(Path::new("/tmp/a.md"))
+            .unwrap()
+            .document
+            .code_block(0)
+            .is_some());
     }
 
     #[test]
