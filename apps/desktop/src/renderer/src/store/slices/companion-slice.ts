@@ -2,7 +2,9 @@ import type { StateCreator } from 'zustand'
 import type {
   CompanionCitation,
   CompanionContextTag,
+  CompanionContextTrace,
   CompanionMessage,
+  CompanionModelState,
   CompanionPart,
   CompanionProviderId,
   CompanionProviderStatus,
@@ -19,7 +21,9 @@ export interface CompanionSlice {
   companionPreferredProvider: CompanionProviderId | null
   companionCustomCommand: string
   companionContextSummary: string
+  companionContextTrace: CompanionContextTrace | null
   companionWarnings: string[]
+  companionModelState: CompanionModelState
   companionTags: CompanionContextTag[]
   companionError: string | null
   setCompanionPresentation: (presentation: CompanionPresentation) => void
@@ -27,6 +31,8 @@ export interface CompanionSlice {
   setCompanionProviders: (providers: CompanionProviderStatus[]) => void
   setCompanionPreferredProvider: (id: CompanionProviderId | null) => void
   setCompanionCustomCommand: (command: string) => void
+  loadCompanionModels: () => Promise<void>
+  selectCompanionModel: (value: string) => Promise<void>
   setCompanionTags: (tags: CompanionContextTag[]) => void
   addCompanionTag: (tag: CompanionContextTag) => void
   removeCompanionTag: (sourceId: string) => void
@@ -125,6 +131,7 @@ function textFromParts(parts: CompanionPart[]): string {
 
 export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (
   set,
+  get,
 ) => ({
   companionPresentation: 'closed',
   companionMessages: [],
@@ -133,7 +140,14 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
   companionPreferredProvider: null,
   companionCustomCommand: '',
   companionContextSummary: '',
+  companionContextTrace: null,
   companionWarnings: [],
+  companionModelState: {
+    options: [],
+    currentValue: null,
+    stale: true,
+    unavailableReason: 'Start Companion to load models',
+  },
   companionTags: [],
   companionError: null,
 
@@ -150,6 +164,35 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     set({ companionPreferredProvider: id })
   },
   setCompanionCustomCommand: (command) => set({ companionCustomCommand: command }),
+  loadCompanionModels: async () => {
+    try {
+      const start = await window.api.startCompanionSession(
+        get().companionPreferredProvider ?? undefined,
+      )
+      if (!start.ok) throw new Error(start.error ?? 'Failed to start Companion')
+      const modelState = await window.api.getCompanionModels()
+      set({ companionModelState: modelState })
+    } catch (error) {
+      set({
+        companionModelState: {
+          options: [],
+          currentValue: null,
+          stale: true,
+          unavailableReason: error instanceof Error ? error.message : 'Could not load live models',
+        },
+      })
+    }
+  },
+  selectCompanionModel: async (value) => {
+    try {
+      const modelState = await window.api.setCompanionModel(value)
+      set({ companionModelState: modelState, companionError: null })
+    } catch (error) {
+      set({
+        companionError: error instanceof Error ? error.message : 'Could not change model',
+      })
+    }
+  },
   setCompanionTags: (tags) => set({ companionTags: tags }),
   addCompanionTag: (tag) =>
     set((state) => {
@@ -333,6 +376,7 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
       case 'context':
         set({
           companionContextSummary: update.summary,
+          companionContextTrace: update.trace,
           companionWarnings: update.warnings,
         })
         break
@@ -349,6 +393,7 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
       companionMessages: [],
       companionStreaming: false,
       companionContextSummary: '',
+      companionContextTrace: null,
       companionWarnings: [],
       companionError: null,
     })

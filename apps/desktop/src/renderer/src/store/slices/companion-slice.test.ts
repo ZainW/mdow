@@ -1,5 +1,28 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '../app-store'
+import { stubWindowApi } from '../../test/stubWindowApi'
+
+const liveModels = {
+  options: [
+    {
+      value: 'openai/gpt-5.4',
+      name: 'GPT-5.4',
+      provider: 'openai' as const,
+    },
+  ],
+  currentValue: 'openai/gpt-5.4',
+  stale: false,
+}
+
+const getCompanionModels = vi.fn().mockResolvedValue(liveModels)
+const setCompanionModel = vi.fn().mockResolvedValue(liveModels)
+
+stubWindowApi(() => ({
+  saveCompanionSettings: vi.fn().mockResolvedValue(undefined),
+  startCompanionSession: vi.fn().mockResolvedValue({ ok: true, providerId: 'opencode' }),
+  getCompanionModels,
+  setCompanionModel,
+}))
 
 describe('Companion slice', () => {
   beforeEach(() => {
@@ -10,6 +33,13 @@ describe('Companion slice', () => {
       companionProviders: [],
       companionPreferredProvider: null,
       companionError: null,
+      companionContextTrace: null,
+      companionModelState: {
+        options: [],
+        currentValue: null,
+        stale: true,
+        unavailableReason: 'Start Companion to load models',
+      },
     })
   })
 
@@ -38,6 +68,37 @@ describe('Companion slice', () => {
     useAppStore.getState().setCompanionPresentation('drawer')
     expect(useAppStore.getState().companionPresentation).toBe('drawer')
     expect(useAppStore.getState().companionMessages[0]?.content).toBe('Keep this message')
+  })
+
+  it('stores the honest context trace from the main process', () => {
+    const trace = {
+      focusedCount: 1,
+      attachedCount: 0,
+      searchedCount: 0,
+      readRangeCount: 0,
+      injectedBytes: 400,
+      estimatedTokens: 100,
+      retrievalMode: 'focused-only' as const,
+      items: [{ path: '/docs/a.md', reason: 'focused' as const, bytes: 400 }],
+    }
+
+    useAppStore.getState().applyCompanionUpdate({
+      kind: 'context',
+      summary: '1 focused',
+      warnings: [],
+      trace,
+    })
+
+    expect(useAppStore.getState().companionContextTrace).toEqual(trace)
+  })
+
+  it('loads and changes live model state through the typed bridge', async () => {
+    await useAppStore.getState().loadCompanionModels()
+    expect(useAppStore.getState().companionModelState).toEqual(liveModels)
+
+    await useAppStore.getState().selectCompanionModel('openai/gpt-5.4')
+    expect(setCompanionModel).toHaveBeenCalledWith('openai/gpt-5.4')
+    expect(useAppStore.getState().companionModelState.currentValue).toBe('openai/gpt-5.4')
   })
 
   it('applies streaming deltas into one assistant message', () => {
