@@ -19,6 +19,17 @@ stubWindowApi(() => ({
     .fn()
     .mockResolvedValue({ preferredProvider: 'opencode', customCommand: '', lastModel: null }),
   saveCompanionSettings: vi.fn().mockResolvedValue(undefined),
+  startCompanionSession: vi.fn().mockResolvedValue({ ok: true, providerId: 'opencode' }),
+  getCompanionModels: vi.fn().mockResolvedValue({
+    options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
+    currentValue: 'openai/gpt-5.4',
+    stale: false,
+  }),
+  setCompanionModel: vi.fn().mockResolvedValue({
+    options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
+    currentValue: 'openai/gpt-5.4',
+    stale: false,
+  }),
   sendCompanionMessage,
   cancelCompanion: vi.fn().mockResolvedValue(undefined),
 }))
@@ -38,6 +49,12 @@ beforeEach(() => {
     ],
     companionPreferredProvider: 'opencode',
     companionCustomCommand: '',
+    companionModelState: {
+      options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
+      currentValue: 'openai/gpt-5.4',
+      stale: false,
+    },
+    companionContextTrace: null,
     companionTags: [],
     folderTree: [
       {
@@ -140,6 +157,29 @@ describe('CompanionPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to document' }))
     expect(useAppStore.getState().companionPresentation).toBe('drawer')
+  })
+
+  it('integrates the model picker and compact context bar in workspace mode', () => {
+    useAppStore.setState({
+      companionPresentation: 'workspace',
+      companionContextTrace: {
+        focusedCount: 1,
+        attachedCount: 0,
+        searchedCount: 0,
+        readRangeCount: 0,
+        injectedBytes: 800,
+        estimatedTokens: 200,
+        retrievalMode: 'focused-only',
+        items: [{ path: '/docs/overview.md', reason: 'focused', bytes: 800 }],
+      },
+    })
+
+    render(<CompanionWorkspace />)
+
+    expect(screen.getByRole('combobox', { name: 'Model' })).toBeVisible()
+    expect(screen.getByText(/1 focused/)).toBeVisible()
+    expect(screen.getByText(/≈200 added/)).toBeVisible()
+    expect(screen.queryByText(/using .*more/i)).not.toBeInTheDocument()
   })
 
   it('replaces the reader shell while workspace mode is active', () => {

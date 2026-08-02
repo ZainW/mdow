@@ -38,7 +38,7 @@ export function CompanionContextBar({
         : 'Adaptive'
 
   return (
-    <div className="flex min-h-9 items-center gap-1.5 overflow-hidden border-t border-border-subtle px-3 py-1.5 text-[11px] text-muted-foreground">
+    <div className="flex min-h-9 items-center gap-1.5 overflow-hidden px-3 py-1.5 text-[11px] text-muted-foreground">
       <Popover>
         <PopoverTrigger
           render={
