@@ -8,7 +8,7 @@ export interface ReleaseInfo {
   publishedAt: string
   htmlUrl: string
   assets: {
-    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; nativeBeta: ReleaseAsset | null }
+    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; gpuiBeta: ReleaseAsset | null }
     windows: { exe: string | null }
     linux: { appImage: string | null }
   }
@@ -28,6 +28,7 @@ interface GhRelease {
 }
 
 const REPO = 'ZainW/mdow'
+const GPUI_ALIAS = 'mdownative-mac-beta.zip'
 
 function detectArch(name: string): 'arm64' | 'x64' | undefined {
   if (name.includes('arm64')) return 'arm64'
@@ -40,15 +41,13 @@ function releaseAsset(asset: GhAsset): ReleaseAsset {
   return arch ? { arch, url: asset.browser_download_url } : { url: asset.browser_download_url }
 }
 
-function isNativeMacBetaAsset(name: string): boolean {
+function gpuiBetaAssetType(name: string): 'alias' | 'versioned' | null {
   const normalized = name.toLowerCase()
-  return (
-    normalized === 'mdownative-mac-beta.zip' ||
-    (normalized.endsWith('.zip') &&
-      normalized.includes('native') &&
-      normalized.includes('mac') &&
-      normalized.includes('beta'))
-  )
+  if (normalized === GPUI_ALIAS) return 'alias'
+  if (normalized.startsWith('mdownative-') && normalized.endsWith('-arm64-mac-beta.zip')) {
+    return 'versioned'
+  }
+  return null
 }
 
 export function parseRelease(release: GhRelease): ReleaseInfo | null {
@@ -56,22 +55,27 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
 
   const dmg: ReleaseAsset[] = []
   const zip: ReleaseAsset[] = []
-  let nativeBeta: ReleaseAsset | null = null
+  let gpuiBeta: ReleaseAsset | null = null
   let exe: string | null = null
   let appImage: string | null = null
 
   for (const asset of release.assets) {
-    if (asset.name.endsWith('.dmg')) {
+    const normalized = asset.name.toLowerCase()
+
+    if (normalized.endsWith('.dmg')) {
       dmg.push(releaseAsset(asset))
-    } else if (asset.name.endsWith('.zip') && asset.name.includes('mac')) {
-      if (isNativeMacBetaAsset(asset.name)) {
-        nativeBeta ??= releaseAsset(asset)
+    } else if (normalized.endsWith('.zip') && normalized.includes('mac')) {
+      const gpuiBetaType = gpuiBetaAssetType(asset.name)
+      if (gpuiBetaType === 'alias') {
+        gpuiBeta = releaseAsset(asset)
+      } else if (gpuiBetaType === 'versioned') {
+        gpuiBeta ??= releaseAsset(asset)
       } else {
         zip.push(releaseAsset(asset))
       }
-    } else if (asset.name.endsWith('.exe')) {
+    } else if (normalized.endsWith('.exe')) {
       exe ??= asset.browser_download_url
-    } else if (asset.name.endsWith('.AppImage')) {
+    } else if (normalized.endsWith('.appimage')) {
       appImage ??= asset.browser_download_url
     }
   }
@@ -80,7 +84,7 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
     version: release.tag_name.replace(/^v/, ''),
     publishedAt: release.published_at,
     htmlUrl: release.html_url,
-    assets: { mac: { dmg, zip, nativeBeta }, windows: { exe }, linux: { appImage } },
+    assets: { mac: { dmg, zip, gpuiBeta }, windows: { exe }, linux: { appImage } },
   }
 }
 

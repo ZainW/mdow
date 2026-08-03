@@ -32,6 +32,14 @@ const sample = {
   ],
 }
 
+function asset(name: string, url: string) {
+  return { name, browser_download_url: url }
+}
+
+function releaseWithAssets(assets: (typeof sample.assets)[number][]) {
+  return { ...sample, assets }
+}
+
 describe('parseRelease', () => {
   it('extracts version, html_url, and platform-keyed assets', () => {
     const result = parseRelease(sample)!
@@ -43,14 +51,14 @@ describe('parseRelease', () => {
       { arch: 'x64', url: 'https://example.test/Mdow-1.2.3-x64.dmg' },
     ])
     expect(result.assets.mac.zip).toHaveLength(1)
-    expect(result.assets.mac.nativeBeta).toEqual({
+    expect(result.assets.mac.gpuiBeta).toEqual({
       url: 'https://example.test/MdowNative-mac-beta.zip',
     })
     expect(result.assets.windows.exe).toBe('https://example.test/Mdow-Setup-1.2.3.exe')
     expect(result.assets.linux.appImage).toBe('https://example.test/Mdow-1.2.3.AppImage')
   })
 
-  it('recognizes versioned native mac beta assets as a fallback', () => {
+  it('recognizes the versioned GPUI mac beta asset as a fallback', () => {
     const result = parseRelease({
       ...sample,
       assets: [
@@ -61,10 +69,44 @@ describe('parseRelease', () => {
       ],
     })
 
-    expect(result?.assets.mac.nativeBeta).toEqual({
+    expect(result?.assets.mac.gpuiBeta).toEqual({
       arch: 'arm64',
       url: 'https://example.test/MdowNative-1.2.3-arm64-mac-beta.zip',
     })
+  })
+
+  it('classifies the GPUI alias separately from Electron mac archives', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([
+        asset('Mdow-2.0.0-arm64-mac.zip', 'electron'),
+        asset('MdowNative-mac-beta.zip', 'gpui'),
+      ]),
+    )!
+
+    expect(parsed.assets.mac.zip).toEqual([{ arch: 'arm64', url: 'electron' }])
+    expect(parsed.assets.mac.gpuiBeta).toEqual({ url: 'gpui' })
+  })
+
+  it('prefers the stable GPUI alias when both beta names are present', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([
+        asset('MdowNative-2.0.0-arm64-mac-beta.zip', 'versioned'),
+        asset('MdowNative-mac-beta.zip', 'alias'),
+      ]),
+    )!
+
+    expect(parsed.assets.mac.gpuiBeta?.url).toBe('alias')
+  })
+
+  it('prefers the stable GPUI alias regardless of GitHub asset order', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([
+        asset('MdowNative-mac-beta.zip', 'alias'),
+        asset('MdowNative-2.0.0-arm64-mac-beta.zip', 'versioned'),
+      ]),
+    )!
+
+    expect(parsed.assets.mac.gpuiBeta?.url).toBe('alias')
   })
 
   it('strips the leading v from tag_name', () => {
