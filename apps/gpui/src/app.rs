@@ -237,6 +237,7 @@ pub struct MdowApp {
     copied_code: Option<(usize, Instant)>,
     hovered_link: Option<LinkFocusKey>,
     focused_link: Option<LinkFocusKey>,
+    reader_scrollbar_drag: Option<ReaderScrollbarDrag>,
     reader_scroll_handles: HashMap<PathBuf, ScrollHandle>,
     reader_link_focus_handles: HashMap<(PathBuf, LinkFocusKey), FocusHandle>,
     file_watcher: FileWatcher,
@@ -245,6 +246,12 @@ pub struct MdowApp {
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ReaderScrollbarDrag {
+    path: PathBuf,
+    grab_y: f32,
 }
 
 fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option<f32> {
@@ -323,6 +330,7 @@ impl MdowApp {
             copied_code: None,
             hovered_link: None,
             focused_link: None,
+            reader_scrollbar_drag: None,
             reader_scroll_handles: HashMap::new(),
             reader_link_focus_handles: HashMap::new(),
             file_watcher,
@@ -506,6 +514,28 @@ impl MdowApp {
         self.copied_code = None;
         self.hovered_link = None;
         self.focused_link = None;
+        self.reader_scrollbar_drag = None;
+    }
+
+    pub(crate) fn begin_reader_scrollbar_drag(&mut self, path: PathBuf, grab_y: f32) {
+        self.reader_scrollbar_drag = Some(ReaderScrollbarDrag { path, grab_y });
+    }
+
+    pub(crate) fn reader_scrollbar_drag_grab_y(&self, path: &Path) -> Option<f32> {
+        self.reader_scrollbar_drag
+            .as_ref()
+            .filter(|drag| drag.path == path)
+            .map(|drag| drag.grab_y)
+    }
+
+    pub(crate) fn end_reader_scrollbar_drag(&mut self, path: &Path) {
+        if self
+            .reader_scrollbar_drag
+            .as_ref()
+            .is_some_and(|drag| drag.path == path)
+        {
+            self.reader_scrollbar_drag = None;
+        }
     }
 
     fn sync_focused_link(&mut self, window: &Window, cx: &mut Context<Self>) {
@@ -765,7 +795,11 @@ impl Render for MdowApp {
                     cx,
                 ));
             }
+            let scroll_handle_was_new = !self.reader_scroll_handles.contains_key(&path);
             let scroll_handle = self.reader_scroll_handles.entry(path).or_default().clone();
+            if scroll_handle_was_new {
+                cx.on_next_frame(window, |_, _, cx| cx.notify());
+            }
             let active_focus_handles =
                 self.reconcile_reader_link_focus_handles(&document, window, cx);
             let link_state = ReaderLinkState {
@@ -1656,11 +1690,157 @@ mod tests {
     }
 
     #[gpui::test]
+    fn long_reader_exposes_a_thumb_whose_literal_drag_changes_the_active_offset(
+        cx: &mut TestAppContext,
+    ) {
+        let document = parse_document(
+            PathBuf::from("/tmp/reader-scrollbar.md"),
+            (0..80)
+                .map(|index| format!("Paragraph {index} keeps the native reader overflowing."))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        );
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let track = visual
+            .debug_bounds("reader-scrollbar-track")
+            .expect("overflowing reader should expose a scrollbar track");
+        let thumb = visual
+            .debug_bounds("reader-scrollbar-thumb")
+            .expect("overflowing reader should expose a draggable thumb");
+        assert!(track.contains(&thumb.center()));
+        assert!(thumb.size.height < track.size.height);
+        let handle = window
+            .update(cx, |app, _, _| {
+                app.reader_scroll_handles.values().next().unwrap().clone()
+            })
+            .unwrap();
+        let before = handle.offset().y;
+        let drag_to = point(thumb.center().x, thumb.center().y + px(120.0));
+
+        visual.simulate_mouse_move(thumb.center(), None, Modifiers::none());
+        visual.simulate_mouse_down(thumb.center(), MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_move(drag_to, MouseButton::Left, Modifiers::none());
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.simulate_mouse_up(drag_to, MouseButton::Left, Modifiers::none());
+
+        assert!(handle.offset().y < before);
+    }
+
+    #[gpui::test]
+    fn clicking_the_reader_scrollbar_track_moves_the_active_offset(cx: &mut TestAppContext) {
+        let document = parse_document(
+            PathBuf::from("/tmp/reader-scrollbar-track.md"),
+            (0..80)
+                .map(|index| format!("Paragraph {index} keeps the native reader overflowing."))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        );
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let track = visual
+            .debug_bounds("reader-scrollbar-track")
+            .expect("overflowing reader should expose a scrollbar track");
+        let handle = window
+            .update(cx, |app, _, _| {
+                app.reader_scroll_handles.values().next().unwrap().clone()
+            })
+            .unwrap();
+        let click = point(track.center().x, track.bottom() - px(8.0));
+
+        visual.simulate_click(click, Modifiers::none());
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        assert!(handle.offset().y < px(0.0));
+    }
+
+    #[gpui::test]
+    fn multi_block_list_item_renders_one_marker_and_indented_children_in_source_order(
+        cx: &mut TestAppContext,
+    ) {
+        let document = prepare_document(parse_document(
+            PathBuf::from("/tmp/multi-block-list.md"),
+            "- before\n\n  ```rust\n  let n = 1;\n  ```\n\n  after\n".into(),
+        ));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open_prepared(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let marker = visual
+            .debug_bounds("reader-list-marker-0")
+            .expect("one outer list marker");
+        let leading = visual
+            .debug_bounds("reader-list-child-0-0")
+            .expect("leading paragraph child");
+        let code = visual
+            .debug_bounds("reader-list-child-0-1")
+            .expect("nested fenced-code child");
+        let trailing = visual
+            .debug_bounds("reader-list-child-0-2")
+            .expect("trailing paragraph child");
+
+        assert!(marker.right() < leading.left());
+        assert_eq!(leading.left(), code.left());
+        assert_eq!(code.left(), trailing.left());
+        assert!(leading.top() < code.top());
+        assert!(code.top() < trailing.top());
+        assert!(visual.debug_bounds("reader-code-0-1").is_some());
+        assert!(visual.debug_bounds("reader-list-marker-0-1").is_none());
+    }
+
+    #[gpui::test]
     fn reader_bounds_match_markdown_css(cx: &mut TestAppContext) {
         let document = prepare_document(parse_document(
             PathBuf::from("/tmp/showcase.md"),
             include_str!("../tests/fixtures/showcase.md").into(),
         ));
+        let wide_code_index = document
+            .blocks
+            .iter()
+            .position(|block| {
+                matches!(
+                    block,
+                    crate::document::DocumentBlock::CodeBlock { code, .. }
+                        if code.contains("deliberately_long_code_line")
+                )
+            })
+            .expect("wide code block in showcase");
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |window, cx| {
                 cx.new(|cx| {
@@ -1684,8 +1864,10 @@ mod tests {
             .expect("first reader block");
         let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
         let tab = visual.debug_bounds("document-tab-0").expect("active tab");
+        let wide_code_selector: &'static str =
+            Box::leak(format!("reader-code-{wide_code_index}").into_boxed_str());
         let code = visual
-            .debug_bounds("reader-code-27")
+            .debug_bounds(wide_code_selector)
             .expect("wide code surface");
 
         assert_eq!(first_block.top() - scroll.top(), px(32.0));

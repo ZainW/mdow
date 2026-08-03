@@ -99,7 +99,7 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceTree, WorkspaceError> {
 
     let mut visited = HashSet::new();
     visited.insert(canonical_root.clone());
-    let children = scan_directory(&canonical_root, &mut visited)?;
+    let children = scan_directory(&canonical_root, &canonical_root, &mut visited)?;
     Ok(WorkspaceTree {
         root: WorkspaceEntry {
             name: display_name(&canonical_root),
@@ -127,6 +127,7 @@ fn canonicalize_root(root: &Path) -> Result<PathBuf, WorkspaceError> {
 }
 
 fn scan_directory(
+    workspace_root: &Path,
     directory: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
@@ -151,20 +152,6 @@ fn scan_directory(
             path: path.clone(),
             message: error.to_string(),
         })?;
-        let metadata = match fs::metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(error)
-                if file_type.is_symlink() && error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                continue;
-            }
-            Err(error) => {
-                return Err(WorkspaceError::Read {
-                    path,
-                    message: error.to_string(),
-                });
-            }
-        };
         let canonical_path = match path.canonicalize() {
             Ok(canonical_path) => canonical_path,
             Err(error)
@@ -179,12 +166,24 @@ fn scan_directory(
                 });
             }
         };
+        if !canonical_path.starts_with(workspace_root) {
+            continue;
+        }
+        let metadata = match fs::metadata(&canonical_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                return Err(WorkspaceError::Read {
+                    path: canonical_path,
+                    message: error.to_string(),
+                });
+            }
+        };
 
         if metadata.is_dir() {
             if !visited.insert(canonical_path.clone()) {
                 continue;
             }
-            let descendants = scan_directory(&canonical_path, visited)?;
+            let descendants = scan_directory(workspace_root, &canonical_path, visited)?;
             if descendants.is_empty() {
                 continue;
             }
@@ -373,6 +372,31 @@ mod tests {
                 .any(|path| path.ends_with("guides/start.md"))
         );
         assert!(!tree.all_paths().any(|path| path.ends_with("loop")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_symlinks_that_escape_the_canonical_workspace_root() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        let outside = temp.path().join("outside");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(root.join("visible.md"), "# Visible").unwrap();
+        fs::write(outside.join("secret.md"), "# Secret").unwrap();
+        symlink(&outside, root.join("external-directory")).unwrap();
+        symlink(outside.join("secret.md"), root.join("external-file.md")).unwrap();
+
+        let tree = scan_workspace(&root).unwrap();
+        let canonical_root = root.canonicalize().unwrap();
+
+        assert_eq!(names(&tree.root.children), vec!["visible.md"]);
+        assert!(
+            tree.all_paths()
+                .all(|path| path.starts_with(&canonical_root))
+        );
     }
 
     #[cfg(unix)]

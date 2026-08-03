@@ -10,9 +10,9 @@ use crate::{
 };
 use gpui::{
     AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
-    InteractiveElement, InteractiveText, IntoElement, ParentElement, ScrollHandle,
-    StatefulInteractiveElement, Styled, StyledImage, StyledText, TextRun, UnderlineStyle, div,
-    font, img, prelude::*, px, relative,
+    InteractiveElement, InteractiveText, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, ScrollHandle, StatefulInteractiveElement, Styled, StyledImage,
+    StyledText, TextRun, UnderlineStyle, canvas, div, font, img, point, prelude::*, px, relative,
 };
 use std::{
     collections::HashMap,
@@ -23,6 +23,65 @@ use std::{
 };
 
 pub const CODE_COPY_FEEDBACK_DURATION: Duration = Duration::from_secs(2);
+
+const READER_SCROLLBAR_TRACK_INSET: f32 = 4.0;
+const READER_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 28.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ReaderScrollbarGeometry {
+    thumb_top: f32,
+    thumb_height: f32,
+    thumb_travel: f32,
+    max_offset: f32,
+}
+
+fn reader_scrollbar_geometry(
+    viewport_height: f32,
+    max_offset: f32,
+    current_offset: f32,
+) -> Option<ReaderScrollbarGeometry> {
+    if !viewport_height.is_finite()
+        || !max_offset.is_finite()
+        || !current_offset.is_finite()
+        || viewport_height <= 0.0
+        || max_offset <= 0.0
+    {
+        return None;
+    }
+
+    let track_height = (viewport_height - READER_SCROLLBAR_TRACK_INSET * 2.0).max(0.0);
+    if track_height <= 0.0 {
+        return None;
+    }
+
+    let content_height = viewport_height + max_offset;
+    let thumb_height = (track_height * viewport_height / content_height)
+        .max(READER_SCROLLBAR_MIN_THUMB_HEIGHT.min(track_height))
+        .min(track_height);
+    let thumb_travel = (track_height - thumb_height).max(0.0);
+    let progress = (-current_offset / max_offset).clamp(0.0, 1.0);
+
+    Some(ReaderScrollbarGeometry {
+        thumb_top: READER_SCROLLBAR_TRACK_INSET + thumb_travel * progress,
+        thumb_height,
+        thumb_travel,
+        max_offset,
+    })
+}
+
+fn reader_scrollbar_offset_for_pointer(
+    pointer_y: f32,
+    grab_y: f32,
+    geometry: ReaderScrollbarGeometry,
+) -> f32 {
+    if geometry.thumb_travel <= 0.0 {
+        return 0.0;
+    }
+
+    let thumb_top =
+        (pointer_y - grab_y - READER_SCROLLBAR_TRACK_INSET).clamp(0.0, geometry.thumb_travel);
+    -geometry.max_offset * thumb_top / geometry.thumb_travel
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BlockStyle {
@@ -317,59 +376,107 @@ pub fn inline_layout(spans: &[InlineSpan]) -> InlineLayout {
 
 pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTarget> {
     let mut targets = Vec::new();
-    for (block_index, block) in document.blocks.iter().enumerate() {
-        let mut surfaces: Vec<(LinkSurfaceKey, &[InlineSpan])> = Vec::new();
+    collect_link_focus_targets(
+        &document.blocks,
+        &mut Vec::new(),
+        &document.path,
+        &mut targets,
+    );
+    targets
+}
+
+fn collect_link_focus_targets(
+    blocks: &[DocumentBlock],
+    parent_path: &mut Vec<usize>,
+    document_path: &Path,
+    targets: &mut Vec<LinkFocusTarget>,
+) {
+    for (child_index, block) in blocks.iter().enumerate() {
+        parent_path.push(child_index);
+        let block_index = block_path_render_index(parent_path);
         match block {
             DocumentBlock::Heading { content, .. }
             | DocumentBlock::Paragraph(content)
-            | DocumentBlock::ListItem { content, .. }
-            | DocumentBlock::TaskItem { content, .. }
             | DocumentBlock::Blockquote(content) => {
-                surfaces.push((LinkSurfaceKey::block(block_index), content));
+                append_link_focus_targets(
+                    content,
+                    LinkSurfaceKey::block(block_index),
+                    document_path,
+                    targets,
+                );
             }
             DocumentBlock::Table(table) => {
                 for (column_index, content) in table.headers.iter().enumerate() {
-                    surfaces.push((
-                        LinkSurfaceKey::table_header(block_index, column_index),
+                    append_link_focus_targets(
                         content,
-                    ));
+                        LinkSurfaceKey::table_header(block_index, column_index),
+                        document_path,
+                        targets,
+                    );
                 }
                 for (row_index, row) in table.rows.iter().enumerate() {
                     for (column_index, content) in row.iter().enumerate() {
-                        surfaces.push((
-                            LinkSurfaceKey::table_cell(block_index, row_index, column_index),
+                        append_link_focus_targets(
                             content,
-                        ));
+                            LinkSurfaceKey::table_cell(block_index, row_index, column_index),
+                            document_path,
+                            targets,
+                        );
                     }
                 }
+            }
+            DocumentBlock::ListItem { children, .. } | DocumentBlock::TaskItem { children, .. } => {
+                collect_link_focus_targets(children, parent_path, document_path, targets);
             }
             DocumentBlock::CodeBlock { .. }
             | DocumentBlock::Image { .. }
             | DocumentBlock::ThematicBreak
             | DocumentBlock::RawText(_) => {}
         }
+        parent_path.pop();
+    }
+}
 
-        for (surface, spans) in surfaces {
-            let layout = inline_layout(spans);
-            for (link_index, link) in layout
-                .links
-                .into_iter()
-                .filter(|link| {
-                    !matches!(
-                        classify_link(&document.path, &link.target),
-                        LinkRoute::Inert
-                    )
-                })
-                .enumerate()
-            {
-                targets.push(LinkFocusTarget {
-                    key: LinkFocusKey::new(surface, link_index),
-                    target: link.target,
-                });
-            }
+fn append_link_focus_targets(
+    spans: &[InlineSpan],
+    surface: LinkSurfaceKey,
+    document_path: &Path,
+    targets: &mut Vec<LinkFocusTarget>,
+) {
+    for (link_index, link) in inline_layout(spans)
+        .links
+        .into_iter()
+        .filter(|link| !matches!(classify_link(document_path, &link.target), LinkRoute::Inert))
+        .enumerate()
+    {
+        targets.push(LinkFocusTarget {
+            key: LinkFocusKey::new(surface, link_index),
+            target: link.target,
+        });
+    }
+}
+
+fn block_path_render_index(block_path: &[usize]) -> usize {
+    if let [block_index] = block_path {
+        return *block_index;
+    }
+
+    let mut hash = 0xcbf29ce484222325_u64;
+    for index in block_path {
+        for byte in index.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
         }
     }
-    targets
+    (hash as usize) | (1_usize << (usize::BITS - 1))
+}
+
+fn block_path_suffix(block_path: &[usize]) -> String {
+    block_path
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 fn inline_layout_with_transform(spans: &[InlineSpan], uppercase: bool) -> InlineLayout {
@@ -736,6 +843,135 @@ fn style_reader_image(image: Img) -> Img {
     image.max_w(relative(1.0)).rounded(px(8.0))
 }
 
+fn render_reader_scrollbar(
+    document_path: &Path,
+    scroll_handle: &ScrollHandle,
+    theme: Theme,
+    cx: &Context<MdowApp>,
+) -> Option<AnyElement> {
+    let geometry = reader_scrollbar_geometry(
+        f32::from(scroll_handle.bounds().size.height),
+        f32::from(scroll_handle.max_offset().height),
+        f32::from(scroll_handle.offset().y),
+    )?;
+    let entity = cx.entity();
+    let event_path = document_path.to_owned();
+    let event_handle = scroll_handle.clone();
+    let thumb_color = theme.muted_foreground.opacity(match theme.color_scheme {
+        ColorScheme::Light => 0.25,
+        ColorScheme::Dark => 0.20,
+    });
+    let thumb_hover_color = theme.muted_foreground.opacity(match theme.color_scheme {
+        ColorScheme::Light => 0.45,
+        ColorScheme::Dark => 0.40,
+    });
+
+    Some(
+        div()
+            .id((
+                "reader-scrollbar-track",
+                document_scoped_element_id(document_path, "reader-scrollbar-track", 0),
+            ))
+            .debug_selector(|| "reader-scrollbar-track".into())
+            .absolute()
+            .top_0()
+            .right_0()
+            .bottom_0()
+            .w(px(6.0))
+            .cursor_pointer()
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |track_bounds, _, window, _| {
+                        window.on_mouse_event({
+                            let entity = entity.clone();
+                            let path = event_path.clone();
+                            let handle = event_handle.clone();
+                            move |event: &MouseDownEvent, _, _, cx| {
+                                if event.button != MouseButton::Left
+                                    || !track_bounds.contains(&event.position)
+                                {
+                                    return;
+                                }
+
+                                let pointer_y = f32::from(event.position.y - track_bounds.origin.y);
+                                if pointer_y >= geometry.thumb_top
+                                    && pointer_y <= geometry.thumb_top + geometry.thumb_height
+                                {
+                                    let grab_y = pointer_y - geometry.thumb_top;
+                                    entity.update(cx, |this, _| {
+                                        this.begin_reader_scrollbar_drag(path.clone(), grab_y);
+                                    });
+                                } else {
+                                    let target = reader_scrollbar_offset_for_pointer(
+                                        pointer_y,
+                                        geometry.thumb_height / 2.0,
+                                        geometry,
+                                    );
+                                    handle.set_offset(point(px(0.0), px(target)));
+                                    entity.update(cx, |this, _| {
+                                        this.end_reader_scrollbar_drag(&path);
+                                    });
+                                    cx.notify(entity.entity_id());
+                                }
+                            }
+                        });
+                        window.on_mouse_event({
+                            let entity = entity.clone();
+                            let path = event_path.clone();
+                            move |event: &MouseUpEvent, _, _, cx| {
+                                if event.button == MouseButton::Left {
+                                    entity.update(cx, |this, _| {
+                                        this.end_reader_scrollbar_drag(&path);
+                                    });
+                                }
+                            }
+                        });
+                        window.on_mouse_event({
+                            let entity = entity.clone();
+                            let path = event_path.clone();
+                            let handle = event_handle.clone();
+                            move |event: &MouseMoveEvent, _, _, cx| {
+                                if !event.dragging() {
+                                    return;
+                                }
+                                let Some(grab_y) =
+                                    entity.read(cx).reader_scrollbar_drag_grab_y(&path)
+                                else {
+                                    return;
+                                };
+                                let pointer_y = f32::from(event.position.y - track_bounds.origin.y);
+                                let target = reader_scrollbar_offset_for_pointer(
+                                    pointer_y, grab_y, geometry,
+                                );
+                                handle.set_offset(point(px(0.0), px(target)));
+                                cx.notify(entity.entity_id());
+                            }
+                        });
+                    },
+                )
+                .size_full(),
+            )
+            .child(
+                div()
+                    .id((
+                        "reader-scrollbar-thumb",
+                        document_scoped_element_id(document_path, "reader-scrollbar-thumb", 0),
+                    ))
+                    .debug_selector(|| "reader-scrollbar-thumb".into())
+                    .absolute()
+                    .top(px(geometry.thumb_top))
+                    .right_0()
+                    .h(px(geometry.thumb_height))
+                    .w_full()
+                    .rounded(px(999.0))
+                    .bg(thumb_color)
+                    .hover(move |thumb| thumb.bg(thumb_hover_color)),
+            )
+            .into_any_element(),
+    )
+}
+
 pub fn render_document(
     document: Arc<PreparedDocument>,
     wide_mode: bool,
@@ -767,13 +1003,14 @@ pub fn render_document(
 
     let spacing = block_sequence_spacing(&document.blocks);
     for (block_index, block) in document.blocks.iter().enumerate() {
+        let block_path = [block_index];
         column = column.child(render_block(
+            &document,
             block,
-            document.code_block(block_index),
-            block_index,
+            &block_path,
+            None,
             spacing[block_index],
             list_marker_is_visible(&document.blocks, block_index),
-            &document.path,
             theme,
             copied_code,
             link_state,
@@ -781,7 +1018,7 @@ pub fn render_document(
         ));
     }
 
-    div()
+    let viewport = div()
         .id("reader-scroll")
         .debug_selector(|| "reader-scroll".into())
         .flex()
@@ -793,29 +1030,44 @@ pub fn render_document(
         .scrollbar_width(px(6.0))
         .track_scroll(scroll_handle)
         .bg(theme.background)
-        .child(column)
+        .child(column);
+    let scrollbar = render_reader_scrollbar(&document.path, scroll_handle, theme, cx);
+
+    div()
+        .relative()
+        .flex()
+        .flex_col()
+        .flex_grow()
+        .min_w_0()
+        .min_h_0()
+        .child(viewport)
+        .when_some(scrollbar, |reader, scrollbar| reader.child(scrollbar))
         .into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
 fn render_block(
+    document: &PreparedDocument,
     block: &DocumentBlock,
-    highlighted: Option<&HighlightedCode>,
-    block_index: usize,
+    block_path: &[usize],
+    parent_list_depth: Option<usize>,
     spacing: BlockSpacing,
     list_marker_visible: bool,
-    document_path: &Path,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let document_path = document.path.as_path();
     let content = match block {
         DocumentBlock::Heading { level, content } => {
             let style = BlockStyle::heading(*level);
+            let debug_selector = format!("reader-block-{block_suffix}");
             div()
                 .id(("reader-block", block_index))
-                .debug_selector(move || format!("reader-block-{block_index}"))
+                .debug_selector(move || debug_selector)
                 .w_full()
                 .min_w_0()
                 .font_weight(FontWeight(style.font_weight as f32))
@@ -843,89 +1095,102 @@ fn render_block(
                 ))
                 .into_any_element()
         }
-        DocumentBlock::Paragraph(content) => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || format!("reader-block-{block_index}"))
-            .w_full()
-            .min_w_0()
-            .child(render_inline(
-                content,
-                document_path,
-                LinkSurfaceKey::block(block_index),
-                400,
-                theme.foreground,
-                theme,
-                link_state,
-                cx,
-            ))
-            .into_any_element(),
+        DocumentBlock::Paragraph(content) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .min_w_0()
+                .child(render_inline(
+                    content,
+                    document_path,
+                    LinkSurfaceKey::block(block_index),
+                    400,
+                    theme.foreground,
+                    theme,
+                    link_state,
+                    cx,
+                ))
+                .into_any_element()
+        }
         DocumentBlock::ListItem {
             kind,
             depth,
-            content,
+            children,
         } => render_list_item(
             kind,
             *depth,
-            content,
+            children,
             list_marker_visible,
-            block_index,
-            document_path,
+            block_path,
+            parent_list_depth,
+            document,
             theme,
+            copied_code,
             link_state,
             cx,
         ),
         DocumentBlock::TaskItem {
             checked,
             depth,
-            content,
+            children,
         } => render_task_item(
             *checked,
             *depth,
-            content,
-            block_index,
-            document_path,
+            children,
+            block_path,
+            parent_list_depth,
+            document,
             theme,
+            copied_code,
             link_state,
             cx,
         ),
-        DocumentBlock::Blockquote(content) => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || format!("reader-block-{block_index}"))
-            .flex()
-            .w_full()
-            .min_w_0()
-            .border_l(px(3.0))
-            .border_color(theme.border)
-            .py(px(6.2))
-            .text_color(theme.muted_foreground)
-            .child(
-                div()
-                    .min_w_0()
-                    .flex_grow()
-                    .px(px(BlockStyle::blockquote().padding[1]))
-                    .child(render_inline(
-                        content,
-                        document_path,
-                        LinkSurfaceKey::block(block_index),
-                        400,
-                        theme.muted_foreground,
-                        theme,
-                        link_state,
-                        cx,
-                    )),
-            )
-            .into_any_element(),
-        DocumentBlock::ThematicBreak => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || format!("reader-block-{block_index}"))
-            .w_full()
-            .child(div().h(px(1.0)).w_full().bg(theme.border))
-            .into_any_element(),
+        DocumentBlock::Blockquote(content) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .flex()
+                .w_full()
+                .min_w_0()
+                .border_l(px(3.0))
+                .border_color(theme.border)
+                .py(px(6.2))
+                .text_color(theme.muted_foreground)
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_grow()
+                        .px(px(BlockStyle::blockquote().padding[1]))
+                        .child(render_inline(
+                            content,
+                            document_path,
+                            LinkSurfaceKey::block(block_index),
+                            400,
+                            theme.muted_foreground,
+                            theme,
+                            link_state,
+                            cx,
+                        )),
+                )
+                .into_any_element()
+        }
+        DocumentBlock::ThematicBreak => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .child(div().h(px(1.0)).w_full().bg(theme.border))
+                .into_any_element()
+        }
         DocumentBlock::CodeBlock { language, code } => render_code_block(
             language.as_deref(),
             code,
-            highlighted,
-            block_index,
+            document.code_block_at(block_path),
+            block_path,
             document_path,
             theme,
             copied_code,
@@ -937,13 +1202,16 @@ fn render_block(
         DocumentBlock::Image { alt, source } => {
             render_image(alt, source, block_index, document_path, theme)
         }
-        DocumentBlock::RawText(text) => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || format!("reader-block-{block_index}"))
-            .w_full()
-            .min_w_0()
-            .child(StyledText::new(text.clone()))
-            .into_any_element(),
+        DocumentBlock::RawText(text) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .min_w_0()
+                .child(StyledText::new(text.clone()))
+                .into_any_element()
+        }
     };
 
     div()
@@ -1231,32 +1499,41 @@ fn text_run(
 fn render_list_item(
     kind: &ListKind,
     depth: usize,
-    content: &[InlineSpan],
+    children: &[DocumentBlock],
     marker_visible: bool,
-    block_index: usize,
-    document_path: &Path,
+    block_path: &[usize],
+    parent_list_depth: Option<usize>,
+    document: &PreparedDocument,
     theme: Theme,
+    copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let block_debug_selector = format!("reader-block-{block_suffix}");
+    let marker_debug_selector = format!("reader-list-marker-{block_suffix}");
     let marker = match kind {
         ListKind::Unordered => unordered_marker(depth).to_owned(),
         ListKind::Ordered { number } => format_ordered_marker(*number, depth),
     };
+    let indentation_depth =
+        parent_list_depth.map_or(depth, |parent_depth| depth.saturating_sub(parent_depth));
     div()
         .id(("reader-block", block_index))
-        .debug_selector(move || format!("reader-block-{block_index}"))
+        .debug_selector(move || block_debug_selector)
         .flex()
         .items_start()
         .w_full()
         .min_w_0()
         .gap(px(if marker_visible { 8.0 } else { 0.0 }))
         .ml(px(
-            depth as f32 * 24.8 + if marker_visible { 0.0 } else { 3.875 }
+            indentation_depth as f32 * 24.8 + if marker_visible { 0.0 } else { 3.875 }
         ))
         .when(marker_visible, |row| {
             row.child(
                 div()
+                    .debug_selector(move || marker_debug_selector)
                     .w(px(18.0))
                     .flex_none()
                     .text_right()
@@ -1264,16 +1541,16 @@ fn render_list_item(
                     .child(marker),
             )
         })
-        .child(div().min_w_0().flex_grow().child(render_inline(
-            content,
-            document_path,
-            LinkSurfaceKey::block(block_index),
-            400,
-            theme.foreground,
+        .child(render_list_children(
+            children,
+            depth,
+            block_path,
+            document,
             theme,
+            copied_code,
             link_state,
             cx,
-        )))
+        ))
         .into_any_element()
 }
 
@@ -1281,14 +1558,23 @@ fn render_list_item(
 fn render_task_item(
     checked: bool,
     depth: usize,
-    content: &[InlineSpan],
-    block_index: usize,
-    document_path: &Path,
+    children: &[DocumentBlock],
+    block_path: &[usize],
+    parent_list_depth: Option<usize>,
+    document: &PreparedDocument,
     theme: Theme,
+    copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let block_debug_selector = format!("reader-block-{block_suffix}");
+    let marker_debug_selector = format!("reader-list-marker-{block_suffix}");
+    let indentation_depth =
+        parent_list_depth.map_or(depth, |parent_depth| depth.saturating_sub(parent_depth));
     let checkbox = div()
+        .debug_selector(move || marker_debug_selector)
         .flex()
         .items_center()
         .justify_center()
@@ -1308,25 +1594,71 @@ fn render_task_item(
         });
     div()
         .id(("reader-block", block_index))
-        .debug_selector(move || format!("reader-block-{block_index}"))
+        .debug_selector(move || block_debug_selector)
         .flex()
         .items_start()
         .w_full()
         .min_w_0()
         .gap(px(8.0))
-        .ml(px(depth as f32 * 24.8))
+        .ml(px(indentation_depth as f32 * 24.8))
         .child(checkbox)
-        .child(div().min_w_0().flex_grow().child(render_inline(
-            content,
-            document_path,
-            LinkSurfaceKey::block(block_index),
-            400,
-            theme.foreground,
+        .child(render_list_children(
+            children,
+            depth,
+            block_path,
+            document,
             theme,
+            copied_code,
             link_state,
             cx,
-        )))
+        ))
         .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_list_children(
+    children: &[DocumentBlock],
+    list_depth: usize,
+    block_path: &[usize],
+    document: &PreparedDocument,
+    theme: Theme,
+    copied_code: Option<(usize, Instant)>,
+    link_state: &ReaderLinkState<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let mut spacing = block_sequence_spacing(children);
+    if let Some(first) = spacing.first_mut() {
+        first.before = 0.0;
+    }
+    if let Some(last) = spacing.last_mut() {
+        last.after = 0.0;
+    }
+
+    let mut column = div().flex().flex_col().min_w_0().flex_grow();
+    for (child_index, child) in children.iter().enumerate() {
+        let mut child_path = block_path.to_vec();
+        child_path.push(child_index);
+        let child_debug_selector = format!("reader-list-child-{}", block_path_suffix(&child_path));
+        column = column.child(
+            div()
+                .debug_selector(move || child_debug_selector)
+                .w_full()
+                .min_w_0()
+                .child(render_block(
+                    document,
+                    child,
+                    &child_path,
+                    Some(list_depth),
+                    spacing[child_index],
+                    list_marker_is_visible(children, child_index),
+                    theme,
+                    copied_code,
+                    link_state,
+                    cx,
+                )),
+        );
+    }
+    column.into_any_element()
 }
 
 fn format_ordered_marker(number: u64, depth: usize) -> String {
@@ -1419,12 +1751,14 @@ fn render_code_block(
     language: Option<&str>,
     code: &str,
     highlighted: Option<&HighlightedCode>,
-    block_index: usize,
+    block_path: &[usize],
     document_path: &Path,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
     let copied = code_copy_feedback_is_active(copied_code, block_index, Instant::now());
     let code_to_copy = code.to_owned();
     let display_language = highlighted
@@ -1438,9 +1772,10 @@ fn render_code_block(
             ))
         })
         .unwrap_or_else(|| StyledText::new(code.to_owned()));
+    let copy_debug_selector = format!("copy-code-{block_suffix}");
     let copy_button = div()
         .id(("copy-code", block_index))
-        .debug_selector(move || format!("copy-code-{block_index}"))
+        .debug_selector(move || copy_debug_selector)
         .tab_index(0)
         .focusable()
         .flex()
@@ -1470,9 +1805,12 @@ fn render_code_block(
             },
             14.0,
         ));
+    let block_debug_selector = format!("reader-block-{block_suffix}");
+    let copied_debug_selector = format!("copied-code-{block_suffix}");
+    let code_debug_selector = format!("reader-code-{block_suffix}");
     div()
         .id(("reader-block", block_index))
-        .debug_selector(move || format!("reader-block-{block_index}"))
+        .debug_selector(move || block_debug_selector)
         .relative()
         .w_full()
         .rounded(px(10.0))
@@ -1504,7 +1842,7 @@ fn render_code_block(
                     row.child(
                         div()
                             .id(("copied-code", block_index))
-                            .debug_selector(move || format!("copied-code-{block_index}"))
+                            .debug_selector(move || copied_debug_selector)
                             .font_family(Metrics::FONT_SANS)
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(px(11.0))
@@ -1520,7 +1858,7 @@ fn render_code_block(
                     "code-scroll",
                     document_scoped_element_id(document_path, "code-scroll", block_index),
                 ))
-                .debug_selector(move || format!("reader-code-{block_index}"))
+                .debug_selector(move || code_debug_selector)
                 .w_full()
                 .overflow_x_scroll()
                 .scrollbar_width(px(6.0))
@@ -1687,13 +2025,19 @@ fn image_fallback(alt: String, theme: Theme, block_index: usize) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::InlineSpan;
+    use crate::document::{InlineSpan, parse_document};
     use crate::syntax::highlight_code;
     use std::time::{Duration, Instant};
     use std::{
         fs,
         path::{Path, PathBuf},
     };
+
+    fn paragraph_children(text: &str) -> Vec<DocumentBlock> {
+        vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+            text.into(),
+        )])]
+    }
 
     #[test]
     fn reader_surface_metrics_match_markdown_css() {
@@ -1705,6 +2049,34 @@ mod tests {
         assert_eq!(BlockStyle::code_block().radius, 10.0);
         assert_eq!(BlockStyle::code_block().padding, [14.0, 18.0]);
         assert_eq!(BlockStyle::table_cell().padding, [10.0, 14.0]);
+    }
+
+    #[test]
+    fn reader_scrollbar_geometry_tracks_viewport_extent_and_offset() {
+        let top = reader_scrollbar_geometry(600.0, 1_400.0, 0.0).expect("overflow thumb");
+        let middle = reader_scrollbar_geometry(600.0, 1_400.0, -700.0).expect("overflow thumb");
+        let bottom = reader_scrollbar_geometry(600.0, 1_400.0, -1_400.0).expect("overflow thumb");
+
+        assert!((top.thumb_height - 177.6).abs() < 0.001);
+        assert_eq!(top.thumb_top, 4.0);
+        assert!((middle.thumb_top - 211.2).abs() < 0.001);
+        assert!((bottom.thumb_top - 418.4).abs() < 0.001);
+        assert!(reader_scrollbar_geometry(600.0, 0.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn reader_scrollbar_pointer_targets_clamp_to_the_scroll_extent() {
+        let geometry = reader_scrollbar_geometry(600.0, 1_400.0, 0.0).expect("overflow thumb");
+
+        assert_eq!(
+            reader_scrollbar_offset_for_pointer(-100.0, 20.0, geometry),
+            0.0
+        );
+        assert!((reader_scrollbar_offset_for_pointer(300.0, 88.8, geometry) + 700.0).abs() < 0.001);
+        assert_eq!(
+            reader_scrollbar_offset_for_pointer(900.0, 20.0, geometry),
+            -1_400.0,
+        );
     }
 
     #[test]
@@ -1873,12 +2245,12 @@ mod tests {
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("one".into())],
+                children: paragraph_children("one"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("two".into())],
+                children: paragraph_children("two"),
             },
         ];
 
@@ -1917,12 +2289,12 @@ mod tests {
             DocumentBlock::TaskItem {
                 checked: true,
                 depth: 0,
-                content: vec![InlineSpan::Text("task".into())],
+                children: paragraph_children("task"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Ordered { number: 1 },
                 depth: 0,
-                content: vec![InlineSpan::Text("ordered".into())],
+                children: paragraph_children("ordered"),
             },
         ];
 
@@ -1937,12 +2309,12 @@ mod tests {
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("first".into())],
+                children: paragraph_children("first"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("second".into())],
+                children: paragraph_children("second"),
             },
         ];
 
@@ -1955,18 +2327,18 @@ mod tests {
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("plain".into())],
+                children: paragraph_children("plain"),
             },
             DocumentBlock::TaskItem {
                 checked: false,
                 depth: 0,
-                content: vec![InlineSpan::Text("task".into())],
+                children: paragraph_children("task"),
             },
         ];
         let plain_group = vec![DocumentBlock::ListItem {
             kind: ListKind::Unordered,
             depth: 0,
-            content: vec![InlineSpan::Text("plain".into())],
+            children: paragraph_children("plain"),
         }];
 
         assert!(!list_marker_is_visible(&mixed_group, 0));
@@ -1979,24 +2351,24 @@ mod tests {
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("parent".into())],
+                children: paragraph_children("parent"),
             },
             DocumentBlock::TaskItem {
                 checked: false,
                 depth: 1,
-                content: vec![InlineSpan::Text("nested task".into())],
+                children: paragraph_children("nested task"),
             },
         ];
         let same_depth_task = vec![
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("plain".into())],
+                children: paragraph_children("plain"),
             },
             DocumentBlock::TaskItem {
                 checked: false,
                 depth: 0,
-                content: vec![InlineSpan::Text("peer task".into())],
+                children: paragraph_children("peer task"),
             },
         ];
 
@@ -2010,29 +2382,29 @@ mod tests {
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("parent".into())],
+                children: paragraph_children("parent"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 1,
-                content: vec![InlineSpan::Text("nested".into())],
+                children: paragraph_children("nested"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("parent peer".into())],
+                children: paragraph_children("parent peer"),
             },
         ];
         let same_depth = vec![
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("first".into())],
+                children: paragraph_children("first"),
             },
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
                 depth: 0,
-                content: vec![InlineSpan::Text("second".into())],
+                children: paragraph_children("second"),
             },
         ];
 
@@ -2071,6 +2443,10 @@ mod tests {
             LinkRoute::Local(PathBuf::from("/vault/images/hero.png")),
         );
         assert_eq!(
+            classify_link(document, "chapter%20one.md?mode=reader#details"),
+            LinkRoute::Markdown(PathBuf::from("/vault/guides/chapter one.md")),
+        );
+        assert_eq!(
             classify_link(document, "https://mdow.dev/docs"),
             LinkRoute::Web("https://mdow.dev/docs".into()),
         );
@@ -2086,12 +2462,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let document = directory.path().join("guide.md");
         let image = directory.path().join("images/hero.PNG");
+        let encoded_image = directory.path().join("images/hero shot.PNG");
         fs::create_dir(image.parent().unwrap()).unwrap();
         fs::write(&image, b"not decoded by this pure path test").unwrap();
+        fs::write(&encoded_image, b"not decoded by this pure path test").unwrap();
 
         assert_eq!(
             resolve_image_target(&document, "images/hero.PNG"),
             Some(image),
+        );
+        assert_eq!(
+            resolve_image_target(&document, "images/hero%20shot.PNG?raw=1#preview"),
+            Some(encoded_image),
         );
         assert_eq!(resolve_image_target(&document, "images/missing.png"), None);
         assert_eq!(resolve_image_target(&document, "images/readme.txt"), None);
@@ -2099,6 +2481,25 @@ mod tests {
             resolve_image_target(&document, "https://mdow.dev/hero.png"),
             None
         );
+    }
+
+    #[test]
+    fn showcase_local_link_and_image_resolve_to_real_fixture_files() {
+        let fixture_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let document = fixture_directory.join("showcase.md");
+        let guide = fixture_directory.join("guide.md");
+        let image = fixture_directory.join("images/preview.png");
+
+        assert_eq!(
+            classify_link(&document, "./guide.md"),
+            LinkRoute::Markdown(guide.clone()),
+        );
+        assert!(guide.is_file());
+        assert_eq!(
+            resolve_image_target(&document, "./images/preview.png"),
+            Some(image.clone()),
+        );
+        assert!(image.is_file());
     }
 
     #[test]
@@ -2206,6 +2607,26 @@ mod tests {
                 },
             ],
         );
+    }
+
+    #[test]
+    fn list_child_links_keep_source_order_and_distinct_focus_surfaces() {
+        let document = parse_document(
+            PathBuf::from("/tmp/list-links.md"),
+            "- [before](before.md)\n\n  ```rust\n  let n = 1;\n  ```\n\n  [after](after.md)\n"
+                .into(),
+        );
+
+        let targets = document_link_focus_targets(&document);
+
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| target.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["before.md", "after.md"],
+        );
+        assert_ne!(targets[0].key.surface, targets[1].key.surface);
     }
 
     #[test]

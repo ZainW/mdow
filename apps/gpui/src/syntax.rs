@@ -83,6 +83,23 @@ mod tests {
         assert!(prepared.code_block(1).is_some());
         assert!(prepared.code_block(0).is_none());
     }
+
+    #[test]
+    fn prepares_highlighted_code_nested_inside_one_list_item() {
+        let document = parse_document(
+            PathBuf::from("/tmp/list-code.md"),
+            "- before\n\n  ```rust\n  let answer = 42;\n  ```\n\n  after\n".into(),
+        );
+        let prepared = prepare_document(document);
+
+        let highlighted = prepared
+            .code_block_at(&[0, 1])
+            .expect("nested fenced code should be prepared");
+        assert_eq!(highlighted.text, "let answer = 42;\n");
+        assert!(highlighted.light_runs.len() > 1);
+        assert!(highlighted.dark_runs.len() > 1);
+        assert!(prepared.code_block(1).is_none());
+    }
 }
 
 use crate::document::{DocumentBlock, ParsedDocument};
@@ -121,7 +138,7 @@ pub struct HighlightedCode {
 #[derive(Debug, Clone)]
 pub struct PreparedDocument {
     parsed: ParsedDocument,
-    code_blocks: HashMap<usize, HighlightedCode>,
+    code_blocks: HashMap<Vec<usize>, HighlightedCode>,
 }
 
 impl Deref for PreparedDocument {
@@ -141,7 +158,11 @@ impl PreparedDocument {
     }
 
     pub fn code_block(&self, block_index: usize) -> Option<&HighlightedCode> {
-        self.code_blocks.get(&block_index)
+        self.code_block_at(&[block_index])
+    }
+
+    pub fn code_block_at(&self, block_path: &[usize]) -> Option<&HighlightedCode> {
+        self.code_blocks.get(block_path)
     }
 
     pub(crate) fn set_path(&mut self, path: std::path::PathBuf) {
@@ -338,19 +359,33 @@ pub fn highlight_code(language: Option<&str>, code: &str) -> HighlightedCode {
 }
 
 pub fn prepare_document(parsed: ParsedDocument) -> PreparedDocument {
-    let code_blocks = parsed
-        .blocks
-        .iter()
-        .enumerate()
-        .filter_map(|(index, block)| match block {
-            DocumentBlock::CodeBlock { language, code } => {
-                Some((index, highlight_code(language.as_deref(), code)))
-            }
-            _ => None,
-        })
-        .collect();
+    let mut code_blocks = HashMap::new();
+    collect_code_blocks(&parsed.blocks, &mut Vec::new(), &mut code_blocks);
     PreparedDocument {
         parsed,
         code_blocks,
+    }
+}
+
+fn collect_code_blocks(
+    blocks: &[DocumentBlock],
+    parent_path: &mut Vec<usize>,
+    code_blocks: &mut HashMap<Vec<usize>, HighlightedCode>,
+) {
+    for (index, block) in blocks.iter().enumerate() {
+        parent_path.push(index);
+        match block {
+            DocumentBlock::CodeBlock { language, code } => {
+                code_blocks.insert(
+                    parent_path.clone(),
+                    highlight_code(language.as_deref(), code),
+                );
+            }
+            DocumentBlock::ListItem { children, .. } | DocumentBlock::TaskItem { children, .. } => {
+                collect_code_blocks(children, parent_path, code_blocks);
+            }
+            _ => {}
+        }
+        parent_path.pop();
     }
 }

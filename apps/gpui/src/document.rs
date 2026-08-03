@@ -144,12 +144,12 @@ pub enum DocumentBlock {
     ListItem {
         kind: ListKind,
         depth: usize,
-        content: Vec<InlineSpan>,
+        children: Vec<DocumentBlock>,
     },
     TaskItem {
         checked: bool,
         depth: usize,
-        content: Vec<InlineSpan>,
+        children: Vec<DocumentBlock>,
     },
     Blockquote(Vec<InlineSpan>),
     ThematicBreak,
@@ -170,9 +170,10 @@ impl DocumentBlock {
         match self {
             Self::Heading { content, .. }
             | Self::Paragraph(content)
-            | Self::Blockquote(content)
-            | Self::ListItem { content, .. }
-            | Self::TaskItem { content, .. } => plain_text_for_spans(content),
+            | Self::Blockquote(content) => plain_text_for_spans(content),
+            Self::ListItem { children, .. } | Self::TaskItem { children, .. } => {
+                plain_text_for_blocks(children)
+            }
             Self::ThematicBreak => String::new(),
             Self::CodeBlock { code, .. } => code.clone(),
             Self::Table(table) => table.plain_text(),
@@ -281,54 +282,32 @@ struct ItemContext {
     kind: ListKind,
     depth: usize,
     checked: Option<bool>,
-    content: Vec<InlineSpan>,
-    parts: Vec<ItemPart>,
-}
-
-#[derive(Debug)]
-enum ItemPart {
-    Content(Vec<InlineSpan>),
-    Block(DocumentBlock),
+    children: Vec<DocumentBlock>,
 }
 
 impl ItemContext {
     fn push_content(&mut self, content: Vec<InlineSpan>) {
         if !content.is_empty() {
-            append_inline_content(&mut self.content, content);
+            self.children.push(DocumentBlock::Paragraph(content));
         }
     }
 
     fn push_block(&mut self, block: DocumentBlock) {
-        self.flush_content();
-        self.parts.push(ItemPart::Block(block));
+        self.children.push(block);
     }
 
-    fn into_blocks(mut self) -> Vec<DocumentBlock> {
-        self.flush_content();
-        self.parts
-            .into_iter()
-            .map(|part| match part {
-                ItemPart::Content(content) => match self.checked {
-                    Some(checked) => DocumentBlock::TaskItem {
-                        checked,
-                        depth: self.depth,
-                        content,
-                    },
-                    None => DocumentBlock::ListItem {
-                        kind: self.kind.clone(),
-                        depth: self.depth,
-                        content,
-                    },
-                },
-                ItemPart::Block(block) => block,
-            })
-            .collect()
-    }
-
-    fn flush_content(&mut self) {
-        if !self.content.is_empty() {
-            self.parts
-                .push(ItemPart::Content(std::mem::take(&mut self.content)));
+    fn into_block(self) -> DocumentBlock {
+        match self.checked {
+            Some(checked) => DocumentBlock::TaskItem {
+                checked,
+                depth: self.depth,
+                children: self.children,
+            },
+            None => DocumentBlock::ListItem {
+                kind: self.kind,
+                depth: self.depth,
+                children: self.children,
+            },
         }
     }
 }
@@ -553,8 +532,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     kind,
                     depth,
                     checked: None,
-                    content: Vec::new(),
-                    parts: Vec::new(),
+                    children: Vec::new(),
                 });
                 push_inline_frame(&mut inline_stack, InlineContainer::Flatten);
             }
@@ -563,16 +541,12 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     item.push_content(frame.into_spans());
                 }
                 if let Some(item) = item_stack.pop() {
-                    let item_blocks = item.into_blocks();
+                    let item_block = item.into_block();
                     if let Some(parent) = item_stack.last_mut() {
                         flush_item_inline_frame(&mut inline_stack, parent);
-                        for block in item_blocks {
-                            parent.push_block(block);
-                        }
+                        parent.push_block(item_block);
                     } else {
-                        for block in item_blocks {
-                            push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
-                        }
+                        push_block(item_block, &mut blocks, &mut item_stack, &mut blockquotes);
                     }
                 }
             }
@@ -711,12 +685,14 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
 
 /// Resolves a local Markdown target without checking whether it exists on disk.
 pub fn resolve_local_target(document_path: &Path, target: &str) -> Option<PathBuf> {
-    let target = target.split('#').next().unwrap_or_default();
+    let path_end = target.find(['?', '#']).unwrap_or(target.len());
+    let target = &target[..path_end];
     if target.is_empty() || has_uri_scheme(target) {
         return None;
     }
+    let target = percent_decode_url_path(target)?;
 
-    let path = Path::new(target);
+    let path = Path::new(&target);
     let joined = if path.is_absolute() {
         path.to_owned()
     } else {
@@ -726,6 +702,40 @@ pub fn resolve_local_target(document_path: &Path, target: &str) -> Option<PathBu
             .join(path)
     };
     Some(normalize_lexically(&joined))
+}
+
+fn percent_decode_url_path(target: &str) -> Option<String> {
+    let bytes = target.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+
+        let high = hex_value(*bytes.get(index + 1)?)?;
+        let low = hex_value(*bytes.get(index + 2)?)?;
+        let byte = high * 16 + low;
+        if matches!(byte, 0 | b'/' | b'\\') {
+            return None;
+        }
+        decoded.push(byte);
+        index += 3;
+    }
+
+    String::from_utf8(decoded).ok()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn push_paragraph_content(
@@ -849,6 +859,15 @@ fn plain_text_for_spans(spans: &[InlineSpan]) -> String {
     spans.iter().map(InlineSpan::plain_text).collect()
 }
 
+fn plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
+    blocks
+        .iter()
+        .map(DocumentBlock::plain_text)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn has_uri_scheme(target: &str) -> bool {
     let Some((scheme, _)) = target.split_once(':') else {
         return false;
@@ -958,7 +977,9 @@ mod tests {
             DocumentBlock::TaskItem {
                 checked: true,
                 depth: 0,
-                content: vec![InlineSpan::Text("Done".into())],
+                children: vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                    "Done".into()
+                )])],
             }
         );
         assert_eq!(
@@ -994,7 +1015,24 @@ mod tests {
     }
 
     #[test]
-    fn emits_nested_list_items_after_their_parent() {
+    fn resolves_percent_encoded_url_paths_without_decoding_separators() {
+        let document = Path::new("/vault/guides/start.md");
+
+        assert_eq!(
+            resolve_local_target(document, "../images/hero%20shot.png?raw=1#preview"),
+            Some(PathBuf::from("/vault/images/hero shot.png")),
+        );
+        assert_eq!(
+            resolve_local_target(document, "caf%C3%A9.md"),
+            Some(PathBuf::from("/vault/guides/café.md")),
+        );
+        assert_eq!(resolve_local_target(document, "bad%2.md"), None);
+        assert_eq!(resolve_local_target(document, "..%2Fsecret.md"), None);
+        assert_eq!(resolve_local_target(document, "..%5Csecret.md"), None);
+    }
+
+    #[test]
+    fn preserves_nested_list_items_inside_their_parent() {
         let parsed = parse_document(
             PathBuf::from("/tmp/list.md"),
             "- Parent\n  - Child\n".into(),
@@ -1002,19 +1040,49 @@ mod tests {
 
         assert_eq!(
             parsed.blocks,
-            vec![
-                DocumentBlock::ListItem {
-                    kind: ListKind::Unordered,
-                    depth: 0,
-                    content: vec![InlineSpan::Text("Parent".into())],
-                },
-                DocumentBlock::ListItem {
-                    kind: ListKind::Unordered,
-                    depth: 1,
-                    content: vec![InlineSpan::Text("Child".into())],
-                },
-            ]
+            vec![DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                children: vec![
+                    DocumentBlock::Paragraph(vec![InlineSpan::Text("Parent".into())]),
+                    DocumentBlock::ListItem {
+                        kind: ListKind::Unordered,
+                        depth: 1,
+                        children: vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                            "Child".into()
+                        )])],
+                    },
+                ],
+            }]
         );
+    }
+
+    #[test]
+    fn structured_lists_preserve_ordered_numbers() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/ordered-list.md"),
+            "3. Third\n4. Fourth\n".into(),
+        );
+
+        let DocumentBlock::ListItem {
+            kind: ListKind::Ordered { number: first },
+            depth: first_depth,
+            ..
+        } = &parsed.blocks[0]
+        else {
+            panic!("first ordered item");
+        };
+        let DocumentBlock::ListItem {
+            kind: ListKind::Ordered { number: second },
+            depth: second_depth,
+            ..
+        } = &parsed.blocks[1]
+        else {
+            panic!("second ordered item");
+        };
+
+        assert_eq!((*first, *first_depth), (3, 0));
+        assert_eq!((*second, *second_depth), (4, 0));
     }
 
     #[test]
@@ -1087,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_interleaved_list_content_and_code_order() {
+    fn preserves_one_list_item_around_ordered_paragraph_code_paragraph_children() {
         let parsed = parse_document(
             PathBuf::from("/tmp/interleaved-list.md"),
             "- before\n\n  ```rust\n  let n = 1;\n  ```\n\n  after\n".into(),
@@ -1095,22 +1163,26 @@ mod tests {
 
         assert_eq!(
             parsed.blocks,
-            vec![
-                DocumentBlock::ListItem {
-                    kind: ListKind::Unordered,
-                    depth: 0,
-                    content: vec![InlineSpan::Text("before".into())],
-                },
-                DocumentBlock::CodeBlock {
-                    language: Some("rust".into()),
-                    code: "let n = 1;\n".into(),
-                },
-                DocumentBlock::ListItem {
-                    kind: ListKind::Unordered,
-                    depth: 0,
-                    content: vec![InlineSpan::Text("after".into())],
-                },
-            ]
+            vec![DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                children: vec![
+                    DocumentBlock::Paragraph(vec![InlineSpan::Text("before".into())]),
+                    DocumentBlock::CodeBlock {
+                        language: Some("rust".into()),
+                        code: "let n = 1;\n".into(),
+                    },
+                    DocumentBlock::Paragraph(vec![InlineSpan::Text("after".into())]),
+                ],
+            }]
+        );
+        assert_eq!(
+            parsed
+                .blocks
+                .iter()
+                .filter(|block| matches!(block, DocumentBlock::ListItem { .. }))
+                .count(),
+            1,
         );
         assert_eq!(parsed.plain_text(), "before\nlet n = 1;\n\nafter");
     }
