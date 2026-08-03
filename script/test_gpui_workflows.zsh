@@ -12,6 +12,8 @@ PACKAGE_JSON="$ROOT_DIR/package.json"
 
 ruby - "$WORKFLOW" "$PACKAGE_JSON" <<'RUBY'
 require 'json'
+require 'fileutils'
+require 'tmpdir'
 require 'yaml'
 
 workflow_path, package_json_path = ARGV
@@ -20,6 +22,22 @@ def assert(condition, message)
   return if condition
 
   abort("FAIL: #{message}")
+end
+
+def archive_check_succeeds?(command, archives)
+  Dir.mktmpdir('mdow-gpui-workflow-test') do |root|
+    archives.each do |archive|
+      path = File.join(root, archive)
+      FileUtils.mkdir_p(File.dirname(path))
+      FileUtils.touch(path)
+    end
+
+    Dir.chdir(root) do
+      system(
+        'bash', '-e', '-u', '-o', 'pipefail', '-c', command, out: File::NULL, err: File::NULL,
+      )
+    end
+  end
 end
 
 workflow = YAML.load_file(workflow_path)
@@ -109,6 +127,27 @@ assert(
 
 artifact = steps.find { |step| step['uses'] == 'actions/upload-artifact@v4' }
 assert(!artifact.nil?, 'verify must upload a package artifact')
+archive_check = steps.find { |step| step['name'] == 'Verify expected GPUI package ZIPs' }
+assert(!archive_check.nil?, 'verify must check both expected package ZIPs before upload')
+assert(
+  steps.index(archive_check) < steps.index(artifact),
+  'verify must check both expected package ZIPs before uploading artifacts',
+)
+archive_check_command = archive_check.fetch('run')
+versioned_archive = 'dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip'
+alias_archive = 'dist/gpui-mac/MdowNative-mac-beta.zip'
+{
+  'no archives' => [[], false],
+  'versioned archive only' => [[versioned_archive], false],
+  'alias archive only' => [[alias_archive], false],
+  'both expected archives' => [[versioned_archive, alias_archive], true],
+}.each do |layout, (archives, expected_success)|
+  actual_success = archive_check_succeeds?(archive_check_command, archives)
+  assert(
+    actual_success == expected_success,
+    "package archive check must #{expected_success ? 'pass' : 'fail'} with #{layout}",
+  )
+end
 assert(artifact.dig('with', 'name') == 'mdow-native-ci-arm64', 'artifact name must be mdow-native-ci-arm64')
 assert(artifact.dig('with', 'path') == 'dist/gpui-mac/*.zip', 'artifact path must be dist/gpui-mac/*.zip')
 assert(artifact.dig('with', 'if-no-files-found') == 'error', 'artifact must fail when ZIP files are absent')

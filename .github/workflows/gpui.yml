@@ -58,6 +58,11 @@ jobs:
         env:
           CI: 'false'
 
+      - name: Verify expected GPUI package ZIPs
+        run: |
+          test -f dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip
+          test -f dist/gpui-mac/MdowNative-mac-beta.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: mdow-native-ci-arm64
