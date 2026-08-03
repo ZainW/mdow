@@ -47,6 +47,79 @@ def archive_check_succeeds?(command, archives, environment = {})
   end
 end
 
+def package_smoke_creates_expected_archives?(command, environment)
+  Dir.mktmpdir('mdow-gpui-release-smoke-test') do |root|
+    fake_bin = File.join(root, 'bin')
+    FileUtils.mkdir_p(fake_bin)
+    fake_pnpm = File.join(fake_bin, 'pnpm')
+    File.write(
+      fake_pnpm,
+      <<~'BASH',
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$*" == "run package:gpui-mac-beta" ]]
+        [[ "$VERSION" == "0.0.0-ci" ]]
+        [[ "$CI" == "false" ]]
+        mkdir -p dist/gpui-mac
+        touch dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip
+        touch dist/gpui-mac/MdowNative-mac-beta.zip
+      BASH
+    )
+    FileUtils.chmod(0o755, fake_pnpm)
+
+    smoke_environment = environment.transform_values(&:to_s).merge(
+      'PATH' => "#{fake_bin}:#{ENV.fetch('PATH')}",
+    )
+    succeeded = Dir.chdir(root) do
+      system(
+        smoke_environment,
+        'bash', '-e', '-u', '-o', 'pipefail', '-c', command,
+        out: File::NULL, err: File::NULL,
+      )
+    end
+    expected_archives = [
+      'dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip',
+      'dist/gpui-mac/MdowNative-mac-beta.zip',
+    ]
+    succeeded && expected_archives.all? { |archive| File.file?(File.join(root, archive)) }
+  end
+end
+
+def cleanup_deletes_configured_keychain?(command, keychain_template)
+  return false unless keychain_template.is_a?(String)
+
+  Dir.mktmpdir('mdow-gpui-keychain-cleanup-test') do |root|
+    runner_temp = File.join(root, 'runner-temp')
+    fake_bin = File.join(root, 'bin')
+    FileUtils.mkdir_p([runner_temp, fake_bin])
+    security_log = File.join(root, 'security.log')
+    fake_security = File.join(fake_bin, 'security')
+    File.write(
+      fake_security,
+      <<~'BASH',
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf '%s\n' "$*" > "$FAKE_SECURITY_LOG"
+      BASH
+    )
+    FileUtils.chmod(0o755, fake_security)
+
+    keychain_path = keychain_template.sub('${{ runner.temp }}', runner_temp)
+    succeeded = system(
+      {
+        'FAKE_SECURITY_LOG' => security_log,
+        'KEYCHAIN_PATH' => keychain_path,
+        'PATH' => "#{fake_bin}:#{ENV.fetch('PATH')}",
+        'RUNNER_TEMP' => runner_temp,
+      },
+      'bash', '-e', '-u', '-o', 'pipefail', '-c', command,
+      out: File::NULL, err: File::NULL,
+    )
+    succeeded && File.file?(security_log) &&
+      File.read(security_log).strip == "delete-keychain #{keychain_path}"
+  end
+end
+
 workflow = YAML.load_file(workflow_path)
 assert(workflow.is_a?(Hash), 'workflow must parse to a mapping')
 
@@ -231,6 +304,9 @@ release_gate_commands = [
   'cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check',
   'cargo test --locked --manifest-path apps/gpui/Cargo.toml',
   'cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings',
+  'cargo build --release --locked --manifest-path apps/gpui/Cargo.toml',
+  'pnpm run test:package:gpui-mac-beta',
+  'VERSION=0.0.0-ci pnpm run package:gpui-mac-beta',
 ]
 release_gate_positions = release_gate_commands.map do |command|
   position = gpui_steps.index { |step| step['run'] == command }
@@ -239,15 +315,38 @@ release_gate_positions = release_gate_commands.map do |command|
 end
 assert(
   release_gate_positions == release_gate_positions.sort,
-  'gpui-mac-beta must run formatting, tests, and lint in order',
+  'gpui-mac-beta must run the complete GPUI verification and package preflight in order',
+)
+release_pnpm = gpui_steps.find { |step| step['uses'] == 'pnpm/action-setup@v6' }
+assert(!release_pnpm.nil?, 'gpui-mac-beta package preflights must set up pnpm')
+release_node = gpui_steps.find { |step| step['uses'] == 'actions/setup-node@v6' }
+assert(!release_node.nil?, 'gpui-mac-beta package preflights must set up Node')
+assert(
+  gpui_steps.index(release_pnpm) < release_gate_positions.fetch(-2) &&
+    gpui_steps.index(release_node) < release_gate_positions.fetch(-2),
+  'gpui-mac-beta must set up pnpm and Node before package preflights',
+)
+release_smoke = gpui_steps.fetch(release_gate_positions.last)
+assert(
+  release_smoke.dig('env', 'CI') == 'false',
+  'gpui-mac-beta package smoke must explicitly use ad-hoc CI=false signing',
+)
+assert(
+  package_smoke_creates_expected_archives?(release_smoke.fetch('run'), release_smoke.fetch('env')),
+  'gpui-mac-beta package smoke must run with CI=false and create both non-release ZIPs',
 )
 
 gpui_certificate = gpui_steps.find { |step| step['name'] == 'Import Apple signing certificate' }
 assert(!gpui_certificate.nil?, 'gpui-mac-beta must import the Apple signing certificate')
+gpui_keychain_path = gpui_certificate.dig('env', 'KEYCHAIN_PATH')
+assert(
+  gpui_keychain_path == '${{ runner.temp }}/gpui-mac-signing.keychain-db',
+  'gpui-mac-beta must define its keychain path before certificate setup starts',
+)
 gpui_certificate_command = gpui_certificate.fetch('run')
 assert(
-  gpui_certificate_command.include?('KEYCHAIN_PATH=$RUNNER_TEMP/gpui-mac-signing.keychain-db'),
-  'gpui-mac-beta must use an explicit temporary keychain',
+  gpui_certificate_command.include?('security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"'),
+  'gpui-mac-beta certificate setup must use the step-scoped temporary keychain',
 )
 assert(
   gpui_certificate_command.include?('echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"'),
@@ -277,6 +376,10 @@ assert(
   !gpui_package.fetch('env').key?('NATIVE_MAC_CODESIGN_IDENTITY') &&
     !gpui_package.fetch('env').key?('CSC_NAME'),
   'gpui-mac-beta must discover its Developer ID identity from KEYCHAIN_PATH',
+)
+assert(
+  gpui_package.dig('env', 'KEYCHAIN_PATH') == gpui_keychain_path,
+  'gpui-mac-beta packaging must use the same explicit keychain as certificate setup',
 )
 assert(
   release_gate_positions.last < gpui_steps.index(gpui_certificate) &&
@@ -334,6 +437,18 @@ assert(
 )
 gpui_cleanup = gpui_steps.find { |step| step['name'] == 'Clean up keychain' }
 assert(!gpui_cleanup.nil?, 'gpui-mac-beta must keep keychain cleanup')
+assert(gpui_cleanup['if'] == '${{ always() }}', 'gpui-mac-beta keychain cleanup must always run')
+assert(
+  gpui_cleanup.dig('env', 'KEYCHAIN_PATH') == gpui_keychain_path,
+  'gpui-mac-beta cleanup must receive the same explicit keychain as certificate setup',
+)
+assert(
+  cleanup_deletes_configured_keychain?(
+    gpui_cleanup.fetch('run'),
+    gpui_cleanup.dig('env', 'KEYCHAIN_PATH'),
+  ),
+  'gpui-mac-beta cleanup must resolve the step-scoped keychain without a completed import',
+)
 
 publish_needs = release_jobs.fetch('publish').fetch('needs')
 assert(
