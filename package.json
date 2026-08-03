@@ -7,6 +7,7 @@
     "build": "turbo build",
     "package:gpui-mac-beta": "bash script/package_gpui_mac_beta.sh",
     "test:package:gpui-mac-beta": "zsh script/test_package_gpui_mac_beta.zsh",
+    "test:gpui-workflows": "zsh script/test_gpui_workflows.zsh",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "fmt": "turbo fmt",
