@@ -1,7 +1,4 @@
-use crate::{
-    document::ParsedDocument,
-    syntax::PreparedDocument,
-};
+use crate::{document::ParsedDocument, syntax::PreparedDocument};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -174,12 +171,13 @@ mod tests {
 
         assert!(tabs.replace_prepared(replacement));
         assert_eq!(tabs.active().unwrap().path(), Path::new("/tmp/b.md"));
-        assert!(tabs
-            .get(Path::new("/tmp/a.md"))
-            .unwrap()
-            .document
-            .code_block(0)
-            .is_some());
+        assert!(
+            tabs.get(Path::new("/tmp/a.md"))
+                .unwrap()
+                .document
+                .code_block(0)
+                .is_some()
+        );
     }
 
     #[test]

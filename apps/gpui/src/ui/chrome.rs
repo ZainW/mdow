@@ -98,7 +98,7 @@ pub fn render_sidebar(
         .py(px(4.0));
 
     if rows.is_empty() {
-        tree = tree.child(
+        let empty_state = if workspace.is_some() {
             div()
                 .px(px(12.0))
                 .pt(px(36.0))
@@ -107,12 +107,41 @@ pub fn render_sidebar(
                 .text_size(px(12.0))
                 .line_height(px(18.0))
                 .text_color(theme.muted_foreground)
-                .child(if workspace.is_some() {
-                    "No Markdown files in this folder."
-                } else {
-                    "Open a folder to browse its Markdown files."
-                }),
-        );
+                .child("No Markdown files in this folder.")
+                .into_any_element()
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .pt(px(36.0))
+                .px(px(20.0))
+                .child(icon(
+                    "icons/folder.svg",
+                    theme.muted_foreground.opacity(0.55),
+                    22.0,
+                ))
+                .child(
+                    div()
+                        .mt(px(10.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(px(13.0))
+                        .text_color(theme.foreground)
+                        .child("No folder open"),
+                )
+                .child(
+                    div()
+                        .mt(px(6.0))
+                        .max_w(px(190.0))
+                        .text_center()
+                        .text_size(px(12.0))
+                        .line_height(px(18.0))
+                        .text_color(theme.muted_foreground)
+                        .child("Open or drop a folder to browse its Markdown files."),
+                )
+                .into_any_element()
+        };
+        tree = tree.child(empty_state);
     } else {
         for (index, row) in rows.into_iter().enumerate() {
             let is_active = row.kind == WorkspaceEntryKind::File
@@ -130,11 +159,7 @@ pub fn render_sidebar(
             let row_path = row.path.clone();
             let click_path = row.path.clone();
             let directory = row.kind == WorkspaceEntryKind::Directory;
-            let disclosure_icon = if row.expanded {
-                "icons/chevron-right.svg"
-            } else {
-                "icons/chevron-right.svg"
-            };
+            let disclosure_icon = "icons/chevron-right.svg";
 
             let disclosure = div()
                 .id(("workspace-disclosure", index))
@@ -332,10 +357,11 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .id("tabs-scroll")
         .debug_selector(|| "tabs-scroll".into())
         .flex()
-        .items_center()
+        .items_start()
         .min_w_0()
         .flex_grow()
         .h_full()
+        .pt(px(4.0))
         .gap(px(Metrics::TAB_GAP))
         .px(px(Metrics::TAB_LIST_INSET))
         .overflow_x_scroll()
@@ -465,6 +491,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         ));
 
     div()
+        .debug_selector(|| "tab-bar".into())
         .flex()
         .items_center()
         .h(px(Metrics::TAB_BAR_HEIGHT))

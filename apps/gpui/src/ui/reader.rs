@@ -596,11 +596,51 @@ struct BlockMargins {
     bottom: f32,
 }
 
-fn is_list_block(block: &DocumentBlock) -> bool {
-    matches!(
-        block,
-        DocumentBlock::ListItem { .. } | DocumentBlock::TaskItem { .. }
-    )
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListGroup {
+    Unordered,
+    Ordered,
+}
+
+fn list_group(block: &DocumentBlock) -> Option<ListGroup> {
+    match block {
+        DocumentBlock::ListItem {
+            kind: ListKind::Ordered { .. },
+            ..
+        } => Some(ListGroup::Ordered),
+        DocumentBlock::ListItem {
+            kind: ListKind::Unordered,
+            ..
+        }
+        | DocumentBlock::TaskItem { .. } => Some(ListGroup::Unordered),
+        _ => None,
+    }
+}
+
+fn list_marker_is_visible(blocks: &[DocumentBlock], block_index: usize) -> bool {
+    if !matches!(
+        blocks.get(block_index),
+        Some(DocumentBlock::ListItem {
+            kind: ListKind::Unordered,
+            ..
+        })
+    ) {
+        return true;
+    }
+
+    let group_start = (0..block_index)
+        .rev()
+        .take_while(|index| list_group(&blocks[*index]) == Some(ListGroup::Unordered))
+        .last()
+        .unwrap_or(block_index);
+    let group_end = (block_index + 1..blocks.len())
+        .take_while(|index| list_group(&blocks[*index]) == Some(ListGroup::Unordered))
+        .last()
+        .map_or(block_index + 1, |index| index + 1);
+
+    !blocks[group_start..group_end]
+        .iter()
+        .any(|block| matches!(block, DocumentBlock::TaskItem { .. }))
 }
 
 fn block_margins(
@@ -608,14 +648,14 @@ fn block_margins(
     previous: Option<&DocumentBlock>,
     next: Option<&DocumentBlock>,
 ) -> BlockMargins {
-    if is_list_block(block) {
+    if let Some(group) = list_group(block) {
         return BlockMargins {
-            top: if previous.is_some_and(is_list_block) {
-                3.875
+            top: if previous.and_then(list_group) == Some(group) {
+                15.5 * 0.35
             } else {
                 15.5
             },
-            bottom: if next.is_some_and(is_list_block) {
+            bottom: if next.and_then(list_group) == Some(group) {
                 3.875
             } else {
                 15.5
@@ -680,9 +720,11 @@ pub fn block_sequence_spacing(blocks: &[DocumentBlock]) -> Vec<BlockSpacing> {
             } else {
                 margin.top
             },
-            after: (index + 1 == margins.len())
-                .then_some(margin.bottom)
-                .unwrap_or(0.0),
+            after: if index + 1 == margins.len() {
+                margin.bottom
+            } else {
+                0.0
+            },
         })
         .collect()
 }
@@ -727,6 +769,7 @@ pub fn render_document(
             document.code_block(block_index),
             block_index,
             spacing[block_index],
+            list_marker_is_visible(&document.blocks, block_index),
             &document.path,
             theme,
             copied_code,
@@ -757,6 +800,7 @@ fn render_block(
     highlighted: Option<&HighlightedCode>,
     block_index: usize,
     spacing: BlockSpacing,
+    list_marker_visible: bool,
     document_path: &Path,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
@@ -820,6 +864,7 @@ fn render_block(
             kind,
             *depth,
             content,
+            list_marker_visible,
             block_index,
             document_path,
             theme,
@@ -846,15 +891,10 @@ fn render_block(
             .flex()
             .w_full()
             .min_w_0()
+            .border_l(px(3.0))
+            .border_color(theme.border)
             .py(px(6.2))
             .text_color(theme.muted_foreground)
-            .child(
-                div()
-                    .w(px(3.0))
-                    .flex_none()
-                    .rounded(px(1.5))
-                    .bg(theme.border),
-            )
             .child(
                 div()
                     .min_w_0()
@@ -1081,6 +1121,7 @@ fn render_inline_layout(
     surface_element.into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_runs(
     layout: &InlineLayout,
     active_links: &[InlineLink],
@@ -1144,6 +1185,7 @@ fn text_runs(
     runs
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_run(
     len: usize,
     weight: u16,
@@ -1187,6 +1229,7 @@ fn render_list_item(
     kind: &ListKind,
     depth: usize,
     content: &[InlineSpan],
+    marker_visible: bool,
     block_index: usize,
     document_path: &Path,
     theme: Theme,
@@ -1204,16 +1247,20 @@ fn render_list_item(
         .items_start()
         .w_full()
         .min_w_0()
-        .gap(px(8.0))
-        .ml(px(depth as f32 * 24.8))
-        .child(
-            div()
-                .w(px(18.0))
-                .flex_none()
-                .text_right()
-                .text_color(theme.muted_foreground)
-                .child(marker),
-        )
+        .gap(px(if marker_visible { 8.0 } else { 0.0 }))
+        .ml(px(
+            depth as f32 * 24.8 + if marker_visible { 0.0 } else { 3.875 }
+        ))
+        .when(marker_visible, |row| {
+            row.child(
+                div()
+                    .w(px(18.0))
+                    .flex_none()
+                    .text_right()
+                    .text_color(theme.muted_foreground)
+                    .child(marker),
+            )
+        })
         .child(div().min_w_0().flex_grow().child(render_inline(
             content,
             document_path,
@@ -1364,6 +1411,7 @@ fn highlighted_text_runs(highlighted: &HighlightedCode, dark: bool) -> Vec<TextR
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_code_block(
     language: Option<&str>,
     code: &str,
@@ -1575,6 +1623,7 @@ fn render_table(
         .rounded(px(8.0))
         .border_1()
         .border_color(theme.border)
+        .overflow_hidden()
         .overflow_x_scroll()
         .map(restrict_scroll_to_axis)
         .scrollbar_width(px(6.0))
@@ -1644,10 +1693,12 @@ mod tests {
     };
 
     #[test]
-    fn reader_styles_match_markdown_css() {
+    fn reader_surface_metrics_match_markdown_css() {
+        assert_eq!(BlockStyle::body().font_size, 15.5);
+        assert_eq!(BlockStyle::body().line_height, 1.65);
         assert_eq!(BlockStyle::heading(1).font_size, 15.5 * 1.875);
-        assert_eq!(BlockStyle::heading(1).line_height, 1.2);
-        assert_eq!(BlockStyle::heading(2).font_weight, 650);
+        assert_eq!(BlockStyle::heading(2).margin_top_em, 1.8);
+        assert_eq!(BlockStyle::blockquote().padding, [6.2, 16.0]);
         assert_eq!(BlockStyle::code_block().radius, 10.0);
         assert_eq!(BlockStyle::code_block().padding, [14.0, 18.0]);
         assert_eq!(BlockStyle::table_cell().padding, [10.0, 14.0]);
@@ -1841,8 +1892,9 @@ mod tests {
         );
         assert_eq!(spacing[3].before, 19.375);
         assert_eq!(
-            spacing[4].before, 3.875,
-            "items keep compact internal rhythm"
+            spacing[4].before,
+            15.5 * 0.35,
+            "adjacent items use the CSS li + li margin"
         );
         assert_eq!(
             spacing[4].after, 15.5,
@@ -1854,6 +1906,68 @@ mod tests {
             content: vec![InlineSpan::Text("Section".into())],
         }]);
         assert_eq!(first_h2[0].before, BlockStyle::heading(2).font_size * 1.8);
+    }
+
+    #[test]
+    fn block_sequence_spacing_separates_unordered_and_ordered_list_groups() {
+        let blocks = vec![
+            DocumentBlock::TaskItem {
+                checked: true,
+                depth: 0,
+                content: vec![InlineSpan::Text("task".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Ordered { number: 1 },
+                depth: 0,
+                content: vec![InlineSpan::Text("ordered".into())],
+            },
+        ];
+
+        let spacing = block_sequence_spacing(&blocks);
+
+        assert_eq!(spacing[1].before, 15.5);
+    }
+
+    #[test]
+    fn adjacent_list_items_use_the_css_li_plus_li_margin() {
+        let blocks = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("first".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("second".into())],
+            },
+        ];
+
+        assert_eq!(block_sequence_spacing(&blocks)[1].before, 15.5 * 0.35);
+    }
+
+    #[test]
+    fn mixed_task_list_groups_suppress_unordered_markers() {
+        let mixed_group = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("plain".into())],
+            },
+            DocumentBlock::TaskItem {
+                checked: false,
+                depth: 0,
+                content: vec![InlineSpan::Text("task".into())],
+            },
+        ];
+        let plain_group = vec![DocumentBlock::ListItem {
+            kind: ListKind::Unordered,
+            depth: 0,
+            content: vec![InlineSpan::Text("plain".into())],
+        }];
+
+        assert!(!list_marker_is_visible(&mixed_group, 0));
+        assert!(list_marker_is_visible(&plain_group, 0));
     }
 
     #[test]

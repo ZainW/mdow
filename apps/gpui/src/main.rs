@@ -75,7 +75,6 @@ fn main() {
                         title: Some("Mdow".into()),
                         appears_transparent: true,
                         traffic_light_position: Some(point(px(14.0), px(14.0))),
-                        ..Default::default()
                     }),
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()

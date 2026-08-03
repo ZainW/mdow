@@ -42,6 +42,22 @@ mod tests {
     }
 
     #[test]
+    fn showcase_languages_emit_syntax_colored_runs() {
+        for (language, code) in [
+            ("rust", "fn main() { println!(\"hello\"); }\n"),
+            ("javascript", "const answer = \"forty-two\";\n"),
+            ("json", "{\"answer\": 42}\n"),
+            ("shell", "if true; then echo \"hello\"; fi\n"),
+        ] {
+            let highlighted = highlight_code(Some(language), code);
+
+            assert_eq!(highlighted.text, code, "{language} source");
+            assert!(highlighted.light_runs.len() > 1, "{language} light runs");
+            assert!(highlighted.dark_runs.len() > 1, "{language} dark runs");
+        }
+    }
+
+    #[test]
     fn unknown_language_falls_back_to_one_plain_run() {
         let code = "alpha < beta\n";
         let highlighted = highlight_code(Some("not-a-real-language"), code);

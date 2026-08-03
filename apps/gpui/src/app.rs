@@ -258,6 +258,19 @@ fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option
     }
 }
 
+fn reader_key_modifiers_are_allowed(
+    key: &str,
+    control: bool,
+    alt: bool,
+    platform: bool,
+    function: bool,
+) -> bool {
+    !control
+        && !alt
+        && !platform
+        && (!function || matches!(key, "home" | "end" | "pageup" | "pagedown"))
+}
+
 impl MdowApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
@@ -779,11 +792,13 @@ impl Render for MdowApp {
             .track_focus(&self.focus_handle)
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 let modifiers = event.keystroke.modifiers;
-                if !modifiers.control
-                    && !modifiers.alt
-                    && !modifiers.platform
-                    && !modifiers.function
-                    && this.scroll_active_reader(&event.keystroke.key, cx)
+                if reader_key_modifiers_are_allowed(
+                    &event.keystroke.key,
+                    modifiers.control,
+                    modifiers.alt,
+                    modifiers.platform,
+                    modifiers.function,
+                ) && this.scroll_active_reader(&event.keystroke.key, cx)
                 {
                     cx.stop_propagation();
                     return;
@@ -1226,6 +1241,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reader_navigation_accepts_the_macos_function_modifier() {
+        assert!(reader_key_modifiers_are_allowed(
+            "end", false, false, false, true,
+        ));
+        assert!(!reader_key_modifiers_are_allowed(
+            "tab", false, false, false, true,
+        ));
+        assert!(!reader_key_modifiers_are_allowed(
+            "end", false, false, true, true,
+        ));
+    }
+
     #[gpui::test]
     fn open_paths_registers_live_reload_without_changing_tab_or_scroll_state(
         cx: &mut TestAppContext,
@@ -1258,7 +1286,7 @@ mod tests {
             .unwrap();
         cx.run_until_parked();
         {
-            let mut visual = VisualTestContext::from_window((*window).into(), cx);
+            let mut visual = VisualTestContext::from_window(*window, cx);
             visual.update(|window, cx| window.draw(cx).clear());
         }
         let scroll_handle = window
@@ -1371,7 +1399,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
 
         // The nested close target follows the top-level controls in GPUI's grouped tab order.
         focus_next(&mut visual, 6);
@@ -1408,7 +1436,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
 
         // Open-folder, sidebar-toggle, first tab, then second tab.
         focus_next(&mut visual, 4);
@@ -1442,7 +1470,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         let toggle_slot = visual
@@ -1475,7 +1503,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
 
         // The nested disclosure follows the top-level controls in GPUI's grouped tab order.
         focus_next(&mut visual, 7);
@@ -1503,7 +1531,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         visual.simulate_event(FileDropEvent::Entered {
@@ -1592,7 +1620,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         let bounds = visual
@@ -1628,6 +1656,49 @@ mod tests {
     }
 
     #[gpui::test]
+    fn reader_bounds_match_markdown_css(cx: &mut TestAppContext) {
+        let document = prepare_document(parse_document(
+            PathBuf::from("/tmp/showcase.md"),
+            include_str!("../tests/fixtures/showcase.md").into(),
+        ));
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open_prepared(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let scroll = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        let column = visual.debug_bounds("reader-column").expect("reader column");
+        let first_block = visual
+            .debug_bounds("reader-block-0")
+            .expect("first reader block");
+        let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
+        let tab = visual.debug_bounds("document-tab-0").expect("active tab");
+        let code = visual
+            .debug_bounds("reader-code-27")
+            .expect("wide code surface");
+
+        assert_eq!(first_block.top() - scroll.top(), px(32.0));
+        assert_eq!(
+            tab.top() - tab_bar.top(),
+            px(4.0),
+            "tab bar {tab_bar:?}, tab {tab:?}",
+        );
+        assert!(code.left() >= column.left());
+        assert!(code.right() <= column.right());
+    }
+
+    #[gpui::test]
     fn code_copy_control_writes_exact_source_and_renders_feedback(cx: &mut TestAppContext) {
         let code = "fn main() {\n    println!(\"Hello\");\n}\n";
         let document = parse_document(
@@ -1645,7 +1716,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
 
         click_debug(&mut visual, "copy-code-0");
         visual.update(|window, cx| window.draw(cx).clear());
@@ -1678,7 +1749,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         assert!(visual.debug_bounds("reader-code-0").is_some());
@@ -1710,7 +1781,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         assert!(visual.debug_bounds("reader-link-focus-0-0").is_some());
         for _ in 0..12 {
@@ -1763,7 +1834,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         assert!(visual.debug_bounds("reload-error-banner").is_some());
@@ -1885,7 +1956,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
 
         click_debug(&mut visual, "dismiss-reload-error");
         visual.update(|window, cx| window.draw(cx).clear());
@@ -1929,7 +2000,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         let blank = visual
@@ -2002,7 +2073,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         let bounds = visual.debug_bounds("reader-inline-0-0").unwrap();
         let link_point = point(bounds.left() + px(8.0), bounds.center().y);
@@ -2040,7 +2111,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         window
             .update(cx, |app, _, _| {
@@ -2094,7 +2165,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         window
             .update(cx, |app, _, cx| app.activate_tab(&first, cx))
@@ -2138,7 +2209,7 @@ mod tests {
             })
             .unwrap()
         });
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
         for _ in 0..12 {

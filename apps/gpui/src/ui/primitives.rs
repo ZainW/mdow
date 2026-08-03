@@ -147,7 +147,7 @@ mod tests {
             .unwrap()
         });
 
-        let mut visual = VisualTestContext::from_window((*window).into(), cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         let button_center = visual
             .debug_bounds("keyboard-test-button")

@@ -124,17 +124,17 @@ impl Theme {
         Self {
             color_scheme: ColorScheme::Light,
             background: hsla(0.08672199, 0.39970066, 0.97152986, 1.0),
-            foreground: hsla(0.04368636, 0.69489038, 0.03135708, 1.0),
+            foreground: hsla(0.04368636, 0.694_890_4, 0.03135708, 1.0),
             card: hsla(0.08672199, 0.39970066, 0.97152986, 1.0),
-            muted: hsla(0.08673897, 0.24669178, 0.94492692, 1.0),
+            muted: hsla(0.08673897, 0.24669178, 0.944_926_9, 1.0),
             muted_foreground: hsla(0.05796655, 0.08543156, 0.33432802, 1.0),
-            primary: hsla(0.60388106, 0.64902184, 0.50534449, 1.0),
+            primary: hsla(0.60388106, 0.64902184, 0.505_344_5, 1.0),
             accent: hsla(0.08304337, 1.0, 0.40092257, 1.0),
-            destructive: hsla(0.99228718, 0.68270120, 0.47648946, 1.0),
+            destructive: hsla(0.99228718, 0.682_701_2, 0.47648946, 1.0),
             border: hsla(0.08681399, 0.15087865, 0.85268928, 1.0),
-            border_subtle: hsla(0.08677410, 0.18931960, 0.90505948, 1.0),
+            border_subtle: hsla(0.086_774_1, 0.189_319_6, 0.90505948, 1.0),
             sidebar: hsla(0.08672199, 0.39970066, 0.97152986, 1.0),
-            sidebar_accent: hsla(0.08677273, 0.21983283, 0.91801898, 1.0),
+            sidebar_accent: hsla(0.08677273, 0.21983283, 0.918_019, 1.0),
         }
     }
 
@@ -142,17 +142,17 @@ impl Theme {
         Self {
             color_scheme: ColorScheme::Dark,
             background: hsla(0.0, 0.0, 0.03545248, 1.0),
-            foreground: hsla(0.0, 0.0, 0.89557687, 1.0),
+            foreground: hsla(0.0, 0.0, 0.895_576_9, 1.0),
             card: hsla(0.0, 0.0, 0.03545248, 1.0),
             muted: hsla(0.0, 0.0, 0.07734101, 1.0),
             muted_foreground: hsla(0.0, 0.0, 0.56073545, 1.0),
-            primary: hsla(0.60397774, 0.86814313, 0.66416450, 1.0),
-            accent: hsla(0.11458780, 0.79153254, 0.48821926, 1.0),
-            destructive: hsla(0.99784042, 0.71515589, 0.55231520, 1.0),
+            primary: hsla(0.60397774, 0.86814313, 0.664_164_5, 1.0),
+            accent: hsla(0.114_587_8, 0.791_532_5, 0.48821926, 1.0),
+            destructive: hsla(0.997_840_4, 0.715_155_9, 0.552_315_2, 1.0),
             border: hsla(0.0, 0.0, 0.15033225, 1.0),
             border_subtle: hsla(0.0, 0.0, 0.10395742, 1.0),
             sidebar: hsla(0.0, 0.0, 0.03545248, 1.0),
-            sidebar_accent: hsla(0.0, 0.0, 0.08610420, 1.0),
+            sidebar_accent: hsla(0.0, 0.0, 0.086_104_2, 1.0),
         }
     }
 }
@@ -263,12 +263,15 @@ mod tests {
         );
         assert_eq!(
             light.foreground,
-            hsla(0.04368636, 0.69489038, 0.03135708, 1.0)
+            hsla(0.04368636, 0.694_890_4, 0.03135708, 1.0)
         );
-        assert_eq!(light.primary, hsla(0.60388106, 0.64902184, 0.50534449, 1.0));
+        assert_eq!(
+            light.primary,
+            hsla(0.60388106, 0.64902184, 0.505_344_5, 1.0)
+        );
         assert_eq!(
             light.sidebar_accent,
-            hsla(0.08677273, 0.21983283, 0.91801898, 1.0)
+            hsla(0.08677273, 0.21983283, 0.918_019, 1.0)
         );
     }
 
@@ -280,8 +283,8 @@ mod tests {
         assert_eq!(dark, vibrant);
         assert_eq!(dark.color_scheme, ColorScheme::Dark);
         assert_eq!(dark.background, hsla(0.0, 0.0, 0.03545248, 1.0));
-        assert_eq!(dark.foreground, hsla(0.0, 0.0, 0.89557687, 1.0));
+        assert_eq!(dark.foreground, hsla(0.0, 0.0, 0.895_576_9, 1.0));
         assert_eq!(dark.border, hsla(0.0, 0.0, 0.15033225, 1.0));
-        assert_eq!(dark.sidebar_accent, hsla(0.0, 0.0, 0.08610420, 1.0));
+        assert_eq!(dark.sidebar_accent, hsla(0.0, 0.0, 0.086_104_2, 1.0));
     }
 }
