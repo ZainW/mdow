@@ -29,6 +29,7 @@ interface GhRelease {
 
 const REPO = 'ZainW/mdow'
 const GPUI_ALIAS = 'mdownative-mac-beta.zip'
+const GPUI_VERSIONED_SUFFIX = '-arm64-mac-beta.zip'
 
 function detectArch(name: string): 'arm64' | 'x64' | undefined {
   if (name.includes('arm64')) return 'arm64'
@@ -44,8 +45,9 @@ function releaseAsset(asset: GhAsset): ReleaseAsset {
 function gpuiBetaAssetType(name: string): 'alias' | 'versioned' | null {
   const normalized = name.toLowerCase()
   if (normalized === GPUI_ALIAS) return 'alias'
-  if (normalized.startsWith('mdownative-') && normalized.endsWith('-arm64-mac-beta.zip')) {
-    return 'versioned'
+  if (normalized.startsWith('mdownative-') && normalized.endsWith(GPUI_VERSIONED_SUFFIX)) {
+    const version = normalized.slice('mdownative-'.length, -GPUI_VERSIONED_SUFFIX.length)
+    if (version.length > 0) return 'versioned'
   }
   return null
 }

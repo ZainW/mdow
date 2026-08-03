@@ -75,6 +75,23 @@ describe('parseRelease', () => {
     })
   })
 
+  it('keeps an empty-version GPUI-shaped archive in the ordinary mac ZIP list', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([asset('MdowNative--arm64-mac-beta.zip', 'empty-version')]),
+    )!
+
+    expect(parsed.assets.mac.gpuiBeta).toBeNull()
+    expect(parsed.assets.mac.zip).toEqual([{ arch: 'arm64', url: 'empty-version' }])
+  })
+
+  it('recognizes versioned GPUI beta archives with prerelease hyphens', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([asset('MdowNative-2.0.0-rc.1-arm64-mac-beta.zip', 'prerelease')]),
+    )!
+
+    expect(parsed.assets.mac.gpuiBeta).toEqual({ arch: 'arm64', url: 'prerelease' })
+  })
+
   it('classifies the GPUI alias separately from Electron mac archives', () => {
     const parsed = parseRelease(
       releaseWithAssets([
