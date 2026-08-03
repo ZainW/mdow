@@ -99,30 +99,55 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
-  native-mac-beta:
+  gpui-mac-beta:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+
+      - name: Select full Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Ensure Metal toolchain is available
+        run: xcrun metal -v || xcodebuild -downloadComponent MetalToolchain
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/gpui/target
+          key: ${{ runner.os }}-gpui-cargo-${{ hashFiles('apps/gpui/Cargo.lock') }}
 
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check
+      - run: cargo test --locked --manifest-path apps/gpui/Cargo.toml
+      - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
+      - run: pnpm run test:package:gpui-mac-beta
+      - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
+        env:
+          CI: 'false'
+          DIST_DIR: ${{ runner.temp }}/gpui-mac-smoke
 
       - name: Import Apple signing certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
+          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
           P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/native-mac-signing.keychain-db
           KEYCHAIN_PASSWORD=$(uuidgen)
 
           printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
@@ -153,21 +178,29 @@ jobs:
           echo "=== Available signing identities ==="
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      - name: Build native Mac beta
-        run: pnpm run package:native-mac-beta
+      - name: Build signed and notarized Mdow Native beta
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CI: 'true'
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" bash script/package_gpui_mac_beta.sh
 
-      - name: Upload native Mac beta workflow artifact
+      - name: Verify expected GPUI package ZIPs
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test -f "dist/gpui-mac/MdowNative-$VERSION-arm64-mac-beta.zip"
+          test -f dist/gpui-mac/MdowNative-mac-beta.zip
+
+      - name: Upload GPUI Mac beta workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: native-mac-beta
-          path: dist/native-mac/*.zip
+          name: gpui-mac-beta
+          path: dist/gpui-mac/*.zip
           if-no-files-found: error
 
       - name: Ensure draft GitHub release exists
@@ -178,22 +211,24 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --draft --title "$TAG" --notes ""
 
-      - name: Upload native Mac beta
+      - name: Upload GPUI Mac beta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" dist/native-mac/MdowNative-*.zip --clobber
+          gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber
 
       - name: Clean up keychain
         if: ${{ always() }}
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
   publish:
     needs:
       - release
-      - native-mac-beta
+      - gpui-mac-beta
     runs-on: ubuntu-latest
     permissions:
       contents: write

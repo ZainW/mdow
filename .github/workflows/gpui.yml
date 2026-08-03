@@ -1,0 +1,77 @@
+name: GPUI verification
+
+'on':
+  pull_request:
+    paths:
+      - 'apps/gpui/**'
+      - 'script/package_gpui_mac_beta.sh'
+      - 'script/native_mac_bundle.sh'
+      - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_gpui_workflows.zsh'
+      - '.github/workflows/gpui.yml'
+      - '.github/workflows/release.yml'
+      - 'package.json'
+  push:
+    paths:
+      - 'apps/gpui/**'
+      - 'script/package_gpui_mac_beta.sh'
+      - 'script/native_mac_bundle.sh'
+      - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_gpui_workflows.zsh'
+      - '.github/workflows/gpui.yml'
+      - '.github/workflows/release.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select full Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Ensure Metal toolchain is available
+        run: xcrun metal -v || xcodebuild -downloadComponent MetalToolchain
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/gpui/target
+          key: ${{ runner.os }}-gpui-cargo-${{ hashFiles('apps/gpui/Cargo.lock') }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - run: cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check
+      - run: cargo test --locked --manifest-path apps/gpui/Cargo.toml
+      - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
+      - run: pnpm run test:gpui-workflows
+      - run: pnpm run test:package:gpui-mac-beta
+      - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
+        env:
+          CI: 'false'
+
+      - name: Verify expected GPUI package ZIPs
+        run: |
+          test -f dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip
+          test -f dist/gpui-mac/MdowNative-mac-beta.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-native-ci-arm64
+          path: dist/gpui-mac/*.zip
+          if-no-files-found: error

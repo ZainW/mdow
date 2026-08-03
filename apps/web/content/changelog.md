@@ -9,6 +9,7 @@ description: What's new in Mdow
 
 Latest release.
 
+- Added a separately distributed Mdow Native GPUI beta for Apple Silicon Macs
 - Added a local, read-only AI Companion for asking questions about Markdown documents through installed ACP providers
 - Added focused-document, open-folder, and `@`-tagged context with clickable source citations
 - Streamed Markdown answers alongside collapsible thinking and tool activity in drawer and expanded views
@@ -36,8 +37,8 @@ Latest release.
 
 ## v1.4.1
 
-- Added a native SwiftUI macOS beta build under the download page beta section
-- Published native Mac beta zip artifacts from the tagged release workflow
+- Added a native macOS beta build under the download page beta section
+- Published native Mac beta ZIP artifacts from the tagged release workflow
 - Kept the Electron macOS build as the recommended stable download
 
 ## v1.4.0

@@ -49,7 +49,7 @@ copy_native_mac_resources "$ROOT_DIR" "$APP_CONTENTS" "$APP_NAME"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
-write_native_mac_info_plist "$INFO_PLIST" "$APP_NAME" "$BUNDLE_ID" "$MIN_SYSTEM_VERSION"
+write_native_mac_info_plist "$INFO_PLIST" "$APP_NAME" "Mdow" "$BUNDLE_ID" "$MIN_SYSTEM_VERSION"
 
 prepare_launch_state() {
   rm -rf "$HOME/Library/Saved Application State/$BUNDLE_ID.savedState"
