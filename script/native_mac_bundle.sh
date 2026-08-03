@@ -31,7 +31,7 @@ write_native_mac_info_plist() {
   <key>CFBundleIdentifier</key>
   <string>$bundle_id</string>
   <key>CFBundleName</key>
-  <string>$executable_name</string>
+  <string>$display_name</string>
   <key>CFBundleDisplayName</key>
   <string>$display_name</string>
   <key>CFBundleIconFile</key>

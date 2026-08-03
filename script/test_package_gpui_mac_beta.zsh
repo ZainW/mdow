@@ -22,6 +22,7 @@ write_native_mac_info_plist \
 
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" == "MdowNative" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$plist")" == "Mdow Native" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$plist")" == "Mdow Native" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == "com.zain.mdow.gpui" ]]
 
 print "PASS: native mac plist supports distinct executable and display names"
@@ -188,6 +189,7 @@ info_plist="$app/Contents/Info.plist"
 [[ -x "$binary" ]] || fail "expected executable: $binary"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info_plist")" == "MdowNative" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$info_plist")" == "Mdow Native" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$info_plist")" == "Mdow Native" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")" == "com.zain.mdow.gpui" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$info_plist")" == "14.0" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:LSHandlerRank' "$info_plist")" == "Alternate" ]]
