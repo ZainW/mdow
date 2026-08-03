@@ -1,10 +1,90 @@
+use anyhow::Context;
 use gpui::{AssetSource, Result, SharedString};
 use std::{
     borrow::Cow,
+    ffi::OsStr,
     fs,
     io::ErrorKind,
     path::{Component, Path, PathBuf},
 };
+
+pub const REQUIRED_ASSETS: &[&str] = &[
+    "fonts/InterVariable.ttf",
+    "fonts/GeistMono-Variable.ttf",
+    "icons/alert-circle.svg",
+    "icons/check.svg",
+    "icons/chevron-right.svg",
+    "icons/copy.svg",
+    "icons/expand.svg",
+    "icons/file.svg",
+    "icons/folder-open.svg",
+    "icons/folder.svg",
+    "icons/mdow-logo.svg",
+    "icons/sidebar.svg",
+    "icons/x.svg",
+];
+
+pub fn discover_asset_root(
+    executable: impl AsRef<Path>,
+    development_assets: impl AsRef<Path>,
+) -> Result<PathBuf> {
+    let executable = fs::canonicalize(executable.as_ref()).context("canonicalizing executable")?;
+
+    if let Some(contents) = bundled_contents(&executable) {
+        let resources = fs::canonicalize(contents.join("Resources"))
+            .context("canonicalizing bundled Contents/Resources")?;
+        if !resources.starts_with(contents) {
+            anyhow::bail!("bundled resources must stay inside Contents");
+        }
+        let assets = fs::canonicalize(resources.join("assets"))
+            .context("canonicalizing bundled Contents/Resources/assets")?;
+        if !assets.starts_with(&resources) {
+            anyhow::bail!("bundled assets must stay inside Contents/Resources");
+        }
+        return Ok(assets);
+    }
+
+    if executable
+        .ancestors()
+        .any(|ancestor| ancestor.extension() == Some(OsStr::new("app")))
+    {
+        anyhow::bail!("executable is inside a malformed app bundle");
+    }
+
+    fs::canonicalize(development_assets.as_ref()).context("canonicalizing development assets")
+}
+
+pub fn validate_required_assets(root: impl AsRef<Path>) -> Result<()> {
+    let source = MdowAssets::new(root.as_ref().to_owned());
+    let mut missing = Vec::new();
+
+    for asset in REQUIRED_ASSETS {
+        match source
+            .resolve(asset)
+            .with_context(|| format!("validating required asset {asset}"))?
+        {
+            Some(path) if path.is_file() => {}
+            _ => missing.push(*asset),
+        }
+    }
+
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("missing required Mdow assets: {}", missing.join(", "));
+    }
+}
+
+fn bundled_contents(executable: &Path) -> Option<&Path> {
+    let macos = executable.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+
+    (macos.file_name() == Some(OsStr::new("MacOS"))
+        && contents.file_name() == Some(OsStr::new("Contents"))
+        && bundle.extension() == Some(OsStr::new("app")))
+    .then_some(contents)
+}
 
 pub struct MdowAssets {
     root: PathBuf,
@@ -87,6 +167,100 @@ mod tests {
     use super::*;
     use gpui::AssetSource;
     use std::fs;
+
+    #[test]
+    fn discovers_assets_next_to_a_bundled_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Mdow Native.app/Contents/MacOS/MdowNative");
+        let bundled_assets = dir.path().join("Mdow Native.app/Contents/Resources/assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir_all(&bundled_assets).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert_eq!(
+            discover_asset_root(&executable, dir.path().join("development-assets")).unwrap(),
+            bundled_assets.canonicalize().unwrap(),
+        );
+    }
+
+    #[test]
+    fn falls_back_to_development_assets_outside_an_app_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("target/debug/mdow-gpui");
+        let development_assets = dir.path().join("assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir_all(&development_assets).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert_eq!(
+            discover_asset_root(&executable, &development_assets).unwrap(),
+            development_assets.canonicalize().unwrap(),
+        );
+    }
+
+    #[test]
+    fn rejects_a_bundled_executable_without_resources_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Mdow Native.app/Contents/MacOS/MdowNative");
+        let development_assets = dir.path().join("development-assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir(&development_assets).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert!(discover_asset_root(&executable, &development_assets).is_err());
+    }
+
+    #[test]
+    fn rejects_a_malformed_app_bundle_without_falling_back_to_development_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Mdow Native.app/Contents/bin/MdowNative");
+        let development_assets = dir.path().join("development-assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir(&development_assets).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert!(discover_asset_root(&executable, &development_assets).is_err());
+    }
+
+    #[test]
+    fn rejects_a_missing_development_asset_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("target/debug/mdow-gpui");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert!(discover_asset_root(&executable, dir.path().join("missing-assets")).is_err());
+    }
+
+    #[test]
+    fn reports_every_missing_required_asset() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = validate_required_assets(dir.path())
+            .unwrap_err()
+            .to_string();
+
+        for asset in REQUIRED_ASSETS {
+            assert!(error.contains(asset), "missing {asset} from {error}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_bundled_assets_symlinked_outside_resources() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Mdow Native.app/Contents/MacOS/MdowNative");
+        let resources = dir.path().join("Mdow Native.app/Contents/Resources");
+        let outside = dir.path().join("outside-assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir_all(&resources).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+        symlink(&outside, resources.join("assets")).unwrap();
+
+        assert!(discover_asset_root(&executable, dir.path().join("development-assets")).is_err());
+    }
 
     #[test]
     fn loads_assets_relative_to_the_configured_root() {

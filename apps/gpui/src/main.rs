@@ -1,3 +1,4 @@
+use anyhow::Context;
 use gpui::{
     App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType,
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
@@ -5,25 +6,48 @@ use gpui::{
 use mdow_gpui::{
     actions::{CloseTab, OpenFile, OpenFolder, Quit, ToggleSidebar, ToggleWideMode},
     app::MdowApp,
-    assets::MdowAssets,
+    assets::{MdowAssets, discover_asset_root, validate_required_assets},
 };
 use std::{borrow::Cow, ffi::OsString, path::PathBuf};
 
-fn launch_path_from_args(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
-    args.into_iter()
-        .skip(1)
-        .find(|argument| !argument.to_string_lossy().starts_with('-'))
-        .map(PathBuf::from)
+struct LaunchArgs {
+    verify_assets: bool,
+    document_path: Option<PathBuf>,
+}
+
+fn launch_args<T>(args: impl IntoIterator<Item = T>) -> LaunchArgs
+where
+    T: Into<OsString>,
+{
+    let mut verify_assets = false;
+    let mut document_path = None;
+
+    for argument in args.into_iter().skip(1).map(Into::into) {
+        if argument == "--verify-assets" {
+            verify_assets = true;
+        } else if document_path.is_none() && !argument.to_string_lossy().starts_with('-') {
+            document_path = Some(PathBuf::from(argument));
+        }
+    }
+
+    LaunchArgs {
+        verify_assets,
+        document_path,
+    }
+}
+
+fn default_window_title() -> &'static str {
+    "Mdow Native"
 }
 
 fn app_menus() -> Vec<Menu> {
     vec![
         Menu {
-            name: "Mdow".into(),
+            name: "Mdow Native".into(),
             items: vec![
                 MenuItem::os_submenu("Services", SystemMenuType::Services),
                 MenuItem::separator(),
-                MenuItem::action("Quit Mdow", Quit),
+                MenuItem::action("Quit Mdow Native", Quit),
             ],
         },
         Menu {
@@ -38,24 +62,34 @@ fn app_menus() -> Vec<Menu> {
     ]
 }
 
-fn main() {
-    let asset_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
-    let launch_path = launch_path_from_args(std::env::args_os());
+fn main() -> anyhow::Result<()> {
+    let launch_args = launch_args(std::env::args_os());
+    let asset_root = discover_asset_root(
+        std::env::current_exe().context("locating Mdow Native executable")?,
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
+    )?;
+    validate_required_assets(&asset_root)?;
+
+    if launch_args.verify_assets {
+        println!("{}", asset_root.display());
+        return Ok(());
+    }
+
+    let fonts = ["fonts/InterVariable.ttf", "fonts/GeistMono-Variable.ttf"]
+        .into_iter()
+        .map(|asset| {
+            std::fs::read(asset_root.join(asset))
+                .with_context(|| format!("reading required asset {asset}"))
+                .map(Cow::Owned)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let launch_path = launch_args.document_path;
     Application::new()
-        .with_assets(MdowAssets::new(asset_root.clone()))
+        .with_assets(MdowAssets::new(asset_root))
         .run(move |cx: &mut App| {
             cx.text_system()
-                .add_fonts(vec![
-                    Cow::Owned(
-                        std::fs::read(asset_root.join("fonts/InterVariable.ttf"))
-                            .expect("read bundled Inter font"),
-                    ),
-                    Cow::Owned(
-                        std::fs::read(asset_root.join("fonts/GeistMono-Variable.ttf"))
-                            .expect("read bundled Geist Mono font"),
-                    ),
-                ])
-                .expect("register bundled Mdow fonts");
+                .add_fonts(fonts)
+                .expect("register required Mdow fonts");
 
             cx.bind_keys([
                 KeyBinding::new("cmd-o", OpenFile, None),
@@ -72,7 +106,7 @@ fn main() {
             cx.open_window(
                 WindowOptions {
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Mdow".into()),
+                        title: Some(default_window_title().into()),
                         appears_transparent: true,
                         traffic_light_position: Some(point(px(14.0), px(14.0))),
                     }),
@@ -92,6 +126,7 @@ fn main() {
             .expect("open Mdow window");
             cx.activate(true);
         });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -102,18 +137,26 @@ mod tests {
 
     #[test]
     fn launch_path_is_the_first_non_flag_argument_only() {
-        let path = launch_path_from_args([
+        let args = launch_args([
             OsString::from("mdow"),
             OsString::from("--verify"),
             OsString::from("first.md"),
             OsString::from("second.md"),
         ]);
 
-        assert_eq!(path, Some(PathBuf::from("first.md")));
+        assert_eq!(args.document_path, Some(PathBuf::from("first.md")));
         assert_eq!(
-            launch_path_from_args([OsString::from("mdow"), OsString::from("--verify")]),
+            launch_args([OsString::from("mdow"), OsString::from("--verify")]).document_path,
             None
         );
+    }
+
+    #[test]
+    fn verify_assets_flag_is_not_treated_as_a_document_path() {
+        let args = launch_args(["MdowNative", "--verify-assets"]);
+
+        assert!(args.verify_assets);
+        assert_eq!(args.document_path, None);
     }
 
     #[test]
@@ -124,7 +167,7 @@ mod tests {
             .map(|menu| menu.name.as_ref())
             .collect::<Vec<_>>();
 
-        assert_eq!(names, vec!["Mdow", "File"]);
+        assert_eq!(names, vec!["Mdow Native", "File"]);
         assert!(matches!(
             &menus[0].items[0],
             OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"
@@ -133,7 +176,7 @@ mod tests {
         assert!(matches!(
             &menus[0].items[2],
             OwnedMenuItem::Action { name, action, .. }
-                if name == "Quit Mdow" && action.as_any().is::<Quit>()
+                if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
         ));
 
         let file_actions = menus[1]
@@ -165,5 +208,6 @@ mod tests {
             })
             .count();
         assert_eq!(quit_count, 1);
+        assert_eq!(default_window_title(), "Mdow Native");
     }
 }
