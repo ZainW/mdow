@@ -598,21 +598,23 @@ struct BlockMargins {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ListGroup {
-    Unordered,
-    Ordered,
+    Unordered(usize),
+    Ordered(usize),
 }
 
 fn list_group(block: &DocumentBlock) -> Option<ListGroup> {
     match block {
         DocumentBlock::ListItem {
             kind: ListKind::Ordered { .. },
+            depth,
             ..
-        } => Some(ListGroup::Ordered),
+        } => Some(ListGroup::Ordered(*depth)),
         DocumentBlock::ListItem {
             kind: ListKind::Unordered,
+            depth,
             ..
         }
-        | DocumentBlock::TaskItem { .. } => Some(ListGroup::Unordered),
+        | DocumentBlock::TaskItem { depth, .. } => Some(ListGroup::Unordered(*depth)),
         _ => None,
     }
 }
@@ -628,13 +630,14 @@ fn list_marker_is_visible(blocks: &[DocumentBlock], block_index: usize) -> bool 
         return true;
     }
 
+    let group = list_group(&blocks[block_index]).expect("unordered list group");
     let group_start = (0..block_index)
         .rev()
-        .take_while(|index| list_group(&blocks[*index]) == Some(ListGroup::Unordered))
+        .take_while(|index| list_group(&blocks[*index]) == Some(group))
         .last()
         .unwrap_or(block_index);
     let group_end = (block_index + 1..blocks.len())
-        .take_while(|index| list_group(&blocks[*index]) == Some(ListGroup::Unordered))
+        .take_while(|index| list_group(&blocks[*index]) == Some(group))
         .last()
         .map_or(block_index + 1, |index| index + 1);
 
@@ -1968,6 +1971,75 @@ mod tests {
 
         assert!(!list_marker_is_visible(&mixed_group, 0));
         assert!(list_marker_is_visible(&plain_group, 0));
+    }
+
+    #[test]
+    fn task_marker_suppression_is_scoped_to_the_same_depth() {
+        let parent_then_nested_task = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("parent".into())],
+            },
+            DocumentBlock::TaskItem {
+                checked: false,
+                depth: 1,
+                content: vec![InlineSpan::Text("nested task".into())],
+            },
+        ];
+        let same_depth_task = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("plain".into())],
+            },
+            DocumentBlock::TaskItem {
+                checked: false,
+                depth: 0,
+                content: vec![InlineSpan::Text("peer task".into())],
+            },
+        ];
+
+        assert!(list_marker_is_visible(&parent_then_nested_task, 0));
+        assert!(!list_marker_is_visible(&same_depth_task, 0));
+    }
+
+    #[test]
+    fn parent_and_nested_list_items_do_not_share_adjacent_item_spacing() {
+        let nested_boundaries = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("parent".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 1,
+                content: vec![InlineSpan::Text("nested".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("parent peer".into())],
+            },
+        ];
+        let same_depth = vec![
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("first".into())],
+            },
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                content: vec![InlineSpan::Text("second".into())],
+            },
+        ];
+
+        let nested_spacing = block_sequence_spacing(&nested_boundaries);
+        assert_eq!(nested_spacing[1].before, 15.5);
+        assert_eq!(nested_spacing[2].before, 15.5);
+        assert_eq!(block_sequence_spacing(&same_depth)[1].before, 15.5 * 0.35);
     }
 
     #[test]
