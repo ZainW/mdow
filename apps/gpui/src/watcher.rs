@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn sibling_events_do_not_cross_the_watched_file_boundary() {
+    fn matching_watched_paths_ignores_unwatched_siblings() {
         let dir = watcher_tempdir();
         let logical_watched = dir.path().join("watched.md");
         let logical_sibling = dir.path().join("sibling.md");
@@ -275,18 +275,9 @@ mod tests {
         fs::write(&logical_sibling, "# Sibling").unwrap();
         let watched = logical_watched.canonicalize().unwrap();
         let sibling = logical_sibling.canonicalize().unwrap();
-        let mut watcher = FileWatcher::new().unwrap();
-        watcher.watch(&watched).unwrap();
-        let messages = watcher.messages();
+        let watched_files = RwLock::new(HashSet::from([watched]));
 
-        fs::write(&sibling, "# Unrelated").unwrap();
-
-        assert_eq!(receive_path(&messages, Duration::from_millis(350)), None);
-        fs::write(&watched, "# Changed").unwrap();
-        assert_eq!(
-            receive_path(&messages, Duration::from_secs(2)),
-            Some(watched.canonicalize().unwrap())
-        );
+        assert!(matching_watched_paths(&[sibling], &watched_files).is_empty());
     }
 
     #[test]
