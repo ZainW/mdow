@@ -223,6 +223,10 @@ mod tests {
             })
     }
 
+    fn wait_for_watcher_to_settle(receiver: &Arc<Mutex<std::sync::mpsc::Receiver<WatchMessage>>>) {
+        while receive_path(receiver, DEBOUNCE * 2).is_some() {}
+    }
+
     #[test]
     fn coalescer_debounces_each_path_independently() {
         let start = Instant::now();
@@ -289,7 +293,7 @@ mod tests {
         let mut watcher = FileWatcher::new().unwrap();
         watcher.watch(&path).unwrap();
         let messages = watcher.messages();
-        std::thread::sleep(Duration::from_millis(100));
+        wait_for_watcher_to_settle(&messages);
         let started = Instant::now();
 
         fs::write(&path, "# First").unwrap();
@@ -315,7 +319,7 @@ mod tests {
         let mut watcher = FileWatcher::new().unwrap();
         watcher.watch(&path).unwrap();
         let messages = watcher.messages();
-        std::thread::sleep(Duration::from_millis(100));
+        wait_for_watcher_to_settle(&messages);
 
         fs::write(&replacement, "# After").unwrap();
         fs::rename(&replacement, &path).unwrap();
