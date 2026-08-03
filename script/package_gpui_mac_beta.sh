@@ -10,6 +10,19 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$ROOT_DIR/script/native_mac_bundle.sh"
 cd "$ROOT_DIR"
 
+TEMP_BASE_INPUT="${TMPDIR:-/tmp}"
+if [[ ! -d "$TEMP_BASE_INPUT" ]]; then
+  echo "Temporary directory base does not exist: $TEMP_BASE_INPUT" >&2
+  exit 1
+fi
+TEMP_BASE="$(cd "$TEMP_BASE_INPUT" && pwd -P)"
+case "$TEMP_BASE" in
+  "$ROOT_DIR" | "$ROOT_DIR"/*)
+    echo "Temporary directory base must be outside repository: $TEMP_BASE" >&2
+    exit 1
+    ;;
+esac
+
 APP_BUNDLE_NAME="Mdow Native"
 EXECUTABLE_NAME="MdowNative"
 BUNDLE_ID="com.zain.mdow.gpui"
@@ -40,11 +53,12 @@ cleanup_temp_paths() {
 trap cleanup_temp_paths EXIT
 
 make_temp_dir() {
-  CREATED_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mdow-gpui-package.XXXXXX")"
+  CREATED_TEMP_DIR="$(mktemp -d "$TEMP_BASE/mdow-gpui-package.XXXXXX")"
   [[ -n "$CREATED_TEMP_DIR" && -d "$CREATED_TEMP_DIR" ]] || {
     echo "Failed to create packaging temporary directory." >&2
     exit 1
   }
+  CREATED_TEMP_DIR="$(cd "$CREATED_TEMP_DIR" && pwd -P)"
   TEMP_PATHS+=("$CREATED_TEMP_DIR")
 }
 
@@ -152,8 +166,23 @@ else
 fi
 "$CODESIGN" --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
+SIGNED_WITH_DEVELOPER_ID=false
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  SIGNATURE_DETAILS="$("$CODESIGN" -dv --verbose=4 "$APP_BUNDLE" 2>&1)"
+  while IFS= read -r signature_detail; do
+    if [[ "$signature_detail" == "Authority=Developer ID Application:"* ]]; then
+      SIGNED_WITH_DEVELOPER_ID=true
+      break
+    fi
+  done <<<"$SIGNATURE_DETAILS"
+fi
+if [[ "${CI:-}" == "true" && "$SIGNED_WITH_DEVELOPER_ID" != "true" ]]; then
+  echo "CI GPUI beta packaging requires a verified Developer ID Application signature." >&2
+  exit 1
+fi
+
 DID_NOTARIZE=false
-if [[ "$SIGNING_IDENTITY" == "Developer ID Application:"* ]]; then
+if [[ "$SIGNED_WITH_DEVELOPER_ID" == "true" ]]; then
   if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
     make_temp_dir
     NOTARY_DIR="$CREATED_TEMP_DIR"

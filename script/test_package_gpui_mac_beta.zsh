@@ -86,6 +86,9 @@ FAKE
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_TOOL_LOG/codesign"
+if [[ "$*" == *"-dv"* && -n "${FAKE_CODESIGN_AUTHORITY:-}" ]]; then
+  printf 'Authority=%s\n' "$FAKE_CODESIGN_AUTHORITY" >&2
+fi
 FAKE
 
   cat >"$fake_dir/ditto" <<'FAKE'
@@ -142,6 +145,7 @@ run_packager() {
     FAKE_TOOL_LOG="$case_dir/log" \
     FAKE_REPO_ROOT="$ROOT_DIR" \
     FAKE_LIPO_ARCHS="$fake_archs" \
+    "FAKE_CODESIGN_AUTHORITY=Developer ID Application: Test (TEAM123)" \
     CARGO="$case_dir/fakes/cargo" \
     CODESIGN="$case_dir/fakes/codesign" \
     DITTO="$case_dir/fakes/ditto" \
@@ -166,6 +170,14 @@ if ('package:native-mac-beta' in scripts) process.exit(1)
 JS
 [[ ! -e "$ROOT_DIR/script/package_native_mac_beta.sh" ]] || \
   fail "old Swift beta packager still exists"
+
+repo_tmp_case="$test_dir/repo-tmp"
+if run_packager "$repo_tmp_case" arm64 TMPDIR=. >"$repo_tmp_case.output" 2>&1; then
+  fail "repository-contained TMPDIR unexpectedly packaged"
+fi
+assert_contains "$repo_tmp_case.output" "Temporary directory base must be outside repository"
+[[ ! -s "$repo_tmp_case/log/cargo" ]] || fail "repository-contained TMPDIR reached Cargo"
+print "PASS: repository-contained relative TMPDIR fails before building"
 
 local_case="$test_dir/local"
 run_packager "$local_case" arm64 >"$local_case.output" 2>&1
@@ -216,6 +228,39 @@ fi
 [[ ! -s "$unsigned_ci_case/log/codesign" ]] || fail "unsigned CI package reached signing"
 assert_contains "$unsigned_ci_case.output" "signing identity"
 print "PASS: CI requires a real signing identity"
+
+apple_development_case="$test_dir/apple-development"
+if run_packager \
+  "$apple_development_case" \
+  arm64 \
+  CI=true \
+  "NATIVE_MAC_CODESIGN_IDENTITY=Apple Development: Test (TEAM123)" \
+  "FAKE_CODESIGN_AUTHORITY=Apple Development: Test (TEAM123)" \
+  APPLE_ID=test@example.com \
+  APPLE_APP_SPECIFIC_PASSWORD=test-password \
+  APPLE_TEAM_ID=TEAM123 \
+  >"$apple_development_case.output" 2>&1; then
+  fail "Apple Development signature unexpectedly passed CI release validation"
+fi
+[[ ! -e "$apple_development_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip" ]] || \
+  fail "Apple Development signature produced a release archive"
+assert_contains "$apple_development_case.output" "Developer ID Application"
+print "PASS: CI rejects Apple Development signatures"
+
+hash_identity_case="$test_dir/hash-identity"
+if run_packager \
+  "$hash_identity_case" \
+  arm64 \
+  CI=true \
+  NATIVE_MAC_CODESIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567 \
+  "FAKE_CODESIGN_AUTHORITY=Developer ID Application: Test (TEAM123)" \
+  >"$hash_identity_case.output" 2>&1; then
+  fail "Developer ID certificate hash bypassed CI notarization credentials"
+fi
+[[ ! -e "$hash_identity_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip" ]] || \
+  fail "unnotarized certificate-hash package produced a release archive"
+assert_contains "$hash_identity_case.output" "notarization credentials"
+print "PASS: CI certificate hash still requires complete notarization"
 
 release_case="$test_dir/release"
 run_packager \
