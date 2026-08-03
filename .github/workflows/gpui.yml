@@ -7,14 +7,20 @@ name: GPUI verification
       - 'script/package_gpui_mac_beta.sh'
       - 'script/native_mac_bundle.sh'
       - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_gpui_workflows.zsh'
       - '.github/workflows/gpui.yml'
+      - '.github/workflows/release.yml'
+      - 'package.json'
   push:
     paths:
       - 'apps/gpui/**'
       - 'script/package_gpui_mac_beta.sh'
       - 'script/native_mac_bundle.sh'
       - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_gpui_workflows.zsh'
       - '.github/workflows/gpui.yml'
+      - '.github/workflows/release.yml'
+      - 'package.json'
 
 permissions:
   contents: read
@@ -53,6 +59,7 @@ jobs:
       - run: cargo test --locked --manifest-path apps/gpui/Cargo.toml
       - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
       - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
+      - run: pnpm run test:gpui-workflows
       - run: pnpm run test:package:gpui-mac-beta
       - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
         env:

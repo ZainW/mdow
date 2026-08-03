@@ -75,9 +75,13 @@ case "$PWD/" in
     exit 1
     ;;
 esac
-asset_root="$(cd "$(dirname "$0")/../Resources/assets" && pwd -P)"
-[[ -d "$asset_root/fonts" ]]
-[[ -d "$asset_root/icons" ]]
+if [[ -n "${FAKE_VERIFY_ASSET_ROOT:-}" ]]; then
+  asset_root="$FAKE_VERIFY_ASSET_ROOT"
+else
+  asset_root="$(cd "$(dirname "$0")/../Resources/assets" && pwd -P)"
+  [[ -d "$asset_root/fonts" ]]
+  [[ -d "$asset_root/icons" ]]
+fi
 printf '%s\n' "$asset_root" | tee "$FAKE_TOOL_LOG/verify-assets"
 BINARY
 chmod +x "$CARGO_TARGET_DIR/release/mdow-gpui"
@@ -96,7 +100,14 @@ FAKE
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_TOOL_LOG/ditto"
-exec /usr/bin/ditto "$@"
+/usr/bin/ditto "$@"
+if [[ "${1:-}" == "-x" && -n "${FAKE_EXTRACTED_PLIST_KEY:-}" ]]; then
+  destination="${!#}"
+  extracted_plist="$destination/Mdow Native.app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy \
+    -c "Set :$FAKE_EXTRACTED_PLIST_KEY $FAKE_EXTRACTED_PLIST_VALUE" \
+    "$extracted_plist"
+fi
 FAKE
 
   cat >"$fake_dir/lipo" <<'FAKE'
@@ -192,6 +203,8 @@ info_plist="$app/Contents/Info.plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$info_plist")" == "Mdow Native" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")" == "com.zain.mdow.gpui" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$info_plist")" == "14.0" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")" == "1.2.3" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_plist")" == "456" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:LSHandlerRank' "$info_plist")" == "Alternate" ]]
 assert_file "$app/Contents/Resources/MdowNative.icns"
 assert_dir "$app/Contents/Resources/assets/fonts"
@@ -208,6 +221,43 @@ case "$(<"$local_case/log/verify-assets")" in
   "$ROOT_DIR"/*) fail "asset verification resolved into repository" ;;
 esac
 print "PASS: local package assembles, signs ad-hoc, and validates after extraction"
+
+wrong_asset_root_case="$test_dir/wrong-asset-root"
+if run_packager \
+  "$wrong_asset_root_case" \
+  arm64 \
+  FAKE_VERIFY_ASSET_ROOT="$ROOT_DIR/apps/gpui/assets" \
+  >"$wrong_asset_root_case.output" 2>&1; then
+  fail "checkout-relative asset root unexpectedly passed extracted package validation"
+fi
+assert_contains "$wrong_asset_root_case.output" "asset root"
+print "PASS: extracted package rejects a checkout-relative asset root"
+
+for plist_case in \
+  "CFBundleExecutable|WrongExecutable|executable" \
+  "CFBundleName|Wrong Name|bundle-name" \
+  "CFBundleDisplayName|Wrong Display Name|display-name" \
+  "CFBundleIdentifier|com.example.wrong|identifier" \
+  "LSMinimumSystemVersion|13.0|minimum-system" \
+  "CFBundleShortVersionString|9.9.9|short-version" \
+  "CFBundleVersion|999|build-number"; do
+  plist_key="${plist_case%%|*}"
+  plist_remainder="${plist_case#*|}"
+  plist_value="${plist_remainder%%|*}"
+  plist_label="${plist_remainder##*|}"
+  plist_case_dir="$test_dir/extracted-plist-$plist_label"
+
+  if run_packager \
+    "$plist_case_dir" \
+    arm64 \
+    FAKE_EXTRACTED_PLIST_KEY="$plist_key" \
+    FAKE_EXTRACTED_PLIST_VALUE="$plist_value" \
+    >"$plist_case_dir.output" 2>&1; then
+    fail "extracted package with mismatched $plist_key unexpectedly passed validation"
+  fi
+  assert_contains "$plist_case_dir.output" "$plist_key"
+done
+print "PASS: extracted package revalidates complete plist identity, version, and build"
 
 wrong_arch_case="$test_dir/wrong-arch"
 if run_packager "$wrong_arch_case" x86_64 >"$wrong_arch_case.output" 2>&1; then

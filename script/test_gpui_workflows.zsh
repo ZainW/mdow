@@ -158,7 +158,10 @@ required_paths = [
   'script/package_gpui_mac_beta.sh',
   'script/native_mac_bundle.sh',
   'script/test_package_gpui_mac_beta.zsh',
+  'script/test_gpui_workflows.zsh',
   '.github/workflows/gpui.yml',
+  '.github/workflows/release.yml',
+  'package.json',
 ]
 
 %w[pull_request push].each do |event|
@@ -212,6 +215,7 @@ required_commands = [
   'cargo test --locked --manifest-path apps/gpui/Cargo.toml',
   'cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings',
   'cargo build --release --locked --manifest-path apps/gpui/Cargo.toml',
+  'pnpm run test:gpui-workflows',
   'pnpm run test:package:gpui-mac-beta',
   'VERSION=0.0.0-ci pnpm run package:gpui-mac-beta',
 ]
@@ -508,7 +512,11 @@ assert(
 release_commands = release_jobs.values.flat_map do |job|
   job.fetch('steps', []).filter_map { |step| step['run'] }
 end
-forbidden_release_references = /Swift|package:native-mac-beta|dist\/native-mac/
+forbidden_release_references = /swift|package:native-mac-beta|dist\/native-mac/i
+assert(
+  forbidden_release_references.match?('swift build --configuration release'),
+  'forbidden Swift command detection must be case-insensitive',
+)
 assert(
   release_commands.none? { |command| command.match?(forbidden_release_references) },
   'release commands must not reference Swift or the removed native-mac package',

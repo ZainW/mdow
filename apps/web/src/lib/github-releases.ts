@@ -72,7 +72,7 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
         gpuiBeta = releaseAsset(asset)
       } else if (gpuiBetaType === 'versioned') {
         gpuiBeta ??= releaseAsset(asset)
-      } else {
+      } else if (!normalized.startsWith('mdownative')) {
         zip.push(releaseAsset(asset))
       }
     } else if (normalized.endsWith('.exe')) {

@@ -21,6 +21,17 @@ function existingPublicationDates(rss) {
   return dates
 }
 
+function truncateAtWordBoundary(content, maxLength) {
+  if (content.length <= maxLength) return content
+
+  const candidate = content.slice(0, maxLength)
+  const previousBoundary = candidate.search(/\s+\S*$/)
+  if (previousBoundary >= 0) return candidate.slice(0, previousBoundary).trimEnd()
+
+  const nextBoundary = content.slice(maxLength).search(/\s/)
+  return nextBoundary >= 0 ? content.slice(0, maxLength + nextBoundary) : content
+}
+
 export function generateRss(rawChangelog, existingRss = '', now = new Date()) {
   const body = rawChangelog.replace(/^---[\s\S]*?---\n/, '').replace(/^\s*# .*\n+/, '')
   const sections = body.split(/^## /m).filter(Boolean)
@@ -40,7 +51,7 @@ export function generateRss(rawChangelog, existingRss = '', now = new Date()) {
       <link>${SITE_URL}/changelog#${escapeXml(anchor)}</link>
       <guid isPermaLink="false">${escapeXml(version)}</guid>
       <pubDate>${pubDate}</pubDate>
-      <description>${escapeXml(content.slice(0, 500))}</description>
+      <description>${escapeXml(truncateAtWordBoundary(content, 500))}</description>
     </item>`
     })
     .join('')

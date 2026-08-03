@@ -75,13 +75,24 @@ describe('parseRelease', () => {
     })
   })
 
-  it('keeps an empty-version GPUI-shaped archive in the ordinary mac ZIP list', () => {
+  it('ignores an empty-version GPUI-shaped archive', () => {
     const parsed = parseRelease(
       releaseWithAssets([asset('MdowNative--arm64-mac-beta.zip', 'empty-version')]),
     )!
 
     expect(parsed.assets.mac.gpuiBeta).toBeNull()
-    expect(parsed.assets.mac.zip).toEqual([{ arch: 'arm64', url: 'empty-version' }])
+    expect(parsed.assets.mac.zip).toEqual([])
+  })
+
+  it.each([
+    'MdowNative-2.0.0-x64-mac-beta.zip',
+    'MdowNative-2.0.0-mac-beta.zip',
+    'MdowNative-2.0.0-arm64-mac-preview.zip',
+  ])('ignores malformed MdowNative mac archive %s', (name) => {
+    const parsed = parseRelease(releaseWithAssets([asset(name, 'malformed')]))!
+
+    expect(parsed.assets.mac.gpuiBeta).toBeNull()
+    expect(parsed.assets.mac.zip).toEqual([])
   })
 
   it('recognizes versioned GPUI beta archives with prerelease hyphens', () => {

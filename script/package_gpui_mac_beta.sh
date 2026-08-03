@@ -62,6 +62,22 @@ make_temp_dir() {
   TEMP_PATHS+=("$CREATED_TEMP_DIR")
 }
 
+assert_plist_value() {
+  local plist_path="$1"
+  local key="$2"
+  local expected="$3"
+  local actual
+
+  if ! actual="$(/usr/libexec/PlistBuddy -c "Print :$key" "$plist_path")"; then
+    echo "Extracted GPUI Mac beta plist is missing $key." >&2
+    exit 1
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Extracted GPUI Mac beta plist $key is '$actual'; expected '$expected'." >&2
+    exit 1
+  fi
+}
+
 if [[ "$RUNNER_ARCH" != "arm64" ]]; then
   echo "GPUI Mac beta packaging requires an arm64 runner, got: $RUNNER_ARCH" >&2
   exit 1
@@ -215,6 +231,14 @@ VALIDATION_DIR="$CREATED_TEMP_DIR"
 "$DITTO" -x -k "$VERSIONED_ZIP" "$VALIDATION_DIR"
 EXTRACTED_APP="$VALIDATION_DIR/$APP_BUNDLE_NAME.app"
 EXTRACTED_BINARY="$EXTRACTED_APP/Contents/MacOS/$EXECUTABLE_NAME"
+EXTRACTED_INFO_PLIST="$EXTRACTED_APP/Contents/Info.plist"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleExecutable "$EXECUTABLE_NAME"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleName "$APP_BUNDLE_NAME"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleDisplayName "$APP_BUNDLE_NAME"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleIdentifier "$BUNDLE_ID"
+assert_plist_value "$EXTRACTED_INFO_PLIST" LSMinimumSystemVersion "$MIN_SYSTEM_VERSION"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleShortVersionString "$VERSION"
+assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleVersion "$BUILD_NUMBER"
 "$CODESIGN" --verify --deep --strict --verbose=2 "$EXTRACTED_APP"
 EXTRACTED_ARCHS="$("$LIPO" -archs "$EXTRACTED_BINARY")"
 if [[ "$EXTRACTED_ARCHS" != "arm64" ]]; then
@@ -225,10 +249,15 @@ if [[ "$DID_NOTARIZE" == "true" ]]; then
   "$SPCTL" -a -vv --type execute "$EXTRACTED_APP"
   "$XCRUN" stapler validate "$EXTRACTED_APP"
 fi
-(
+EXPECTED_ASSET_ROOT="$(cd "$EXTRACTED_APP/Contents/Resources/assets" && pwd -P)"
+VERIFIED_ASSET_ROOT="$(
   cd "$VALIDATION_DIR"
   "$EXTRACTED_BINARY" --verify-assets
-)
+)"
+if [[ "$VERIFIED_ASSET_ROOT" != "$EXPECTED_ASSET_ROOT" ]]; then
+  echo "Extracted GPUI Mac beta reported asset root '$VERIFIED_ASSET_ROOT'; expected '$EXPECTED_ASSET_ROOT'." >&2
+  exit 1
+fi
 
 echo "Created GPUI Mac beta artifacts:"
 echo "$VERSIONED_ZIP"
