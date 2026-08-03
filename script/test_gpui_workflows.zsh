@@ -18,6 +18,7 @@ PACKAGE_JSON="$ROOT_DIR/package.json"
 ruby - "$WORKFLOW" "$RELEASE_WORKFLOW" "$PACKAGE_JSON" <<'RUBY'
 require 'json'
 require 'fileutils'
+require 'shellwords'
 require 'tmpdir'
 require 'yaml'
 
@@ -47,10 +48,17 @@ def archive_check_succeeds?(command, archives, environment = {})
   end
 end
 
-def package_smoke_creates_expected_archives?(command, environment)
+def release_uploads_only_trusted_archives?(
+  smoke_command,
+  smoke_environment,
+  artifact_pattern,
+  release_pattern
+)
   Dir.mktmpdir('mdow-gpui-release-smoke-test') do |root|
+    workspace = File.join(root, 'workspace')
+    runner_temp = File.join(root, 'runner-temp')
     fake_bin = File.join(root, 'bin')
-    FileUtils.mkdir_p(fake_bin)
+    FileUtils.mkdir_p([workspace, runner_temp, fake_bin])
     fake_pnpm = File.join(fake_bin, 'pnpm')
     File.write(
       fake_pnpm,
@@ -60,28 +68,49 @@ def package_smoke_creates_expected_archives?(command, environment)
         [[ "$*" == "run package:gpui-mac-beta" ]]
         [[ "$VERSION" == "0.0.0-ci" ]]
         [[ "$CI" == "false" ]]
-        mkdir -p dist/gpui-mac
-        touch dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip
-        touch dist/gpui-mac/MdowNative-mac-beta.zip
+        smoke_dist="${DIST_DIR:-dist/gpui-mac}"
+        mkdir -p "$smoke_dist"
+        touch "$smoke_dist/MdowNative-0.0.0-ci-arm64-mac-beta.zip"
+        touch "$smoke_dist/MdowNative-mac-beta.zip"
       BASH
     )
     FileUtils.chmod(0o755, fake_pnpm)
 
-    smoke_environment = environment.transform_values(&:to_s).merge(
+    resolved_environment = smoke_environment.transform_values do |value|
+      value.to_s.sub('${{ runner.temp }}', runner_temp)
+    end.merge(
       'PATH' => "#{fake_bin}:#{ENV.fetch('PATH')}",
+      'RUNNER_TEMP' => runner_temp,
     )
-    succeeded = Dir.chdir(root) do
+    succeeded = Dir.chdir(workspace) do
       system(
-        smoke_environment,
-        'bash', '-e', '-u', '-o', 'pipefail', '-c', command,
+        resolved_environment,
+        'bash', '-e', '-u', '-o', 'pipefail', '-c', smoke_command,
         out: File::NULL, err: File::NULL,
       )
     end
-    expected_archives = [
-      'dist/gpui-mac/MdowNative-0.0.0-ci-arm64-mac-beta.zip',
+
+    smoke_dist = File.join(runner_temp, 'gpui-mac-smoke')
+    expected_smoke_archives = [
+      File.join(smoke_dist, 'MdowNative-0.0.0-ci-arm64-mac-beta.zip'),
+      File.join(smoke_dist, 'MdowNative-mac-beta.zip'),
+    ].sort
+    actual_smoke_archives = Dir.glob(File.join(smoke_dist, '*.zip')).sort
+
+    trusted_archives = [
+      'dist/gpui-mac/MdowNative-1.2.3-arm64-mac-beta.zip',
       'dist/gpui-mac/MdowNative-mac-beta.zip',
-    ]
-    succeeded && expected_archives.all? { |archive| File.file?(File.join(root, archive)) }
+    ].sort
+    trusted_archives.each do |archive|
+      path = File.join(workspace, archive)
+      FileUtils.mkdir_p(File.dirname(path))
+      FileUtils.touch(path)
+    end
+    artifact_uploads = Dir.chdir(workspace) { Dir.glob(artifact_pattern).sort }
+    release_uploads = Dir.chdir(workspace) { Dir.glob(release_pattern).sort }
+
+    succeeded && actual_smoke_archives == expected_smoke_archives &&
+      artifact_uploads == trusted_archives && release_uploads == trusted_archives
   end
 end
 
@@ -331,10 +360,6 @@ assert(
   release_smoke.dig('env', 'CI') == 'false',
   'gpui-mac-beta package smoke must explicitly use ad-hoc CI=false signing',
 )
-assert(
-  package_smoke_creates_expected_archives?(release_smoke.fetch('run'), release_smoke.fetch('env')),
-  'gpui-mac-beta package smoke must run with CI=false and create both non-release ZIPs',
-)
 
 gpui_certificate = gpui_steps.find { |step| step['name'] == 'Import Apple signing certificate' }
 assert(!gpui_certificate.nil?, 'gpui-mac-beta must import the Apple signing certificate')
@@ -380,6 +405,10 @@ assert(
 assert(
   gpui_package.dig('env', 'KEYCHAIN_PATH') == gpui_keychain_path,
   'gpui-mac-beta packaging must use the same explicit keychain as certificate setup',
+)
+assert(
+  !gpui_package.fetch('env').key?('DIST_DIR'),
+  'trusted gpui-mac-beta packaging must remain the only writer to repository dist/gpui-mac',
 )
 assert(
   release_gate_positions.last < gpui_steps.index(gpui_certificate) &&
@@ -429,6 +458,26 @@ assert(
     'gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber',
   ),
   'gpui-mac-beta must upload MdowNative GPUI ZIPs to the GitHub release',
+)
+github_upload_line = github_release_upload.fetch('run').lines.map(&:strip).find do |line|
+  Shellwords.shellsplit(line).first(3) == %w[gh release upload]
+end
+assert(!github_upload_line.nil?, 'gpui-mac-beta must expose a parseable GitHub upload command')
+github_upload_arguments = Shellwords.shellsplit(github_upload_line)
+github_upload_pattern = github_upload_arguments.find { |argument| argument.end_with?('.zip') }
+assert(!github_upload_pattern.nil?, 'gpui-mac-beta GitHub upload must include a ZIP pattern')
+assert(
+  release_uploads_only_trusted_archives?(
+    release_smoke.fetch('run'),
+    release_smoke.fetch('env'),
+    gpui_artifact.dig('with', 'path'),
+    github_upload_pattern,
+  ),
+  'smoke outputs must stay isolated while both production uploads select only trusted ZIPs',
+)
+assert(
+  release_smoke.dig('env', 'DIST_DIR') == '${{ runner.temp }}/gpui-mac-smoke',
+  'gpui-mac-beta package smoke must isolate DIST_DIR under runner.temp',
 )
 assert(
   gpui_steps.index(release_archive_check) < gpui_steps.index(gpui_artifact) &&

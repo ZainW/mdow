@@ -137,6 +137,7 @@ jobs:
       - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
         env:
           CI: 'false'
+          DIST_DIR: ${{ runner.temp }}/gpui-mac-smoke
 
       - name: Import Apple signing certificate
         env:
