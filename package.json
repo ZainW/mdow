@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "package:native-mac-beta": "bash script/package_native_mac_beta.sh",
+    "package:gpui-mac-beta": "bash script/package_gpui_mac_beta.sh",
+    "test:package:gpui-mac-beta": "zsh script/test_package_gpui_mac_beta.zsh",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "fmt": "turbo fmt",

@@ -13,11 +13,12 @@ copy_native_mac_resources() {
 
 write_native_mac_info_plist() {
   local plist_path="$1"
-  local app_name="$2"
-  local bundle_id="$3"
-  local min_system_version="$4"
-  local version="${5:-}"
-  local build_number="${6:-}"
+  local executable_name="$2"
+  local display_name="$3"
+  local bundle_id="$4"
+  local min_system_version="$5"
+  local version="${6:-}"
+  local build_number="${7:-}"
 
   {
     cat <<PLIST
@@ -26,17 +27,17 @@ write_native_mac_info_plist() {
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>$app_name</string>
+  <string>$executable_name</string>
   <key>CFBundleIdentifier</key>
   <string>$bundle_id</string>
   <key>CFBundleName</key>
-  <string>$app_name</string>
+  <string>$executable_name</string>
   <key>CFBundleDisplayName</key>
-  <string>Mdow</string>
+  <string>$display_name</string>
   <key>CFBundleIconFile</key>
-  <string>$app_name.icns</string>
+  <string>$executable_name.icns</string>
   <key>CFBundleIconName</key>
-  <string>$app_name</string>
+  <string>$executable_name</string>
 PLIST
 
     if [[ -n "$version" ]]; then
