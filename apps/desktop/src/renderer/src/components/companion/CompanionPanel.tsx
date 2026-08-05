@@ -129,7 +129,7 @@ function CompanionBody({
       <div
         className={cn(
           'flex min-h-0 flex-1 flex-col',
-          layout === 'workspace' && 'mx-auto w-full max-w-5xl',
+          layout === 'workspace' && 'mx-auto w-full max-w-3xl',
         )}
       >
         {providerId ? (

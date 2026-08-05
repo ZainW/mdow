@@ -1,6 +1,6 @@
 import { cn } from '@renderer/lib/utils'
-import type { ComponentProps, HTMLAttributes, ReactNode } from 'react'
-import { useEffect, useRef } from 'react'
+import type { ComponentProps, HTMLAttributes, ReactNode, Ref } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { ArrowDownIcon } from 'lucide-react'
 
@@ -15,9 +15,14 @@ export function Conversation({ className, ...props }: HTMLAttributes<HTMLDivElem
   )
 }
 
-export function ConversationContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function ConversationContent({
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
   return (
     <div
+      ref={ref}
       className={cn('flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3', className)}
       {...props}
     />
@@ -59,25 +64,28 @@ export function ConversationScrollButton({
 }: ComponentProps<typeof Button> & {
   containerRef: React.RefObject<HTMLDivElement | null>
 }) {
-  const visibleRef = useRef(false)
+  const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-      visibleRef.current = distance > 80
+      setVisible(distance > 80)
     }
+    onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
   }, [containerRef])
+
+  if (!visible) return null
 
   return (
     <Button
       type="button"
       size="icon-sm"
       variant="secondary"
-      className={cn('absolute right-3 bottom-3 shadow-sm', className)}
+      className={cn('absolute right-3 bottom-3 z-10 shadow-sm transition-opacity', className)}
       aria-label="Scroll to latest message"
       onClick={() => {
         containerRef.current?.scrollTo({

@@ -1,5 +1,5 @@
 /* oxlint-disable jsx-a11y/no-noninteractive-element-to-interactive-role, jsx-a11y/prefer-tag-over-role -- The custom mention popup follows the ARIA combobox/listbox pattern. */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Send, Square, X } from 'lucide-react'
 import type { CompanionProviderId, TreeNode } from '../../../../shared/types'
 import { fuzzySearch } from '../../lib/fuzzy-search'
@@ -9,6 +9,8 @@ import { selectActiveTab, useAppStore } from '../../store/app-store'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Textarea } from '../ui/textarea'
+
+export const COMPANION_PREFILL_EVENT = 'mdow:companion-prefill'
 
 function flattenMarkdownPaths(nodes: TreeNode[]): { path: string; name: string }[] {
   const output: { path: string; name: string }[] = []
@@ -34,9 +36,30 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
   const folderTree = useAppStore((state) => state.folderTree)
   const openFolderPath = useAppStore((state) => state.openFolderPath)
   const activeTab = useAppStore(selectActiveTab)
+  const clearError = useAppStore((state) => state.clearCompanionError)
   const [text, setText] = useState('')
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [activeMentionIndex, setActiveMentionIndex] = useState(-1)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!error) return
+    const timer = setTimeout(() => void clearError(), 6000)
+    return () => clearTimeout(timer)
+  }, [error, clearError])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ text: string }>).detail
+      if (!detail?.text) return
+      setText(detail.text)
+      setMentionQuery(null)
+      setActiveMentionIndex(-1)
+      queueMicrotask(() => textareaRef.current?.focus())
+    }
+    window.addEventListener(COMPANION_PREFILL_EVENT, handler)
+    return () => window.removeEventListener(COMPANION_PREFILL_EVENT, handler)
+  }, [])
 
   const candidates = useMemo(() => flattenMarkdownPaths(folderTree), [folderTree])
   const mentionResults = useMemo(() => {
@@ -133,6 +156,7 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
       )}
       <div className="flex items-end gap-1.5">
         <Textarea
+          ref={textareaRef}
           name="companion-prompt"
           aria-label="Ask about these docs"
           aria-controls={mentionResults.length > 0 ? 'companion-mention-listbox' : undefined}
@@ -208,6 +232,9 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
           {streaming ? <Square /> : <Send />}
         </Button>
       </div>
+      <p className="mt-1 px-1 text-[10px] text-muted-foreground/70">
+        <kbd className="font-sans">⏎</kbd> to send · <kbd className="font-sans">⇧⏎</kbd> for newline
+      </p>
     </div>
   )
 }
