@@ -2,10 +2,16 @@
 title: Features
 description: What makes Mdow special
 category: Guide
-order: 3
+order: 4
 ---
 
 # Features
+
+## Local AI companion
+
+Ask questions about the focused document, an open folder, or files and folders selected with `@` tags. Mdow sends the context you choose through an installed ACP provider such as OpenCode or Codex ACP, then links citations in the answer back to the source files.
+
+The companion is read-only. It helps you understand local documents without modifying them, and it uses providers already configured on your machine rather than requiring a separate Mdow model account.
 
 ## Tabbed reading
 

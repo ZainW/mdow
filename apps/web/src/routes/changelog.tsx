@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { seo } from '~/lib/seo'
+import { canonical, seo } from '~/lib/seo'
 import changelogRaw from '../../content/changelog.md?raw'
 
 const fetchChangelog = createServerFn({ method: 'GET' }).handler(async () => {
@@ -17,7 +17,9 @@ export const Route = createFileRoute('/changelog')({
     meta: seo({
       title: 'Changelog — Mdow',
       description: "What's new in Mdow.",
+      path: '/changelog',
     }),
+    links: [canonical('/changelog')],
   }),
   component: ChangelogPage,
 })

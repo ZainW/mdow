@@ -14,10 +14,9 @@ export const Route = createRootRoute({
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ...seo({
-        title: 'Mdow — A quiet place to read markdown',
+        title: 'Mdow: AI Markdown Reader for Mac, Windows & Linux',
         description:
-          'A beautiful, fast markdown viewer for Mac, Windows, and Linux. Syntax highlighting, Mermaid diagrams, and a distraction-free reading experience.',
-        image: '/og-image.png',
+          'Read markdown and ask questions about local files with OpenCode and ACP. Free for Mac, Windows, and Linux, with Mermaid and Shiki built in.',
       }),
     ],
     links: [

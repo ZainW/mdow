@@ -11,7 +11,7 @@ const changelogPath = join(root, 'content/changelog.md')
 const outDir = join(root, 'public/changelog')
 const outPath = join(outDir, 'rss.xml')
 
-const SITE_URL = 'https://mdow.app'
+const SITE_URL = 'https://mdow.wania.app'
 
 function escapeXml(text) {
   return text
@@ -30,14 +30,12 @@ const items = sections
     const [versionLine, ...rest] = section.split('\n')
     const version = versionLine.trim()
     const content = rest.join('\n').trim()
-    const pubDate = new Date().toUTCString()
     const anchor = version.replace(/\./g, '-')
     return `
     <item>
       <title>${escapeXml(version)}</title>
       <link>${SITE_URL}/changelog#${escapeXml(anchor)}</link>
       <guid isPermaLink="false">${escapeXml(version)}</guid>
-      <pubDate>${pubDate}</pubDate>
       <description>${escapeXml(content.slice(0, 500))}</description>
     </item>`
   })

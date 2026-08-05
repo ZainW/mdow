@@ -30,12 +30,12 @@ export function LandingHero({ platform, release, downloadUrl }: LandingHeroProps
             </Link>
           )}
           <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl md:text-6xl lg:text-[4rem] lg:leading-[1.08]">
-            A quiet place to read markdown
+            A quiet AI markdown reader
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Open folders, browse with a file tree, and read beautifully rendered markdown, with
-            Shiki syntax highlighting, Mermaid diagrams, and a calm interface that stays out of your
-            way.
+            Read local folders and ask questions across your documents through OpenCode and ACP,
+            with clickable source citations, Shiki syntax highlighting, Mermaid diagrams, and a calm
+            interface that stays out of your way.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             {downloadUrl ? (

@@ -9,7 +9,7 @@ import {
   NATIVE_MAC_BETA_DOWNLOAD_URL,
 } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
-import { seo } from '~/lib/seo'
+import { canonical, seo } from '~/lib/seo'
 
 const REPO_RELEASES_URL = 'https://github.com/ZainW/mdow/releases'
 
@@ -33,8 +33,9 @@ export const Route = createFileRoute('/download')({
       title: 'Download Mdow',
       description:
         'Download Mdow for Mac, Windows, or Linux. Free markdown viewer with syntax highlighting and Mermaid support.',
-      image: '/og-image.png',
+      path: '/download',
     }),
+    links: [canonical('/download')],
   }),
   component: DownloadPage,
 })

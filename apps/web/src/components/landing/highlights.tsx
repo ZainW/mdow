@@ -87,7 +87,7 @@ function ListIcon({ className }: { className?: string }) {
   )
 }
 
-function ExpandIcon({ className }: { className?: string }) {
+function CompanionIcon({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -96,10 +96,9 @@ function ExpandIcon({ className }: { className?: string }) {
       strokeWidth="1.5"
       className={className}
     >
-      <path d="M15 3h6v6" />
-      <path d="M9 21H3v-6" />
-      <path d="M21 3l-7 7" />
-      <path d="M3 21l7-7" />
+      <path d="M12 3v3m0 12v3M3 12h3m12 0h3" />
+      <path d="m5.64 5.64 2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }
@@ -108,6 +107,12 @@ export function LandingHighlights() {
   const modKey = useModKey()
 
   const highlights = [
+    {
+      icon: CompanionIcon,
+      title: 'Local AI companion',
+      description:
+        'Ask questions across documents through OpenCode and ACP, with context you control and citations you can verify.',
+    },
     {
       icon: TabsIcon,
       title: 'Tabbed reading',
@@ -132,11 +137,6 @@ export function LandingHighlights() {
       icon: ListIcon,
       title: 'Document outline',
       description: 'Jump between headings with a sidebar outline for long reads.',
-    },
-    {
-      icon: ExpandIcon,
-      title: 'Wide reading mode',
-      description: 'Hide chrome and focus on the content when you need more space.',
     },
   ]
 

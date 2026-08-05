@@ -9,10 +9,10 @@ import { DocsNav } from '~/components/docs-nav'
 import { DocsCopyMarkdown } from '~/components/docs-copy-markdown'
 import { CopyButton } from '~/components/copy-button'
 import { useCodeBlockCopy } from '~/hooks/use-code-block-copy'
-import { seo } from '~/lib/seo'
+import { canonical, seo } from '~/lib/seo'
 
 const fetchDoc = createServerFn({ method: 'GET' })
-  .inputValidator((slug: string) => slug)
+  .validator((slug: string) => slug)
   .handler(async ({ data: slug }) => {
     const [doc, allDocs] = await Promise.all([getDoc(slug), getAllDocs()])
     if (!doc) throw new Error(`Doc not found: ${slug}`)
@@ -35,8 +35,10 @@ export const Route = createFileRoute('/docs/$')({
       ? seo({
           title: `${loaderData.doc.meta.title} — Mdow Docs`,
           description: loaderData.doc.meta.description,
+          path: `/docs/${loaderData.doc.meta.slug}`,
         })
       : [],
+    links: loaderData ? [canonical(`/docs/${loaderData.doc.meta.slug}`)] : [],
   }),
   component: DocPage,
 })
