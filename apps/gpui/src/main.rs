@@ -1,0 +1,213 @@
+use anyhow::Context;
+use gpui::{
+    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType,
+    TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
+};
+use mdow_gpui::{
+    actions::{CloseTab, OpenFile, OpenFolder, Quit, ToggleSidebar, ToggleWideMode},
+    app::MdowApp,
+    assets::{MdowAssets, discover_asset_root, validate_required_assets},
+};
+use std::{borrow::Cow, ffi::OsString, path::PathBuf};
+
+struct LaunchArgs {
+    verify_assets: bool,
+    document_path: Option<PathBuf>,
+}
+
+fn launch_args<T>(args: impl IntoIterator<Item = T>) -> LaunchArgs
+where
+    T: Into<OsString>,
+{
+    let mut verify_assets = false;
+    let mut document_path = None;
+
+    for argument in args.into_iter().skip(1).map(Into::into) {
+        if argument == "--verify-assets" {
+            verify_assets = true;
+        } else if document_path.is_none() && !argument.to_string_lossy().starts_with('-') {
+            document_path = Some(PathBuf::from(argument));
+        }
+    }
+
+    LaunchArgs {
+        verify_assets,
+        document_path,
+    }
+}
+
+fn default_window_title() -> &'static str {
+    "Mdow Native"
+}
+
+fn app_menus() -> Vec<Menu> {
+    vec![
+        Menu {
+            name: "Mdow Native".into(),
+            items: vec![
+                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::separator(),
+                MenuItem::action("Quit Mdow Native", Quit),
+            ],
+        },
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("Open File…", OpenFile),
+                MenuItem::action("Open Folder…", OpenFolder),
+                MenuItem::separator(),
+                MenuItem::action("Close Tab", CloseTab),
+            ],
+        },
+    ]
+}
+
+fn main() -> anyhow::Result<()> {
+    let launch_args = launch_args(std::env::args_os());
+    let asset_root = discover_asset_root(
+        std::env::current_exe().context("locating Mdow Native executable")?,
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
+    )?;
+    validate_required_assets(&asset_root)?;
+
+    if launch_args.verify_assets {
+        println!("{}", asset_root.display());
+        return Ok(());
+    }
+
+    let fonts = ["fonts/InterVariable.ttf", "fonts/GeistMono-Variable.ttf"]
+        .into_iter()
+        .map(|asset| {
+            std::fs::read(asset_root.join(asset))
+                .with_context(|| format!("reading required asset {asset}"))
+                .map(Cow::Owned)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let launch_path = launch_args.document_path;
+    Application::new()
+        .with_assets(MdowAssets::new(asset_root))
+        .run(move |cx: &mut App| {
+            cx.text_system()
+                .add_fonts(fonts)
+                .expect("register required Mdow fonts");
+
+            cx.bind_keys([
+                KeyBinding::new("cmd-o", OpenFile, None),
+                KeyBinding::new("cmd-shift-o", OpenFolder, None),
+                KeyBinding::new("cmd-b", ToggleSidebar, None),
+                KeyBinding::new("cmd-w", CloseTab, None),
+                KeyBinding::new("cmd-shift-w", ToggleWideMode, None),
+                KeyBinding::new("cmd-q", Quit, None),
+            ]);
+            cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.set_menus(app_menus());
+
+            let bounds = Bounds::centered(None, size(px(1120.0), px(760.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(default_window_title().into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(px(14.0), px(14.0))),
+                    }),
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = MdowApp::new(window, cx);
+                        if let Some(path) = launch_path.as_deref() {
+                            app.open_path(path, cx);
+                        }
+                        app
+                    })
+                },
+            )
+            .expect("open Mdow window");
+            cx.activate(true);
+        });
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::OwnedMenuItem;
+    use std::ffi::OsString;
+
+    #[test]
+    fn launch_path_is_the_first_non_flag_argument_only() {
+        let args = launch_args([
+            OsString::from("mdow"),
+            OsString::from("--verify"),
+            OsString::from("first.md"),
+            OsString::from("second.md"),
+        ]);
+
+        assert_eq!(args.document_path, Some(PathBuf::from("first.md")));
+        assert_eq!(
+            launch_args([OsString::from("mdow"), OsString::from("--verify")]).document_path,
+            None
+        );
+    }
+
+    #[test]
+    fn verify_assets_flag_is_not_treated_as_a_document_path() {
+        let args = launch_args(["MdowNative", "--verify-assets"]);
+
+        assert!(args.verify_assets);
+        assert_eq!(args.document_path, None);
+    }
+
+    #[test]
+    fn native_menus_keep_quit_once_and_file_actions_in_a_distinct_file_menu() {
+        let menus = app_menus().into_iter().map(Menu::owned).collect::<Vec<_>>();
+        let names = menus
+            .iter()
+            .map(|menu| menu.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["Mdow Native", "File"]);
+        assert!(matches!(
+            &menus[0].items[0],
+            OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"
+        ));
+        assert!(matches!(menus[0].items[1], OwnedMenuItem::Separator));
+        assert!(matches!(
+            &menus[0].items[2],
+            OwnedMenuItem::Action { name, action, .. }
+                if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
+        ));
+
+        let file_actions = menus[1]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                OwnedMenuItem::Action { name, action, .. } => {
+                    Some((name.as_str(), action.as_ref()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(file_actions.len(), 3);
+        assert_eq!(file_actions[0].0, "Open File…");
+        assert!(file_actions[0].1.as_any().is::<OpenFile>());
+        assert_eq!(file_actions[1].0, "Open Folder…");
+        assert!(file_actions[1].1.as_any().is::<OpenFolder>());
+        assert_eq!(file_actions[2].0, "Close Tab");
+        assert!(file_actions[2].1.as_any().is::<CloseTab>());
+
+        let quit_count = menus
+            .iter()
+            .flat_map(|menu| &menu.items)
+            .filter(|item| {
+                matches!(
+                    item,
+                    OwnedMenuItem::Action { action, .. } if action.as_any().is::<Quit>()
+                )
+            })
+            .count();
+        assert_eq!(quit_count, 1);
+        assert_eq!(default_window_title(), "Mdow Native");
+    }
+}

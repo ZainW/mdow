@@ -15,11 +15,14 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
 
-### Native Mac beta
+### Mdow Native (GPUI beta)
 
-The download page also offers a separate native SwiftUI beta for macOS 14 and newer.
-Download `MdowNative-mac-beta.zip`, unzip it, and move `MdowNative.app` to Applications.
-This preview is published with tagged releases, but the Electron app remains the recommended stable macOS build.
+Mdow Native is a separate GPUI beta for Apple Silicon Macs running macOS 14 or newer. Download
+`MdowNative-mac-beta.zip`, unzip it, and move `Mdow Native.app` to Applications. It runs alongside
+the regular Mdow app.
+
+Tagged releases are signed and notarized. Upgrades are manual for now: download the latest beta ZIP
+and replace the old app. Mdow Native does not have an in-app updater yet.
 
 ## Windows
 

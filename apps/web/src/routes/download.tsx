@@ -3,10 +3,11 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadCard } from '~/components/download-card'
 import { DownloadButton } from '~/components/download-button'
+import { NativeDownloadSection } from '~/components/native-download-section'
 import {
   detectPlatform,
-  nativeMacBetaDownloadUrl,
-  NATIVE_MAC_BETA_DOWNLOAD_URL,
+  gpuiMacBetaDownloadUrl,
+  GPUI_MAC_BETA_DOWNLOAD_URL,
 } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { canonical, seo } from '~/lib/seo'
@@ -59,7 +60,7 @@ function DownloadPage() {
             .
           </p>
         </div>
-        <NativeBetaSection betaUrl={NATIVE_MAC_BETA_DOWNLOAD_URL} />
+        <NativeDownloadSection betaUrl={GPUI_MAC_BETA_DOWNLOAD_URL} />
       </div>
     )
   }
@@ -68,7 +69,7 @@ function DownloadPage() {
   const sorted = [...platforms].sort((a, b) => (a.id === os ? -1 : b.id === os ? 1 : 0))
   const recommended = sorted.find((p) => p.id === os)
   const primaryUrl = recommended?.formats[0]?.url
-  const nativeBetaUrl = nativeMacBetaDownloadUrl(release)
+  const gpuiBetaUrl = gpuiMacBetaDownloadUrl(release)
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
@@ -100,7 +101,7 @@ function DownloadPage() {
           />
         ))}
       </div>
-      <NativeBetaSection betaUrl={nativeBetaUrl} />
+      <NativeDownloadSection betaUrl={gpuiBetaUrl} />
       <p className="mt-8 text-center text-sm text-muted-foreground">
         <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
           View all releases on GitHub
@@ -116,28 +117,6 @@ function DownloadPage() {
         </a>
       </p>
     </div>
-  )
-}
-
-function NativeBetaSection({ betaUrl }: { betaUrl: string }) {
-  return (
-    <section className="mt-10 border-t border-border-subtle pt-8">
-      <div className="mx-auto mb-5 max-w-2xl text-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">Beta</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight">Native Mac build</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          A separate SwiftUI preview for macOS 14 and newer. The Electron app remains the
-          recommended stable download.
-        </p>
-      </div>
-      <div className="mx-auto max-w-sm">
-        <DownloadCard
-          platform="Native macOS"
-          icon={'\u{2318}'}
-          formats={[{ label: 'Download native beta (.zip)', url: betaUrl }]}
-        />
-      </div>
-    </section>
   )
 }
 

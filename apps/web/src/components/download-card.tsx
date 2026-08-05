@@ -26,7 +26,9 @@ export function DownloadCard({ platform, icon, formats, recommended, note }: Dow
         recommended && 'border-accent/40 bg-accent/8 ring-1 ring-accent/15',
       )}
     >
-      <div className="mb-3 text-3xl">{icon}</div>
+      <div className="mb-3 text-3xl" aria-hidden="true">
+        {icon}
+      </div>
       <h3 className="mb-1 text-lg font-semibold">{platform}</h3>
       {recommended && (
         <p className="mb-3 text-xs font-medium text-primary">Recommended for your OS</p>
