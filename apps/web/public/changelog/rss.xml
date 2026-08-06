@@ -6,17 +6,26 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.6.1</title>
+      <link>https://mdow.wania.app/changelog#v1-6-1</link>
+      <guid isPermaLink="false">v1.6.1</guid>
+      <pubDate>Thu, 06 Aug 2026 15:12:14 GMT</pubDate>
+      <description>Latest release.
+
+- Upgraded the comark markdown engine to 0.6 with API compatibility fixes
+- Updated all desktop and web dependencies to their latest compatible versions
+- Removed unused dependencies for leaner builds and a deduplicated lockfile</description>
+    </item>
+    <item>
       <title>v1.6.0</title>
       <link>https://mdow.wania.app/changelog#v1-6-0</link>
       <guid isPermaLink="false">v1.6.0</guid>
       <pubDate>Mon, 03 Aug 2026 14:23:43 GMT</pubDate>
-      <description>Latest release.
-
-- Added a separately distributed Mdow Native GPUI beta for Apple Silicon Macs
+      <description>- Added a separately distributed Mdow Native GPUI beta for Apple Silicon Macs
 - Added a local, read-only AI Companion for asking questions about Markdown documents through installed ACP providers
 - Added focused-document, open-folder, and `@`-tagged context with clickable source citations
 - Streamed Markdown answers alongside collapsible thinking and tool activity in drawer and expanded views
-- Hardened long responses, cancellation, multi-window routing, provider fallback, and</description>
+- Hardened long responses, cancellation, multi-window routing, provider fallback, and custom executable</description>
     </item>
     <item>
       <title>v1.5.2</title>
