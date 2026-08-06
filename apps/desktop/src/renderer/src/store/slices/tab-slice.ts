@@ -223,10 +223,13 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
     set((state) => {
       const keep = state.tabs.find((t) => t.id === tabId)
       if (!keep) return state
+      const removedIds: string[] = []
       for (const t of state.tabs) {
-        if (t.id !== tabId) unwatchPath(t.path)
+        if (t.id !== tabId) {
+          unwatchPath(t.path)
+          removedIds.push(t.id)
+        }
       }
-      const removedIds = state.tabs.filter((t) => t.id !== tabId).map((t) => t.id)
       return {
         tabs: [keep],
         activeTabId: tabId,

@@ -1,9 +1,9 @@
 import {
-  createParse,
-  type ComarkElement,
-  type ComarkNode,
+  createMarkdownParser,
   type ComarkPlugin,
-  type ComarkTree,
+  type ElementNode as ComarkElement,
+  type MarkdownDocument as ComarkTree,
+  type Node as ComarkNode,
 } from 'comark'
 import { defineCachedFunction } from 'ocache'
 import type { LanguageRegistration, ThemeRegistration } from 'shiki'
@@ -11,7 +11,7 @@ import { configureRendererCacheStorage } from './cache-storage'
 
 configureRendererCacheStorage()
 
-type ParseFn = ReturnType<typeof createParse>
+type ParseFn = ReturnType<typeof createMarkdownParser>
 type LanguageLoader = () => Promise<LanguageRegistration | LanguageRegistration[]>
 
 interface ParserFeatures {
@@ -251,8 +251,10 @@ const lazyHighlight: ComarkPlugin = {
     const languages = languageResults.filter(
       (language): language is LanguageRegistration | LanguageRegistration[] => Boolean(language),
     )
-    const themes = await loadHighlightThemes()
-    const { highlightCodeBlocks } = await import('comark/plugins/highlight')
+    const [themes, { highlightCodeBlocks }] = await Promise.all([
+      loadHighlightThemes(),
+      import('comark/plugins/highlight'),
+    ])
 
     state.tree = await highlightCodeBlocks(state.tree, {
       registerDefaultThemes: false,
@@ -280,7 +282,7 @@ async function createParser(features: ParserFeatures): Promise<ParseFn> {
 
   plugins.push(breaksOutsideCode)
 
-  return createParse({ plugins })
+  return createMarkdownParser({ plugins })
 }
 
 async function getParser(text: string): Promise<ParseFn> {
