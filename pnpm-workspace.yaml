@@ -11,3 +11,6 @@ allowBuilds:
 
 configDependencies:
   '@pnpm/pacquet': 0.11.12
+
+minimumReleaseAgeExclude:
+  - md4x@0.0.26

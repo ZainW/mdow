@@ -1,4 +1,4 @@
-import { MarkdownDocument as ComarkRenderer } from '@comark/react'
+import { MarkdownDocument } from '@comark/react'
 import {
   lazy,
   memo,
@@ -66,7 +66,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   const components = useMemo(() => createMarkdownComponents(docPath), [docPath])
   return (
     <Suspense fallback={null}>
-      <ComarkRenderer value={result.tree} components={components} />
+      <MarkdownDocument value={result.tree} components={components} />
     </Suspense>
   )
 })
