@@ -44,7 +44,9 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
 
   useEffect(() => {
     if (!error) return
-    const timer = setTimeout(() => void clearError(), 6000)
+    const timer = setTimeout(() => {
+      clearError()
+    }, 6000)
     return () => clearTimeout(timer)
   }, [error, clearError])
 

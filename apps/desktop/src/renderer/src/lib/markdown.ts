@@ -1,9 +1,9 @@
 import {
-  createParse,
-  type ComarkElement,
-  type ComarkNode,
+  createMarkdownParser,
   type ComarkPlugin,
-  type ComarkTree,
+  type ElementNode,
+  type MarkdownDocument,
+  type Node,
 } from 'comark'
 import { defineCachedFunction } from 'ocache'
 import type { LanguageRegistration, ThemeRegistration } from 'shiki'
@@ -11,7 +11,7 @@ import { configureRendererCacheStorage } from './cache-storage'
 
 configureRendererCacheStorage()
 
-type ParseFn = ReturnType<typeof createParse>
+type ParseFn = ReturnType<typeof createMarkdownParser>
 type LanguageLoader = () => Promise<LanguageRegistration | LanguageRegistration[]>
 
 interface ParserFeatures {
@@ -214,10 +214,10 @@ function loadLanguage(
   return promise
 }
 
-function collectCodeLanguages(tree: ComarkTree): string[] {
+function collectCodeLanguages(tree: MarkdownDocument): string[] {
   const languages = new Set<string>()
 
-  function visit(node: ComarkNode): void {
+  function visit(node: Node): void {
     if (!isElement(node)) return
 
     if (node[0] === 'pre') {
@@ -252,7 +252,7 @@ const lazyHighlight: ComarkPlugin = {
       (language): language is LanguageRegistration | LanguageRegistration[] => Boolean(language),
     )
     const themes = await loadHighlightThemes()
-    const { highlightCodeBlocks } = await import('comark/plugins/highlight')
+    const { highlightCodeBlocks } = await import('comark/plugins/shiki')
 
     state.tree = await highlightCodeBlocks(state.tree, {
       registerDefaultThemes: false,
@@ -280,7 +280,7 @@ async function createParser(features: ParserFeatures): Promise<ParseFn> {
 
   plugins.push(breaksOutsideCode)
 
-  return createParse({ plugins })
+  return createMarkdownParser({ plugins })
 }
 
 async function getParser(text: string): Promise<ParseFn> {
@@ -307,7 +307,7 @@ export interface DocHeading {
 }
 
 export interface RenderResult {
-  tree: ComarkTree
+  tree: MarkdownDocument
   mermaidBlocks: { id: string; code: string }[]
   headings: DocHeading[]
   frontmatter: Record<string, unknown>
@@ -321,22 +321,22 @@ function slugifyHeading(text: string): string {
     .replace(/\s+/g, '-')
 }
 
-function isElement(node: ComarkNode): node is ComarkElement {
+function isElement(node: Node): node is ElementNode {
   return Array.isArray(node) && typeof node[0] === 'string'
 }
 
-function isNode(value: unknown): value is ComarkNode {
+function isNode(value: unknown): value is Node {
   return typeof value === 'string' || Array.isArray(value)
 }
 
-function getNodeText(node: ComarkNode): string {
+function getNodeText(node: Node): string {
   if (typeof node === 'string') return node
   if (!isElement(node)) return ''
   return getChildren(node).map(getNodeText).join('')
 }
 
-function getChildren(node: ComarkElement): ComarkNode[] {
-  const children: ComarkNode[] = []
+function getChildren(node: ElementNode): Node[] {
+  const children: Node[] = []
   for (let i = 2; i < node.length; i++) {
     const child = node[i]
     if (isNode(child)) children.push(child)
@@ -344,7 +344,7 @@ function getChildren(node: ComarkElement): ComarkNode[] {
   return children
 }
 
-function appendClassName(node: ComarkElement, className: string): void {
+function appendClassName(node: ElementNode, className: string): void {
   const attrs = node[1]
   const existing = attrs.class
   if (typeof existing === 'string' && existing.length > 0) {
@@ -367,7 +367,7 @@ async function renderMarkdownUncached(
   const headings: DocHeading[] = []
   const slugCounts = new Map<string, number>()
 
-  function visit(node: ComarkNode): void {
+  function visit(node: Node): void {
     if (!isElement(node)) return
 
     const tag = node[0]

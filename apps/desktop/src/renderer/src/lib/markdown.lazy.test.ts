@@ -7,7 +7,7 @@ const pluginMock = vi.hoisted(() => ({
   mermaidFactory: vi.fn(() => ({ name: 'mermaid' })),
 }))
 
-vi.mock('comark/plugins/highlight', () => ({
+vi.mock('comark/plugins/shiki', () => ({
   default: pluginMock.highlightFactory,
   highlightCodeBlocks: pluginMock.highlightCodeBlocks,
 }))

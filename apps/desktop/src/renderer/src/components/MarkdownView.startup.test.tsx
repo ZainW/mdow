@@ -30,9 +30,9 @@ vi.mock('../hooks/useDocumentSearch', () => ({
 }))
 
 vi.mock('@comark/react', () => ({
-  ComarkRenderer: ({ tree }: { tree: { nodes: unknown[] } }) => (
+  MarkdownDocument: ({ value }: { value: { nodes: unknown[] } }) => (
     <>
-      {tree.nodes.map((node) =>
+      {value.nodes.map((node) =>
         Array.isArray(node) && node[0] === 'h1' && typeof node[2] === 'string' ? (
           <h1 key={node[2]}>{node[2]}</h1>
         ) : null,

@@ -1,4 +1,4 @@
-import { ComarkRenderer } from '@comark/react'
+import { MarkdownDocument } from '@comark/react'
 import { Math as ComarkMath } from '@comark/react/components/Math'
 import {
   memo,
@@ -58,5 +58,5 @@ export const MarkdownContent = memo(function MarkdownContent({
   docPath: string
 }) {
   const components = useMemo(() => createMarkdownComponents(docPath), [docPath])
-  return <ComarkRenderer tree={result.tree} components={components} />
+  return <MarkdownDocument value={result.tree} components={components} />
 })
