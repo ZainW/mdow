@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "description": "A quiet place to read markdown",
   "author": "Zain Wania",
@@ -33,12 +33,9 @@
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@comark/react": "^0.6.2",
-    "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@pierre/trees": "1.0.0-beta.6",
-    "@radix-ui/react-slot": "^1.3.3",
     "@tanstack/react-query": "^5.101.4",
-    "@tanstack/react-virtual": "^3.14.9",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

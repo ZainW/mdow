@@ -1,12 +1,18 @@
 import { MarkdownDocument } from '@comark/react'
-import { Math as ComarkMath } from '@comark/react/components/Math'
 import {
+  lazy,
   memo,
+  Suspense,
   useMemo,
   type AnchorHTMLAttributes,
   type HTMLAttributes,
   type ImgHTMLAttributes,
 } from 'react'
+
+const ComarkMath = lazy(() =>
+  import('@comark/react/components/Math').then((mod) => ({ default: mod.Math })),
+)
+
 import type { RenderResult } from '../../lib/markdown'
 import { resolveRelativePath } from '../../lib/path-utils'
 import { ALERT_TYPES, AlertCallout } from './AlertCallout'
@@ -58,5 +64,9 @@ export const MarkdownContent = memo(function MarkdownContent({
   docPath: string
 }) {
   const components = useMemo(() => createMarkdownComponents(docPath), [docPath])
-  return <MarkdownDocument value={result.tree} components={components} />
+  return (
+    <Suspense fallback={null}>
+      <MarkdownDocument value={result.tree} components={components} />
+    </Suspense>
+  )
 })

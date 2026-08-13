@@ -13,6 +13,20 @@ export default defineConfig({
       },
     },
     plugins: [tailwindcss(), react()],
+    build: {
+      rollupOptions: {
+        input: resolve('src/renderer/index.html'),
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('/components/SettingsDialog')) return 'ui-settings'
+            if (id.includes('/components/ShortcutsDialog')) return 'ui-shortcuts'
+            if (id.includes('/components/CommandPalette')) return 'ui-command'
+            if (id.includes('/components/companion/')) return 'companion'
+            return undefined
+          },
+        },
+      },
+    },
     server: {
       watch: {
         ignored: [

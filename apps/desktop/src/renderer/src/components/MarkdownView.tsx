@@ -110,7 +110,7 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
         role="tabpanel"
         aria-labelledby={`tab-${tab.id}`}
         aria-busy={isRendering}
-        className="mx-auto px-12 py-8 text-foreground markdown-body transition-[max-width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        className="mx-auto px-12 py-8 text-foreground markdown-body"
         style={
           {
             maxWidth: wideMode ? '100%' : READING_WIDTHS[readingWidth],

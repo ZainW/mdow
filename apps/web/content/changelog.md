@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.6.0
+## v1.6.1
 
 Latest release.
+
+- Upgraded the comark markdown engine to 0.6 with API compatibility fixes
+- Updated all desktop and web dependencies to their latest compatible versions
+- Removed unused dependencies for leaner builds and a deduplicated lockfile
+
+## v1.6.0
 
 - Added a separately distributed Mdow Native GPUI beta for Apple Silicon Macs
 - Added a local, read-only AI Companion for asking questions about Markdown documents through installed ACP providers

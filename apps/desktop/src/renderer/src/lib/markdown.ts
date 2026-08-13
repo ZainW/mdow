@@ -251,8 +251,10 @@ const lazyHighlight: ComarkPlugin = {
     const languages = languageResults.filter(
       (language): language is LanguageRegistration | LanguageRegistration[] => Boolean(language),
     )
-    const themes = await loadHighlightThemes()
-    const { highlightCodeBlocks } = await import('comark/plugins/shiki')
+    const [themes, { highlightCodeBlocks }] = await Promise.all([
+      loadHighlightThemes(),
+      import('comark/plugins/shiki'),
+    ])
 
     state.tree = await highlightCodeBlocks(state.tree, {
       registerDefaultThemes: false,

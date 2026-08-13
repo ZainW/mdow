@@ -328,10 +328,6 @@
 
 /* Active file — subtle left accent bar + distinct bg.
    No font-weight change: it would shift neighbors when selecting. */
-.sidebar-drawer {
-  transition: width 180ms var(--ease-out-ui);
-}
-
 .sidebar-drawer-header {
   padding: 0.5rem 0.75rem;
 }
