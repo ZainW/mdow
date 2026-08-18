@@ -3,6 +3,8 @@ name: update-web-changelog
 description: Update the website changelog and RSS feed when releasing a new version. Use after bumping the desktop app version and before pushing a release tag.
 ---
 
+This is one step of a full release. For bumping the version, tagging, and GitHub/CI, use the `release` skill.
+
 When releasing a new version of the desktop app, update the website changelog:
 
 1. **Edit `apps/web/content/changelog.md`** — add a new `## vX.Y.Z` section at the top (below the frontmatter) with a brief summary of changes. Move "Latest release." to the new version.

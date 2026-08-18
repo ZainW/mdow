@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.6.1
+## v1.6.2
 
 Latest release.
+
+- Hold ⌘ (macOS) or Ctrl (Windows/Linux) to glance at a keyboard cheat sheet without dimming the document
+- Upgraded remaining desktop and web dependencies
+- Polished docs and copy to match the current app
+
+## v1.6.1
 
 - Upgraded the comark markdown engine to 0.6 with API compatibility fixes
 - Updated all desktop and web dependencies to their latest compatible versions
