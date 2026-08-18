@@ -20,7 +20,7 @@ export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
           Ready to read markdown beautifully?
         </h2>
         <p className="mx-auto mt-4 max-w-xl text-muted-foreground text-balance leading-relaxed">
-          Download mdow and turn any folder of markdown into a calm reading experience.
+          Download Mdow and turn any folder of markdown into a calm reading experience.
         </p>
       </div>
       <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">

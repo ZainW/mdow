@@ -44,4 +44,4 @@ Press `Cmd+K` (or `Ctrl+K`) to search open-folder files and run common actions s
 | Settings         | `Cmd+,` | `Ctrl+,`        |
 | Close tab        | `Cmd+W` | `Ctrl+W`        |
 
-Press `Cmd+?` (or `Ctrl+?`) inside the app to see the full shortcuts list, or read the [keyboard shortcuts guide](/docs/shortcuts).
+Press `Cmd+/` (or `Ctrl+/`) inside the app to see the full shortcuts list, or read the [keyboard shortcuts guide](/docs/shortcuts).

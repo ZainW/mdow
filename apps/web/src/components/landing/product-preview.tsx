@@ -8,7 +8,7 @@ export function LandingProductPreview() {
         Built for long reading sessions
       </h2>
       <p className="mx-auto mt-4 max-w-xl text-balance text-muted-foreground">
-        Whether you're skimming notes or diving into a long document, mdow keeps things comfortable
+        Whether you're skimming notes or diving into a long document, Mdow keeps things comfortable
         at any time of day, with tabs, outline navigation, and typography tuned for reading.
       </p>
       <div className="relative mx-auto mt-12 max-w-5xl">

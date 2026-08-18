@@ -1,5 +1,3 @@
-import { slugify } from './slugify'
-
 export interface DocMeta {
   slug: string
   title: string
@@ -39,14 +37,6 @@ function parseFrontmatter(raw: string): {
   return { frontmatter, body: match[2] }
 }
 
-function injectHeadingIds(html: string): string {
-  return html.replace(/<(h[23])>([\s\S]*?)<\/\1>/gi, (_, tag, inner) => {
-    const text = inner.replace(/<[^>]+>/g, '').trim()
-    const id = slugify(text)
-    return `<${tag} id="${id}">${inner}</${tag}>`
-  })
-}
-
 function slugFromPath(path: string): string {
   const file = path.split('/').pop() ?? ''
   return file.replace(/\.md$/, '')
@@ -60,7 +50,7 @@ export async function getDoc(slug: string): Promise<DocEntry | null> {
   const { frontmatter, body } = parseFrontmatter(raw)
   const { renderToHtml, init } = await import('md4x')
   await init()
-  const html = injectHeadingIds(renderToHtml(body))
+  const html = renderToHtml(body, { headingIds: true })
   return {
     meta: {
       slug,

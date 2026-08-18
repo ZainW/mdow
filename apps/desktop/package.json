@@ -52,7 +52,7 @@
     "react-dom": "^19.2.8",
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.6.0",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",

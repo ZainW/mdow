@@ -19,19 +19,19 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@tanstack/react-router": "^1.170.25",
-    "@tanstack/react-start": "^1.168.42",
+    "@tanstack/react-router": "^1.170.29",
+    "@tanstack/react-start": "^1.168.46",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fuse.js": "^7.5.0",
-    "md4x": "^0.0.26",
+    "md4x": "^0.0.29",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.51.3",
+    "@cloudflare/vite-plugin": "^1.52.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
@@ -47,6 +47,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10",
-    "wrangler": "^4.121.0"
+    "wrangler": "^4.124.0"
   }
 }

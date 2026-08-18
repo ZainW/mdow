@@ -39,7 +39,7 @@ export function WelcomeActions() {
 
 ```mermaid
 flowchart LR
-  md[Markdown] --> parse[md4x]
+  md[Markdown] --> parse[comark]
   parse --> html[HTML]
   html --> view[MarkdownView]
 ```

@@ -7,6 +7,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 This is a pnpm monorepo managed by Turborepo.
 
 - `apps/desktop/` — Electron markdown viewer (the main app)
+- `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
+- `apps/gpui/` — GPUI native beta for Apple Silicon Macs
 - `packages/` — shared libraries (none yet)
 
 ## Build & Development
@@ -42,14 +44,15 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - **Main process** (`apps/desktop/src/main/`): Electron window, IPC handlers, file/folder services, chokidar watchers
 - **Preload** (`apps/desktop/src/preload/`): IPC bridge exposing `window.api` — types in `index.d.ts`
 - **Renderer** (`apps/desktop/src/renderer/src/`): React app with Zustand store + TanStack Query
-- Markdown rendering uses md4x (WASM) + Shiki (syntax highlighting) + Mermaid (diagrams)
+- Desktop markdown rendering uses comark + `@comark/react` + Shiki + Mermaid
+- Website docs and changelog render with md4x
 - Path alias: `@renderer/*` maps to `src/renderer/src/*` (within the desktop workspace)
 
 ## Key Patterns
 
 - State: Zustand for UI state (`store/app-store.ts`), TanStack Query for async data
 - IPC: all main↔renderer communication through typed handlers in `ipc.ts` / `preload/index.ts`
-- File types: `.md`, `.markdown`, `.mdx` are treated as markdown
+- File types: `.md`, `.markdown`, `.mdx` are markdown; `.html` / `.htm` open in a sandboxed HTML viewer
 
 ## Testing
 

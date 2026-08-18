@@ -13,4 +13,6 @@ configDependencies:
   '@pnpm/pacquet': 0.11.12
 
 minimumReleaseAgeExclude:
-  - md4x@0.0.26
+  - md4x@0.0.29
+  - miniflare@5.20260815.0-alpha
+  - wrangler@4.124.0

@@ -46,7 +46,7 @@ import {
 import { existsSync } from 'fs'
 
 // Get reference to the mock's internal data for resetting
-// eslint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- accessing mock internals
+// oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- accessing mock internals
 const { __storeData: storeData } = (await import('electron-store')) as unknown as {
   __storeData: Map<string, unknown>
 }
