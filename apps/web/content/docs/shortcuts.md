@@ -2,12 +2,12 @@
 title: Keyboard Shortcuts
 description: Every keyboard shortcut in Mdow
 category: Guide
-order: 4
+order: 5
 ---
 
 # Keyboard Shortcuts
 
-Mdow is built for keyboard-first reading. Press **⌘?** (macOS) or **Ctrl+?** (Windows/Linux) inside the app to open the full shortcuts dialog.
+Mdow is built for keyboard-first reading. Press **⌘/** (macOS) or **Ctrl+/** (Windows/Linux) inside the app to open the full shortcuts dialog.
 
 ![Mdow sidebar with folder tree and tabbed documents](/screenshots/sidebar-light.webp)
 
@@ -17,7 +17,6 @@ Mdow is built for keyboard-first reading. Press **⌘?** (macOS) or **Ctrl+?** (
 | ----------- | ----- | --------------- |
 | Open file   | ⌘O    | Ctrl+O          |
 | Open folder | ⌘⇧O   | Ctrl+Shift+O    |
-| Close tab   | ⌘W    | Ctrl+W          |
 
 ## Navigation
 
@@ -25,25 +24,27 @@ Mdow is built for keyboard-first reading. Press **⌘?** (macOS) or **Ctrl+?** (
 | ------------------ | ----- | --------------- |
 | Command palette    | ⌘K    | Ctrl+K          |
 | Find in document   | ⌘F    | Ctrl+F          |
-| Toggle sidebar     | ⌘B    | Ctrl+B          |
 | Switch tab by slot | ⌘1–9  | Ctrl+1–9        |
+| Close tab          | ⌘W    | Ctrl+W          |
 | Next tab           | ⌘⌥→   | Ctrl+Alt+→      |
 | Previous tab       | ⌘⌥←   | Ctrl+Alt+←      |
 
 ## View
 
-| Action     | macOS | Windows / Linux |
-| ---------- | ----- | --------------- |
-| Zoom in    | ⌘+    | Ctrl++          |
-| Zoom out   | ⌘-    | Ctrl+-          |
-| Reset zoom | ⌘0    | Ctrl+0          |
+| Action             | macOS | Windows / Linux |
+| ------------------ | ----- | --------------- |
+| Toggle sidebar     | ⌘B    | Ctrl+B          |
+| Keyboard shortcuts | ⌘/    | Ctrl+/          |
+| Zoom in            | ⌘+    | Ctrl++          |
+| Zoom out           | ⌘-    | Ctrl+-          |
+| Reset zoom         | ⌘0    | Ctrl+0          |
+| Toggle full screen | ⌃⌘F   | F11             |
 
 ## App
 
-| Action    | macOS | Windows / Linux |
-| --------- | ----- | --------------- |
-| Settings  | ⌘,    | Ctrl+,          |
-| Shortcuts | ⌘?    | Ctrl+?          |
+| Action   | macOS | Windows / Linux |
+| -------- | ----- | --------------- |
+| Settings | ⌘,    | Ctrl+,          |
 
 ## Command palette actions
 

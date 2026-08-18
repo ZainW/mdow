@@ -137,9 +137,13 @@ export function WelcomeView() {
           >
             <CardContent className="py-3 text-xs text-muted-foreground">
               <strong className="font-medium text-foreground/90">Anywhere in this window</strong>
-              {' — drop '}
+              {', drop '}
               <code className="rounded-sm bg-muted px-1 py-px font-mono text-[0.6875rem] text-foreground/80">
                 .md
+              </code>
+              {' or '}
+              <code className="rounded-sm bg-muted px-1 py-px font-mono text-[0.6875rem] text-foreground/80">
+                .html
               </code>{' '}
               files or a folder.
             </CardContent>

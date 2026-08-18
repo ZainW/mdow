@@ -95,7 +95,7 @@ function useStableFileTree(buildOptions: () => FileTreeOptions): FileTreeModel {
         pendingCleanupRef.current = null
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return modelRef.current

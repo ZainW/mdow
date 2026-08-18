@@ -148,7 +148,7 @@ export function LandingHighlights() {
         </h2>
         <p className="mt-4 text-muted-foreground text-balance">
           Mdow is a viewer, not an editor, built for people who write in their editor and read in
-          mdow.
+          Mdow.
         </p>
       </div>
       <dl className="mx-auto mt-12 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">

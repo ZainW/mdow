@@ -55,7 +55,7 @@ Press `Cmd+F` to search within the current document. Matches are highlighted as 
 
 ## Live file watching
 
-When you edit a file in your text editor, mdow picks up changes automatically and refreshes the view.
+When you edit a file in your text editor, Mdow picks up changes automatically and refreshes the view.
 
 ## Wide reading mode
 

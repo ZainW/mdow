@@ -112,7 +112,7 @@ export function useAppInit(): void {
           let fallbackActivePath = restoredActive ? activeTab?.path : null
 
           for (const tab of inactiveTabs) {
-            // eslint-disable-next-line no-await-in-loop -- restore background tabs sequentially to avoid an I/O burst at startup.
+            // oxlint-disable-next-line no-await-in-loop -- restore background tabs sequentially to avoid an I/O burst at startup.
             const restored = await restoreTab(tab, !hasActiveTab)
             if (restored && !hasActiveTab) {
               hasActiveTab = true

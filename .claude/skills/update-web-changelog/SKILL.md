@@ -7,9 +7,10 @@ When releasing a new version of the desktop app, update the website changelog:
 
 1. **Edit `apps/web/content/changelog.md`** — add a new `## vX.Y.Z` section at the top (below the frontmatter) with a brief summary of changes. Move "Latest release." to the new version.
 
-2. **Regenerate the RSS feed:**
+2. **Regenerate the RSS feed and synced public docs:**
+
    ```bash
-   node apps/web/scripts/generate-rss.mjs
+   pnpm run --filter web generate:static
    ```
 
 3. **Verify:**
