@@ -17,6 +17,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateBanner } from './components/UpdateBanner'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { CheatSheetOverlay } from './components/CheatSheetOverlay'
 import { SettingsDialog } from './components/SettingsDialog'
 import {
   CompanionPanel,
@@ -260,6 +261,7 @@ function MainApp(): React.JSX.Element {
             <CompanionPanel />
           </CompanionShell>
           <CommandPalette />
+          <CheatSheetOverlay />
           <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>

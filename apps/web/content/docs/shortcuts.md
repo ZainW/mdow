@@ -7,7 +7,7 @@ order: 5
 
 # Keyboard Shortcuts
 
-Mdow is built for keyboard-first reading. Press **⌘/** (macOS) or **Ctrl+/** (Windows/Linux) inside the app to open the full shortcuts dialog.
+Mdow is built for keyboard-first reading. Hold **⌘** (macOS) or **Ctrl** (Windows/Linux) to glance at a cheat sheet, or press **⌘/** / **Ctrl+/** for the full shortcuts dialog.
 
 ![Mdow sidebar with folder tree and tabbed documents](/screenshots/sidebar-light.webp)
 
