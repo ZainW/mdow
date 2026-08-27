@@ -381,8 +381,17 @@ fn collect_code_blocks(
                     highlight_code(language.as_deref(), code),
                 );
             }
-            DocumentBlock::ListItem { children, .. } | DocumentBlock::TaskItem { children, .. } => {
+            DocumentBlock::ListItem { children, .. }
+            | DocumentBlock::TaskItem { children, .. }
+            | DocumentBlock::Alert { children, .. } => {
                 collect_code_blocks(children, parent_path, code_blocks);
+            }
+            DocumentBlock::FootnoteSection { notes } => {
+                for (note_index, (_, children)) in notes.iter().enumerate() {
+                    parent_path.push(note_index);
+                    collect_code_blocks(children, parent_path, code_blocks);
+                    parent_path.pop();
+                }
             }
             _ => {}
         }

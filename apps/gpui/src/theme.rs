@@ -1,3 +1,4 @@
+use crate::prefs::ThemeMode;
 use gpui::{Hsla, WindowAppearance, hsla};
 
 pub struct Metrics;
@@ -114,9 +115,18 @@ pub struct Theme {
 
 impl Theme {
     pub fn for_appearance(appearance: WindowAppearance) -> Self {
-        match appearance {
-            WindowAppearance::Light | WindowAppearance::VibrantLight => Self::light(),
-            WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::dark(),
+        Self::resolve(ThemeMode::System, appearance)
+    }
+
+    pub fn resolve(mode: ThemeMode, appearance: WindowAppearance) -> Self {
+        let system_is_dark = matches!(
+            appearance,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        );
+        if mode.is_dark(system_is_dark) {
+            Self::dark()
+        } else {
+            Self::light()
         }
     }
 

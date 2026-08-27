@@ -3223,6 +3223,8 @@ dependencies = [
  "notify",
  "open",
  "pulldown-cmark",
+ "serde",
+ "serde_json",
  "syntect",
  "tempfile",
 ]

@@ -1,12 +1,11 @@
 use crate::{
-    actions::{OpenFile, OpenFolder},
-    app::UserFacingError,
+    app::{MdowApp, UserFacingError},
     theme::{Metrics, Theme},
     ui::primitives::{brand_logo, icon, outline_button},
 };
-use gpui::{AnyElement, div, prelude::*, px};
+use gpui::{AnyElement, Context, div, prelude::*, px};
 
-pub fn welcome(theme: Theme, drop_active: bool) -> AnyElement {
+pub fn welcome(theme: Theme, drop_active: bool, cx: &Context<MdowApp>) -> AnyElement {
     let drop_background = if drop_active {
         theme.primary.opacity(0.08)
     } else {
@@ -77,14 +76,14 @@ pub fn welcome(theme: Theme, drop_active: bool) -> AnyElement {
                             "Open File",
                             "icons/file.svg",
                             theme,
-                            |_, _, cx| cx.dispatch_action(&OpenFile),
+                            cx.listener(|this, _, _, cx| this.open_file_prompt(cx)),
                         ))
                         .child(outline_button(
                             "welcome-open-folder",
                             "Open Folder",
                             "icons/folder-open.svg",
                             theme,
-                            |_, _, cx| cx.dispatch_action(&OpenFolder),
+                            cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
                         )),
                 )
                 .child(
@@ -151,7 +150,12 @@ pub fn welcome(theme: Theme, drop_active: bool) -> AnyElement {
         .into_any_element()
 }
 
-pub fn error_state(theme: Theme, error: &UserFacingError, drop_active: bool) -> AnyElement {
+pub fn error_state(
+    theme: Theme,
+    error: &UserFacingError,
+    drop_active: bool,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
     let background = if drop_active {
         theme.primary.opacity(0.06)
     } else {
@@ -221,7 +225,7 @@ pub fn error_state(theme: Theme, error: &UserFacingError, drop_active: bool) -> 
                     "Open File",
                     "icons/file.svg",
                     theme,
-                    |_, _, cx| cx.dispatch_action(&OpenFile),
+                    cx.listener(|this, _, _, cx| this.open_file_prompt(cx)),
                 ))),
         )
         .into_any_element()
