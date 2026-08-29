@@ -9,7 +9,7 @@ use crate::{
         CommandId, FindEvent, FindOverlay, OpenOverlay, OverlayHost, OverlayKind, PaletteAction,
         PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
     },
-    persist::{StateStore, StoredPrefs},
+    persist::{SessionRole, StateStore, StoredPrefs},
     prefs::{ColumnWidth, PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
     syntax::prepare_document,
@@ -18,7 +18,7 @@ use crate::{
     ui::{
         chrome::{
             render_breadcrumb, render_error_banner, render_error_state, render_reload_error_banner,
-            render_sidebar, render_tab_bar,
+            render_sidebar, render_tab_bar, render_titlebar,
         },
         reader::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
@@ -87,6 +87,12 @@ impl From<WorkspaceError> for AppOpenError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentOpened {
+    ActivatedExisting,
+    LoadedFromDisk,
+}
+
 #[derive(Debug, Default)]
 pub struct AppModel {
     pub tabs: TabSet,
@@ -124,6 +130,14 @@ impl AppModel {
         Ok(())
     }
 
+    pub fn open_or_activate(&mut self, path: &Path) -> Result<DocumentOpened, AppOpenError> {
+        if self.tabs.activate(path) {
+            return Ok(DocumentOpened::ActivatedExisting);
+        }
+        self.open_document(path)?;
+        Ok(DocumentOpened::LoadedFromDisk)
+    }
+
     pub fn reload_path(&mut self, path: &Path) -> Result<(), AppOpenError> {
         let tab_path = canonical_file_identity(path);
         let loaded = match load_source(path) {
@@ -159,7 +173,7 @@ impl AppModel {
         if path.is_dir() {
             self.open_workspace(path)
         } else {
-            self.open_document(path)
+            self.open_or_activate(path).map(|_| ())
         }
     }
 
@@ -181,8 +195,8 @@ impl AppModel {
                 }
             } else {
                 result.document_attempted = true;
-                match self.open_document(path) {
-                    Ok(()) => result.document_opened = true,
+                match self.open_or_activate(path) {
+                    Ok(_) => result.document_opened = true,
                     Err(AppOpenError::Document(error)) if result.document_error.is_none() => {
                         result.document_error = Some(error);
                     }
@@ -282,12 +296,19 @@ fn reader_key_modifiers_are_allowed(
 
 impl MdowApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::boot(Prefs::default(), StateStore::in_memory(), window, cx)
+        Self::boot(
+            Prefs::default(),
+            StateStore::in_memory(),
+            SessionRole::Owner,
+            window,
+            cx,
+        )
     }
 
     pub fn boot(
         prefs: Prefs,
         store: StateStore,
+        role: SessionRole,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -337,7 +358,7 @@ impl MdowApp {
             model: AppModel::default(),
             sidebar_open: true,
             wide_mode,
-            prefs: StoredPrefs::restore(prefs, store),
+            prefs: StoredPrefs::restore(prefs, store, role),
             overlays: OverlayHost::default(),
             last_window_bounds: None,
             drop_state: DropState::default(),
@@ -357,8 +378,21 @@ impl MdowApp {
     }
 
     pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
-        match self.model.open_path(path) {
-            Ok(()) if !path.is_dir() => {
+        if path.is_dir() {
+            match self.model.open_workspace(path) {
+                Ok(()) => {}
+                Err(AppOpenError::Workspace(_)) => {}
+                Err(AppOpenError::Document(_)) => unreachable!(),
+            }
+            cx.notify();
+            return;
+        }
+        match self.model.open_or_activate(path) {
+            Ok(DocumentOpened::ActivatedExisting) => {
+                self.open_error = None;
+                self.active_document_changed(cx);
+            }
+            Ok(DocumentOpened::LoadedFromDisk) => {
                 let watch_error = self
                     .model
                     .tabs
@@ -368,7 +402,6 @@ impl MdowApp {
                 self.open_error = watch_error;
                 self.active_document_changed(cx);
             }
-            Ok(()) => {}
             Err(AppOpenError::Document(error)) => self.open_error = Some(error),
             Err(AppOpenError::Workspace(_)) => {}
         }
@@ -609,7 +642,13 @@ impl MdowApp {
                     .map(WorkspaceTree::files)
                     .unwrap_or_default();
                 let view = cx.new(|cx| {
-                    PaletteOverlay::new(self.model.recents.clone(), workspace_files, window, cx)
+                    PaletteOverlay::new(
+                        self.model.recents.clone(),
+                        workspace_files,
+                        self.prefs.get().theme_mode,
+                        window,
+                        cx,
+                    )
                 });
                 let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
                     this.on_palette_event(event, window, cx);
@@ -1266,15 +1305,12 @@ impl Render for MdowApp {
             .font_family(Metrics::FONT_SANS)
             .text_size(px(self.prefs.get().interface_scale.tokens().control_font))
             .text_color(self.theme.foreground)
-            .child(
-                div()
-                    .h(px(Metrics::TITLEBAR_INSET))
-                    .w_full()
-                    .flex_none()
-                    .border_b_1()
-                    .border_color(self.theme.border_subtle)
-                    .bg(self.theme.background),
-            )
+            .child(render_titlebar(
+                self.theme,
+                &layout.titlebar,
+                self.sidebar_open,
+                cx,
+            ))
             .child(
                 div()
                     .flex()
@@ -1300,10 +1336,11 @@ impl Render for MdowApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::{TrafficLightClearance, TrafficLights};
     use crate::ui::reader::reader_key_target;
     use gpui::{
         FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, ScrollDelta,
-        ScrollWheelEvent, TestAppContext, VisualTestContext, point,
+        ScrollWheelEvent, TestAppContext, TitlebarOptions, VisualTestContext, WindowOptions, point,
     };
     use std::{
         fs,
@@ -1399,6 +1436,21 @@ mod tests {
 
         assert_eq!(model.tabs.len(), 1);
         assert_eq!(model.tabs.active().unwrap().document.title, "Guide");
+    }
+
+    #[test]
+    fn open_or_activate_reuses_the_existing_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("guide.md");
+        fs::write(&path, "# Guide").unwrap();
+        let mut model = AppModel::default();
+        model.open_document(&path).unwrap();
+        let before = model.tabs.active().unwrap().document.clone();
+
+        let opened = model.open_or_activate(&path).unwrap();
+
+        assert_eq!(opened, DocumentOpened::ActivatedExisting);
+        assert!(Arc::ptr_eq(&before, &model.tabs.active().unwrap().document));
     }
 
     #[test]
@@ -1845,7 +1897,7 @@ mod tests {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Recents, Folder, Outline, sidebar-toggle, both tabs, find, palette, settings,
+        // Titlebar toggle, Recents, Folder, Outline, both tabs, find, palette, settings,
         // wide-mode, then the first tab's nested close target.
         focus_next(&mut visual, 11);
         activate_focused(&mut visual, "space");
@@ -1863,7 +1915,7 @@ mod tests {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Recents, Folder, Outline, sidebar-toggle, first tab, then second tab.
+        // Titlebar toggle, Recents, Folder, Outline, first tab, then second tab.
         focus_next(&mut visual, 6);
         activate_focused(&mut visual, "enter");
 
@@ -1876,36 +1928,52 @@ mod tests {
     }
 
     #[gpui::test]
-    fn tab_rail_keeps_the_sidebar_toggle_and_tab_list_in_measured_slots(cx: &mut TestAppContext) {
+    fn titlebar_keeps_the_toggle_clear_of_the_traffic_lights(cx: &mut TestAppContext) {
         let document = parse_document(
             PathBuf::from("/tmp/measured-tab.md"),
             "# Measured tab\n".into(),
         );
         let window = cx.update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
-                cx.new(|cx| {
-                    let mut app = MdowApp::new(window, cx);
-                    app.model.tabs.open(document);
-                    app.open_error = None;
-                    app
-                })
-            })
+            cx.open_window(
+                WindowOptions {
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Mdow Native".into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(TrafficLights::position()),
+                    }),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = MdowApp::new(window, cx);
+                        app.model.tabs.open(document);
+                        app.open_error = None;
+                        app
+                    })
+                },
+            )
             .unwrap()
         });
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
-        let toggle_slot = visual
-            .debug_bounds("sidebar-toggle-slot")
-            .expect("fixed sidebar toggle slot");
+        let titlebar = visual.debug_bounds("titlebar").expect("titlebar row");
+        let toggle = visual
+            .debug_bounds("titlebar-sidebar-toggle")
+            .expect("titlebar sidebar toggle");
+        let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
         let tabs = visual.debug_bounds("tabs-scroll").expect("tab list");
         let tab = visual
             .debug_bounds("document-tab-0")
             .expect("first document tab");
 
-        assert_eq!(toggle_slot.size.width, px(36.0));
-        assert_eq!(tabs.origin.x, toggle_slot.origin.x + toggle_slot.size.width);
-        assert_eq!(tab.origin.x, tabs.origin.x + px(6.0));
+        assert_eq!(titlebar.size.height, px(TrafficLights::titlebar_height()));
+        assert_eq!(
+            toggle.origin.x,
+            px(TrafficLightClearance::reserved().width())
+        );
+        assert_eq!(tabs.origin.x, tab_bar.origin.x);
+        assert_eq!(tab.origin.x, tabs.origin.x + px(Metrics::TAB_LIST_INSET));
         assert_eq!(tab.size.height, px(28.0));
     }
 
@@ -2846,10 +2914,7 @@ mod tests {
         activate_focused(&mut visual, "enter");
         visual.update(|window, cx| window.draw(cx).clear());
         window
-            .update(cx, |app, window, _| {
-                assert!(app.focused_link.is_none());
-                assert_eq!(app.reader_link_focus_handles.len(), 1);
-                assert!(!old_handle.is_focused(window));
+            .update(cx, |app, _, _| {
                 assert_eq!(app.model.tabs.len(), 1);
                 assert_eq!(app.model.tabs.active().unwrap().path(), canonical);
             })
@@ -2857,7 +2922,11 @@ mod tests {
 
         fs::write(&path, "No links remain.\n").unwrap();
         window
-            .update(cx, |app, _, cx| app.open_path(&path, cx))
+            .update(cx, |app, _, cx| {
+                app.model.open_document(&path).unwrap();
+                app.active_document_changed(cx);
+                cx.notify();
+            })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
         window
@@ -2880,7 +2949,11 @@ mod tests {
         )
         .unwrap();
         window
-            .update(cx, |app, _, cx| app.open_path(&path, cx))
+            .update(cx, |app, _, cx| {
+                app.model.open_document(&path).unwrap();
+                app.active_document_changed(cx);
+                cx.notify();
+            })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
         window

@@ -5,16 +5,32 @@
 @font-face {
   font-family: 'Inter';
   src: url('../assets/fonts/InterVariable.woff2') format('woff2');
-  font-weight: 100 900;
+  font-weight: 400 700;
   font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../assets/fonts/InterVariable-Italic.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
   font-display: block;
 }
 
 @font-face {
   font-family: 'Geist Mono';
   src: url('../assets/fonts/GeistMono-Variable.woff2') format('woff2');
-  font-weight: 100 900;
+  font-weight: 400 700;
   font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../assets/fonts/GeistMono-Italic-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
   font-display: block;
 }
 

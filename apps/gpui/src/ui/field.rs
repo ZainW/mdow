@@ -1,3 +1,5 @@
+use crate::theme::{Metrics, Theme};
+use crate::ui::primitives::icon;
 use gpui::{
     App, Bounds, ClipboardItem, CursorStyle, Element, ElementId, ElementInputHandler, Entity,
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, InspectorElementId,
@@ -6,6 +8,11 @@ use gpui::{
     hsla, point, prelude::*, px, relative, size,
 };
 use std::ops::Range;
+
+enum FieldChrome {
+    Bare,
+    Search,
+}
 
 gpui::actions!(
     field,
@@ -36,6 +43,8 @@ pub enum FieldEvent {
 }
 
 pub struct Field {
+    chrome: FieldChrome,
+    theme: Theme,
     content: SharedString,
     placeholder: SharedString,
     selected_range: Range<usize>,
@@ -58,6 +67,8 @@ impl Field {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window);
         Self {
+            chrome: FieldChrome::Bare,
+            theme: Theme::for_appearance(window.appearance()),
             content: SharedString::default(),
             placeholder: placeholder.into(),
             selected_range: 0..0,
@@ -67,6 +78,22 @@ impl Field {
             last_bounds: None,
             is_selecting: false,
             focus_handle,
+        }
+    }
+
+    pub fn search(
+        placeholder: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut field = Self::new(placeholder, window, cx);
+        field.chrome = FieldChrome::Search;
+        field
+    }
+
+    pub fn apply_theme(&mut self, theme: Theme) {
+        if matches!(self.chrome, FieldChrome::Search) && self.theme != theme {
+            self.theme = theme;
         }
     }
 
@@ -436,12 +463,21 @@ impl EntityInputHandler for Field {
 
 impl Render for Field {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let search = matches!(self.chrome, FieldChrome::Search);
+        let theme = self.theme;
         div()
             .id("field")
             .flex()
             .items_center()
             .w_full()
             .h(px(28.0))
+            .when(search, |field| {
+                field.gap(px(8.0)).bg(theme.surface_well).child(icon(
+                    "icons/search.svg",
+                    theme.muted_foreground,
+                    Metrics::ICON_SIZE,
+                ))
+            })
             .key_context("Field")
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
@@ -526,7 +562,11 @@ impl Element for FieldElement {
         let cursor = field.cursor_offset();
         let style = window.text_style();
         let (display_text, text_color) = if content.is_empty() {
-            (field.placeholder.clone(), hsla(0., 0., 0.45, 0.55))
+            let placeholder_color = match field.chrome {
+                FieldChrome::Bare => hsla(0., 0., 0.45, 0.55),
+                FieldChrome::Search => field.theme.muted_foreground,
+            };
+            (field.placeholder.clone(), placeholder_color)
         } else {
             (content, style.color)
         };

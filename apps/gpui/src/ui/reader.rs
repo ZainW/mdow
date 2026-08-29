@@ -1347,6 +1347,7 @@ fn render_block(
                         theme.foreground
                     },
                     theme,
+                    view.style,
                     false,
                     link_state,
                     cx,
@@ -1367,6 +1368,7 @@ fn render_block(
                     400,
                     theme.foreground,
                     theme,
+                    view.style,
                     link_state,
                     cx,
                 ))
@@ -1425,6 +1427,7 @@ fn render_block(
                             400,
                             theme.muted_foreground,
                             theme,
+                            view.style,
                             link_state,
                             cx,
                         )),
@@ -1501,6 +1504,7 @@ pub fn render_inline(
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
+    style: ReaderStyle,
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
@@ -1511,6 +1515,7 @@ pub fn render_inline(
         base_weight,
         base_color,
         theme,
+        style,
         false,
         link_state,
         cx,
@@ -1525,6 +1530,7 @@ fn render_inline_layout(
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
+    style: ReaderStyle,
     tabular_numbers: bool,
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
@@ -1551,6 +1557,7 @@ fn render_inline_layout(
         base_weight,
         base_color,
         theme,
+        style,
         tabular_numbers,
     );
     let styled_text = StyledText::new(layout.text.clone()).with_runs(runs);
@@ -1671,6 +1678,7 @@ fn text_runs(
     base_weight: u16,
     base_color: gpui::Hsla,
     theme: Theme,
+    reader: ReaderStyle,
     tabular_numbers: bool,
 ) -> Vec<TextRun> {
     let mut runs = Vec::new();
@@ -1687,6 +1695,7 @@ fn text_runs(
                 false,
                 tabular_numbers,
                 theme,
+                reader,
             ));
         }
         let link_index = style.link_target.as_ref().and_then(|_| {
@@ -1712,6 +1721,7 @@ fn text_runs(
             }),
             tabular_numbers,
             theme,
+            reader,
         ));
         cursor = style.range.end;
     }
@@ -1726,6 +1736,7 @@ fn text_runs(
             false,
             tabular_numbers,
             theme,
+            reader,
         ));
     }
     runs
@@ -1742,11 +1753,12 @@ fn text_run(
     underline: bool,
     tabular_numbers: bool,
     theme: Theme,
+    reader: ReaderStyle,
 ) -> TextRun {
     let mut run_font: Font = font(if code {
-        Metrics::FONT_MONO
+        reader.code_family
     } else {
-        Metrics::FONT_SANS
+        reader.content_family
     });
     run_font.weight = FontWeight(weight as f32);
     run_font.style = if emphasis {
@@ -2306,6 +2318,7 @@ fn render_table(
                     600,
                     theme.muted_foreground,
                     theme,
+                    view.style,
                     true,
                     link_state,
                     cx,
@@ -2335,6 +2348,7 @@ fn render_table(
                         400,
                         theme.foreground,
                         theme,
+                        view.style,
                         link_state,
                         cx,
                     )),
@@ -2413,6 +2427,7 @@ fn image_fallback(alt: String, theme: Theme, block_index: usize) -> AnyElement {
 mod tests {
     use super::*;
     use crate::document::{InlineSpan, parse_document};
+    use crate::prefs::{CodeFont, ContentFont, PrefEdit, Prefs};
     use crate::syntax::highlight_code;
     use std::time::{Duration, Instant};
     use std::{
@@ -2587,6 +2602,7 @@ mod tests {
             400,
             theme.foreground,
             theme,
+            Prefs::default().reader_style(),
             false,
         );
         assert!(runs[0].strikethrough.is_some());
@@ -2951,11 +2967,48 @@ mod tests {
     }
 
     #[test]
+    fn text_runs_use_the_selected_content_and_code_families() {
+        let theme = Theme::for_appearance(gpui::WindowAppearance::Dark);
+        let mut prefs = Prefs::default();
+        prefs.apply(PrefEdit::ContentFont(ContentFont::Georgia));
+        prefs.apply(PrefEdit::CodeFont(CodeFont::SfMono));
+        let layout = inline_layout(&[
+            InlineSpan::Text("hello ".into()),
+            InlineSpan::Code("world".into()),
+        ]);
+
+        let runs = text_runs(
+            &layout,
+            &[],
+            None,
+            None,
+            400,
+            theme.foreground,
+            theme,
+            prefs.reader_style(),
+            false,
+        );
+
+        assert_eq!(runs[0].font.family.as_ref(), ContentFont::Georgia.family());
+        assert_eq!(runs[1].font.family.as_ref(), CodeFont::SfMono.family());
+    }
+
+    #[test]
     fn table_text_runs_enable_tabular_number_spacing() {
         let theme = Theme::for_appearance(gpui::WindowAppearance::Dark);
         let layout = inline_layout(&[InlineSpan::Text("123".into())]);
 
-        let runs = text_runs(&layout, &[], None, None, 400, theme.foreground, theme, true);
+        let runs = text_runs(
+            &layout,
+            &[],
+            None,
+            None,
+            400,
+            theme.foreground,
+            theme,
+            Prefs::default().reader_style(),
+            true,
+        );
 
         assert_eq!(
             runs[0].font.features.tag_value_list(),
@@ -2986,6 +3039,7 @@ mod tests {
             400,
             theme.foreground,
             theme,
+            Prefs::default().reader_style(),
             false,
         );
 

@@ -68,14 +68,21 @@ impl StateStore {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionRole {
+    Owner,
+    Transient,
+}
+
 pub struct StoredPrefs {
     prefs: Prefs,
     store: StateStore,
+    role: SessionRole,
 }
 
 impl StoredPrefs {
-    pub fn restore(prefs: Prefs, store: StateStore) -> Self {
-        Self { prefs, store }
+    pub fn restore(prefs: Prefs, store: StateStore, role: SessionRole) -> Self {
+        Self { prefs, store, role }
     }
 
     pub fn get(&self) -> &Prefs {
@@ -86,11 +93,16 @@ impl StoredPrefs {
         if !self.prefs.apply(edit) {
             return false;
         }
-        self.store.save(&self.prefs, session);
+        if self.role == SessionRole::Owner {
+            self.store.save(&self.prefs, session);
+        }
         true
     }
 
     pub fn save_session(&self, session: &Session) {
+        if self.role == SessionRole::Transient {
+            return;
+        }
         self.store.save(&self.prefs, session);
     }
 }
@@ -555,7 +567,11 @@ mod tests {
     fn stored_prefs_write_through_and_skip_noop_edits() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let mut stored = StoredPrefs::restore(Prefs::default(), StateStore::open_at(path.clone()));
+        let mut stored = StoredPrefs::restore(
+            Prefs::default(),
+            StateStore::open_at(path.clone()),
+            SessionRole::Owner,
+        );
         let session = Session::default();
 
         assert!(stored.apply(PrefEdit::Theme(ThemeMode::Light), &session));
@@ -564,5 +580,20 @@ mod tests {
 
         let restored = StateStore::open_at(path).load();
         assert_eq!(restored.prefs.theme_mode, ThemeMode::Light);
+    }
+
+    #[test]
+    fn transient_role_does_not_write_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let stored = StoredPrefs::restore(
+            Prefs::default(),
+            StateStore::open_at(path.clone()),
+            SessionRole::Transient,
+        );
+
+        stored.save_session(&sample_session());
+
+        assert!(!path.exists());
     }
 }

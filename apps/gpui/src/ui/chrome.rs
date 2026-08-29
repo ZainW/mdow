@@ -5,9 +5,11 @@ use crate::{
     prefs::SidebarMode,
     session::Recents,
     tabs::DocumentTab,
-    theme::{Metrics, Theme},
+    theme::{Metrics, Theme, TitlebarLayout},
     ui::{
-        primitives::{compact_icon_button, icon, icon_button, outline_button},
+        primitives::{
+            ListRowStyle, compact_icon_button, icon, icon_button, list_row, outline_button,
+        },
         welcome::error_state,
     },
     workspace::{WorkspaceEntryKind, WorkspaceTree},
@@ -648,26 +650,82 @@ fn render_outline_list(
     } else {
         for (index, heading) in headings.iter().enumerate() {
             let text = heading.text.clone();
+            let color = if heading.level <= 2 {
+                theme.foreground
+            } else {
+                theme.muted_foreground
+            };
             list = list.child(
-                div()
-                    .id(("outline-row", index))
-                    .debug_selector(move || format!("outline-row-{index}"))
-                    .h(px(28.0))
-                    .px(px(8.0 + heading.level.saturating_sub(1) as f32 * 8.0))
-                    .rounded(px(5.0))
-                    .font_family(Metrics::FONT_SANS)
-                    .text_size(px(12.0))
-                    .text_color(theme.foreground)
-                    .truncate()
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.jump_to_heading(&text, cx);
-                    }))
-                    .child(heading.text.clone()),
+                list_row(
+                    ("outline-row", index),
+                    ListRowStyle {
+                        selected: false,
+                        indent: heading.level.saturating_sub(1) as f32 * 18.0,
+                    },
+                    theme,
+                )
+                .text_color(color)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.jump_to_heading(&text, cx);
+                }))
+                .child(heading.text.clone()),
             );
         }
     }
     list.into_any_element()
+}
+
+pub fn render_titlebar(
+    theme: Theme,
+    layout: &TitlebarLayout,
+    sidebar_open: bool,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let _ = sidebar_open;
+    div()
+        .id("titlebar")
+        .debug_selector(|| "titlebar".into())
+        .flex()
+        .items_center()
+        .h(px(layout.height))
+        .w_full()
+        .flex_none()
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.background)
+        .child(div().w(px(layout.clearance.width())).h_full().flex_none())
+        .child(
+            div()
+                .id("titlebar-sidebar-toggle")
+                .debug_selector(|| "titlebar-sidebar-toggle".into())
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(px(Metrics::TITLEBAR_BUTTON))
+                .flex_none()
+                .child(icon_button(
+                    "toggle-sidebar",
+                    "icons/sidebar.svg",
+                    theme,
+                    cx.listener(|this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.click_toggle_sidebar(cx);
+                    }),
+                )),
+        )
+        .child(
+            div()
+                .id("titlebar-drag")
+                .flex_grow()
+                .h_full()
+                .min_w_0()
+                .on_click(|event, window, _| {
+                    if event.click_count() == 2 {
+                        window.titlebar_double_click();
+                    }
+                }),
+        )
+        .into_any_element()
 }
 
 pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> AnyElement {
@@ -798,23 +856,6 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         }
     }
 
-    let toggle_slot = div()
-        .debug_selector(|| "sidebar-toggle-slot".into())
-        .flex()
-        .items_center()
-        .justify_center()
-        .w(px(Metrics::TAB_TOGGLE_SLOT))
-        .h_full()
-        .flex_none()
-        .border_r_1()
-        .border_color(theme.border_subtle)
-        .child(icon_button(
-            "toggle-sidebar",
-            "icons/sidebar.svg",
-            theme,
-            cx.listener(|this, _, _, cx| this.click_toggle_sidebar(cx)),
-        ));
-
     div()
         .debug_selector(|| "tab-bar".into())
         .flex()
@@ -824,7 +865,6 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.background)
-        .child(toggle_slot)
         .child(tabs)
         .child(
             div()

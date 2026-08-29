@@ -3,6 +3,7 @@ use gpui::actions;
 actions!(
     mdow,
     [
+        NewWindow,
         OpenFile,
         OpenFolder,
         ToggleSidebar,

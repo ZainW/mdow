@@ -3,16 +3,80 @@
 @font-face {
   font-family: 'Inter';
   src: url('../fonts/InterVariable.woff2') format('woff2');
-  font-weight: 100 900;
+  font-weight: 400 700;
   font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/InterVariable-Italic.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Geist Mono';
   src: url('../fonts/GeistMono-Variable.woff2') format('woff2');
-  font-weight: 100 900;
+  font-weight: 400 700;
   font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../fonts/GeistMono-Italic-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Charter';
+  src: url('../fonts/Charter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Charter';
+  src: url('../fonts/Charter-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Charter';
+  src: url('../fonts/Charter-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Charter';
+  src: url('../fonts/Charter-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono-Italic-Variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: italic;
   font-display: swap;
 }
 

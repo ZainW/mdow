@@ -1,5 +1,8 @@
 use crate::theme::{Metrics, Theme};
-use gpui::{App, ClickEvent, Hsla, Img, IntoElement, Svg, Window, div, img, prelude::*, px, svg};
+use gpui::{
+    App, ClickEvent, Div, Hsla, Img, IntoElement, Stateful, Svg, Window, div, img, prelude::*, px,
+    svg,
+};
 
 pub fn brand_logo(size: f32) -> Img {
     img("icons/mdow-logo.svg").size(px(size)).flex_none()
@@ -108,6 +111,54 @@ pub fn compact_icon_button(
         .focus(move |style| style.border_1().border_color(theme.primary))
         .on_click(on_click)
         .child(icon(icon_path, theme.muted_foreground, icon_size))
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ListRowStyle {
+    pub selected: bool,
+    pub indent: f32,
+}
+
+pub fn list_row(id: (&'static str, usize), style: ListRowStyle, theme: Theme) -> Stateful<Div> {
+    let selected = style.selected;
+    div()
+        .id(id)
+        .debug_selector(move || format!("{}-{}", id.0, id.1))
+        .tab_index(0)
+        .focusable()
+        .flex()
+        .items_center()
+        .h(px(28.0))
+        .px(px(8.0 + style.indent))
+        .rounded(px(5.0))
+        .bg(if selected {
+            theme.sidebar_accent
+        } else {
+            theme.sidebar_accent.opacity(0.0)
+        })
+        .when(!selected, |row| {
+            row.hover(move |style| style.bg(theme.sidebar_accent))
+        })
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(12.0))
+        .text_color(theme.foreground)
+        .cursor_pointer()
+        .focus(move |style| style.border_1().border_color(theme.primary))
+}
+
+pub fn key_hint(keys: &'static str, theme: Theme) -> Div {
+    div()
+        .flex_none()
+        .px(px(6.0))
+        .h(px(18.0))
+        .rounded(px(4.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.muted)
+        .font_family(Metrics::FONT_MONO)
+        .text_size(px(10.0))
+        .text_color(theme.muted_foreground)
+        .child(keys)
 }
 
 #[cfg(test)]

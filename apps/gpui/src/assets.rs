@@ -8,9 +8,20 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-pub const REQUIRED_ASSETS: &[&str] = &[
+pub const BUNDLED_FONTS: &[&str] = &[
     "fonts/InterVariable.ttf",
+    "fonts/InterVariable-Italic.ttf",
     "fonts/GeistMono-Variable.ttf",
+    "fonts/GeistMono-Italic-Variable.ttf",
+    "fonts/Charter-Regular.ttf",
+    "fonts/Charter-Italic.ttf",
+    "fonts/Charter-Bold.ttf",
+    "fonts/Charter-BoldItalic.ttf",
+    "fonts/JetBrainsMono-Variable.ttf",
+    "fonts/JetBrainsMono-Italic-Variable.ttf",
+];
+
+const REQUIRED_ICONS: &[&str] = &[
     "icons/alert-circle.svg",
     "icons/check.svg",
     "icons/chevron-down.svg",
@@ -30,6 +41,13 @@ pub const REQUIRED_ASSETS: &[&str] = &[
     "icons/sidebar.svg",
     "icons/x.svg",
 ];
+
+pub fn required_assets() -> impl Iterator<Item = &'static str> {
+    BUNDLED_FONTS
+        .iter()
+        .copied()
+        .chain(REQUIRED_ICONS.iter().copied())
+}
 
 pub fn discover_asset_root(
     executable: impl AsRef<Path>,
@@ -69,13 +87,13 @@ pub fn validate_required_assets(root: impl AsRef<Path>) -> Result<()> {
     let source = MdowAssets::new(root.as_ref().to_owned());
     let mut missing = Vec::new();
 
-    for asset in REQUIRED_ASSETS {
+    for asset in required_assets() {
         match source
             .resolve(asset)
             .with_context(|| format!("validating required asset {asset}"))?
         {
             Some(path) if path.is_file() => {}
-            _ => missing.push(*asset),
+            _ => missing.push(asset),
         }
     }
 
@@ -272,8 +290,19 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        for asset in REQUIRED_ASSETS {
+        for asset in required_assets() {
             assert!(error.contains(asset), "missing {asset} from {error}");
+        }
+    }
+
+    #[test]
+    fn required_assets_include_every_bundled_font() {
+        let assets = required_assets().collect::<Vec<_>>();
+        for font in BUNDLED_FONTS {
+            assert!(
+                assets.contains(font),
+                "{font} must stay in required_assets()"
+            );
         }
     }
 

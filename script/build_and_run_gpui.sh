@@ -10,7 +10,37 @@ readonly repository_root="${script_directory:h}"
 readonly manifest_path="$repository_root/apps/gpui/Cargo.toml"
 readonly cargo_target_directory="${repository_root:A}/apps/gpui/target"
 readonly binary_path="$cargo_target_directory/debug/mdow-gpui"
+readonly app_bundle="$cargo_target_directory/debug/Mdow Native.app"
+readonly bundled_executable="$app_bundle/Contents/MacOS/MdowNative"
 readonly showcase_path="$repository_root/apps/gpui/tests/fixtures/showcase.md"
+
+if [[ -f "$script_directory/native_mac_bundle.sh" ]]; then
+  source "$script_directory/native_mac_bundle.sh"
+else
+  copy_native_mac_resources() {
+    mkdir -p "$2/Resources"
+  }
+  write_native_mac_info_plist() {
+    cat >"$1" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>$2</string>
+  <key>CFBundleIdentifier</key>
+  <string>$4</string>
+  <key>CFBundleName</key>
+  <string>$3</string>
+  <key>CFBundleDisplayName</key>
+  <string>$3</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+</dict>
+</plist>
+PLIST
+  }
+fi
 
 typeset -g selected_developer_directory=''
 typeset -g selected_metal_toolchains=''
@@ -169,13 +199,19 @@ function executable_path_for_pid {
   print -r -- "${executable:A}"
 }
 
-function process_matches_binary {
+function process_matches_path {
   local pid="$1"
+  local expected="$2"
   [[ "$pid" == <-> ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   local executable
   executable="$(executable_path_for_pid "$pid")" || return 1
-  [[ "$executable" == "$binary_path" ]]
+  [[ "$executable" == "${expected:A}" ]]
+}
+
+function process_matches_binary {
+  process_matches_path "$1" "$bundled_executable" \
+    || process_matches_path "$1" "$binary_path"
 }
 
 function terminate_exact_process {
@@ -204,6 +240,9 @@ function terminate_exact_process {
 function terminate_earlier_binary_processes {
   local -a candidate_pids=()
   local discovered=''
+  discovered="$(lsof -a -d txt -t -- "$bundled_executable" 2>/dev/null || true)"
+  [[ -n "$discovered" ]] && candidate_pids+=("${(@f)discovered}")
+
   discovered="$(lsof -a -d txt -t -- "$binary_path" 2>/dev/null || true)"
   [[ -n "$discovered" ]] && candidate_pids+=("${(@f)discovered}")
 
@@ -292,13 +331,35 @@ fi
 [[ -x "$binary_path" ]] \
   || die "Cargo completed without producing the expected executable at $binary_path."
 
+rm -rf "$app_bundle"
+mkdir -p "$app_bundle/Contents/MacOS"
+if [[ -f "$repository_root/apps/desktop/resources/icon.icns" ]]; then
+  copy_native_mac_resources "$repository_root" "$app_bundle/Contents" "MdowNative"
+else
+  mkdir -p "$app_bundle/Contents/Resources"
+fi
+if [[ -d "$repository_root/apps/gpui/assets" ]]; then
+  mkdir -p "$app_bundle/Contents/Resources"
+  cp -R "$repository_root/apps/gpui/assets" "$app_bundle/Contents/Resources/assets"
+fi
+cp "$binary_path" "$bundled_executable"
+chmod +x "$bundled_executable"
+write_native_mac_info_plist \
+  "$app_bundle/Contents/Info.plist" \
+  "MdowNative" \
+  "Mdow Native" \
+  "com.zain.mdow.gpui" \
+  "14.0"
+[[ -x "$bundled_executable" ]] \
+  || die "Failed to wrap the debug executable at $bundled_executable."
+
 terminate_earlier_binary_processes
 
 if (( verify == 0 )); then
   if [[ -n "$launch_path" ]]; then
-    exec "$binary_path" "$launch_path"
+    exec "$bundled_executable" "$launch_path"
   else
-    exec "$binary_path"
+    exec "$bundled_executable"
   fi
 fi
 
@@ -307,20 +368,17 @@ trap 'interrupt_verify 130' INT
 trap 'interrupt_verify 143' TERM
 trap 'interrupt_verify 129' HUP
 
-"$binary_path" "$launch_path" &
+"$bundled_executable" "$launch_path" &
 verify_pid=$!
 trap cleanup_verify_child EXIT
 
-typeset -i exit_status
-typeset -i exact_observations=0
 zmodload zsh/datetime
+typeset -i exact_observations=0
 typeset -F 6 verification_deadline=$(( EPOCHREALTIME + 10.0 ))
 while (( EPOCHREALTIME < verification_deadline )); do
   if ! kill -0 "$verify_pid" 2>/dev/null; then
-    exit_status=0
-    wait "$verify_pid" 2>/dev/null || exit_status=$?
     verify_pid=''
-    die "the Mdow GPUI process exited before verification completed (status $exit_status)."
+    die "the Mdow GPUI process exited before verification completed."
   fi
   if process_matches_binary "$verify_pid"; then
     (( exact_observations += 1 ))

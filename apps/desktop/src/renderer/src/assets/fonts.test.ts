@@ -5,12 +5,20 @@ import { describe, expect, it } from 'vitest'
 const FONT_DIR = resolve('src/renderer/src/assets/fonts')
 
 describe('bundled fonts', () => {
-  it.each(['InterVariable.woff2', 'GeistMono-Variable.woff2'])(
-    '%s is a valid WOFF2 asset',
-    (filename) => {
-      const font = readFileSync(resolve(FONT_DIR, filename))
+  it.each([
+    'InterVariable.woff2',
+    'InterVariable-Italic.woff2',
+    'GeistMono-Variable.woff2',
+    'GeistMono-Italic-Variable.woff2',
+    'Charter-Regular.woff2',
+    'Charter-Italic.woff2',
+    'Charter-Bold.woff2',
+    'Charter-BoldItalic.woff2',
+    'JetBrainsMono-Variable.woff2',
+    'JetBrainsMono-Italic-Variable.woff2',
+  ])('%s is a valid WOFF2 asset', (filename) => {
+    const font = readFileSync(resolve(FONT_DIR, filename))
 
-      expect(font.subarray(0, 4).toString('ascii')).toBe('wOF2')
-    },
-  )
+    expect(font.subarray(0, 4).toString('ascii')).toBe('wOF2')
+  })
 })

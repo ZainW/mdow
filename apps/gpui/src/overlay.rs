@@ -6,11 +6,11 @@ use crate::prefs::{
 };
 use crate::session::Recents;
 use crate::syntax::PreparedDocument;
-use crate::theme::{Metrics, Theme};
+use crate::theme::{ColorScheme, Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
-use crate::ui::primitives::{compact_icon_button, icon};
+use crate::ui::primitives::{ListRowStyle, compact_icon_button, icon, key_hint, list_row};
 use gpui::{
-    AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
+    AnyElement, App, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, FontWeight, Hsla,
     IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use std::collections::HashSet;
@@ -137,11 +137,46 @@ impl OverlayHost {
 fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
     div()
         .absolute()
-        .top(px(48.0))
+        .top(px(84.0))
         .right(px(16.0))
         .w(px(360.0))
         .child(view)
         .into_any_element()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OverlayEdge {
+    LightShadow,
+    DarkKeyline { keyline: Hsla },
+}
+
+impl OverlayEdge {
+    fn for_theme(theme: Theme) -> Self {
+        match theme.color_scheme {
+            ColorScheme::Light => Self::LightShadow,
+            ColorScheme::Dark => Self::DarkKeyline {
+                keyline: theme.border_subtle,
+            },
+        }
+    }
+}
+
+pub fn overlay_surface(width: f32, theme: Theme) -> Div {
+    let surface = div()
+        .w(px(width))
+        .rounded(px(Metrics::RADIUS))
+        .bg(theme.surface_raised);
+    match OverlayEdge::for_theme(theme) {
+        OverlayEdge::LightShadow => surface.shadow_lg(),
+        OverlayEdge::DarkKeyline { keyline } => surface.border_1().border_color(keyline),
+    }
+}
+
+fn paint_overlay_edge(element: Div, theme: Theme) -> Div {
+    match OverlayEdge::for_theme(theme) {
+        OverlayEdge::LightShadow => element.shadow_lg(),
+        OverlayEdge::DarkKeyline { keyline } => element.border_1().border_color(keyline),
+    }
 }
 
 fn modal_layer(child: impl IntoElement, theme: Theme) -> AnyElement {
@@ -330,59 +365,59 @@ impl Render for FindOverlay {
             None => "0 of 0".into(),
             Some((index, total)) => format!("{index} of {total}"),
         };
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .px(px(10.0))
-            .h(px(36.0))
-            .rounded(px(Metrics::RADIUS))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.card)
-            .shadow_sm()
-            .child(
-                div()
-                    .flex_grow()
-                    .min_w_0()
-                    .font_family(Metrics::FONT_SANS)
-                    .text_size(px(12.0))
-                    .text_color(theme.foreground)
-                    .child(self.query.clone()),
-            )
-            .child(
-                div()
-                    .w(px(64.0))
-                    .flex_none()
-                    .font_family(Metrics::FONT_SANS)
-                    .text_size(px(11.0))
-                    .text_color(theme.muted_foreground)
-                    .child(count),
-            )
-            .child(compact_icon_button(
-                "find-prev",
-                "icons/chevron-up.svg",
-                24.0,
-                12.0,
-                theme,
-                cx.listener(|this, _, _, cx| this.advance(true, cx)),
-            ))
-            .child(compact_icon_button(
-                "find-next",
-                "icons/chevron-down.svg",
-                24.0,
-                12.0,
-                theme,
-                cx.listener(|this, _, _, cx| this.advance(false, cx)),
-            ))
-            .child(compact_icon_button(
-                "find-close",
-                "icons/x.svg",
-                24.0,
-                12.0,
-                theme,
-                cx.listener(|_, _, _, cx| cx.emit(FindEvent::Dismissed)),
-            ))
+        paint_overlay_edge(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .px(px(10.0))
+                .h(px(36.0))
+                .rounded(px(Metrics::RADIUS))
+                .bg(theme.surface_raised),
+            theme,
+        )
+        .child(
+            div()
+                .flex_grow()
+                .min_w_0()
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(12.0))
+                .text_color(theme.foreground)
+                .child(self.query.clone()),
+        )
+        .child(
+            div()
+                .w(px(64.0))
+                .flex_none()
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(11.0))
+                .text_color(theme.muted_foreground)
+                .child(count),
+        )
+        .child(compact_icon_button(
+            "find-prev",
+            "icons/chevron-up.svg",
+            24.0,
+            12.0,
+            theme,
+            cx.listener(|this, _, _, cx| this.advance(true, cx)),
+        ))
+        .child(compact_icon_button(
+            "find-next",
+            "icons/chevron-down.svg",
+            24.0,
+            12.0,
+            theme,
+            cx.listener(|this, _, _, cx| this.advance(false, cx)),
+        ))
+        .child(compact_icon_button(
+            "find-close",
+            "icons/x.svg",
+            24.0,
+            12.0,
+            theme,
+            cx.listener(|_, _, _, cx| cx.emit(FindEvent::Dismissed)),
+        ))
     }
 }
 
@@ -640,6 +675,7 @@ pub struct PaletteOverlay {
     query: Entity<Field>,
     items: Vec<PaletteItem>,
     selected: usize,
+    theme_mode: ThemeMode,
     _query_events: Subscription,
 }
 
@@ -649,11 +685,12 @@ impl PaletteOverlay {
     pub fn new(
         recents: Recents,
         workspace_files: Vec<PathBuf>,
+        theme_mode: ThemeMode,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let items = palette_items("", &recents, &workspace_files);
-        let query = cx.new(|cx| Field::new("Search files and commands…", window, cx));
+        let query = cx.new(|cx| Field::search("Search files and commands…", window, cx));
         let query_events = cx.subscribe(&query, {
             let recents = recents.clone();
             let workspace_files = workspace_files.clone();
@@ -674,6 +711,7 @@ impl PaletteOverlay {
             query,
             items,
             selected: 0,
+            theme_mode,
             _query_events: query_events,
         }
     }
@@ -708,7 +746,8 @@ impl PaletteOverlay {
 
 impl Render for PaletteOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::for_appearance(window.appearance());
+        let theme = Theme::resolve(self.theme_mode, window.appearance());
+        self.query.update(cx, |field, _| field.apply_theme(theme));
         let selected = self.selected;
         let commands = self
             .items
@@ -753,20 +792,19 @@ impl Render for PaletteOverlay {
                 }
             }
         }
-        div()
+        overlay_surface(480.0, theme)
             .key_context("Palette")
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
-            .w(px(480.0))
-            .rounded(px(Metrics::RADIUS))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.card)
-            .shadow_lg()
-            .p(px(10.0))
             .child(
                 div()
-                    .mb(px(8.0))
+                    .flex()
+                    .items_center()
+                    .px(px(12.0))
+                    .h(px(44.0))
+                    .border_b_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface_well)
                     .font_family(Metrics::FONT_SANS)
                     .text_size(px(13.0))
                     .child(self.query.clone()),
@@ -774,18 +812,21 @@ impl Render for PaletteOverlay {
             .child(list)
             .child(
                 div()
-                    .mt(px(8.0))
-                    .pt(px(6.0))
+                    .px(px(12.0))
+                    .py(px(8.0))
                     .border_t_1()
                     .border_color(theme.border_subtle)
                     .flex()
+                    .items_center()
                     .justify_end()
-                    .gap(px(12.0))
+                    .gap(px(10.0))
                     .font_family(Metrics::FONT_SANS)
                     .text_size(px(10.0))
-                    .text_color(theme.muted_foreground.opacity(0.8))
-                    .child("↵ open")
-                    .child("esc dismiss"),
+                    .text_color(theme.muted_foreground)
+                    .child(key_hint("↵", theme))
+                    .child("Open")
+                    .child(key_hint("esc", theme))
+                    .child("Dismiss"),
             )
     }
 }
@@ -808,48 +849,42 @@ fn palette_row(
     theme: Theme,
     cx: &mut Context<PaletteOverlay>,
 ) -> impl IntoElement {
-    let (icon_path, label, hint) = match item {
-        PaletteItem::Command(spec) => (
-            "icons/command.svg",
-            spec.title.to_owned(),
-            spec.keys.unwrap_or("").to_owned(),
+    let (icon_path, label, shortcut, file_hint) = match item {
+        PaletteItem::Command(spec) => ("icons/command.svg", spec.title.to_owned(), spec.keys, None),
+        PaletteItem::File { path, recent } => (
+            "icons/file.svg",
+            path_label(path),
+            None,
+            Some(path_hint(path, *recent)),
         ),
-        PaletteItem::File { path, recent } => {
-            ("icons/file.svg", path_label(path), path_hint(path, *recent))
-        }
     };
-    div()
-        .id(("palette-item", index))
-        .debug_selector(move || format!("palette-item-{index}"))
-        .flex()
-        .items_center()
-        .gap(px(8.0))
-        .h(px(28.0))
-        .px(px(10.0))
-        .rounded(px(6.0))
-        .bg(if selected {
-            theme.sidebar_accent
-        } else {
-            theme.sidebar_accent.opacity(0.0)
-        })
-        .hover(move |style| style.bg(theme.sidebar_accent.opacity(0.7)))
-        .font_family(Metrics::FONT_SANS)
-        .text_size(px(12.0))
-        .text_color(theme.foreground)
-        .cursor_pointer()
-        .on_click(cx.listener(move |this, _, _, cx| {
-            this.selected = index;
-            this.invoke(cx);
-        }))
-        .child(icon(icon_path, theme.muted_foreground, 14.0))
-        .child(div().min_w_0().flex_grow().truncate().child(label))
-        .child(
+    let mut row = list_row(
+        ("palette-item", index),
+        ListRowStyle {
+            selected,
+            indent: 0.0,
+        },
+        theme,
+    )
+    .gap(px(8.0))
+    .on_click(cx.listener(move |this, _, _, cx| {
+        this.selected = index;
+        this.invoke(cx);
+    }))
+    .child(icon(icon_path, theme.muted_foreground, 14.0))
+    .child(div().min_w_0().flex_grow().truncate().child(label));
+    if let Some(keys) = shortcut {
+        row = row.child(key_hint(keys, theme));
+    } else if let Some(hint) = file_hint {
+        row = row.child(
             div()
                 .flex_none()
                 .text_color(theme.muted_foreground)
                 .text_size(px(11.0))
                 .child(hint),
-        )
+        );
+    }
+    row
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -891,13 +926,8 @@ impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::resolve(self.prefs.theme_mode, window.appearance());
         let prefs = self.prefs;
-        div()
+        overlay_surface(420.0, theme)
             .track_focus(&self.focus_handle)
-            .w(px(420.0))
-            .rounded(px(Metrics::RADIUS))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.card)
             .p(px(16.0))
             .flex()
             .flex_col()
@@ -1222,13 +1252,8 @@ impl Render for ShortcutsCard {
                 );
             }
         }
-        div()
+        overlay_surface(420.0, theme)
             .track_focus(&self.focus_handle)
-            .w(px(420.0))
-            .rounded(px(Metrics::RADIUS))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.card)
             .p(px(16.0))
             .child(settings_heading("Keyboard shortcuts", theme))
             .child(div().mt(px(10.0)).child(list))

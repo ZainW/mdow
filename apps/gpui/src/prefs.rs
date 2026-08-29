@@ -180,7 +180,7 @@ impl ContentFont {
         match self {
             Self::Inter => "Inter Variable",
             Self::Charter => "Charter",
-            Self::SystemSans => ".AppleSystemUIFont",
+            Self::SystemSans => ".SystemUIFont",
             Self::Georgia => "Georgia",
         }
     }
@@ -341,5 +341,23 @@ mod tests {
         assert_eq!(style.font_size, READER_FONT_SIZE * 1.1);
         assert_eq!(style.line_height, READER_LINE_HEIGHT);
         assert_eq!(style.max_width, Some(768.0));
+    }
+
+    #[test]
+    fn reader_style_uses_the_selected_content_and_code_fonts() {
+        let mut prefs = Prefs::default();
+        prefs.apply(PrefEdit::ContentFont(ContentFont::Charter));
+        prefs.apply(PrefEdit::CodeFont(CodeFont::SystemMono));
+        let style = prefs.reader_style();
+        assert_eq!(style.content_family, ContentFont::Charter.family());
+        assert_eq!(style.code_family, CodeFont::SystemMono.family());
+    }
+
+    #[test]
+    fn bundled_reader_fonts_keep_stable_family_names() {
+        assert_eq!(ContentFont::Inter.family(), "Inter Variable");
+        assert_eq!(ContentFont::Charter.family(), "Charter");
+        assert_eq!(CodeFont::GeistMono.family(), "Geist Mono");
+        assert_eq!(CodeFont::JetBrainsMono.family(), "JetBrains Mono");
     }
 }
