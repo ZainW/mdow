@@ -83,7 +83,6 @@ export function SearchBar({
         disabled={matchCount === 0}
         aria-label="Previous match"
         title="Previous match (Shift+Enter)"
-        className="active:scale-90 transition-transform"
       >
         <ChevronUp className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>
@@ -94,7 +93,6 @@ export function SearchBar({
         disabled={matchCount === 0}
         aria-label="Next match"
         title="Next match (Enter)"
-        className="active:scale-90 transition-transform"
       >
         <ChevronDown className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>
@@ -104,7 +102,6 @@ export function SearchBar({
         onClick={onClose}
         aria-label="Close search"
         title="Close (Esc)"
-        className="active:scale-90 transition-transform"
       >
         <X className="size-(--button-xs-icon-size)" aria-hidden />
       </Button>

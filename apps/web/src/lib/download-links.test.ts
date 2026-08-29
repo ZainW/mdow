@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   detectPlatform,
   downloadButtonLabel,
+  gpuiLinuxBetaDownloadUrl,
   gpuiMacBetaDownloadUrl,
   platformLabel,
   primaryDownloadUrl,
@@ -71,6 +72,34 @@ describe('gpuiMacBetaDownloadUrl', () => {
   it('falls back to the durable latest-download alias when the API has no beta asset', () => {
     expect(gpuiMacBetaDownloadUrl(stableRelease)).toBe(
       'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-mac-beta.zip',
+    )
+  })
+})
+
+describe('gpuiLinuxBetaDownloadUrl', () => {
+  it('prefers the parsed Linux GPUI alias', () => {
+    const release = parseRelease({
+      tag_name: 'v1.0.5',
+      published_at: '2026-05-26T00:00:00Z',
+      html_url: 'https://github.com/ZainW/mdow/releases/tag/v1.0.5',
+      assets: [
+        {
+          name: 'MdowNative-1.0.5-x64-linux-beta.zip',
+          browser_download_url: 'https://example.com/MdowNative-1.0.5-x64-linux-beta.zip',
+        },
+        {
+          name: 'MdowNative-linux-beta.zip',
+          browser_download_url: 'https://example.com/MdowNative-linux-beta.zip',
+        },
+      ],
+    })!
+
+    expect(gpuiLinuxBetaDownloadUrl(release)).toBe('https://example.com/MdowNative-linux-beta.zip')
+  })
+
+  it('falls back to the durable Linux alias when the API has no beta asset', () => {
+    expect(gpuiLinuxBetaDownloadUrl(stableRelease)).toBe(
+      'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.zip',
     )
   })
 })

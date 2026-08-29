@@ -9,7 +9,7 @@ export function Shimmer({
   return (
     <span
       className={cn(
-        'inline-block bg-linear-to-r from-muted-foreground/40 via-foreground to-muted-foreground/40 bg-size-[200%_100%] bg-clip-text text-transparent animate-[companion-shimmer_1.6s_linear_infinite]',
+        'inline-block bg-linear-to-r from-muted-foreground/40 via-foreground to-muted-foreground/40 bg-size-[200%_100%] bg-clip-text text-transparent motion-safe:animate-[companion-shimmer_1.6s_linear_infinite]',
         className,
       )}
       {...props}

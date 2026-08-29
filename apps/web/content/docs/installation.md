@@ -17,12 +17,12 @@ Alternatively, download the `.zip` for a portable version — unzip and run Mdow
 
 ### Mdow Native (GPUI beta)
 
-Mdow Native is a separate GPUI beta for Apple Silicon Macs running macOS 14 or newer. Download
+Mdow Native is a separate GPUI beta. On Apple Silicon Macs running macOS 14 or newer, download
 `MdowNative-mac-beta.zip`, unzip it, and move `Mdow Native.app` to Applications. It runs alongside
 the regular Mdow app.
 
-Tagged releases are signed and notarized. Upgrades are manual for now: download the latest beta ZIP
-and replace the old app. Mdow Native does not have an in-app updater yet.
+Tagged macOS releases are signed and notarized. Upgrades are manual for now: download the latest
+beta ZIP and replace the old app. Mdow Native does not have an in-app updater yet.
 
 ## Windows
 
@@ -38,6 +38,12 @@ chmod +x Mdow-*.AppImage
 ```
 
 AppImage requires no system installation — run it directly from your Downloads folder or move it anywhere on your PATH.
+
+### Mdow Native (GPUI beta)
+
+Linux x64 builds ship as `MdowNative-linux-beta.zip`. Unzip the archive and run `MdowNative` from
+that folder so it can find the bundled `assets` directory. It is a separate beta from the Electron
+AppImage and does not have an in-app updater yet.
 
 ## Updates
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, type RefObject } from 'react'
+import { scrollBehavior } from '../lib/motion'
 import { applySearchHighlights, removeSearchHighlights } from '../lib/search-highlight'
 
 interface SearchState {
@@ -69,7 +70,7 @@ export function useDocumentSearch(
     const mark = container.querySelector(`mark[data-match-index="${currentIndex}"]`)
     if (mark) {
       mark.classList.add('search-highlight-active')
-      mark.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      mark.scrollIntoView({ block: 'center', behavior: scrollBehavior('snap') })
       activeMarkRef.current = mark
     }
   }, [currentIndex, containerRef])

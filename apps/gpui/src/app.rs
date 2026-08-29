@@ -607,7 +607,15 @@ impl MdowApp {
                 OpenOverlay::find(view, events)
             }
             OverlayKind::Palette => {
-                let view = cx.new(|cx| PaletteOverlay::new(self.model.recents.clone(), window, cx));
+                let workspace_files = self
+                    .model
+                    .workspace
+                    .as_ref()
+                    .map(WorkspaceTree::files)
+                    .unwrap_or_default();
+                let view = cx.new(|cx| {
+                    PaletteOverlay::new(self.model.recents.clone(), workspace_files, window, cx)
+                });
                 let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
                     this.on_palette_event(event, window, cx);
                 });
@@ -1156,7 +1164,12 @@ impl Render for MdowApp {
             if let Some(error) = self.open_error.as_ref() {
                 render_error_state(self.theme, error, self.drop_state.is_active(), cx)
             } else {
-                welcome(self.theme, self.drop_state.is_active(), cx)
+                welcome(
+                    self.theme,
+                    &self.model.recents,
+                    self.drop_state.is_active(),
+                    cx,
+                )
             }
         } else {
             let mut surface = div()
@@ -1313,9 +1326,15 @@ mod tests {
     }
 
     fn watcher_workspace() -> tempfile::TempDir {
+        // macOS FSEvents is flaky under /var/folders; Linux has no /private/tmp.
+        let parent = if Path::new("/private/tmp").is_dir() {
+            Path::new("/private/tmp")
+        } else {
+            Path::new("/tmp")
+        };
         tempfile::Builder::new()
             .prefix("mdow-app-watch-")
-            .tempdir_in("/private/tmp")
+            .tempdir_in(parent)
             .unwrap()
     }
 
@@ -1792,8 +1811,14 @@ mod tests {
             .unwrap();
     }
 
-    #[gpui::test]
-    fn tab_close_target_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+    fn two_tab_window(
+        cx: &mut TestAppContext,
+    ) -> (
+        gpui::WindowHandle<MdowApp>,
+        PathBuf,
+        PathBuf,
+        tempfile::TempDir,
+    ) {
         let root = markdown_workspace();
         let first = root.path().join("README.md");
         let second = root.path().join("guides/start.md");
@@ -1812,56 +1837,45 @@ mod tests {
             })
             .unwrap()
         });
+        (
+            window,
+            first.canonicalize().unwrap(),
+            second.canonicalize().unwrap(),
+            root,
+        )
+    }
+
+    #[gpui::test]
+    fn tab_close_target_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+        let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // The nested close target follows the top-level controls in GPUI's grouped tab order.
-        focus_next(&mut visual, 9);
+        // Recents, Folder, Outline, sidebar-toggle, both tabs, find, palette, settings,
+        // wide-mode, then the first tab's nested close target.
+        focus_next(&mut visual, 11);
         activate_focused(&mut visual, "space");
 
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.model.tabs.len(), 1);
-                assert_eq!(
-                    app.model.tabs.active().unwrap().path(),
-                    second.canonicalize().unwrap()
-                );
+                assert_eq!(app.model.tabs.active().unwrap().path(), second);
             })
             .unwrap();
     }
 
     #[gpui::test]
     fn inactive_tab_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
-        let root = markdown_workspace();
-        let first = root.path().join("README.md");
-        let second = root.path().join("guides/start.md");
-        let mut model = AppModel::default();
-        model.open_document(&first).unwrap();
-        model.open_document(&second).unwrap();
-        model.tabs.activate(&first.canonicalize().unwrap());
-        let window = cx.update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
-                cx.new(|cx| {
-                    let mut app = MdowApp::new(window, cx);
-                    app.model = model;
-                    app.open_error = None;
-                    app
-                })
-            })
-            .unwrap()
-        });
+        let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Open-folder, sidebar-toggle, first tab, then second tab.
-        focus_next(&mut visual, 4);
+        // Recents, Folder, Outline, sidebar-toggle, first tab, then second tab.
+        focus_next(&mut visual, 6);
         activate_focused(&mut visual, "enter");
 
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.model.tabs.len(), 2);
-                assert_eq!(
-                    app.model.tabs.active().unwrap().path(),
-                    second.canonicalize().unwrap()
-                );
+                assert_eq!(app.model.tabs.active().unwrap().path(), second);
             })
             .unwrap();
     }
@@ -1919,8 +1933,8 @@ mod tests {
         });
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // The nested disclosure follows the top-level controls in GPUI's grouped tab order.
-        focus_next(&mut visual, 10);
+        // Recents, Folder, Outline, open-folder, then later the nested first-row disclosure.
+        focus_next(&mut visual, 13);
         activate_focused(&mut visual, "space");
         window
             .update(cx, |app, _, _| {

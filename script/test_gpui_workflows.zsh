@@ -156,8 +156,10 @@ triggers = workflow.fetch('on')
 required_paths = [
   'apps/gpui/**',
   'script/package_gpui_mac_beta.sh',
+  'script/package_gpui_linux_beta.sh',
   'script/native_mac_bundle.sh',
   'script/test_package_gpui_mac_beta.zsh',
+  'script/test_package_gpui_linux_beta.sh',
   'script/test_gpui_workflows.zsh',
   '.github/workflows/gpui.yml',
   '.github/workflows/release.yml',
@@ -217,6 +219,7 @@ required_commands = [
   'cargo build --release --locked --manifest-path apps/gpui/Cargo.toml',
   'pnpm run test:gpui-workflows',
   'pnpm run test:package:gpui-mac-beta',
+  'pnpm run test:package:gpui-linux-beta',
   'VERSION=0.0.0-ci pnpm run package:gpui-mac-beta',
 ]
 command_positions = required_commands.map do |command|
@@ -272,6 +275,10 @@ assert(release_jobs.key?('gpui-mac-beta'), 'release workflow must define gpui-ma
 assert(!release_jobs.key?('native-mac-beta'), 'release workflow must not define native-mac-beta')
 
 electron_job = release_jobs.fetch('release')
+assert(
+  electron_job.dig('strategy', 'fail-fast') == false,
+  'Electron release must keep fail-fast false so one platform cannot cancel the others',
+)
 expected_electron_matrix = [
   { 'os' => 'macos-latest', 'platform' => 'mac' },
   { 'os' => 'ubuntu-latest', 'platform' => 'linux' },
@@ -282,6 +289,11 @@ assert(
   'Electron release matrix must remain macOS, Linux, and Windows',
 )
 electron_steps = electron_job.fetch('steps')
+electron_draft = electron_steps.find { |step| step['name'] == 'Ensure draft GitHub release exists' }
+assert(
+  electron_draft && electron_draft['shell'] == 'bash',
+  'Electron draft-release step must use bash on Windows',
+)
 electron_certificate = electron_steps.find { |step| step['name'] == 'Import Apple signing certificate' }
 assert(!electron_certificate.nil?, 'Electron release must keep its signing-certificate import')
 assert(
@@ -505,8 +517,47 @@ assert(
 
 publish_needs = release_jobs.fetch('publish').fetch('needs')
 assert(
-  publish_needs.is_a?(Array) && publish_needs.sort == %w[gpui-mac-beta release],
-  'publish must need both Electron release and gpui-mac-beta',
+  publish_needs.is_a?(Array) && publish_needs.sort == %w[gpui-linux-beta gpui-mac-beta release],
+  'publish must need Electron release, gpui-mac-beta, and gpui-linux-beta',
+)
+
+linux_verify = workflow.fetch('jobs').fetch('verify-linux')
+assert(linux_verify['runs-on'] == 'ubuntu-latest', 'verify-linux must run on ubuntu-latest')
+linux_verify_steps = linux_verify.fetch('steps')
+linux_deps = linux_verify_steps.find { |step| step['name'] == 'Install GPUI Linux build dependencies' }
+assert(!linux_deps.nil?, 'verify-linux must install Linux GPUI libraries')
+linux_required = [
+  'cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check',
+  'xvfb-run -a cargo test --locked --manifest-path apps/gpui/Cargo.toml',
+  'cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings',
+  'cargo build --release --locked --manifest-path apps/gpui/Cargo.toml',
+  'pnpm run test:package:gpui-linux-beta',
+  'VERSION=0.0.0-ci pnpm run package:gpui-linux-beta',
+]
+linux_positions = linux_required.map do |command|
+  position = linux_verify_steps.index { |step| step['run'] == command }
+  assert(!position.nil?, "verify-linux must run #{command}")
+  position
+end
+assert(linux_positions == linux_positions.sort, 'verify-linux must run build and package steps in order')
+linux_archives = linux_verify_steps.find { |step| step['name'] == 'Verify expected GPUI Linux package ZIPs' }
+assert(!linux_archives.nil?, 'verify-linux must check both expected Linux ZIPs')
+
+linux_release = release_jobs.fetch('gpui-linux-beta')
+assert(linux_release['runs-on'] == 'ubuntu-latest', 'gpui-linux-beta must run on ubuntu-latest')
+linux_release_steps = linux_release.fetch('steps')
+linux_package = linux_release_steps.find { |step| step['name'] == 'Build Mdow Native Linux beta' }
+assert(
+  linux_package && linux_package['run'].to_s.strip ==
+    'VERSION="${GITHUB_REF_NAME#v}" bash script/package_gpui_linux_beta.sh',
+  'gpui-linux-beta must derive VERSION from the tag and run the Linux packager',
+)
+linux_upload = linux_release_steps.find { |step| step['name'] == 'Upload GPUI Linux beta' }
+assert(
+  linux_upload && linux_upload['run'].to_s.include?(
+    'gh release upload "$TAG" dist/gpui-linux/MdowNative-*.zip --clobber',
+  ),
+  'gpui-linux-beta must upload MdowNative Linux ZIPs to the GitHub release',
 )
 
 release_commands = release_jobs.values.flat_map do |job|

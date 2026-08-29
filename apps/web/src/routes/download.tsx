@@ -6,7 +6,9 @@ import { DownloadButton } from '~/components/download-button'
 import { NativeDownloadSection } from '~/components/native-download-section'
 import {
   detectPlatform,
+  gpuiLinuxBetaDownloadUrl,
   gpuiMacBetaDownloadUrl,
+  GPUI_LINUX_BETA_DOWNLOAD_URL,
   GPUI_MAC_BETA_DOWNLOAD_URL,
 } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
@@ -60,7 +62,10 @@ function DownloadPage() {
             .
           </p>
         </div>
-        <NativeDownloadSection betaUrl={GPUI_MAC_BETA_DOWNLOAD_URL} />
+        <NativeDownloadSection
+          macUrl={GPUI_MAC_BETA_DOWNLOAD_URL}
+          linuxUrl={GPUI_LINUX_BETA_DOWNLOAD_URL}
+        />
       </div>
     )
   }
@@ -70,6 +75,7 @@ function DownloadPage() {
   const recommended = sorted.find((p) => p.id === os)
   const primaryUrl = recommended?.formats[0]?.url
   const gpuiBetaUrl = gpuiMacBetaDownloadUrl(release)
+  const gpuiLinuxUrl = gpuiLinuxBetaDownloadUrl(release)
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
@@ -101,7 +107,7 @@ function DownloadPage() {
           />
         ))}
       </div>
-      <NativeDownloadSection betaUrl={gpuiBetaUrl} />
+      <NativeDownloadSection macUrl={gpuiBetaUrl} linuxUrl={gpuiLinuxUrl} />
       <p className="mt-8 text-center text-sm text-muted-foreground">
         <a className="underline hover:text-foreground" href={REPO_RELEASES_URL}>
           View all releases on GitHub

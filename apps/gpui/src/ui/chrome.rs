@@ -94,12 +94,13 @@ pub fn render_sidebar(
         .items_center()
         .gap(px(4.0))
         .px(px(8.0))
-        .h(px(32.0))
+        .h(px(36.0))
         .flex_none()
         .border_b_1()
         .border_color(theme.border_subtle)
         .child(sidebar_mode_chip(
             "Recents",
+            "icons/clock.svg",
             mode == SidebarMode::Recents,
             SidebarMode::Recents,
             theme,
@@ -107,6 +108,7 @@ pub fn render_sidebar(
         ))
         .child(sidebar_mode_chip(
             "Folder",
+            "icons/folder.svg",
             mode == SidebarMode::Folder,
             SidebarMode::Folder,
             theme,
@@ -114,6 +116,7 @@ pub fn render_sidebar(
         ))
         .child(sidebar_mode_chip(
             "Outline",
+            "icons/list.svg",
             mode == SidebarMode::Outline,
             SidebarMode::Outline,
             theme,
@@ -307,43 +310,40 @@ pub fn render_sidebar(
         .border_r_1()
         .border_color(theme.border_subtle)
         .bg(theme.sidebar)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .h(px(36.0))
-                .px(px(8.0))
-                .gap(px(6.0))
-                .flex_none()
-                .border_b_1()
-                .border_color(theme.border_subtle)
-                .font_family(Metrics::FONT_SANS)
-                .text_size(px(12.0))
-                .child(icon("icons/folder.svg", theme.muted_foreground, 14.0))
-                .child(
-                    div()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.foreground)
-                        .child("Folder"),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_grow()
-                        .truncate()
-                        .text_size(px(11.0))
-                        .text_color(theme.muted_foreground.opacity(0.7))
-                        .child(folder_name),
-                )
-                .child(compact_icon_button(
-                    "sidebar-open-folder",
-                    "icons/folder-open.svg",
-                    24.0,
-                    14.0,
-                    theme,
-                    cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
-                )),
-        )
+        .child(mode_bar)
+        .when(mode == SidebarMode::Folder, |sidebar| {
+            sidebar.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .h(px(28.0))
+                    .px(px(8.0))
+                    .gap(px(6.0))
+                    .flex_none()
+                    .font_family(Metrics::FONT_SANS)
+                    .text_size(px(11.0))
+                    .text_color(theme.muted_foreground)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_grow()
+                            .truncate()
+                            .child(if workspace.is_some() {
+                                folder_name.clone()
+                            } else {
+                                "No folder".into()
+                            }),
+                    )
+                    .child(compact_icon_button(
+                        "sidebar-open-folder",
+                        "icons/folder-open.svg",
+                        24.0,
+                        14.0,
+                        theme,
+                        cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
+                    )),
+            )
+        })
         .when_some(workspace_error.cloned(), |sidebar, error| {
             sidebar.child(
                 div()
@@ -385,11 +385,12 @@ pub fn render_sidebar(
                     ),
             )
         })
-        .child(mode_bar)
         .child(match mode {
             SidebarMode::Folder => tree.into_any_element(),
             SidebarMode::Recents => render_recents_list(theme, recents, active_path, cx),
-            SidebarMode::Outline => render_outline_list(theme, headings.unwrap_or(&[]), cx),
+            SidebarMode::Outline => {
+                render_outline_list(theme, headings.unwrap_or(&[]), active_path.is_some(), cx)
+            }
         })
         .child(
             div()
@@ -427,8 +428,43 @@ pub fn render_sidebar(
         .into_any_element()
 }
 
+fn sidebar_empty(
+    theme: Theme,
+    icon_path: &'static str,
+    title: &'static str,
+    hint: &'static str,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .pt(px(36.0))
+        .px(px(20.0))
+        .child(icon(icon_path, theme.muted_foreground.opacity(0.55), 22.0))
+        .child(
+            div()
+                .mt(px(10.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(13.0))
+                .text_color(theme.foreground)
+                .child(title),
+        )
+        .child(
+            div()
+                .mt(px(6.0))
+                .max_w(px(190.0))
+                .text_center()
+                .text_size(px(12.0))
+                .line_height(px(18.0))
+                .text_color(theme.muted_foreground)
+                .child(hint),
+        )
+        .into_any_element()
+}
+
 fn sidebar_mode_chip(
     label: &'static str,
+    icon_path: &'static str,
     selected: bool,
     mode: SidebarMode,
     theme: Theme,
@@ -437,15 +473,26 @@ fn sidebar_mode_chip(
     div()
         .id(label)
         .debug_selector(move || label.to_string())
-        .px(px(8.0))
-        .h(px(22.0))
+        .tab_index(0)
+        .focusable()
+        .px(px(6.0))
+        .h(px(28.0))
         .flex()
+        .flex_grow()
         .items_center()
-        .rounded(px(5.0))
+        .justify_center()
+        .gap(px(5.0))
+        .min_w_0()
+        .rounded(px(6.0))
         .bg(if selected {
             theme.sidebar_accent
         } else {
             theme.sidebar_accent.opacity(0.0)
+        })
+        .hover(move |style| {
+            style.bg(theme
+                .sidebar_accent
+                .opacity(if selected { 1.0 } else { 0.7 }))
         })
         .font_family(Metrics::FONT_SANS)
         .text_size(px(11.0))
@@ -455,9 +502,19 @@ fn sidebar_mode_chip(
             theme.muted_foreground
         })
         .cursor_pointer()
+        .focus(move |style| style.border_1().border_color(theme.primary))
         .on_click(cx.listener(move |this, _, _, cx| {
             this.set_sidebar_mode(mode, cx);
         }))
+        .child(icon(
+            icon_path,
+            if selected {
+                theme.foreground
+            } else {
+                theme.muted_foreground
+            },
+            14.0,
+        ))
         .child(label)
 }
 
@@ -477,16 +534,12 @@ fn render_recents_list(
         .px(px(4.0))
         .py(px(4.0));
     if recents.is_empty() {
-        list = list.child(
-            div()
-                .px(px(12.0))
-                .pt(px(36.0))
-                .text_center()
-                .font_family(Metrics::FONT_SANS)
-                .text_size(px(12.0))
-                .text_color(theme.muted_foreground)
-                .child("Recently opened files appear here."),
-        );
+        list = list.child(sidebar_empty(
+            theme,
+            "icons/clock.svg",
+            "No recents yet",
+            "Files you open will appear here.",
+        ));
     } else {
         for (index, path) in recents.iter().enumerate() {
             let path_buf = path.to_owned();
@@ -496,12 +549,23 @@ fn render_recents_list(
                 .unwrap_or("Untitled")
                 .to_owned();
             let is_active = active_path.is_some_and(|active| active == path);
+            let parent = path
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("")
+                .to_owned();
             list = list.child(
                 div()
                     .id(("recent-row", index))
                     .debug_selector(move || format!("recent-row-{index}"))
-                    .h(px(28.0))
+                    .flex()
+                    .flex_col()
+                    .justify_center()
+                    .gap(px(1.0))
+                    .min_h(px(36.0))
                     .px(px(8.0))
+                    .py(px(5.0))
                     .rounded(px(5.0))
                     .bg(if is_active {
                         theme.sidebar_accent
@@ -509,21 +573,53 @@ fn render_recents_list(
                         theme.sidebar_accent.opacity(0.0)
                     })
                     .font_family(Metrics::FONT_SANS)
-                    .text_size(px(12.0))
-                    .text_color(theme.foreground)
-                    .truncate()
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.open_path(&path_buf, cx);
                     }))
-                    .child(name),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .min_w_0()
+                            .child(icon(
+                                "icons/file.svg",
+                                theme.muted_foreground.opacity(0.45),
+                                13.0,
+                            ))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .flex_grow()
+                                    .truncate()
+                                    .text_size(px(12.0))
+                                    .text_color(theme.foreground)
+                                    .child(name),
+                            ),
+                    )
+                    .when(!parent.is_empty(), |row| {
+                        row.child(
+                            div()
+                                .pl(px(19.0))
+                                .truncate()
+                                .text_size(px(10.0))
+                                .text_color(theme.muted_foreground.opacity(0.62))
+                                .child(parent),
+                        )
+                    }),
             );
         }
     }
     list.into_any_element()
 }
 
-fn render_outline_list(theme: Theme, headings: &[Heading], cx: &Context<MdowApp>) -> AnyElement {
+fn render_outline_list(
+    theme: Theme,
+    headings: &[Heading],
+    has_document: bool,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
     let mut list = div()
         .id("outline-scroll")
         .flex()
@@ -534,16 +630,21 @@ fn render_outline_list(theme: Theme, headings: &[Heading], cx: &Context<MdowApp>
         .px(px(4.0))
         .py(px(4.0));
     if headings.is_empty() {
-        list = list.child(
-            div()
-                .px(px(12.0))
-                .pt(px(36.0))
-                .text_center()
-                .font_family(Metrics::FONT_SANS)
-                .text_size(px(12.0))
-                .text_color(theme.muted_foreground)
-                .child("Headings in the open document appear here."),
-        );
+        list = list.child(if has_document {
+            sidebar_empty(
+                theme,
+                "icons/list.svg",
+                "No headings",
+                "This document has no headings to show.",
+            )
+        } else {
+            sidebar_empty(
+                theme,
+                "icons/list.svg",
+                "No document open",
+                "Open a document to see its outline.",
+            )
+        });
     } else {
         for (index, heading) in headings.iter().enumerate() {
             let text = heading.text.clone();

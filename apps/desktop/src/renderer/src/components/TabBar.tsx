@@ -36,9 +36,8 @@ export function TabBar() {
   const tablistRoving = useRovingFocus({ orientation: 'horizontal' })
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     activeTabRef.current?.scrollIntoView({
-      behavior: reduceMotion ? 'auto' : 'smooth',
+      behavior: 'auto',
       block: 'nearest',
       inline: 'nearest',
     })

@@ -21,6 +21,10 @@ const sample = {
       browser_download_url: 'https://example.test/MdowNative-mac-beta.zip',
     },
     {
+      name: 'MdowNative-linux-beta.zip',
+      browser_download_url: 'https://example.test/MdowNative-linux-beta.zip',
+    },
+    {
       name: 'Mdow-Setup-1.2.3.exe',
       browser_download_url: 'https://example.test/Mdow-Setup-1.2.3.exe',
     },
@@ -56,6 +60,9 @@ describe('parseRelease', () => {
     })
     expect(result.assets.windows.exe).toBe('https://example.test/Mdow-Setup-1.2.3.exe')
     expect(result.assets.linux.appImage).toBe('https://example.test/Mdow-1.2.3.AppImage')
+    expect(result.assets.linux.gpuiBeta).toEqual({
+      url: 'https://example.test/MdowNative-linux-beta.zip',
+    })
   })
 
   it('recognizes the versioned GPUI mac beta asset as a fallback', () => {

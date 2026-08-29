@@ -133,7 +133,7 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
             </button>
           </div>
         ) : renderResult ? (
-          <div key={renderVersion} className="document-content-in">
+          <div key={renderVersion}>
             <MarkdownContent result={renderResult} docPath={tab.path} />
           </div>
         ) : isRendering ? (
