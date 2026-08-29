@@ -1326,9 +1326,15 @@ mod tests {
     }
 
     fn watcher_workspace() -> tempfile::TempDir {
+        // macOS FSEvents is flaky under /var/folders; Linux has no /private/tmp.
+        let parent = if Path::new("/private/tmp").is_dir() {
+            Path::new("/private/tmp")
+        } else {
+            Path::new("/tmp")
+        };
         tempfile::Builder::new()
             .prefix("mdow-app-watch-")
-            .tempdir_in("/private/tmp")
+            .tempdir_in(parent)
             .unwrap()
     }
 
