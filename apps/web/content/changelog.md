@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.8.1
+## v1.9.0
 
 Latest release.
+
+- Native settings now switch the reading face; Inter, Geist, Charter, and JetBrains Mono ship in the app
+- Native chrome: traffic-light clearance, sidebar toggle in the titlebar, double-click to zoom, and a finished command palette
+- Opening an already-open file activates its tab instead of reloading
+- Cmd+N opens a new window; the dock icon restores the last session when no windows are open
+- Debug Native launches as Mdow Native.app so Cmd+Tab and the dock show the right name
+
+## v1.8.1
 
 - Native Recents no longer lists the same file twice when macOS keeps both `/var` and `/private/var` paths
 

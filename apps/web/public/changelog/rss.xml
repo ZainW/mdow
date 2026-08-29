@@ -6,13 +6,24 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.9.0</title>
+      <link>https://mdow.wania.app/changelog#v1-9-0</link>
+      <guid isPermaLink="false">v1.9.0</guid>
+      <pubDate>Sat, 29 Aug 2026 15:46:38 GMT</pubDate>
+      <description>Latest release.
+
+- Native settings now switch the reading face; Inter, Geist, Charter, and JetBrains Mono ship in the app
+- Native chrome: traffic-light clearance, sidebar toggle in the titlebar, double-click to zoom, and a finished command palette
+- Opening an already-open file activates its tab instead of reloading
+- Cmd+N opens a new window; the dock icon restores the last session when no windows are open
+- Debug Native launches as Mdow Native.app so Cmd+Tab and the dock show the right name</description>
+    </item>
+    <item>
       <title>v1.8.1</title>
       <link>https://mdow.wania.app/changelog#v1-8-1</link>
       <guid isPermaLink="false">v1.8.1</guid>
       <pubDate>Sat, 29 Aug 2026 02:25:32 GMT</pubDate>
-      <description>Latest release.
-
-- Native Recents no longer lists the same file twice when macOS keeps both `/var` and `/private/var` paths</description>
+      <description>- Native Recents no longer lists the same file twice when macOS keeps both `/var` and `/private/var` paths</description>
     </item>
     <item>
       <title>v1.8.0</title>
