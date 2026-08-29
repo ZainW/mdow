@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.7.0
+## v1.7.1
 
 Latest release.
+
+- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
+- Restores tabs, preferences, and window bounds across launches
+- Virtualized the reader so large documents stay responsive
+- Opens local HTML in a native viewer without a webview
+- Fixed the GitHub Release workflow so Windows, macOS, and Linux artifacts all publish
+
+## v1.7.0
 
 - Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
 - Restores tabs, preferences, and window bounds across launches

@@ -15,6 +15,7 @@ concurrency:
 jobs:
   release:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -85,6 +86,7 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Ensure draft GitHub release exists
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
