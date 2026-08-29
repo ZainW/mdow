@@ -137,6 +137,38 @@ mod tests {
     }
 
     #[test]
+    fn recents_treat_macos_var_and_private_var_as_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("showcase.md");
+        std::fs::write(&file, "# Showcase").unwrap();
+        let canonical = file.canonicalize().unwrap();
+        if file == canonical {
+            return;
+        }
+
+        let mut recents = Recents::from_paths(vec![file.clone()]);
+        recents.note(&canonical);
+        let listed: Vec<_> = recents.iter().collect();
+        assert_eq!(listed, vec![canonical.as_path()]);
+    }
+
+    #[test]
+    fn recents_treat_symlink_and_canonical_path_as_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("showcase.md");
+        std::fs::write(&file, "# Showcase").unwrap();
+        let link = dir.path().join("also-showcase.md");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let canonical = file.canonicalize().unwrap();
+        assert_ne!(link.as_path(), canonical.as_path());
+
+        let mut recents = Recents::from_paths(vec![link.clone()]);
+        recents.note(&canonical);
+        let listed: Vec<_> = recents.iter().collect();
+        assert_eq!(listed, vec![canonical.as_path()]);
+    }
+
+    #[test]
     fn recents_move_to_front_dedupe_and_cap() {
         let mut recents = Recents::default();
         assert!(recents.note(Path::new("/a.md")));
