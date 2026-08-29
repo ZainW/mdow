@@ -12,8 +12,7 @@ use crate::{
 use gpui::{
     AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
     InteractiveElement, InteractiveText, IntoElement, ListAlignment, ListOffset, ListState,
-    MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
     StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText, TextRun,
     UnderlineStyle, WeakEntity, Window, canvas, div, font, img, list, point, prelude::*, px,
     relative,
@@ -449,56 +448,56 @@ fn collect_current_block_link_targets(
     document_path: &Path,
     targets: &mut Vec<LinkFocusTarget>,
 ) {
-        let block_index = block_path_render_index(parent_path);
-        match block {
-            DocumentBlock::Heading { content, .. }
-            | DocumentBlock::Paragraph(content)
-            | DocumentBlock::Blockquote(content) => {
+    let block_index = block_path_render_index(parent_path);
+    match block {
+        DocumentBlock::Heading { content, .. }
+        | DocumentBlock::Paragraph(content)
+        | DocumentBlock::Blockquote(content) => {
+            append_link_focus_targets(
+                content,
+                LinkSurfaceKey::block(block_index),
+                document_path,
+                targets,
+            );
+        }
+        DocumentBlock::Table(table) => {
+            for (column_index, content) in table.headers.iter().enumerate() {
                 append_link_focus_targets(
                     content,
-                    LinkSurfaceKey::block(block_index),
+                    LinkSurfaceKey::table_header(block_index, column_index),
                     document_path,
                     targets,
                 );
             }
-            DocumentBlock::Table(table) => {
-                for (column_index, content) in table.headers.iter().enumerate() {
+            for (row_index, row) in table.rows.iter().enumerate() {
+                for (column_index, content) in row.iter().enumerate() {
                     append_link_focus_targets(
                         content,
-                        LinkSurfaceKey::table_header(block_index, column_index),
+                        LinkSurfaceKey::table_cell(block_index, row_index, column_index),
                         document_path,
                         targets,
                     );
                 }
-                for (row_index, row) in table.rows.iter().enumerate() {
-                    for (column_index, content) in row.iter().enumerate() {
-                        append_link_focus_targets(
-                            content,
-                            LinkSurfaceKey::table_cell(block_index, row_index, column_index),
-                            document_path,
-                            targets,
-                        );
-                    }
-                }
             }
-            DocumentBlock::ListItem { children, .. }
-            | DocumentBlock::TaskItem { children, .. }
-            | DocumentBlock::Alert { children, .. } => {
-                collect_link_focus_targets(children, parent_path, document_path, targets);
-            }
-            DocumentBlock::FootnoteSection { notes } => {
-                for (note_index, (_, children)) in notes.iter().enumerate() {
-                    parent_path.push(note_index);
-                    collect_link_focus_targets(children, parent_path, document_path, targets);
-                    parent_path.pop();
-                }
-            }
-            DocumentBlock::CodeBlock { .. }
-            | DocumentBlock::MermaidCard { .. }
-            | DocumentBlock::Image { .. }
-            | DocumentBlock::ThematicBreak
-            | DocumentBlock::RawText(_) => {}
         }
+        DocumentBlock::ListItem { children, .. }
+        | DocumentBlock::TaskItem { children, .. }
+        | DocumentBlock::Alert { children, .. } => {
+            collect_link_focus_targets(children, parent_path, document_path, targets);
+        }
+        DocumentBlock::FootnoteSection { notes } => {
+            for (note_index, (_, children)) in notes.iter().enumerate() {
+                parent_path.push(note_index);
+                collect_link_focus_targets(children, parent_path, document_path, targets);
+                parent_path.pop();
+            }
+        }
+        DocumentBlock::CodeBlock { .. }
+        | DocumentBlock::MermaidCard { .. }
+        | DocumentBlock::Image { .. }
+        | DocumentBlock::ThematicBreak
+        | DocumentBlock::RawText(_) => {}
+    }
 }
 
 fn append_link_focus_targets(
@@ -1237,7 +1236,9 @@ fn render_reader_item(
         .text_size(px(style.font_size))
         .line_height(px(style.font_size * style.line_height))
         .text_color(theme.foreground)
-        .when_some(style.max_width, |item, width| item.max_w(px(width)).mx_auto())
+        .when_some(style.max_width, |item, width| {
+            item.max_w(px(width)).mx_auto()
+        })
         .child(render_block(
             document,
             block,
@@ -1818,12 +1819,7 @@ fn render_list_item(
             )
         })
         .child(render_list_children(
-            children,
-            depth,
-            block_path,
-            document,
-            view,
-            cx,
+            children, depth, block_path, document, view, cx,
         ))
         .into_any_element()
 }
@@ -1876,12 +1872,7 @@ fn render_task_item(
         .ml(px(indentation_depth as f32 * 24.8))
         .child(checkbox)
         .child(render_list_children(
-            children,
-            depth,
-            block_path,
-            document,
-            view,
-            cx,
+            children, depth, block_path, document, view, cx,
         ))
         .into_any_element()
 }

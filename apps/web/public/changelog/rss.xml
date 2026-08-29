@@ -6,13 +6,23 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.7.0</title>
+      <link>https://mdow.wania.app/changelog#v1-7-0</link>
+      <guid isPermaLink="false">v1.7.0</guid>
+      <pubDate>Sat, 29 Aug 2026 00:32:55 GMT</pubDate>
+      <description>Latest release.
+
+- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
+- Restores tabs, preferences, and window bounds across launches
+- Virtualized the reader so large documents stay responsive
+- Opens local HTML in a native viewer without a webview</description>
+    </item>
+    <item>
       <title>v1.6.2</title>
       <link>https://mdow.wania.app/changelog#v1-6-2</link>
       <guid isPermaLink="false">v1.6.2</guid>
       <pubDate>Tue, 18 Aug 2026 13:30:36 GMT</pubDate>
-      <description>Latest release.
-
-- Hold ⌘ (macOS) or Ctrl (Windows/Linux) to glance at a keyboard cheat sheet without dimming the document
+      <description>- Hold ⌘ (macOS) or Ctrl (Windows/Linux) to glance at a keyboard cheat sheet without dimming the document
 - Upgraded remaining desktop and web dependencies
 - Polished docs and copy to match the current app</description>
     </item>

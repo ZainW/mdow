@@ -175,17 +175,13 @@ pub fn render_sidebar(
                         .text_color(theme.muted_foreground)
                         .child("Open or drop a folder to browse its Markdown files."),
                 )
-                .child(
-                    div()
-                        .mt(px(14.0))
-                        .child(outline_button(
-                            "sidebar-empty-open-folder",
-                            "Open Folder",
-                            "icons/folder-open.svg",
-                            theme,
-                            cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
-                        )),
-                )
+                .child(div().mt(px(14.0)).child(outline_button(
+                    "sidebar-empty-open-folder",
+                    "Open Folder",
+                    "icons/folder-open.svg",
+                    theme,
+                    cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
+                )))
                 .into_any_element()
         };
         tree = tree.child(empty_state);

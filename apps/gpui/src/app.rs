@@ -558,7 +558,10 @@ impl MdowApp {
     }
 
     pub(crate) fn reveal_path(&self, path: &Path) {
-        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+        let _ = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn();
     }
 
     pub fn restore_session(&mut self, session: Session, cx: &mut Context<Self>) {
@@ -868,7 +871,8 @@ impl MdowApp {
             .paths()
             .map(Path::to_owned)
             .collect::<HashSet<_>>();
-        self.reader_panes.retain(|open_path, _| live.contains(open_path));
+        self.reader_panes
+            .retain(|open_path, _| live.contains(open_path));
         self.reader_link_focus_handles
             .retain(|(open_path, _), _| live.contains(open_path));
         if let Some(pane) = self.reader_panes.get(&path).cloned() {
@@ -906,11 +910,7 @@ impl MdowApp {
         }
     }
 
-    fn retain_reader_link_focus_handles(
-        &mut self,
-        document: &ParsedDocument,
-        window: &mut Window,
-    ) {
+    fn retain_reader_link_focus_handles(&mut self, document: &ParsedDocument, window: &mut Window) {
         let active_keys = document_link_focus_targets(document)
             .into_iter()
             .map(|target| target.key)
@@ -1707,9 +1707,7 @@ mod tests {
             visual.update(|window, cx| window.draw(cx).clear());
         }
         let scroll_handle = window
-            .update(cx, |app, _, cx| {
-                app.reader_list_state(&first, cx).unwrap()
-            })
+            .update(cx, |app, _, cx| app.reader_list_state(&first, cx).unwrap())
             .unwrap();
         let before = window
             .update(cx, |app, _, _| {
@@ -1753,10 +1751,7 @@ mod tests {
                     .set_offset_from_scrollbar(point(px(0.0), px(-64.0)));
             })
             .unwrap();
-        assert_eq!(
-            scroll_handle.scroll_px_offset_for_scrollbar().y,
-            px(-64.0)
-        );
+        assert_eq!(scroll_handle.scroll_px_offset_for_scrollbar().y, px(-64.0));
     }
 
     #[gpui::test]
