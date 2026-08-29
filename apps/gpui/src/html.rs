@@ -208,7 +208,9 @@ fn apply_implied_closes(name: &str, root: &mut Vec<Node>, stack: &mut Vec<OpenEl
     }
 }
 
-fn scan_open_tag(rest: &str) -> Option<(String, Vec<(String, String)>, bool, usize)> {
+type OpenTagScan = (String, Vec<(String, String)>, bool, usize);
+
+fn scan_open_tag(rest: &str) -> Option<OpenTagScan> {
     let bytes = rest.as_bytes();
     debug_assert_eq!(bytes.first(), Some(&b'<'));
     let mut index = 1;
@@ -754,7 +756,7 @@ fn find_code_language(nodes: &[Node]) -> Option<String> {
     None
 }
 
-fn table_rows<'a>(children: &'a [Node]) -> Vec<(&'a Node, bool)> {
+fn table_rows(children: &[Node]) -> Vec<(&Node, bool)> {
     let mut rows = Vec::new();
     for child in children {
         let Node::Element { name, children, .. } = child else {
