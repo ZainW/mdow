@@ -58,6 +58,10 @@ pub fn discover_asset_root(
         anyhow::bail!("executable is inside a malformed app bundle");
     }
 
+    if let Some(assets) = sibling_assets(&executable) {
+        return Ok(assets);
+    }
+
     fs::canonicalize(development_assets.as_ref()).context("canonicalizing development assets")
 }
 
@@ -91,6 +95,13 @@ fn bundled_contents(executable: &Path) -> Option<&Path> {
         && contents.file_name() == Some(OsStr::new("Contents"))
         && bundle.extension() == Some(OsStr::new("app")))
     .then_some(contents)
+}
+
+fn sibling_assets(executable: &Path) -> Option<PathBuf> {
+    let parent = executable.parent()?;
+    let assets = fs::canonicalize(parent.join("assets")).ok()?;
+    let parent = fs::canonicalize(parent).ok()?;
+    assets.starts_with(&parent).then_some(assets)
 }
 
 pub struct MdowAssets {
@@ -202,6 +213,21 @@ mod tests {
         assert_eq!(
             discover_asset_root(&executable, &development_assets).unwrap(),
             development_assets.canonicalize().unwrap(),
+        );
+    }
+
+    #[test]
+    fn discovers_assets_next_to_a_portable_linux_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("MdowNative-linux/MdowNative");
+        let bundled_assets = dir.path().join("MdowNative-linux/assets");
+        fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        fs::create_dir_all(&bundled_assets).unwrap();
+        fs::write(&executable, b"fixture").unwrap();
+
+        assert_eq!(
+            discover_asset_root(&executable, dir.path().join("development-assets")).unwrap(),
+            bundled_assets.canonicalize().unwrap(),
         );
     }
 

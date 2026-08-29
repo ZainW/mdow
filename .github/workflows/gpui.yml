@@ -5,8 +5,10 @@ name: GPUI verification
     paths:
       - 'apps/gpui/**'
       - 'script/package_gpui_mac_beta.sh'
+      - 'script/package_gpui_linux_beta.sh'
       - 'script/native_mac_bundle.sh'
       - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_package_gpui_linux_beta.sh'
       - 'script/test_gpui_workflows.zsh'
       - '.github/workflows/gpui.yml'
       - '.github/workflows/release.yml'
@@ -15,8 +17,10 @@ name: GPUI verification
     paths:
       - 'apps/gpui/**'
       - 'script/package_gpui_mac_beta.sh'
+      - 'script/package_gpui_linux_beta.sh'
       - 'script/native_mac_bundle.sh'
       - 'script/test_package_gpui_mac_beta.zsh'
+      - 'script/test_package_gpui_linux_beta.sh'
       - 'script/test_gpui_workflows.zsh'
       - '.github/workflows/gpui.yml'
       - '.github/workflows/release.yml'
@@ -61,6 +65,7 @@ jobs:
       - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
       - run: pnpm run test:gpui-workflows
       - run: pnpm run test:package:gpui-mac-beta
+      - run: pnpm run test:package:gpui-linux-beta
       - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
         env:
           CI: 'false'
@@ -74,4 +79,59 @@ jobs:
         with:
           name: mdow-native-ci-arm64
           path: dist/gpui-mac/*.zip
+          if-no-files-found: error
+
+  verify-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install GPUI Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            pkg-config \
+            xvfb \
+            zip
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/gpui/target
+          key: ${{ runner.os }}-gpui-linux-cargo-${{ hashFiles('apps/gpui/Cargo.lock') }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - run: cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check
+      - run: xvfb-run -a cargo test --locked --manifest-path apps/gpui/Cargo.toml
+      - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
+      - run: pnpm run test:package:gpui-linux-beta
+      - run: VERSION=0.0.0-ci pnpm run package:gpui-linux-beta
+
+      - name: Verify expected GPUI Linux package ZIPs
+        run: |
+          test -f dist/gpui-linux/MdowNative-0.0.0-ci-x64-linux-beta.zip
+          test -f dist/gpui-linux/MdowNative-linux-beta.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-native-ci-linux-x64
+          path: dist/gpui-linux/*.zip
           if-no-files-found: error

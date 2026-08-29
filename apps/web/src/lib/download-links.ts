@@ -3,6 +3,8 @@ import type { ReleaseInfo } from './github-releases'
 export type PlatformId = 'mac' | 'windows' | 'linux'
 export const GPUI_MAC_BETA_DOWNLOAD_URL =
   'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-mac-beta.zip'
+export const GPUI_LINUX_BETA_DOWNLOAD_URL =
+  'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.zip'
 
 export function detectPlatform(userAgent: string): PlatformId {
   if (userAgent.includes('Mac')) return 'mac'
@@ -21,6 +23,10 @@ export function primaryDownloadUrl(release: ReleaseInfo, platform: PlatformId): 
 
 export function gpuiMacBetaDownloadUrl(release: ReleaseInfo): string {
   return release.assets.mac.gpuiBeta?.url ?? GPUI_MAC_BETA_DOWNLOAD_URL
+}
+
+export function gpuiLinuxBetaDownloadUrl(release: ReleaseInfo): string {
+  return release.assets.linux.gpuiBeta?.url ?? GPUI_LINUX_BETA_DOWNLOAD_URL
 }
 
 export function platformLabel(platform: PlatformId): string {
