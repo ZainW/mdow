@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.7.2
+## v1.8.0
 
 Latest release.
+
+- Native GPUI sidebar header is now Recents, Folder, and Outline, the palette opens workspace files, and settings preview the reading face
+- Electron no longer animates sidebar, palette, find, or tab scroll on every use
+- Added a separately distributed Mdow Native GPUI beta for Linux x64
+
+## v1.7.2
 
 - Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
 - Restores tabs, preferences, and window bounds across launches

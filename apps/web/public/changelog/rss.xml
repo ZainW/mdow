@@ -6,13 +6,22 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.8.0</title>
+      <link>https://mdow.wania.app/changelog#v1-8-0</link>
+      <guid isPermaLink="false">v1.8.0</guid>
+      <pubDate>Sat, 29 Aug 2026 01:53:30 GMT</pubDate>
+      <description>Latest release.
+
+- Native GPUI sidebar header is now Recents, Folder, and Outline, the palette opens workspace files, and settings preview the reading face
+- Electron no longer animates sidebar, palette, find, or tab scroll on every use
+- Added a separately distributed Mdow Native GPUI beta for Linux x64</description>
+    </item>
+    <item>
       <title>v1.7.2</title>
       <link>https://mdow.wania.app/changelog#v1-7-2</link>
       <guid isPermaLink="false">v1.7.2</guid>
       <pubDate>Sat, 29 Aug 2026 01:31:03 GMT</pubDate>
-      <description>Latest release.
-
-- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
+      <description>- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
 - Restores tabs, preferences, and window bounds across launches
 - Virtualized the reader so large documents stay responsive
 - Opens local HTML in a native viewer without a webview
