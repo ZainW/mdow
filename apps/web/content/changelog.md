@@ -5,9 +5,13 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.8.0
+## v1.8.1
 
 Latest release.
+
+- Native Recents no longer lists the same file twice when macOS keeps both `/var` and `/private/var` paths
+
+## v1.8.0
 
 - Native GPUI sidebar header is now Recents, Folder, and Outline, the palette opens workspace files, and settings preview the reading face
 - Electron no longer animates sidebar, palette, find, or tab scroll on every use
