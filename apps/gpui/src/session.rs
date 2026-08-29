@@ -2,6 +2,15 @@
 
 use std::path::{Path, PathBuf};
 
+pub fn file_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        path.parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .and_then(|parent| path.file_name().map(|name| parent.join(name)))
+            .unwrap_or_else(|| path.to_owned())
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SavedWindowBounds {
     pub x: f32,
@@ -56,11 +65,12 @@ impl Recents {
     pub const CAP: usize = 20;
 
     pub fn note(&mut self, path: &Path) -> bool {
-        if self.0.first().is_some_and(|first| first == path) {
+        let path = file_identity(path);
+        if self.0.first().is_some_and(|first| first == &path) {
             return false;
         }
-        self.0.retain(|existing| existing != path);
-        self.0.insert(0, path.to_owned());
+        self.0.retain(|existing| existing != &path);
+        self.0.insert(0, path);
         self.0.truncate(Self::CAP);
         true
     }
@@ -76,6 +86,7 @@ impl Recents {
     pub fn from_paths(paths: Vec<PathBuf>) -> Self {
         let mut recents = Vec::new();
         for path in paths {
+            let path = file_identity(&path);
             if recents.iter().any(|existing| existing == &path) {
                 continue;
             }
