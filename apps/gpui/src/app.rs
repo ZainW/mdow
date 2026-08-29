@@ -1,6 +1,17 @@
 use crate::{
-    actions::{CloseTab, OpenFile, OpenFolder, ToggleSidebar, ToggleWideMode},
+    actions::{
+        CloseTab, Dismiss, FindNext, FindPrevious, OpenFile, OpenFolder, SidebarFolder,
+        SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts,
+        ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
+    },
     document::{DocumentError, ParsedDocument, load_source, parse_document},
+    overlay::{
+        CommandId, FindEvent, FindOverlay, OpenOverlay, OverlayHost, OverlayKind, PaletteAction,
+        PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
+    },
+    persist::{StateStore, StoredPrefs},
+    prefs::{ColumnWidth, PrefEdit, Prefs, SidebarMode, ThemeMode},
+    session::{Recents, SavedWindowBounds, Session},
     syntax::prepare_document,
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
@@ -10,8 +21,8 @@ use crate::{
             render_sidebar, render_tab_bar,
         },
         reader::{
-            LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderLinkState, classify_link,
-            clear_expired_code_copy_feedback, document_link_focus_targets, render_document,
+            LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
+            clear_expired_code_copy_feedback, document_link_focus_targets,
         },
         welcome::welcome,
     },
@@ -19,8 +30,8 @@ use crate::{
     workspace::{WorkspaceError, WorkspaceTree, scan_workspace},
 };
 use gpui::{
-    ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, IntoElement, PathPromptOptions,
-    Render, ScrollHandle, Subscription, Task, Timer, Window, div, point, prelude::*, px,
+    App, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle, Focusable, IntoElement,
+    PathPromptOptions, Render, Subscription, Task, Timer, Window, div, prelude::*, px,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -81,6 +92,7 @@ pub struct AppModel {
     pub tabs: TabSet,
     pub workspace: Option<WorkspaceTree>,
     pub workspace_error: Option<UserFacingError>,
+    pub recents: Recents,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -106,6 +118,9 @@ impl AppModel {
         let loaded = load_source(path)?;
         let parsed = parse_document(loaded.canonical_path, loaded.source);
         self.tabs.open_prepared(prepare_document(parsed));
+        if let Some(tab) = self.tabs.active() {
+            self.recents.note(tab.path());
+        }
         Ok(())
     }
 
@@ -232,13 +247,15 @@ pub struct MdowApp {
     pub model: AppModel,
     pub sidebar_open: bool,
     pub wide_mode: bool,
+    prefs: StoredPrefs,
+    overlays: OverlayHost,
+    last_window_bounds: Option<SavedWindowBounds>,
     pub drop_state: DropState,
     pub open_error: Option<UserFacingError>,
     copied_code: Option<(usize, Instant)>,
     hovered_link: Option<LinkFocusKey>,
     focused_link: Option<LinkFocusKey>,
-    reader_scrollbar_drag: Option<ReaderScrollbarDrag>,
-    reader_scroll_handles: HashMap<PathBuf, ScrollHandle>,
+    reader_panes: HashMap<PathBuf, Entity<ReaderPane>>,
     reader_link_focus_handles: HashMap<(PathBuf, LinkFocusKey), FocusHandle>,
     file_watcher: FileWatcher,
     _watch_messages: Arc<Mutex<Receiver<WatchMessage>>>,
@@ -248,21 +265,11 @@ pub struct MdowApp {
     _appearance_subscription: Subscription,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct ReaderScrollbarDrag {
-    path: PathBuf,
-    grab_y: f32,
-}
-
-fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option<f32> {
-    let page = viewport * 0.9;
-    match key {
-        "home" => Some(0.0),
-        "end" => Some(-max),
-        "pageup" => Some((current + page).min(0.0)),
-        "pagedown" => Some((current - page).max(-max)),
-        _ => None,
-    }
+pub(crate) struct ReaderPaintState {
+    pub copied_code: Option<(usize, Instant)>,
+    pub hovered_link: Option<LinkFocusKey>,
+    pub focused_link: Option<LinkFocusKey>,
+    pub find_block: Option<usize>,
 }
 
 fn reader_key_modifiers_are_allowed(
@@ -280,10 +287,19 @@ fn reader_key_modifiers_are_allowed(
 
 impl MdowApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::boot(Prefs::default(), StateStore::in_memory(), window, cx)
+    }
+
+    pub fn boot(
+        prefs: Prefs,
+        store: StateStore,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window);
         let appearance_subscription = cx.observe_window_appearance(window, |this, window, cx| {
-            this.theme = Theme::for_appearance(window.appearance());
+            this.theme = Theme::resolve(this.prefs.get().theme_mode, window.appearance());
             cx.notify();
         });
         let file_watcher = FileWatcher::new().expect("create Mdow file watcher");
@@ -321,17 +337,20 @@ impl MdowApp {
             }
         });
 
+        let wide_mode = prefs.reader_width.is_full();
         Self {
             model: AppModel::default(),
             sidebar_open: true,
-            wide_mode: false,
+            wide_mode,
+            prefs: StoredPrefs::restore(prefs, store),
+            overlays: OverlayHost::default(),
+            last_window_bounds: None,
             drop_state: DropState::default(),
             open_error: None,
             copied_code: None,
             hovered_link: None,
             focused_link: None,
-            reader_scrollbar_drag: None,
-            reader_scroll_handles: HashMap::new(),
+            reader_panes: HashMap::new(),
             reader_link_focus_handles: HashMap::new(),
             file_watcher,
             _watch_messages: watch_messages,
@@ -352,7 +371,7 @@ impl MdowApp {
                     .map(|tab| tab.path().to_owned())
                     .and_then(|path| self.watch_document(&path).err());
                 self.open_error = watch_error;
-                self.clear_reader_transient_state();
+                self.active_document_changed(cx);
             }
             Ok(()) => {}
             Err(AppOpenError::Document(error)) => self.open_error = Some(error),
@@ -371,7 +390,7 @@ impl MdowApp {
             self.open_error = result.document_error.or(watch_error);
         }
         if document_opened {
-            self.clear_reader_transient_state();
+            self.active_document_changed(cx);
         }
         self.drop_state.dropped();
         cx.notify();
@@ -407,6 +426,8 @@ impl MdowApp {
 
     fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.model.open_workspace(path).ok();
+        self.apply_pref(PrefEdit::Sidebar(SidebarMode::Folder), cx);
+        self.prefs.save_session(&self.session_snapshot());
         cx.notify();
     }
 
@@ -501,40 +522,368 @@ impl MdowApp {
     }
 
     fn toggle_sidebar(&mut self, _: &ToggleSidebar, _: &mut Window, cx: &mut Context<Self>) {
+        self.click_toggle_sidebar(cx);
+    }
+
+    fn toggle_wide_mode(&mut self, _: &ToggleWideMode, _: &mut Window, cx: &mut Context<Self>) {
+        self.click_toggle_wide_mode(cx);
+    }
+
+    pub(crate) fn click_toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_open = !self.sidebar_open;
         cx.notify();
     }
 
-    fn toggle_wide_mode(&mut self, _: &ToggleWideMode, _: &mut Window, cx: &mut Context<Self>) {
-        self.wide_mode = !self.wide_mode;
+    pub(crate) fn click_toggle_wide_mode(&mut self, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::ToggleFull, cx);
+    }
+
+    pub(crate) fn click_toggle_overlay(
+        &mut self,
+        kind: OverlayKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_overlay(kind, window, cx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn overlay_kind(&self) -> Option<OverlayKind> {
+        self.overlays.kind()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prefs_snapshot(&self) -> Prefs {
+        *self.prefs.get()
+    }
+
+    pub(crate) fn reveal_path(&self, path: &Path) {
+        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    }
+
+    pub fn restore_session(&mut self, session: Session, cx: &mut Context<Self>) {
+        self.model.recents = session.recents.clone();
+        if let Some(folder) = session.last_folder.as_ref() {
+            self.model.open_workspace(folder).ok();
+        }
+        if let Some(tabs) = session.tabs.as_ref() {
+            for path in tabs.iter() {
+                let _ = self.model.open_document(path);
+            }
+            self.model.tabs.activate(tabs.active());
+            let _ = self.watch_all_documents();
+        }
+        self.last_window_bounds = session.window;
+        self.clear_reader_transient_state();
         cx.notify();
+    }
+
+    fn apply_pref(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
+        let session = self.session_snapshot();
+        if !self.prefs.apply(edit, &session) {
+            return;
+        }
+        self.wide_mode = self.prefs.get().reader_width.is_full();
+        self.overlays.refresh_settings(self.prefs.get(), cx);
+        cx.notify();
+    }
+
+    fn toggle_overlay(&mut self, kind: OverlayKind, window: &mut Window, cx: &mut Context<Self>) {
+        if self.overlays.kind() == Some(kind) {
+            self.overlays.close(Some(window));
+            cx.notify();
+            return;
+        }
+        let overlay = match kind {
+            OverlayKind::Find => {
+                let document = self.model.tabs.active().map(|tab| tab.document.clone());
+                let view = cx.new(|cx| FindOverlay::new(document, window, cx));
+                let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
+                    this.on_find_event(event, cx);
+                });
+                OpenOverlay::find(view, events)
+            }
+            OverlayKind::Palette => {
+                let view = cx.new(|cx| PaletteOverlay::new(self.model.recents.clone(), window, cx));
+                let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
+                    this.on_palette_event(event, window, cx);
+                });
+                OpenOverlay::palette(view, events)
+            }
+            OverlayKind::Settings => {
+                let view = cx.new(|cx| SettingsPanel::new(*self.prefs.get(), window, cx));
+                let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
+                    this.on_settings_event(event, cx);
+                });
+                OpenOverlay::settings(view, events)
+            }
+            OverlayKind::Shortcuts => {
+                let view = cx.new(|cx| ShortcutsCard::new(window, cx));
+                let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
+                    this.on_shortcuts_event(event, cx);
+                });
+                OpenOverlay::shortcuts(view, events)
+            }
+        };
+        self.overlays.open(overlay, self.focus_handle.clone());
+        cx.notify();
+    }
+
+    fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.overlays.close(Some(window)) {
+            cx.notify();
+            return;
+        }
+        if self.model.dismiss_active_reload_error() {
+            cx.notify();
+        }
+    }
+
+    fn run_command(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
+        match id {
+            CommandId::OpenFile => self.open_file_prompt(cx),
+            CommandId::OpenFolder => self.open_folder_prompt(cx),
+            CommandId::CloseTab => self.close_active_tab(&CloseTab, window, cx),
+            CommandId::ToggleSidebar => self.toggle_sidebar(&ToggleSidebar, window, cx),
+            CommandId::SidebarRecents => {
+                self.apply_pref(PrefEdit::Sidebar(SidebarMode::Recents), cx)
+            }
+            CommandId::SidebarFolder => self.apply_pref(PrefEdit::Sidebar(SidebarMode::Folder), cx),
+            CommandId::SidebarOutline => {
+                self.apply_pref(PrefEdit::Sidebar(SidebarMode::Outline), cx)
+            }
+            CommandId::ToggleWideMode => self.apply_pref(PrefEdit::ToggleFull, cx),
+            CommandId::ColumnStandard => {
+                self.apply_pref(PrefEdit::Column(ColumnWidth::Standard), cx)
+            }
+            CommandId::ColumnComfortable => {
+                self.apply_pref(PrefEdit::Column(ColumnWidth::Comfortable), cx)
+            }
+            CommandId::ColumnWide => self.apply_pref(PrefEdit::Column(ColumnWidth::Wide), cx),
+            CommandId::ThemeSystem => self.apply_pref(PrefEdit::Theme(ThemeMode::System), cx),
+            CommandId::ThemeLight => self.apply_pref(PrefEdit::Theme(ThemeMode::Light), cx),
+            CommandId::ThemeDark => self.apply_pref(PrefEdit::Theme(ThemeMode::Dark), cx),
+            CommandId::ZoomIn => self.apply_pref(PrefEdit::ZoomIn, cx),
+            CommandId::ZoomOut => self.apply_pref(PrefEdit::ZoomOut, cx),
+            CommandId::ZoomReset => self.apply_pref(PrefEdit::ZoomReset, cx),
+            CommandId::FindInDocument => self.toggle_overlay(OverlayKind::Find, window, cx),
+            CommandId::OpenSettings => self.toggle_overlay(OverlayKind::Settings, window, cx),
+            CommandId::OpenShortcuts => self.toggle_overlay(OverlayKind::Shortcuts, window, cx),
+        }
+    }
+
+    fn active_document_changed(&mut self, cx: &mut Context<Self>) {
+        self.clear_reader_transient_state();
+        let document = self.model.tabs.active().map(|tab| tab.document.clone());
+        self.overlays.retarget_find(document, cx);
+        self.prefs.save_session(&self.session_snapshot());
+    }
+
+    fn session_snapshot(&self) -> Session {
+        Session::from_parts(
+            self.model.tabs.paths().map(Path::to_owned),
+            self.model.tabs.active().map(|tab| tab.path().to_owned()),
+            self.model
+                .workspace
+                .as_ref()
+                .map(|tree| tree.root.path.clone()),
+            self.model.recents.clone(),
+            self.last_window_bounds,
+        )
+    }
+
+    fn scroll_reader_to_block(&mut self, block: usize, cx: &mut Context<Self>) {
+        let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) else {
+            return;
+        };
+        let Some(pane) = self.reader_panes.get(&path).cloned() else {
+            return;
+        };
+        pane.update(cx, |pane, cx| {
+            pane.scroll_to_block(block);
+            cx.notify();
+        });
+    }
+
+    fn on_find_event(&mut self, event: &FindEvent, cx: &mut Context<Self>) {
+        match event {
+            FindEvent::ActiveHit(hit) => self.scroll_reader_to_block(hit.block, cx),
+            FindEvent::Dismissed => {
+                self.overlays.close(None);
+                cx.notify();
+            }
+        }
+    }
+
+    fn on_palette_event(
+        &mut self,
+        event: &PaletteEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            PaletteEvent::Invoked(action) => {
+                self.overlays.close(Some(window));
+                match action {
+                    PaletteAction::Run(id) => self.run_command(*id, window, cx),
+                    PaletteAction::Open(path) => self.open_path(path, cx),
+                }
+            }
+            PaletteEvent::Dismissed => {
+                self.overlays.close(Some(window));
+                cx.notify();
+            }
+        }
+    }
+
+    fn on_settings_event(&mut self, event: &SettingsEvent, cx: &mut Context<Self>) {
+        match event {
+            SettingsEvent::Edited(edit) => self.apply_pref(*edit, cx),
+            SettingsEvent::Dismissed => {
+                self.overlays.close(None);
+                cx.notify();
+            }
+        }
+    }
+
+    fn on_shortcuts_event(&mut self, event: &ShortcutsEvent, cx: &mut Context<Self>) {
+        if matches!(event, ShortcutsEvent::Dismissed) {
+            self.overlays.close(None);
+            cx.notify();
+        }
+    }
+
+    fn on_toggle_find(&mut self, _: &ToggleFind, window: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_overlay(OverlayKind::Find, window, cx);
+    }
+
+    fn on_toggle_palette(
+        &mut self,
+        _: &TogglePalette,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_overlay(OverlayKind::Palette, window, cx);
+    }
+
+    fn on_toggle_settings(
+        &mut self,
+        _: &ToggleSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_overlay(OverlayKind::Settings, window, cx);
+    }
+
+    fn on_toggle_shortcuts(
+        &mut self,
+        _: &ToggleShortcuts,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_overlay(OverlayKind::Shortcuts, window, cx);
+    }
+
+    fn on_dismiss(&mut self, _: &Dismiss, window: &mut Window, cx: &mut Context<Self>) {
+        self.dismiss(window, cx);
+    }
+
+    fn on_find_next(&mut self, _: &FindNext, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(find) = self.overlays.find().cloned() {
+            find.update(cx, |find, cx| find.advance(false, cx));
+        }
+    }
+
+    fn on_find_previous(&mut self, _: &FindPrevious, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(find) = self.overlays.find().cloned() {
+            find.update(cx, |find, cx| find.advance(true, cx));
+        }
+    }
+
+    fn on_zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::ZoomIn, cx);
+    }
+
+    fn on_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::ZoomOut, cx);
+    }
+
+    fn on_zoom_reset(&mut self, _: &ZoomReset, _: &mut Window, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::ZoomReset, cx);
+    }
+
+    pub(crate) fn set_sidebar_mode(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::Sidebar(mode), cx);
+    }
+
+    fn on_sidebar_recents(&mut self, _: &SidebarRecents, _: &mut Window, cx: &mut Context<Self>) {
+        self.set_sidebar_mode(SidebarMode::Recents, cx);
+    }
+
+    fn on_sidebar_folder(&mut self, _: &SidebarFolder, _: &mut Window, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::Sidebar(SidebarMode::Folder), cx);
+    }
+
+    fn on_sidebar_outline(&mut self, _: &SidebarOutline, _: &mut Window, cx: &mut Context<Self>) {
+        self.apply_pref(PrefEdit::Sidebar(SidebarMode::Outline), cx);
     }
 
     fn clear_reader_transient_state(&mut self) {
         self.copied_code = None;
         self.hovered_link = None;
         self.focused_link = None;
-        self.reader_scrollbar_drag = None;
     }
 
-    pub(crate) fn begin_reader_scrollbar_drag(&mut self, path: PathBuf, grab_y: f32) {
-        self.reader_scrollbar_drag = Some(ReaderScrollbarDrag { path, grab_y });
+    pub(crate) fn reader_paint_state(&self, cx: &App) -> ReaderPaintState {
+        ReaderPaintState {
+            copied_code: self.copied_code,
+            hovered_link: self.hovered_link,
+            focused_link: self.focused_link,
+            find_block: self
+                .overlays
+                .find()
+                .and_then(|find| find.read(cx).matches().active().map(|hit| hit.block)),
+        }
     }
 
-    pub(crate) fn reader_scrollbar_drag_grab_y(&self, path: &Path) -> Option<f32> {
-        self.reader_scrollbar_drag
-            .as_ref()
-            .filter(|drag| drag.path == path)
-            .map(|drag| drag.grab_y)
+    #[cfg(test)]
+    pub(crate) fn reader_list_state(&self, path: &Path, cx: &App) -> Option<gpui::ListState> {
+        self.reader_panes
+            .get(path)
+            .map(|pane| pane.read(cx).list_state())
     }
 
-    pub(crate) fn end_reader_scrollbar_drag(&mut self, path: &Path) {
-        if self
-            .reader_scrollbar_drag
-            .as_ref()
-            .is_some_and(|drag| drag.path == path)
-        {
-            self.reader_scrollbar_drag = None;
+    fn ensure_reader_pane(
+        &mut self,
+        document: Arc<crate::syntax::PreparedDocument>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ReaderPane> {
+        let path = document.path.clone();
+        let style = self.prefs.get().reader_style();
+        let theme = self.theme;
+        let live = self
+            .model
+            .tabs
+            .paths()
+            .map(Path::to_owned)
+            .collect::<HashSet<_>>();
+        self.reader_panes.retain(|open_path, _| live.contains(open_path));
+        self.reader_link_focus_handles
+            .retain(|(open_path, _), _| live.contains(open_path));
+        if let Some(pane) = self.reader_panes.get(&path).cloned() {
+            if !pane.read(cx).hosts_document(&document) {
+                self.retain_reader_link_focus_handles(&document, window);
+            }
+            pane.update(cx, |pane, cx| pane.sync(document, style, theme, cx));
+            pane
+        } else {
+            self.retain_reader_link_focus_handles(&document, window);
+            let app = cx.weak_entity();
+            let pane = cx.new(|_| ReaderPane::new(app, document, style, theme));
+            self.reader_panes.insert(path, pane.clone());
+            cx.on_next_frame(window, |_, _, cx| cx.notify());
+            pane
         }
     }
 
@@ -557,15 +906,13 @@ impl MdowApp {
         }
     }
 
-    fn reconcile_reader_link_focus_handles(
+    fn retain_reader_link_focus_handles(
         &mut self,
         document: &ParsedDocument,
         window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> HashMap<LinkFocusKey, FocusHandle> {
-        let targets = document_link_focus_targets(document);
-        let active_keys = targets
-            .iter()
+    ) {
+        let active_keys = document_link_focus_targets(document)
+            .into_iter()
             .map(|target| target.key)
             .collect::<HashSet<_>>();
         let mut removed_focused_handle = false;
@@ -590,8 +937,17 @@ impl MdowApp {
         if removed_focused_handle || focus_state_mismatch {
             self.focused_link = None;
         }
+    }
 
-        targets
+    pub(crate) fn ensure_block_link_focus_handles(
+        &mut self,
+        document: &ParsedDocument,
+        block_index: usize,
+        cx: &mut Context<Self>,
+    ) -> HashMap<LinkFocusKey, FocusHandle> {
+        use crate::ui::reader::block_link_focus_targets;
+
+        block_link_focus_targets(document, block_index)
             .into_iter()
             .map(|target| {
                 let map_key = (document.path.clone(), target.key);
@@ -608,10 +964,10 @@ impl MdowApp {
     pub fn close_active_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) {
             self.model.tabs.close(&path);
-            self.reader_scroll_handles.remove(&path);
+            self.reader_panes.remove(&path);
             self.reader_link_focus_handles
                 .retain(|(document_path, _), _| document_path != &path);
-            self.clear_reader_transient_state();
+            self.active_document_changed(cx);
             cx.notify();
         }
     }
@@ -630,7 +986,7 @@ impl MdowApp {
     pub(crate) fn activate_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.model.tabs.activate(path) {
             self.open_error = None;
-            self.clear_reader_transient_state();
+            self.active_document_changed(cx);
             cx.notify();
         }
     }
@@ -639,29 +995,46 @@ impl MdowApp {
         let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) else {
             return false;
         };
-        let Some(handle) = self.reader_scroll_handles.get(&path) else {
+        let Some(pane) = self.reader_panes.get(&path).cloned() else {
             return false;
         };
-        let Some(target) = reader_key_target(
-            key,
-            f32::from(handle.offset().y),
-            f32::from(handle.bounds().size.height),
-            f32::from(handle.max_offset().height),
-        ) else {
-            return false;
-        };
-        handle.set_offset(point(px(0.0), px(target)));
-        cx.notify();
-        true
+        let scrolled = pane.update(cx, |pane, cx| {
+            let scrolled = pane.scroll_by_key(key);
+            if scrolled {
+                cx.notify();
+            }
+            scrolled
+        });
+        scrolled
     }
 
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         if self.model.tabs.close(path).is_some() {
-            self.reader_scroll_handles.remove(path);
+            self.reader_panes.remove(path);
             self.reader_link_focus_handles
                 .retain(|(document_path, _), _| document_path != path);
-            self.clear_reader_transient_state();
+            self.active_document_changed(cx);
             cx.notify();
+        }
+    }
+
+    pub(crate) fn jump_to_heading(&mut self, text: &str, cx: &mut Context<Self>) {
+        let Some(document) = self.model.tabs.active().map(|tab| tab.document.clone()) else {
+            return;
+        };
+        let mut heading_index = 0usize;
+        for (block_index, block) in document.blocks.iter().enumerate() {
+            if matches!(block, crate::document::DocumentBlock::Heading { .. }) {
+                if document
+                    .headings
+                    .get(heading_index)
+                    .is_some_and(|heading| heading.text == text)
+                {
+                    self.scroll_reader_to_block(block_index, cx);
+                    return;
+                }
+                heading_index += 1;
+            }
         }
     }
 
@@ -741,23 +1114,38 @@ impl Focusable for MdowApp {
 
 impl Render for MdowApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.theme = Theme::for_appearance(window.appearance());
+        let bounds = window.bounds();
+        self.last_window_bounds = Some(SavedWindowBounds {
+            x: f32::from(bounds.origin.x),
+            y: f32::from(bounds.origin.y),
+            width: f32::from(bounds.size.width),
+            height: f32::from(bounds.size.height),
+        });
+        self.theme = Theme::resolve(self.prefs.get().theme_mode, window.appearance());
         let layout = ShellLayout::for_width(
             f32::from(window.viewport_size().width),
             self.sidebar_open,
             self.wide_mode,
         );
         let active_path = self.model.tabs.active().map(|tab| tab.path().to_owned());
+        let headings = self
+            .model
+            .tabs
+            .active()
+            .map(|tab| tab.document.headings.as_slice());
         let sidebar = render_sidebar(
             self.theme,
+            self.prefs.get().sidebar_mode,
+            &self.model.recents,
             self.model.workspace.as_ref(),
             self.model.workspace_error.as_ref(),
+            headings,
             active_path.as_deref(),
             layout.sidebar.width,
             cx,
         );
         let tab_bar = render_tab_bar(self.theme, self, cx);
-        let breadcrumb = render_breadcrumb(self.theme, self);
+        let breadcrumb = render_breadcrumb(self.theme, self, cx);
         let active_tab = self.model.tabs.active().map(|tab| {
             (
                 tab.document.clone(),
@@ -767,9 +1155,9 @@ impl Render for MdowApp {
         });
         let content = if self.model.tabs.is_empty() {
             if let Some(error) = self.open_error.as_ref() {
-                render_error_state(self.theme, error, self.drop_state.is_active())
+                render_error_state(self.theme, error, self.drop_state.is_active(), cx)
             } else {
-                welcome(self.theme, self.drop_state.is_active())
+                welcome(self.theme, self.drop_state.is_active(), cx)
             }
         } else {
             let mut surface = div()
@@ -795,29 +1183,8 @@ impl Render for MdowApp {
                     cx,
                 ));
             }
-            let scroll_handle_was_new = !self.reader_scroll_handles.contains_key(&path);
-            let scroll_handle = self.reader_scroll_handles.entry(path).or_default().clone();
-            if scroll_handle_was_new {
-                cx.on_next_frame(window, |_, _, cx| cx.notify());
-            }
-            let active_focus_handles =
-                self.reconcile_reader_link_focus_handles(&document, window, cx);
-            let link_state = ReaderLinkState {
-                hovered: self.hovered_link,
-                focused: self.focused_link,
-                focus_handles: &active_focus_handles,
-            };
-            surface
-                .child(render_document(
-                    document,
-                    self.wide_mode,
-                    self.theme,
-                    self.copied_code,
-                    &link_state,
-                    &scroll_handle,
-                    cx,
-                ))
-                .into_any_element()
+            let pane = self.ensure_reader_pane(document, window, cx);
+            surface.child(pane).into_any_element()
         };
         let drop_theme = self.theme;
 
@@ -858,6 +1225,19 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::toggle_sidebar))
             .on_action(cx.listener(Self::close_active_tab))
             .on_action(cx.listener(Self::toggle_wide_mode))
+            .on_action(cx.listener(Self::on_toggle_find))
+            .on_action(cx.listener(Self::on_toggle_palette))
+            .on_action(cx.listener(Self::on_toggle_settings))
+            .on_action(cx.listener(Self::on_toggle_shortcuts))
+            .on_action(cx.listener(Self::on_dismiss))
+            .on_action(cx.listener(Self::on_find_next))
+            .on_action(cx.listener(Self::on_find_previous))
+            .on_action(cx.listener(Self::on_zoom_in))
+            .on_action(cx.listener(Self::on_zoom_out))
+            .on_action(cx.listener(Self::on_zoom_reset))
+            .on_action(cx.listener(Self::on_sidebar_recents))
+            .on_action(cx.listener(Self::on_sidebar_folder))
+            .on_action(cx.listener(Self::on_sidebar_outline))
             .on_drag_move::<ExternalPaths>(cx.listener(|this, _, window, cx| {
                 this.drag_moved(window, cx);
             }))
@@ -870,13 +1250,14 @@ impl Render for MdowApp {
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                 this.open_paths(paths.paths().to_vec(), cx);
             }))
+            .relative()
             .flex()
             .flex_col()
             .size_full()
             .overflow_hidden()
             .bg(self.theme.background)
             .font_family(Metrics::FONT_SANS)
-            .text_size(px(Metrics::APP_FONT_SIZE))
+            .text_size(px(self.prefs.get().interface_scale.tokens().control_font))
             .text_color(self.theme.foreground)
             .child(
                 div()
@@ -905,12 +1286,14 @@ impl Render for MdowApp {
                             .child(content),
                     ),
             )
+            .children(self.overlays.render_layer(self.theme))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::reader::reader_key_target;
     use gpui::{
         FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, ScrollDelta,
         ScrollWheelEvent, TestAppContext, VisualTestContext, point,
@@ -1324,8 +1707,8 @@ mod tests {
             visual.update(|window, cx| window.draw(cx).clear());
         }
         let scroll_handle = window
-            .update(cx, |app, _, _| {
-                app.reader_scroll_handles.get(&first).unwrap().clone()
+            .update(cx, |app, _, cx| {
+                app.reader_list_state(&first, cx).unwrap()
             })
             .unwrap();
         let before = window
@@ -1351,7 +1734,7 @@ mod tests {
         cx.run_until_parked();
 
         window
-            .update(cx, |app, _, _| {
+            .update(cx, |app, _, cx| {
                 assert_eq!(
                     app.model
                         .tabs
@@ -1365,13 +1748,15 @@ mod tests {
                     app.model.tabs.get(&first).unwrap().document.title,
                     "Reloaded"
                 );
-                app.reader_scroll_handles
-                    .get(&first)
+                app.reader_list_state(&first, cx)
                     .unwrap()
-                    .set_offset(point(px(0.0), px(-64.0)));
+                    .set_offset_from_scrollbar(point(px(0.0), px(-64.0)));
             })
             .unwrap();
-        assert_eq!(scroll_handle.offset(), point(px(0.0), px(-64.0)));
+        assert_eq!(
+            scroll_handle.scroll_px_offset_for_scrollbar().y,
+            px(-64.0)
+        );
     }
 
     #[gpui::test]
@@ -1436,7 +1821,7 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
 
         // The nested close target follows the top-level controls in GPUI's grouped tab order.
-        focus_next(&mut visual, 6);
+        focus_next(&mut visual, 9);
         activate_focused(&mut visual, "space");
 
         window
@@ -1532,6 +1917,7 @@ mod tests {
                     let mut app = MdowApp::new(window, cx);
                     app.model = model;
                     app.open_error = None;
+                    app.set_sidebar_mode(SidebarMode::Folder, cx);
                     app
                 })
             })
@@ -1540,7 +1926,7 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
 
         // The nested disclosure follows the top-level controls in GPUI's grouped tab order.
-        focus_next(&mut visual, 7);
+        focus_next(&mut visual, 10);
         activate_focused(&mut visual, "space");
         window
             .update(cx, |app, _, _| {
@@ -1667,17 +2053,18 @@ mod tests {
             .expect("paragraph inline surface should be painted");
         assert!(paragraph.size.height > px(40.0));
         let handle = window
-            .update(cx, |app, _, _| {
-                app.reader_scroll_handles.values().next().unwrap().clone()
+            .update(cx, |app, _, cx| {
+                app.reader_list_state(app.model.tabs.active().unwrap().path(), cx)
+                    .unwrap()
             })
             .unwrap();
 
         assert!(
-            handle.max_offset().height > px(0.0),
+            handle.max_offset_for_scrollbar().height > px(0.0),
             "reader viewport height {:?}, column height {:?}, max offset {:?}",
             bounds.size.height,
             column_bounds.size.height,
-            handle.max_offset().height,
+            handle.max_offset_for_scrollbar().height,
         );
         visual.simulate_event(ScrollWheelEvent {
             position: bounds.center(),
@@ -1686,7 +2073,7 @@ mod tests {
         });
         visual.update(|window, cx| window.draw(cx).clear());
 
-        assert!(handle.offset().y < px(0.0));
+        assert!(handle.scroll_px_offset_for_scrollbar().y < px(0.0));
     }
 
     #[gpui::test]
@@ -1724,11 +2111,12 @@ mod tests {
         assert!(track.contains(&thumb.center()));
         assert!(thumb.size.height < track.size.height);
         let handle = window
-            .update(cx, |app, _, _| {
-                app.reader_scroll_handles.values().next().unwrap().clone()
+            .update(cx, |app, _, cx| {
+                app.reader_list_state(app.model.tabs.active().unwrap().path(), cx)
+                    .unwrap()
             })
             .unwrap();
-        let before = handle.offset().y;
+        let before = handle.scroll_px_offset_for_scrollbar().y;
         let drag_to = point(thumb.center().x, thumb.center().y + px(120.0));
 
         visual.simulate_mouse_move(thumb.center(), None, Modifiers::none());
@@ -1737,7 +2125,7 @@ mod tests {
         visual.update(|window, cx| window.draw(cx).clear());
         visual.simulate_mouse_up(drag_to, MouseButton::Left, Modifiers::none());
 
-        assert!(handle.offset().y < before);
+        assert!(handle.scroll_px_offset_for_scrollbar().y < before);
     }
 
     #[gpui::test]
@@ -1768,8 +2156,9 @@ mod tests {
             .debug_bounds("reader-scrollbar-track")
             .expect("overflowing reader should expose a scrollbar track");
         let handle = window
-            .update(cx, |app, _, _| {
-                app.reader_scroll_handles.values().next().unwrap().clone()
+            .update(cx, |app, _, cx| {
+                app.reader_list_state(app.model.tabs.active().unwrap().path(), cx)
+                    .unwrap()
             })
             .unwrap();
         let click = point(track.center().x, track.bottom() - px(8.0));
@@ -1777,7 +2166,7 @@ mod tests {
         visual.simulate_click(click, Modifiers::none());
         visual.update(|window, cx| window.draw(cx).clear());
 
-        assert!(handle.offset().y < px(0.0));
+        assert!(handle.scroll_px_offset_for_scrollbar().y < px(0.0));
     }
 
     #[gpui::test]
@@ -1858,24 +2247,31 @@ mod tests {
         let scroll = visual
             .debug_bounds("reader-scroll")
             .expect("reader viewport");
-        let column = visual.debug_bounds("reader-column").expect("reader column");
         let first_block = visual
             .debug_bounds("reader-block-0")
             .expect("first reader block");
         let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
         let tab = visual.debug_bounds("document-tab-0").expect("active tab");
-        let wide_code_selector: &'static str =
-            Box::leak(format!("reader-code-{wide_code_index}").into_boxed_str());
-        let code = visual
-            .debug_bounds(wide_code_selector)
-            .expect("wide code surface");
-
         assert_eq!(first_block.top() - scroll.top(), px(32.0));
         assert_eq!(
             tab.top() - tab_bar.top(),
             px(4.0),
             "tab bar {tab_bar:?}, tab {tab:?}",
         );
+
+        window
+            .update(cx, |app, _, cx| {
+                app.scroll_reader_to_block(wide_code_index, cx);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let column = visual.debug_bounds("reader-column").expect("reader column");
+        let wide_code_selector: &'static str =
+            Box::leak(format!("reader-code-{wide_code_index}").into_boxed_str());
+        let code = visual
+            .debug_bounds(wide_code_selector)
+            .expect("wide code surface");
         assert!(code.left() >= column.left());
         assert!(code.right() <= column.right());
     }
@@ -2296,8 +2692,10 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         window
-            .update(cx, |app, _, _| {
-                app.reader_scroll_handles[&canonical].set_offset(point(px(0.0), px(-120.0)));
+            .update(cx, |app, _, cx| {
+                app.reader_list_state(&canonical, cx)
+                    .unwrap()
+                    .set_offset_from_scrollbar(point(px(0.0), px(-120.0)));
             })
             .unwrap();
 
@@ -2308,7 +2706,7 @@ mod tests {
             .unwrap();
         window
             .update(cx, |app, _, _| {
-                assert!(!app.reader_scroll_handles.contains_key(&canonical));
+                assert!(!app.reader_panes.contains_key(&canonical));
             })
             .unwrap();
 
@@ -2318,8 +2716,14 @@ mod tests {
         visual.update(|window, cx| window.draw(cx).clear());
 
         window
-            .update(cx, |app, _, _| {
-                assert_eq!(app.reader_scroll_handles[&canonical].offset().y, px(0.0));
+            .update(cx, |app, _, cx| {
+                assert_eq!(
+                    app.reader_list_state(&canonical, cx)
+                        .unwrap()
+                        .scroll_px_offset_for_scrollbar()
+                        .y,
+                    px(0.0)
+                );
             })
             .unwrap();
     }
@@ -2357,17 +2761,33 @@ mod tests {
         window
             .update(cx, |app, _, cx| {
                 app.activate_tab(&first, cx);
-                app.reader_scroll_handles[&first].set_offset(point(px(0.0), px(-120.0)));
+                app.reader_list_state(&first, cx)
+                    .unwrap()
+                    .set_offset_from_scrollbar(point(px(0.0), px(-120.0)));
                 app.activate_tab(&second, cx);
-                app.reader_scroll_handles[&second].set_offset(point(px(0.0), px(-260.0)));
+                app.reader_list_state(&second, cx)
+                    .unwrap()
+                    .set_offset_from_scrollbar(point(px(0.0), px(-260.0)));
                 app.activate_tab(&first, cx);
             })
             .unwrap();
 
         window
-            .update(cx, |app, _, _| {
-                assert_eq!(app.reader_scroll_handles[&first].offset().y, px(-120.0));
-                assert_eq!(app.reader_scroll_handles[&second].offset().y, px(-260.0));
+            .update(cx, |app, _, cx| {
+                assert_eq!(
+                    app.reader_list_state(&first, cx)
+                        .unwrap()
+                        .scroll_px_offset_for_scrollbar()
+                        .y,
+                    px(-120.0)
+                );
+                assert_eq!(
+                    app.reader_list_state(&second, cx)
+                        .unwrap()
+                        .scroll_px_offset_for_scrollbar()
+                        .y,
+                    px(-260.0)
+                );
                 assert_eq!(app.model.tabs.active().unwrap().path(), first);
             })
             .unwrap();
@@ -2492,5 +2912,194 @@ mod tests {
                 );
             })
             .unwrap();
+    }
+
+    fn document_window(cx: &mut TestAppContext, source: &str) -> gpui::WindowHandle<MdowApp> {
+        let document = parse_document(PathBuf::from("/tmp/click.md"), source.into());
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        })
+    }
+
+    #[gpui::test]
+    fn chrome_buttons_run_their_handlers_instead_of_dispatching(cx: &mut TestAppContext) {
+        let window = document_window(cx, "# Click\n\n## Nested\n");
+        let mut visual = VisualTestContext::from_window(*window, cx);
+
+        click_debug(&mut visual, "toggle-sidebar");
+        window
+            .update(cx, |app, _, _| assert!(!app.sidebar_open))
+            .unwrap();
+        click_debug(&mut visual, "toggle-sidebar");
+        window
+            .update(cx, |app, _, _| assert!(app.sidebar_open))
+            .unwrap();
+
+        click_debug(&mut visual, "toggle-wide-mode");
+        window
+            .update(cx, |app, _, _| assert!(app.wide_mode))
+            .unwrap();
+
+        click_debug(&mut visual, "Outline");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.prefs_snapshot().sidebar_mode, SidebarMode::Outline)
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert!(visual.debug_bounds("outline-row-0").is_some());
+
+        click_debug(&mut visual, "toggle-settings");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.overlay_kind(), Some(OverlayKind::Settings))
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "Dark-Theme(Dark)");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.prefs_snapshot().theme_mode, ThemeMode::Dark)
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-close");
+        window
+            .update(cx, |app, _, _| assert_eq!(app.overlay_kind(), None))
+            .unwrap();
+
+        click_debug(&mut visual, "sidebar-settings");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.overlay_kind(), Some(OverlayKind::Settings))
+            })
+            .unwrap();
+        window
+            .update(cx, |app, window, cx| {
+                app.click_toggle_overlay(OverlayKind::Settings, window, cx);
+            })
+            .unwrap();
+
+        click_debug(&mut visual, "toggle-find");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.overlay_kind(), Some(OverlayKind::Find))
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "find-close");
+        window
+            .update(cx, |app, _, _| assert_eq!(app.overlay_kind(), None))
+            .unwrap();
+
+        click_debug(&mut visual, "toggle-palette");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.overlay_kind(), Some(OverlayKind::Palette))
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "palette-item-3");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.overlay_kind(), None);
+                assert!(!app.sidebar_open);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn reader_scroll_cost_on_a_large_document(cx: &mut TestAppContext) {
+        const BLOCKS: usize = 1_200;
+        const SCROLL_FRAMES: usize = 20;
+        let document = parse_document(
+            PathBuf::from("/tmp/reader-scroll-bench.md"),
+            (0..BLOCKS)
+                .map(|index| {
+                    format!(
+                        "Paragraph {index} is long enough to wrap inside the reader column and keep layout busy."
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        );
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.tabs.open(document);
+                    app.open_error = None;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+
+        let first_paint = Instant::now();
+        visual.update(|window, cx| window.draw(cx).clear());
+        let first_paint_ms = first_paint.elapsed().as_secs_f64() * 1000.0;
+
+        let bounds = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        let painted_blocks = (0..BLOCKS)
+            .filter(|index| {
+                let selector = format!("reader-block-{index}");
+                visual
+                    .debug_bounds(Box::leak(selector.into_boxed_str()))
+                    .is_some()
+            })
+            .count();
+
+        let scroll = Instant::now();
+        for _ in 0..SCROLL_FRAMES {
+            visual.simulate_event(ScrollWheelEvent {
+                position: bounds.center(),
+                delta: ScrollDelta::Pixels(point(px(0.0), px(-80.0))),
+                ..Default::default()
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+        }
+        let scroll_ms = scroll.elapsed().as_secs_f64() * 1000.0;
+        let scroll_frame_ms = scroll_ms / SCROLL_FRAMES as f64;
+
+        let report = serde_json::json!({
+            "blocks": BLOCKS,
+            "painted_blocks_after_first_paint": painted_blocks,
+            "first_paint_ms": first_paint_ms,
+            "scroll_frames": SCROLL_FRAMES,
+            "scroll_total_ms": scroll_ms,
+            "scroll_frame_ms": scroll_frame_ms,
+        });
+        let report_text = serde_json::to_string_pretty(&report).unwrap();
+        eprintln!("MDOW_READER_SCROLL_BENCH {report_text}");
+        if let Ok(path) = std::env::var("MDOW_READER_BENCH_OUT") {
+            if let Some(parent) = Path::new(&path).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            fs::write(path, report_text).unwrap();
+        }
+
+        assert!(
+            painted_blocks < 40,
+            "virtualized reader painted {painted_blocks} of {BLOCKS} blocks"
+        );
+        assert!(
+            first_paint_ms < 80.0,
+            "first paint of {BLOCKS} blocks took {first_paint_ms:.1}ms"
+        );
+        assert!(
+            scroll_frame_ms < 50.0,
+            "scroll frame of {BLOCKS} blocks took {scroll_frame_ms:.1}ms"
+        );
     }
 }

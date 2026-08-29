@@ -1,4 +1,4 @@
-use crate::document::is_supported_markdown;
+use crate::document::is_supported_document;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -194,7 +194,7 @@ fn scan_directory(
                 children: descendants,
                 expanded: false,
             });
-        } else if metadata.is_file() && is_supported_markdown(&path) {
+        } else if metadata.is_file() && is_supported_document(&path) {
             children.push(WorkspaceEntry {
                 path: canonical_path,
                 name,

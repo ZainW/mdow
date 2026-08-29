@@ -1,10 +1,13 @@
 use crate::{
-    actions::{OpenFolder, ToggleSidebar, ToggleWideMode},
     app::{MdowApp, UserFacingError},
+    document::Heading,
+    overlay::OverlayKind,
+    prefs::SidebarMode,
+    session::Recents,
     tabs::DocumentTab,
     theme::{Metrics, Theme},
     ui::{
-        primitives::{compact_icon_button, icon, icon_button},
+        primitives::{compact_icon_button, icon, icon_button, outline_button},
         welcome::error_state,
     },
     workspace::{WorkspaceEntryKind, WorkspaceTree},
@@ -73,8 +76,11 @@ pub fn breadcrumb_segments(path: &Path) -> Vec<BreadcrumbSegment> {
 
 pub fn render_sidebar(
     theme: Theme,
+    mode: SidebarMode,
+    recents: &Recents,
     workspace: Option<&WorkspaceTree>,
     workspace_error: Option<&UserFacingError>,
+    headings: Option<&[Heading]>,
     active_path: Option<&Path>,
     width: f32,
     cx: &Context<MdowApp>,
@@ -82,6 +88,36 @@ pub fn render_sidebar(
     let folder_name = workspace
         .map(|tree| tree.root.name.clone())
         .unwrap_or_else(|| "No folder".into());
+    let mode_bar = div()
+        .flex()
+        .items_center()
+        .gap(px(4.0))
+        .px(px(8.0))
+        .h(px(32.0))
+        .flex_none()
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .child(sidebar_mode_chip(
+            "Recents",
+            mode == SidebarMode::Recents,
+            SidebarMode::Recents,
+            theme,
+            cx,
+        ))
+        .child(sidebar_mode_chip(
+            "Folder",
+            mode == SidebarMode::Folder,
+            SidebarMode::Folder,
+            theme,
+            cx,
+        ))
+        .child(sidebar_mode_chip(
+            "Outline",
+            mode == SidebarMode::Outline,
+            SidebarMode::Outline,
+            theme,
+            cx,
+        ));
     let rows = workspace
         .map(WorkspaceTree::visible_rows)
         .unwrap_or_default();
@@ -138,6 +174,17 @@ pub fn render_sidebar(
                         .line_height(px(18.0))
                         .text_color(theme.muted_foreground)
                         .child("Open or drop a folder to browse its Markdown files."),
+                )
+                .child(
+                    div()
+                        .mt(px(14.0))
+                        .child(outline_button(
+                            "sidebar-empty-open-folder",
+                            "Open Folder",
+                            "icons/folder-open.svg",
+                            theme,
+                            cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
+                        )),
                 )
                 .into_any_element()
         };
@@ -297,7 +344,7 @@ pub fn render_sidebar(
                     24.0,
                     14.0,
                     theme,
-                    |_, _, cx| cx.dispatch_action(&OpenFolder),
+                    cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
                 )),
         )
         .when_some(workspace_error.cloned(), |sidebar, error| {
@@ -341,8 +388,188 @@ pub fn render_sidebar(
                     ),
             )
         })
-        .child(tree)
+        .child(mode_bar)
+        .child(match mode {
+            SidebarMode::Folder => tree.into_any_element(),
+            SidebarMode::Recents => render_recents_list(theme, recents, active_path, cx),
+            SidebarMode::Outline => render_outline_list(theme, headings.unwrap_or(&[]), cx),
+        })
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .border_t_1()
+                .border_color(theme.border_subtle)
+                .p(px(8.0))
+                .child(
+                    div()
+                        .id("sidebar-settings")
+                        .debug_selector(|| "sidebar-settings".into())
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .h(px(28.0))
+                        .px(px(8.0))
+                        .w_full()
+                        .rounded(px(6.0))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(theme.sidebar_accent))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.click_toggle_overlay(OverlayKind::Settings, window, cx);
+                        }))
+                        .child(icon("icons/settings.svg", theme.muted_foreground, 14.0))
+                        .child(
+                            div()
+                                .font_family(Metrics::FONT_SANS)
+                                .text_size(px(12.0))
+                                .text_color(theme.muted_foreground)
+                                .child("Settings"),
+                        ),
+                ),
+        )
         .into_any_element()
+}
+
+fn sidebar_mode_chip(
+    label: &'static str,
+    selected: bool,
+    mode: SidebarMode,
+    theme: Theme,
+    cx: &Context<MdowApp>,
+) -> impl IntoElement {
+    div()
+        .id(label)
+        .debug_selector(move || label.to_string())
+        .px(px(8.0))
+        .h(px(22.0))
+        .flex()
+        .items_center()
+        .rounded(px(5.0))
+        .bg(if selected {
+            theme.sidebar_accent
+        } else {
+            theme.sidebar_accent.opacity(0.0)
+        })
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(11.0))
+        .text_color(if selected {
+            theme.foreground
+        } else {
+            theme.muted_foreground
+        })
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _, _, cx| {
+            this.set_sidebar_mode(mode, cx);
+        }))
+        .child(label)
+}
+
+fn render_recents_list(
+    theme: Theme,
+    recents: &Recents,
+    active_path: Option<&Path>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let mut list = div()
+        .id("recents-scroll")
+        .flex()
+        .flex_col()
+        .flex_grow()
+        .min_h_0()
+        .overflow_y_scroll()
+        .px(px(4.0))
+        .py(px(4.0));
+    if recents.is_empty() {
+        list = list.child(
+            div()
+                .px(px(12.0))
+                .pt(px(36.0))
+                .text_center()
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(12.0))
+                .text_color(theme.muted_foreground)
+                .child("Recently opened files appear here."),
+        );
+    } else {
+        for (index, path) in recents.iter().enumerate() {
+            let path_buf = path.to_owned();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled")
+                .to_owned();
+            let is_active = active_path.is_some_and(|active| active == path);
+            list = list.child(
+                div()
+                    .id(("recent-row", index))
+                    .debug_selector(move || format!("recent-row-{index}"))
+                    .h(px(28.0))
+                    .px(px(8.0))
+                    .rounded(px(5.0))
+                    .bg(if is_active {
+                        theme.sidebar_accent
+                    } else {
+                        theme.sidebar_accent.opacity(0.0)
+                    })
+                    .font_family(Metrics::FONT_SANS)
+                    .text_size(px(12.0))
+                    .text_color(theme.foreground)
+                    .truncate()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.open_path(&path_buf, cx);
+                    }))
+                    .child(name),
+            );
+        }
+    }
+    list.into_any_element()
+}
+
+fn render_outline_list(theme: Theme, headings: &[Heading], cx: &Context<MdowApp>) -> AnyElement {
+    let mut list = div()
+        .id("outline-scroll")
+        .flex()
+        .flex_col()
+        .flex_grow()
+        .min_h_0()
+        .overflow_y_scroll()
+        .px(px(4.0))
+        .py(px(4.0));
+    if headings.is_empty() {
+        list = list.child(
+            div()
+                .px(px(12.0))
+                .pt(px(36.0))
+                .text_center()
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(12.0))
+                .text_color(theme.muted_foreground)
+                .child("Headings in the open document appear here."),
+        );
+    } else {
+        for (index, heading) in headings.iter().enumerate() {
+            let text = heading.text.clone();
+            list = list.child(
+                div()
+                    .id(("outline-row", index))
+                    .debug_selector(move || format!("outline-row-{index}"))
+                    .h(px(28.0))
+                    .px(px(8.0 + heading.level.saturating_sub(1) as f32 * 8.0))
+                    .rounded(px(5.0))
+                    .font_family(Metrics::FONT_SANS)
+                    .text_size(px(12.0))
+                    .text_color(theme.foreground)
+                    .truncate()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.jump_to_heading(&text, cx);
+                    }))
+                    .child(heading.text.clone()),
+            );
+        }
+    }
+    list.into_any_element()
 }
 
 pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> AnyElement {
@@ -487,7 +714,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
             "toggle-sidebar",
             "icons/sidebar.svg",
             theme,
-            |_, _, cx| cx.dispatch_action(&ToggleSidebar),
+            cx.listener(|this, _, _, cx| this.click_toggle_sidebar(cx)),
         ));
 
     div()
@@ -501,10 +728,45 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
         .bg(theme.background)
         .child(toggle_slot)
         .child(tabs)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(2.0))
+                .h_full()
+                .px(px(6.0))
+                .flex_none()
+                .border_l_1()
+                .border_color(theme.border_subtle)
+                .child(icon_button(
+                    "toggle-find",
+                    "icons/search.svg",
+                    theme,
+                    cx.listener(|this, _, window, cx| {
+                        this.click_toggle_overlay(OverlayKind::Find, window, cx);
+                    }),
+                ))
+                .child(icon_button(
+                    "toggle-palette",
+                    "icons/command.svg",
+                    theme,
+                    cx.listener(|this, _, window, cx| {
+                        this.click_toggle_overlay(OverlayKind::Palette, window, cx);
+                    }),
+                ))
+                .child(icon_button(
+                    "toggle-settings",
+                    "icons/settings.svg",
+                    theme,
+                    cx.listener(|this, _, window, cx| {
+                        this.click_toggle_overlay(OverlayKind::Settings, window, cx);
+                    }),
+                )),
+        )
         .into_any_element()
 }
 
-pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
+pub fn render_breadcrumb(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> AnyElement {
     let Some(tab) = app.model.tabs.active() else {
         return div()
             .flex()
@@ -530,13 +792,19 @@ pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
         .flex_grow()
         .gap(px(2.0))
         .overflow_hidden();
-    for segment in segments {
+    for (index, segment) in segments.into_iter().enumerate() {
+        let reveal = segment.path.clone();
         trail = trail
             .child(
                 div()
+                    .id(("breadcrumb-segment", index))
                     .max_w(px(128.0))
                     .truncate()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(theme.muted).text_color(theme.foreground))
                     .text_color(theme.muted_foreground.opacity(0.78))
+                    .on_click(cx.listener(move |this, _, _, _| this.reveal_path(&reveal)))
                     .child(segment.name),
             )
             .child(icon(
@@ -545,12 +813,18 @@ pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
                 10.0,
             ));
     }
+    let reveal_current = tab.path().to_owned();
     let mut current = div()
+        .id("breadcrumb-current")
         .flex()
         .items_center()
         .min_w_0()
         .px(px(2.0))
+        .rounded(px(4.0))
         .font_weight(FontWeight::MEDIUM)
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.muted))
+        .on_click(cx.listener(move |this, _, _, _| this.reveal_path(&reveal_current)))
         .child(
             div()
                 .min_w_0()
@@ -593,7 +867,7 @@ pub fn render_breadcrumb(theme: Theme, app: &MdowApp) -> AnyElement {
             20.0,
             12.0,
             theme,
-            |_, _, cx| cx.dispatch_action(&ToggleWideMode),
+            cx.listener(|this, _, _, cx| this.click_toggle_wide_mode(cx)),
         ))
         .into_any_element()
 }
@@ -683,8 +957,13 @@ pub fn render_reload_error_banner(
         .into_any_element()
 }
 
-pub fn render_error_state(theme: Theme, error: &UserFacingError, drop_active: bool) -> AnyElement {
-    error_state(theme, error, drop_active)
+pub fn render_error_state(
+    theme: Theme,
+    error: &UserFacingError,
+    drop_active: bool,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    error_state(theme, error, drop_active, cx)
 }
 
 #[cfg(test)]

@@ -4,9 +4,16 @@ use gpui::{
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 use mdow_gpui::{
-    actions::{CloseTab, OpenFile, OpenFolder, Quit, ToggleSidebar, ToggleWideMode},
+    actions::{
+        CloseTab, Dismiss, FindNext, FindPrevious, OpenFile, OpenFolder, Quit, SidebarFolder,
+        SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts,
+        ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
+    },
     app::MdowApp,
     assets::{MdowAssets, discover_asset_root, validate_required_assets},
+    overlay,
+    persist::{Restored, StateStore},
+    ui::field,
 };
 use std::{borrow::Cow, ffi::OsString, path::PathBuf};
 
@@ -59,6 +66,32 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Close Tab", CloseTab),
             ],
         },
+        Menu {
+            name: "Edit".into(),
+            items: vec![
+                MenuItem::action("Find…", ToggleFind),
+                MenuItem::action("Find Next", FindNext),
+                MenuItem::action("Find Previous", FindPrevious),
+            ],
+        },
+        Menu {
+            name: "View".into(),
+            items: vec![
+                MenuItem::action("Toggle Sidebar", ToggleSidebar),
+                MenuItem::action("Recents", SidebarRecents),
+                MenuItem::action("Folder", SidebarFolder),
+                MenuItem::action("Outline", SidebarOutline),
+                MenuItem::separator(),
+                MenuItem::action("Toggle Wide Mode", ToggleWideMode),
+                MenuItem::action("Zoom In", ZoomIn),
+                MenuItem::action("Zoom Out", ZoomOut),
+                MenuItem::action("Actual Size", ZoomReset),
+                MenuItem::separator(),
+                MenuItem::action("Command Palette", TogglePalette),
+                MenuItem::action("Settings…", ToggleSettings),
+                MenuItem::action("Keyboard Shortcuts", ToggleShortcuts),
+            ],
+        },
     ]
 }
 
@@ -84,6 +117,8 @@ fn main() -> anyhow::Result<()> {
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     let launch_path = launch_args.document_path;
+    let store = StateStore::open_default();
+    let Restored { prefs, session } = store.load();
     Application::new()
         .with_assets(MdowAssets::new(asset_root))
         .run(move |cx: &mut App| {
@@ -98,11 +133,51 @@ fn main() -> anyhow::Result<()> {
                 KeyBinding::new("cmd-w", CloseTab, None),
                 KeyBinding::new("cmd-shift-w", ToggleWideMode, None),
                 KeyBinding::new("cmd-q", Quit, None),
+                KeyBinding::new("cmd-f", ToggleFind, None),
+                KeyBinding::new("cmd-k", TogglePalette, None),
+                KeyBinding::new("cmd-shift-p", TogglePalette, None),
+                KeyBinding::new("cmd-,", ToggleSettings, None),
+                KeyBinding::new("cmd-/", ToggleShortcuts, None),
+                KeyBinding::new("escape", Dismiss, None),
+                KeyBinding::new("cmd-g", FindNext, None),
+                KeyBinding::new("cmd-shift-g", FindPrevious, None),
+                KeyBinding::new("cmd-=", ZoomIn, None),
+                KeyBinding::new("cmd--", ZoomOut, None),
+                KeyBinding::new("cmd-0", ZoomReset, None),
+                KeyBinding::new("ctrl-1", SidebarRecents, None),
+                KeyBinding::new("ctrl-2", SidebarFolder, None),
+                KeyBinding::new("ctrl-3", SidebarOutline, None),
+                KeyBinding::new("left", field::MoveLeft, Some("Field")),
+                KeyBinding::new("right", field::MoveRight, Some("Field")),
+                KeyBinding::new("shift-left", field::SelectLeft, Some("Field")),
+                KeyBinding::new("shift-right", field::SelectRight, Some("Field")),
+                KeyBinding::new("cmd-a", field::SelectAll, Some("Field")),
+                KeyBinding::new("home", field::Home, Some("Field")),
+                KeyBinding::new("end", field::End, Some("Field")),
+                KeyBinding::new("backspace", field::Backspace, Some("Field")),
+                KeyBinding::new("delete", field::Delete, Some("Field")),
+                KeyBinding::new("cmd-v", field::Paste, Some("Field")),
+                KeyBinding::new("cmd-c", field::Copy, Some("Field")),
+                KeyBinding::new("cmd-x", field::Cut, Some("Field")),
+                KeyBinding::new("enter", field::Submit, Some("Field")),
+                KeyBinding::new("shift-enter", field::SubmitBackward, Some("Field")),
+                KeyBinding::new("escape", field::Cancel, Some("Field")),
+                KeyBinding::new("down", overlay::SelectNext, Some("Palette")),
+                KeyBinding::new("up", overlay::SelectPrev, Some("Palette")),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus(app_menus());
 
-            let bounds = Bounds::centered(None, size(px(1120.0), px(760.0)), cx);
+            let bounds = session
+                .window
+                .map(|saved| {
+                    Bounds::new(
+                        point(px(saved.x), px(saved.y)),
+                        size(px(saved.width), px(saved.height)),
+                    )
+                })
+                .filter(|bounds| bounds.size.width > px(200.0) && bounds.size.height > px(200.0))
+                .unwrap_or_else(|| Bounds::centered(None, size(px(1120.0), px(760.0)), cx));
             cx.open_window(
                 WindowOptions {
                     titlebar: Some(TitlebarOptions {
@@ -115,7 +190,8 @@ fn main() -> anyhow::Result<()> {
                 },
                 |window, cx| {
                     cx.new(|cx| {
-                        let mut app = MdowApp::new(window, cx);
+                        let mut app = MdowApp::boot(prefs, store, window, cx);
+                        app.restore_session(session, cx);
                         if let Some(path) = launch_path.as_deref() {
                             app.open_path(path, cx);
                         }
@@ -167,7 +243,7 @@ mod tests {
             .map(|menu| menu.name.as_ref())
             .collect::<Vec<_>>();
 
-        assert_eq!(names, vec!["Mdow Native", "File"]);
+        assert_eq!(names, vec!["Mdow Native", "File", "Edit", "View"]);
         assert!(matches!(
             &menus[0].items[0],
             OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"

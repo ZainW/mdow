@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedSource {
@@ -29,7 +29,7 @@ impl DocumentError {
     pub fn body(&self) -> &'static str {
         match self {
             Self::Unsupported { .. } => {
-                "Mdow opens .md, .markdown, and .mdx files. Choose a Markdown file or drop a folder."
+                "Mdow opens .md, .markdown, .mdx, .html, and .htm files. Choose a supported file or drop a folder."
             }
             Self::Missing { .. } => "This file may have been moved or renamed.",
             Self::InvalidUtf8 { .. } => "Mdow can only open files encoded as UTF-8.",
@@ -60,8 +60,18 @@ pub fn is_supported_markdown(path: &Path) -> bool {
         })
 }
 
+pub fn is_html_document(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "html" | "htm"))
+}
+
+pub fn is_supported_document(path: &Path) -> bool {
+    is_supported_markdown(path) || is_html_document(path)
+}
+
 pub fn load_source(path: &Path) -> Result<LoadedSource, DocumentError> {
-    if !is_supported_markdown(path) {
+    if !is_supported_document(path) {
         return Err(DocumentError::Unsupported {
             path: path.to_owned(),
         });
@@ -114,10 +124,14 @@ pub enum InlineSpan {
     Text(String),
     Emphasis(Vec<InlineSpan>),
     Strong(Vec<InlineSpan>),
+    Strikethrough(Vec<InlineSpan>),
     Code(String),
     Link {
         label: Vec<InlineSpan>,
         target: String,
+    },
+    FootnoteRef {
+        label: String,
     },
     SoftBreak,
     HardBreak,
@@ -127,10 +141,41 @@ impl InlineSpan {
     pub fn plain_text(&self) -> String {
         match self {
             Self::Text(text) | Self::Code(text) => text.clone(),
-            Self::Emphasis(content) | Self::Strong(content) => plain_text_for_spans(content),
+            Self::Emphasis(content) | Self::Strong(content) | Self::Strikethrough(content) => {
+                plain_text_for_spans(content)
+            }
             Self::Link { label, .. } => plain_text_for_spans(label),
+            Self::FootnoteRef { label } => footnote_ref_display(label),
             Self::SoftBreak | Self::HardBreak => "\n".into(),
         }
+    }
+
+    /// The text as painted by the reader: soft breaks render as spaces, hard breaks as newlines.
+    pub fn painted_plain_text(&self) -> String {
+        match self {
+            Self::Text(text) | Self::Code(text) => text.clone(),
+            Self::Emphasis(content) | Self::Strong(content) | Self::Strikethrough(content) => {
+                painted_plain_text_for_spans(content)
+            }
+            Self::Link { label, .. } => painted_plain_text_for_spans(label),
+            Self::FootnoteRef { label } => footnote_ref_display(label),
+            Self::SoftBreak => " ".into(),
+            Self::HardBreak => "\n".into(),
+        }
+    }
+}
+
+/// The visible form of a footnote reference: superscript digits when the label is numeric,
+/// otherwise a bracketed label.
+pub fn footnote_ref_display(label: &str) -> String {
+    const SUPERSCRIPT_DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+    if !label.is_empty() && label.bytes().all(|byte| byte.is_ascii_digit()) {
+        label
+            .bytes()
+            .map(|byte| SUPERSCRIPT_DIGITS[usize::from(byte - b'0')])
+            .collect()
+    } else {
+        format!("[{label}]")
     }
 }
 
@@ -152,10 +197,20 @@ pub enum DocumentBlock {
         children: Vec<DocumentBlock>,
     },
     Blockquote(Vec<InlineSpan>),
+    Alert {
+        kind: AlertKind,
+        children: Vec<DocumentBlock>,
+    },
+    FootnoteSection {
+        notes: Vec<(String, Vec<DocumentBlock>)>,
+    },
     ThematicBreak,
     CodeBlock {
         language: Option<String>,
         code: String,
+    },
+    MermaidCard {
+        source: String,
     },
     Table(TableBlock),
     Image {
@@ -166,18 +221,81 @@ pub enum DocumentBlock {
 }
 
 impl DocumentBlock {
-    fn plain_text(&self) -> String {
+    pub(crate) fn plain_text(&self) -> String {
         match self {
             Self::Heading { content, .. }
             | Self::Paragraph(content)
             | Self::Blockquote(content) => plain_text_for_spans(content),
-            Self::ListItem { children, .. } | Self::TaskItem { children, .. } => {
-                plain_text_for_blocks(children)
-            }
+            Self::ListItem { children, .. }
+            | Self::TaskItem { children, .. }
+            | Self::Alert { children, .. } => plain_text_for_blocks(children),
+            Self::FootnoteSection { notes } => notes
+                .iter()
+                .map(|(_, blocks)| plain_text_for_blocks(blocks))
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n"),
             Self::ThematicBreak => String::new(),
             Self::CodeBlock { code, .. } => code.clone(),
+            Self::MermaidCard { source } => source.clone(),
             Self::Table(table) => table.plain_text(),
             Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
+        }
+    }
+
+    /// The text as painted by the reader: soft breaks render as spaces, hard breaks as newlines.
+    pub fn painted_plain_text(&self) -> String {
+        match self {
+            Self::Heading { content, .. }
+            | Self::Paragraph(content)
+            | Self::Blockquote(content) => painted_plain_text_for_spans(content),
+            Self::ListItem { children, .. }
+            | Self::TaskItem { children, .. }
+            | Self::Alert { children, .. } => painted_plain_text_for_blocks(children),
+            Self::FootnoteSection { notes } => notes
+                .iter()
+                .map(|(_, blocks)| painted_plain_text_for_blocks(blocks))
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Self::ThematicBreak => String::new(),
+            Self::CodeBlock { code, .. } => code.clone(),
+            Self::MermaidCard { source } => source.clone(),
+            Self::Table(table) => table.painted_plain_text(),
+            Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertKind {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
+impl AlertKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Note => "Note",
+            Self::Tip => "Tip",
+            Self::Important => "Important",
+            Self::Warning => "Warning",
+            Self::Caution => "Caution",
+        }
+    }
+}
+
+impl From<BlockQuoteKind> for AlertKind {
+    fn from(kind: BlockQuoteKind) -> Self {
+        match kind {
+            BlockQuoteKind::Note => Self::Note,
+            BlockQuoteKind::Tip => Self::Tip,
+            BlockQuoteKind::Important => Self::Important,
+            BlockQuoteKind::Warning => Self::Warning,
+            BlockQuoteKind::Caution => Self::Caution,
         }
     }
 }
@@ -196,11 +314,19 @@ pub struct TableBlock {
 
 impl TableBlock {
     fn plain_text(&self) -> String {
+        self.text_rows(plain_text_for_spans)
+    }
+
+    fn painted_plain_text(&self) -> String {
+        self.text_rows(painted_plain_text_for_spans)
+    }
+
+    fn text_rows(&self, cell_text: impl Fn(&[InlineSpan]) -> String) -> String {
         std::iter::once(&self.headers)
             .chain(self.rows.iter())
             .map(|row| {
                 row.iter()
-                    .map(|cell| plain_text_for_spans(cell))
+                    .map(|cell| cell_text(cell))
                     .collect::<Vec<_>>()
                     .join("\t")
             })
@@ -219,9 +345,20 @@ pub struct Heading {
 enum InlineContainer {
     Emphasis,
     Strong,
+    Strikethrough,
     Link(String),
     Image(String),
     Flatten,
+}
+
+/// One open `>` quote: untyped quotes flatten to inline text, GFM alerts keep child blocks.
+#[derive(Debug)]
+enum QuoteFrame {
+    Plain(Vec<InlineSpan>),
+    Alert {
+        kind: AlertKind,
+        children: Vec<DocumentBlock>,
+    },
 }
 
 #[derive(Debug)]
@@ -365,8 +502,12 @@ fn split_frontmatter(source: &str) -> (Option<String>, &str) {
     (None, source)
 }
 
-/// Parses Markdown into the model consumed by the native reader.
+/// Parses Markdown (or an HTML document) into the model consumed by the native reader.
 pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
+    if is_html_document(&path) {
+        return parse_html_document(path, source);
+    }
+
     let mut options = Options::empty();
     options.insert(
         Options::ENABLE_TABLES
@@ -381,10 +522,14 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     let mut inline_stack = Vec::<InlineFrame>::new();
     let mut list_stack = Vec::<ListContext>::new();
     let mut item_stack = Vec::<ItemContext>::new();
-    let mut blockquotes = Vec::<Vec<InlineSpan>>::new();
+    let mut blockquotes = Vec::<QuoteFrame>::new();
     let mut code_block = None::<CodeContext>;
     let mut table = None::<TableContext>;
     let mut html_block = None::<String>;
+    let mut footnotes = Vec::<(String, Vec<DocumentBlock>)>::new();
+    // While a footnote definition is open, `blocks` holds the footnote body and the main
+    // document blocks wait here, so nested pushes need no special routing.
+    let mut stashed_main_blocks = None::<(String, Vec<DocumentBlock>)>;
     let (frontmatter_title, markdown_body) = split_frontmatter(&source);
 
     for event in Parser::new_ext(markdown_body, options) {
@@ -392,15 +537,19 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             match event {
                 Event::End(TagEnd::CodeBlock) => {
                     let code = code_block.take().expect("code block is present");
-                    push_block(
+                    let block = if code
+                        .language
+                        .as_deref()
+                        .is_some_and(|language| language.eq_ignore_ascii_case("mermaid"))
+                    {
+                        DocumentBlock::MermaidCard { source: code.code }
+                    } else {
                         DocumentBlock::CodeBlock {
                             language: code.language,
                             code: code.code,
-                        },
-                        &mut blocks,
-                        &mut item_stack,
-                        &mut blockquotes,
-                    );
+                        }
+                    };
+                    push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
                 }
                 Event::Text(text)
                 | Event::Code(text)
@@ -486,15 +635,22 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     );
                 }
             }
-            Event::Start(Tag::BlockQuote(_)) => blockquotes.push(Vec::new()),
+            Event::Start(Tag::BlockQuote(kind)) => blockquotes.push(match kind {
+                Some(kind) => QuoteFrame::Alert {
+                    kind: kind.into(),
+                    children: Vec::new(),
+                },
+                None => QuoteFrame::Plain(Vec::new()),
+            }),
             Event::End(TagEnd::BlockQuote(_)) => {
-                if let Some(content) = blockquotes.pop() {
-                    push_block(
-                        DocumentBlock::Blockquote(content),
-                        &mut blocks,
-                        &mut item_stack,
-                        &mut blockquotes,
-                    );
+                if let Some(frame) = blockquotes.pop() {
+                    let block = match frame {
+                        QuoteFrame::Plain(content) => DocumentBlock::Blockquote(content),
+                        QuoteFrame::Alert { kind, children } => {
+                            DocumentBlock::Alert { kind, children }
+                        }
+                    };
+                    push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
                 }
             }
             Event::Start(Tag::CodeBlock(kind)) => {
@@ -603,7 +759,10 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 push_inline_frame(&mut inline_stack, InlineContainer::Strong)
             }
             Event::End(TagEnd::Strong) => pop_inline_frame(&mut inline_stack),
-            Event::Start(Tag::Strikethrough | Tag::Superscript | Tag::Subscript) => {
+            Event::Start(Tag::Strikethrough) => {
+                push_inline_frame(&mut inline_stack, InlineContainer::Strikethrough)
+            }
+            Event::Start(Tag::Superscript | Tag::Subscript) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Flatten)
             }
             Event::End(TagEnd::Strikethrough | TagEnd::Superscript | TagEnd::Subscript) => {
@@ -651,14 +810,36 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     item.checked = Some(checked);
                 }
             }
-            Event::FootnoteReference(label) => {
-                push_inline_span(&mut inline_stack, InlineSpan::Text(format!("[^{label}]")))
+            Event::FootnoteReference(label) => push_inline_span(
+                &mut inline_stack,
+                InlineSpan::FootnoteRef {
+                    label: label.into_string(),
+                },
+            ),
+            Event::Start(Tag::FootnoteDefinition(label)) => {
+                let mut main_blocks = Vec::new();
+                std::mem::swap(&mut blocks, &mut main_blocks);
+                stashed_main_blocks = Some((label.into_string(), main_blocks));
+            }
+            Event::End(TagEnd::FootnoteDefinition) => {
+                if let Some((label, mut main_blocks)) = stashed_main_blocks.take() {
+                    std::mem::swap(&mut blocks, &mut main_blocks);
+                    footnotes.push((label, main_blocks));
+                }
             }
             Event::InlineMath(math) | Event::DisplayMath(math) => {
                 push_inline_span(&mut inline_stack, InlineSpan::Text(math.into_string()))
             }
             Event::Start(_) | Event::End(_) => {}
         }
+    }
+
+    if let Some((label, mut main_blocks)) = stashed_main_blocks.take() {
+        std::mem::swap(&mut blocks, &mut main_blocks);
+        footnotes.push((label, main_blocks));
+    }
+    if !footnotes.is_empty() {
+        blocks.push(DocumentBlock::FootnoteSection { notes: footnotes });
     }
 
     let title = headings
@@ -680,6 +861,49 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
         source,
         blocks,
         headings,
+    }
+}
+
+fn parse_html_document(path: PathBuf, source: String) -> ParsedDocument {
+    let parent = path.parent().unwrap_or_else(|| Path::new("")).to_owned();
+    let blocks = crate::html::html_to_blocks(&source, &parent);
+    let mut headings = Vec::new();
+    collect_headings(&blocks, &mut headings);
+
+    let title = headings
+        .iter()
+        .find(|heading| heading.level == 1)
+        .map(|heading| heading.text.clone())
+        .filter(|title| !title.is_empty())
+        .or_else(|| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "Untitled".into());
+
+    ParsedDocument {
+        path,
+        title,
+        frontmatter_title: None,
+        source,
+        blocks,
+        headings,
+    }
+}
+
+fn collect_headings(blocks: &[DocumentBlock], headings: &mut Vec<Heading>) {
+    for block in blocks {
+        match block {
+            DocumentBlock::Heading { level, content } => headings.push(Heading {
+                level: *level,
+                text: plain_text_for_spans(content),
+            }),
+            DocumentBlock::ListItem { children, .. }
+            | DocumentBlock::TaskItem { children, .. }
+            | DocumentBlock::Alert { children, .. } => collect_headings(children, headings),
+            _ => {}
+        }
     }
 }
 
@@ -742,15 +966,18 @@ fn push_paragraph_content(
     content: Vec<InlineSpan>,
     blocks: &mut Vec<DocumentBlock>,
     item_stack: &mut [ItemContext],
-    blockquotes: &mut [Vec<InlineSpan>],
+    blockquotes: &mut [QuoteFrame],
 ) {
     if content.is_empty() {
         return;
     }
     if let Some(item) = item_stack.last_mut() {
         item.push_content(content);
-    } else if let Some(blockquote) = blockquotes.last_mut() {
-        append_inline_content(blockquote, content);
+    } else if let Some(frame) = blockquotes.last_mut() {
+        match frame {
+            QuoteFrame::Plain(spans) => append_inline_content(spans, content),
+            QuoteFrame::Alert { children, .. } => children.push(DocumentBlock::Paragraph(content)),
+        }
     } else {
         push_block(
             DocumentBlock::Paragraph(content),
@@ -765,14 +992,19 @@ fn push_block(
     block: DocumentBlock,
     blocks: &mut Vec<DocumentBlock>,
     item_stack: &mut [ItemContext],
-    blockquotes: &mut [Vec<InlineSpan>],
+    blockquotes: &mut [QuoteFrame],
 ) {
     if let Some(item) = item_stack.last_mut() {
         item.push_block(block);
-    } else if let Some(blockquote) = blockquotes.last_mut() {
-        let text = block.plain_text();
-        if !text.is_empty() {
-            append_inline_content(blockquote, vec![InlineSpan::Text(text)]);
+    } else if let Some(frame) = blockquotes.last_mut() {
+        match frame {
+            QuoteFrame::Plain(spans) => {
+                let text = block.plain_text();
+                if !text.is_empty() {
+                    append_inline_content(spans, vec![InlineSpan::Text(text)]);
+                }
+            }
+            QuoteFrame::Alert { children, .. } => children.push(block),
         }
     } else {
         blocks.push(block);
@@ -807,6 +1039,9 @@ fn pop_inline_frame(stack: &mut Vec<InlineFrame>) {
             push_inline_span(stack, InlineSpan::Emphasis(frame.into_spans()))
         }
         InlineContainer::Strong => push_inline_span(stack, InlineSpan::Strong(frame.into_spans())),
+        InlineContainer::Strikethrough => {
+            push_inline_span(stack, InlineSpan::Strikethrough(frame.into_spans()))
+        }
         InlineContainer::Link(target) => push_inline_span(
             stack,
             InlineSpan::Link {
@@ -859,6 +1094,10 @@ fn plain_text_for_spans(spans: &[InlineSpan]) -> String {
     spans.iter().map(InlineSpan::plain_text).collect()
 }
 
+fn painted_plain_text_for_spans(spans: &[InlineSpan]) -> String {
+    spans.iter().map(InlineSpan::painted_plain_text).collect()
+}
+
 fn plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
     blocks
         .iter()
@@ -868,7 +1107,16 @@ fn plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
         .join("\n")
 }
 
-fn has_uri_scheme(target: &str) -> bool {
+fn painted_plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
+    blocks
+        .iter()
+        .map(DocumentBlock::painted_plain_text)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub(crate) fn has_uri_scheme(target: &str) -> bool {
     let Some((scheme, _)) = target.split_once(':') else {
         return false;
     };
@@ -879,7 +1127,7 @@ fn has_uri_scheme(target: &str) -> bool {
         })
 }
 
-fn normalize_lexically(path: &Path) -> PathBuf {
+pub(crate) fn normalize_lexically(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
@@ -1000,6 +1248,159 @@ mod tests {
         let visible = parsed.plain_text();
         assert!(visible.contains("<aside>Note</aside>"));
         assert!(visible.contains("<Component value={1} />"));
+    }
+
+    #[test]
+    fn strikethrough_parses_as_a_strikethrough_span() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/strike.md"),
+            "before ~~gone~~ after\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks,
+            vec![DocumentBlock::Paragraph(vec![
+                InlineSpan::Text("before ".into()),
+                InlineSpan::Strikethrough(vec![InlineSpan::Text("gone".into())]),
+                InlineSpan::Text(" after".into()),
+            ])]
+        );
+    }
+
+    #[test]
+    fn gfm_note_blockquotes_become_alerts_with_child_blocks() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/alert.md"),
+            "> [!NOTE]\n> hello\n\n> plain quote\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::Alert {
+                kind: AlertKind::Note,
+                children: vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                    "hello".into()
+                )])],
+            }
+        );
+        assert_eq!(
+            parsed.blocks[1],
+            DocumentBlock::Blockquote(vec![InlineSpan::Text("plain quote".into())]),
+        );
+    }
+
+    #[test]
+    fn footnotes_produce_a_ref_and_a_trailing_section_without_leaked_paragraphs() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/notes.md"),
+            "Some claim.[^1]\n\nMore prose.\n\n[^1]: The evidence.\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::Paragraph(vec![
+                InlineSpan::Text("Some claim.".into()),
+                InlineSpan::FootnoteRef { label: "1".into() },
+            ])
+        );
+        assert_eq!(
+            parsed.blocks[1],
+            DocumentBlock::Paragraph(vec![InlineSpan::Text("More prose.".into())]),
+        );
+        assert_eq!(
+            parsed.blocks[2],
+            DocumentBlock::FootnoteSection {
+                notes: vec![(
+                    "1".into(),
+                    vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                        "The evidence.".into()
+                    )])],
+                )],
+            }
+        );
+        assert_eq!(parsed.blocks.len(), 3, "footnote body must not leak");
+    }
+
+    #[test]
+    fn mermaid_fences_become_mermaid_cards() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/diagram.md"),
+            "```Mermaid\ngraph TD;\n```\n\n```rust\nlet n = 1;\n```\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::MermaidCard {
+                source: "graph TD;\n".into(),
+            }
+        );
+        assert!(matches!(parsed.blocks[1], DocumentBlock::CodeBlock { .. }));
+    }
+
+    #[test]
+    fn painted_plain_text_renders_soft_breaks_as_spaces() {
+        let span_level = InlineSpan::SoftBreak;
+        assert_eq!(span_level.plain_text(), "\n");
+        assert_eq!(span_level.painted_plain_text(), " ");
+
+        let block = DocumentBlock::Paragraph(vec![
+            InlineSpan::Text("one".into()),
+            InlineSpan::SoftBreak,
+            InlineSpan::Text("two".into()),
+            InlineSpan::HardBreak,
+            InlineSpan::Text("three".into()),
+        ]);
+        assert_eq!(block.painted_plain_text(), "one two\nthree");
+    }
+
+    #[test]
+    fn footnote_refs_display_as_superscript_digits_or_bracketed_labels() {
+        assert_eq!(footnote_ref_display("12"), "¹²");
+        assert_eq!(footnote_ref_display("note"), "[note]");
+    }
+
+    #[test]
+    fn html_documents_are_supported_and_parse_through_the_html_path() {
+        assert!(is_supported_document(Path::new("page.HTML")));
+        assert!(is_supported_document(Path::new("page.htm")));
+        assert!(is_supported_document(Path::new("notes.md")));
+        assert!(!is_supported_document(Path::new("notes.txt")));
+        assert!(!is_supported_markdown(Path::new("page.html")));
+
+        let parsed = parse_document(
+            PathBuf::from("/tmp/page.html"),
+            "<h1># Not markdown</h1><p>Body</p>".into(),
+        );
+        assert_eq!(parsed.title, "# Not markdown");
+        assert_eq!(
+            parsed.blocks,
+            vec![
+                DocumentBlock::Heading {
+                    level: 1,
+                    content: vec![InlineSpan::Text("# Not markdown".into())],
+                },
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("Body".into())]),
+            ]
+        );
+        assert_eq!(
+            parsed.headings,
+            vec![Heading {
+                level: 1,
+                text: "# Not markdown".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn load_source_accepts_html_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.html");
+        fs::write(&path, "<h1>Hello</h1>\n").unwrap();
+
+        let loaded = load_source(&path).unwrap();
+
+        assert_eq!(loaded.source, "<h1>Hello</h1>\n");
+        assert_eq!(loaded.canonical_path, path.canonicalize().unwrap());
     }
 
     #[test]

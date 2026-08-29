@@ -1,18 +1,22 @@
 use crate::{
     app::MdowApp,
     document::{
-        DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock, is_supported_markdown,
-        resolve_local_target,
+        AlertKind, DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock,
+        footnote_ref_display, is_supported_document, resolve_local_target,
     },
+    prefs::{READER_FONT_SIZE, ReaderStyle},
     syntax::{HighlightedCode, PreparedDocument},
     theme::{ColorScheme, Metrics, Theme},
     ui::primitives::icon,
 };
 use gpui::{
     AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
-    InteractiveElement, InteractiveText, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, ParentElement, ScrollHandle, StatefulInteractiveElement, Styled, StyledImage,
-    StyledText, TextRun, UnderlineStyle, canvas, div, font, img, point, prelude::*, px, relative,
+    InteractiveElement, InteractiveText, IntoElement, ListAlignment, ListOffset, ListState,
+    MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
+    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText, TextRun,
+    UnderlineStyle, WeakEntity, Window, canvas, div, font, img, list, point, prelude::*, px,
+    relative,
 };
 use std::{
     collections::HashMap,
@@ -101,7 +105,9 @@ impl BlockStyle {
     pub fn for_block(block: &DocumentBlock) -> Self {
         match block {
             DocumentBlock::Heading { level, .. } => Self::heading(*level),
-            DocumentBlock::CodeBlock { .. } => Self::code_block(),
+            DocumentBlock::CodeBlock { .. } | DocumentBlock::MermaidCard { .. } => {
+                Self::code_block()
+            }
             DocumentBlock::Table(_) => Self::table_cell(),
             _ => Self::body(),
         }
@@ -184,16 +190,21 @@ pub struct InlineStyleRange {
     pub emphasis: bool,
     pub strong: bool,
     pub code: bool,
+    pub strikethrough: bool,
+    pub footnote: bool,
     pub link_target: Option<String>,
     pub link_node_id: Option<usize>,
 }
 
 impl InlineStyleRange {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         range: Range<usize>,
         emphasis: bool,
         strong: bool,
         code: bool,
+        strikethrough: bool,
+        footnote: bool,
         link_target: Option<String>,
         link_node_id: Option<usize>,
     ) -> Self {
@@ -202,6 +213,8 @@ impl InlineStyleRange {
             emphasis,
             strong,
             code,
+            strikethrough,
+            footnote,
             link_target,
             link_node_id,
         }
@@ -211,19 +224,36 @@ impl InlineStyleRange {
 #[cfg(test)]
 impl InlineStyleRange {
     fn emphasis(range: Range<usize>) -> Self {
-        Self::new(range, true, false, false, None, None)
+        Self::new(range, true, false, false, false, false, None, None)
     }
 
     fn emphasis_strong(range: Range<usize>) -> Self {
-        Self::new(range, true, true, false, None, None)
+        Self::new(range, true, true, false, false, false, None, None)
     }
 
     fn code(range: Range<usize>) -> Self {
-        Self::new(range, false, false, true, None, None)
+        Self::new(range, false, false, true, false, false, None, None)
     }
 
     fn link(range: Range<usize>, target: &str) -> Self {
-        Self::new(range, false, false, false, Some(target.to_owned()), Some(0))
+        Self::new(
+            range,
+            false,
+            false,
+            false,
+            false,
+            false,
+            Some(target.to_owned()),
+            Some(0),
+        )
+    }
+
+    fn strikethrough(range: Range<usize>) -> Self {
+        Self::new(range, false, false, false, true, false, None, None)
+    }
+
+    fn footnote(range: Range<usize>) -> Self {
+        Self::new(range, false, false, false, false, true, None, None)
     }
 }
 
@@ -366,6 +396,8 @@ struct InlineStyleContext<'a> {
     emphasis: bool,
     strong: bool,
     code: bool,
+    strikethrough: bool,
+    footnote: bool,
     link_target: Option<&'a str>,
     link_node_id: Option<usize>,
 }
@@ -385,6 +417,19 @@ pub fn document_link_focus_targets(document: &ParsedDocument) -> Vec<LinkFocusTa
     targets
 }
 
+pub fn block_link_focus_targets(
+    document: &ParsedDocument,
+    block_index: usize,
+) -> Vec<LinkFocusTarget> {
+    let Some(block) = document.blocks.get(block_index) else {
+        return Vec::new();
+    };
+    let mut targets = Vec::new();
+    let mut parent_path = vec![block_index];
+    collect_current_block_link_targets(block, &mut parent_path, &document.path, &mut targets);
+    targets
+}
+
 fn collect_link_focus_targets(
     blocks: &[DocumentBlock],
     parent_path: &mut Vec<usize>,
@@ -393,6 +438,17 @@ fn collect_link_focus_targets(
 ) {
     for (child_index, block) in blocks.iter().enumerate() {
         parent_path.push(child_index);
+        collect_current_block_link_targets(block, parent_path, document_path, targets);
+        parent_path.pop();
+    }
+}
+
+fn collect_current_block_link_targets(
+    block: &DocumentBlock,
+    parent_path: &mut Vec<usize>,
+    document_path: &Path,
+    targets: &mut Vec<LinkFocusTarget>,
+) {
         let block_index = block_path_render_index(parent_path);
         match block {
             DocumentBlock::Heading { content, .. }
@@ -425,16 +481,24 @@ fn collect_link_focus_targets(
                     }
                 }
             }
-            DocumentBlock::ListItem { children, .. } | DocumentBlock::TaskItem { children, .. } => {
+            DocumentBlock::ListItem { children, .. }
+            | DocumentBlock::TaskItem { children, .. }
+            | DocumentBlock::Alert { children, .. } => {
                 collect_link_focus_targets(children, parent_path, document_path, targets);
             }
+            DocumentBlock::FootnoteSection { notes } => {
+                for (note_index, (_, children)) in notes.iter().enumerate() {
+                    parent_path.push(note_index);
+                    collect_link_focus_targets(children, parent_path, document_path, targets);
+                    parent_path.pop();
+                }
+            }
             DocumentBlock::CodeBlock { .. }
+            | DocumentBlock::MermaidCard { .. }
             | DocumentBlock::Image { .. }
             | DocumentBlock::ThematicBreak
             | DocumentBlock::RawText(_) => {}
         }
-        parent_path.pop();
-    }
 }
 
 fn append_link_focus_targets(
@@ -526,6 +590,16 @@ fn append_inline_spans<'a>(
                 next_link_node_id,
                 layout,
             ),
+            InlineSpan::Strikethrough(content) => append_inline_spans(
+                content,
+                InlineStyleContext {
+                    strikethrough: true,
+                    ..style
+                },
+                uppercase,
+                next_link_node_id,
+                layout,
+            ),
             InlineSpan::Code(code) => append_inline_text(
                 code,
                 InlineStyleContext {
@@ -533,6 +607,15 @@ fn append_inline_spans<'a>(
                     ..style
                 },
                 uppercase,
+                layout,
+            ),
+            InlineSpan::FootnoteRef { label } => append_inline_text(
+                &footnote_ref_display(label),
+                InlineStyleContext {
+                    footnote: true,
+                    ..style
+                },
+                false,
                 layout,
             ),
             InlineSpan::Link { label, target } => {
@@ -572,12 +655,20 @@ fn append_inline_text(
         layout.text.push_str(text);
     }
     let range = start..layout.text.len();
-    if style.emphasis || style.strong || style.code || style.link_target.is_some() {
+    if style.emphasis
+        || style.strong
+        || style.code
+        || style.strikethrough
+        || style.footnote
+        || style.link_target.is_some()
+    {
         layout.styles.push(InlineStyleRange::new(
             range.clone(),
             style.emphasis,
             style.strong,
             style.code,
+            style.strikethrough,
+            style.footnote,
             style.link_target.map(str::to_owned),
             style.link_node_id,
         ));
@@ -616,7 +707,7 @@ pub fn classify_link(document_path: &Path, target: &str) -> LinkRoute {
     let Some(path) = resolve_local_target(document_path, target) else {
         return LinkRoute::Inert;
     };
-    if is_supported_markdown(&path) {
+    if is_supported_document(&path) {
         LinkRoute::Markdown(path)
     } else {
         LinkRoute::Local(path)
@@ -781,7 +872,11 @@ fn block_margins(
                 bottom: style.font_size * style.margin_bottom_em,
             }
         }
-        DocumentBlock::CodeBlock { .. } | DocumentBlock::Table(_) => BlockMargins {
+        DocumentBlock::CodeBlock { .. }
+        | DocumentBlock::MermaidCard { .. }
+        | DocumentBlock::Table(_)
+        | DocumentBlock::Alert { .. }
+        | DocumentBlock::FootnoteSection { .. } => BlockMargins {
             top: 19.375,
             bottom: 19.375,
         },
@@ -843,20 +938,139 @@ fn style_reader_image(image: Img) -> Img {
     image.max_w(relative(1.0)).rounded(px(8.0))
 }
 
+const READER_LIST_OVERDRAW: f32 = 720.0;
+
+pub(crate) struct ReaderPane {
+    app: WeakEntity<MdowApp>,
+    document: Arc<PreparedDocument>,
+    style: ReaderStyle,
+    theme: Theme,
+    list_state: ListState,
+    scrollbar_drag_grab_y: Option<f32>,
+}
+
+impl ReaderPane {
+    pub(crate) fn new(
+        app: WeakEntity<MdowApp>,
+        document: Arc<PreparedDocument>,
+        style: ReaderStyle,
+        theme: Theme,
+    ) -> Self {
+        let list_state = ListState::new(
+            document.blocks.len(),
+            ListAlignment::Top,
+            px(READER_LIST_OVERDRAW),
+        );
+        Self {
+            app,
+            document,
+            style,
+            theme,
+            list_state,
+            scrollbar_drag_grab_y: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn list_state(&self) -> ListState {
+        self.list_state.clone()
+    }
+
+    pub(crate) fn hosts_document(&self, document: &Arc<PreparedDocument>) -> bool {
+        Arc::ptr_eq(&self.document, document)
+    }
+
+    pub(crate) fn sync(
+        &mut self,
+        document: Arc<PreparedDocument>,
+        style: ReaderStyle,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) {
+        let mut notify = false;
+        if !Arc::ptr_eq(&self.document, &document) {
+            let offset = self.list_state.logical_scroll_top();
+            self.document = document;
+            self.list_state.reset(self.document.blocks.len());
+            if offset.item_ix < self.document.blocks.len() {
+                self.list_state.scroll_to(offset);
+            }
+            notify = true;
+        }
+        if self.style != style {
+            let offset = self.list_state.logical_scroll_top();
+            self.style = style;
+            self.list_state.reset(self.document.blocks.len());
+            if offset.item_ix < self.document.blocks.len() {
+                self.list_state.scroll_to(offset);
+            }
+            notify = true;
+        }
+        if self.theme != theme {
+            self.theme = theme;
+            notify = true;
+        }
+        if notify {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn scroll_to_block(&self, block: usize) {
+        if block < self.list_state.item_count() {
+            self.list_state.scroll_to(ListOffset {
+                item_ix: block,
+                offset_in_item: px(0.0),
+            });
+        }
+    }
+
+    pub(crate) fn scroll_by_key(&self, key: &str) -> bool {
+        let viewport = f32::from(self.list_state.viewport_bounds().size.height);
+        let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
+        let current = f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
+        let Some(target) = reader_key_target(key, current, viewport, max) else {
+            return false;
+        };
+        self.list_state
+            .set_offset_from_scrollbar(point(px(0.0), px(target)));
+        true
+    }
+
+    fn begin_scrollbar_drag(&mut self, grab_y: f32) {
+        self.scrollbar_drag_grab_y = Some(grab_y);
+        self.list_state.scrollbar_drag_started();
+    }
+
+    fn end_scrollbar_drag(&mut self) {
+        self.scrollbar_drag_grab_y = None;
+        self.list_state.scrollbar_drag_ended();
+    }
+}
+
+pub(crate) fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option<f32> {
+    let page = viewport * 0.9;
+    match key {
+        "home" => Some(0.0),
+        "end" => Some(-max),
+        "pageup" => Some((current + page).min(0.0)),
+        "pagedown" => Some((current - page).max(-max)),
+        _ => None,
+    }
+}
+
 fn render_reader_scrollbar(
     document_path: &Path,
-    scroll_handle: &ScrollHandle,
+    list_state: &ListState,
     theme: Theme,
-    cx: &Context<MdowApp>,
+    cx: &Context<ReaderPane>,
 ) -> Option<AnyElement> {
     let geometry = reader_scrollbar_geometry(
-        f32::from(scroll_handle.bounds().size.height),
-        f32::from(scroll_handle.max_offset().height),
-        f32::from(scroll_handle.offset().y),
+        f32::from(list_state.viewport_bounds().size.height),
+        f32::from(list_state.max_offset_for_scrollbar().height),
+        f32::from(list_state.scroll_px_offset_for_scrollbar().y),
     )?;
     let entity = cx.entity();
-    let event_path = document_path.to_owned();
-    let event_handle = scroll_handle.clone();
+    let event_handle = list_state.clone();
     let thumb_color = theme.muted_foreground.opacity(match theme.color_scheme {
         ColorScheme::Light => 0.25,
         ColorScheme::Dark => 0.20,
@@ -885,7 +1099,6 @@ fn render_reader_scrollbar(
                     move |track_bounds, _, window, _| {
                         window.on_mouse_event({
                             let entity = entity.clone();
-                            let path = event_path.clone();
                             let handle = event_handle.clone();
                             move |event: &MouseDownEvent, _, _, cx| {
                                 if event.button != MouseButton::Left
@@ -900,7 +1113,7 @@ fn render_reader_scrollbar(
                                 {
                                     let grab_y = pointer_y - geometry.thumb_top;
                                     entity.update(cx, |this, _| {
-                                        this.begin_reader_scrollbar_drag(path.clone(), grab_y);
+                                        this.begin_scrollbar_drag(grab_y);
                                     });
                                 } else {
                                     let target = reader_scrollbar_offset_for_pointer(
@@ -908,9 +1121,9 @@ fn render_reader_scrollbar(
                                         geometry.thumb_height / 2.0,
                                         geometry,
                                     );
-                                    handle.set_offset(point(px(0.0), px(target)));
+                                    handle.set_offset_from_scrollbar(point(px(0.0), px(target)));
                                     entity.update(cx, |this, _| {
-                                        this.end_reader_scrollbar_drag(&path);
+                                        this.end_scrollbar_drag();
                                     });
                                     cx.notify(entity.entity_id());
                                 }
@@ -918,33 +1131,29 @@ fn render_reader_scrollbar(
                         });
                         window.on_mouse_event({
                             let entity = entity.clone();
-                            let path = event_path.clone();
                             move |event: &MouseUpEvent, _, _, cx| {
                                 if event.button == MouseButton::Left {
                                     entity.update(cx, |this, _| {
-                                        this.end_reader_scrollbar_drag(&path);
+                                        this.end_scrollbar_drag();
                                     });
                                 }
                             }
                         });
                         window.on_mouse_event({
                             let entity = entity.clone();
-                            let path = event_path.clone();
                             let handle = event_handle.clone();
                             move |event: &MouseMoveEvent, _, _, cx| {
                                 if !event.dragging() {
                                     return;
                                 }
-                                let Some(grab_y) =
-                                    entity.read(cx).reader_scrollbar_drag_grab_y(&path)
-                                else {
+                                let Some(grab_y) = entity.read(cx).scrollbar_drag_grab_y else {
                                     return;
                                 };
                                 let pointer_y = f32::from(event.position.y - track_bounds.origin.y);
                                 let target = reader_scrollbar_offset_for_pointer(
                                     pointer_y, grab_y, geometry,
                                 );
-                                handle.set_offset(point(px(0.0), px(target)));
+                                handle.set_offset_from_scrollbar(point(px(0.0), px(target)));
                                 cx.notify(entity.entity_id());
                             }
                         });
@@ -972,77 +1181,122 @@ fn render_reader_scrollbar(
     )
 }
 
-pub fn render_document(
-    document: Arc<PreparedDocument>,
-    wide_mode: bool,
+#[derive(Clone, Copy)]
+struct ReaderView<'a> {
+    style: ReaderStyle,
+    theme: Theme,
+    copied_code: Option<(usize, Instant)>,
+    link_state: &'a ReaderLinkState<'a>,
+    find_block: Option<usize>,
+}
+
+impl ReaderView<'_> {
+    fn zoom(self, base: f32) -> f32 {
+        base * (self.style.font_size / READER_FONT_SIZE)
+    }
+}
+
+fn render_reader_item(
+    document: &PreparedDocument,
+    block_index: usize,
+    style: ReaderStyle,
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
-    scroll_handle: &ScrollHandle,
+    find_block: Option<usize>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
-    let mut column = div()
-        .id("reader-column")
+    let Some(block) = document.blocks.get(block_index) else {
+        return div().into_any_element();
+    };
+    let last = document.blocks.len().saturating_sub(1);
+    let spacing = block_sequence_spacing(&document.blocks);
+    let view = ReaderView {
+        style,
+        theme,
+        copied_code,
+        link_state,
+        find_block,
+    };
+    div()
+        .id(("reader-column", block_index))
         .debug_selector(|| "reader-column".into())
         .flex()
         .flex_col()
-        .flex_none()
         .w_full()
         .min_w_0()
         .px(px(Metrics::READER_INSET))
-        .pt(px(Metrics::READER_TOP_PADDING))
-        .pb(px(Metrics::READER_BOTTOM_PADDING))
-        .font_family(Metrics::FONT_SANS)
+        .when(block_index == 0, |item| {
+            item.pt(px(Metrics::READER_TOP_PADDING))
+        })
+        .when(block_index == last, |item| {
+            item.pb(px(Metrics::READER_BOTTOM_PADDING))
+        })
+        .font_family(style.content_family)
         .font_weight(FontWeight::NORMAL)
-        .text_size(px(15.5))
-        .line_height(px(15.5 * 1.65))
+        .text_size(px(style.font_size))
+        .line_height(px(style.font_size * style.line_height))
         .text_color(theme.foreground)
-        .when(!wide_mode, |column| {
-            column.max_w(px(Metrics::READER_MAX_WIDTH)).mx_auto()
-        });
-
-    let spacing = block_sequence_spacing(&document.blocks);
-    for (block_index, block) in document.blocks.iter().enumerate() {
-        let block_path = [block_index];
-        column = column.child(render_block(
-            &document,
+        .when_some(style.max_width, |item, width| item.max_w(px(width)).mx_auto())
+        .child(render_block(
+            document,
             block,
-            &block_path,
+            &[block_index],
             None,
             spacing[block_index],
             list_marker_is_visible(&document.blocks, block_index),
-            theme,
-            copied_code,
-            link_state,
+            view,
             cx,
-        ));
-    }
-
-    let viewport = div()
-        .id("reader-scroll")
-        .debug_selector(|| "reader-scroll".into())
-        .flex()
-        .flex_col()
-        .flex_grow()
-        .min_w_0()
-        .min_h_0()
-        .overflow_y_scroll()
-        .scrollbar_width(px(6.0))
-        .track_scroll(scroll_handle)
-        .bg(theme.background)
-        .child(column);
-    let scrollbar = render_reader_scrollbar(&document.path, scroll_handle, theme, cx);
-
-    div()
-        .relative()
-        .flex()
-        .flex_col()
-        .flex_grow()
-        .min_w_0()
-        .min_h_0()
-        .child(viewport)
-        .when_some(scrollbar, |reader, scrollbar| reader.child(scrollbar))
+        ))
         .into_any_element()
+}
+
+impl Render for ReaderPane {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let app = self.app.clone();
+        let document = self.document.clone();
+        let style = self.style;
+        let theme = self.theme;
+        let list_state = self.list_state.clone();
+        let viewport = list(list_state.clone(), move |block_index, _, cx| {
+            app.update(cx, |app, cx| {
+                let handles = app.ensure_block_link_focus_handles(&document, block_index, cx);
+                let paint = app.reader_paint_state(cx);
+                let link_state = ReaderLinkState {
+                    hovered: paint.hovered_link,
+                    focused: paint.focused_link,
+                    focus_handles: &handles,
+                };
+                render_reader_item(
+                    &document,
+                    block_index,
+                    style,
+                    theme,
+                    paint.copied_code,
+                    &link_state,
+                    paint.find_block,
+                    cx,
+                )
+            })
+            .unwrap_or_else(|_| div().into_any_element())
+        })
+        .w_full()
+        .h_full();
+        let scrollbar = render_reader_scrollbar(&self.document.path, &self.list_state, theme, cx);
+
+        div()
+            .id("reader-scroll")
+            .debug_selector(|| "reader-scroll".into())
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_grow()
+            .min_w_0()
+            .min_h_0()
+            .bg(theme.background)
+            .child(viewport)
+            .when_some(scrollbar, |reader, scrollbar| reader.child(scrollbar))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1053,17 +1307,19 @@ fn render_block(
     parent_list_depth: Option<usize>,
     spacing: BlockSpacing,
     list_marker_visible: bool,
-    theme: Theme,
-    copied_code: Option<(usize, Instant)>,
-    link_state: &ReaderLinkState<'_>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let theme = view.theme;
+    let link_state = view.link_state;
+    let find_block = view.find_block;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let document_path = document.path.as_path();
     let content = match block {
         DocumentBlock::Heading { level, content } => {
             let style = BlockStyle::heading(*level);
+            let font_size = view.zoom(style.font_size);
             let debug_selector = format!("reader-block-{block_suffix}");
             div()
                 .id(("reader-block", block_index))
@@ -1071,8 +1327,8 @@ fn render_block(
                 .w_full()
                 .min_w_0()
                 .font_weight(FontWeight(style.font_weight as f32))
-                .text_size(px(style.font_size))
-                .line_height(px(style.font_size * style.line_height))
+                .text_size(px(font_size))
+                .line_height(px(font_size * style.line_height))
                 .text_color(if style.muted {
                     theme.muted_foreground
                 } else {
@@ -1126,9 +1382,7 @@ fn render_block(
             block_path,
             parent_list_depth,
             document,
-            theme,
-            copied_code,
-            link_state,
+            view,
             cx,
         ),
         DocumentBlock::TaskItem {
@@ -1142,9 +1396,7 @@ fn render_block(
             block_path,
             parent_list_depth,
             document,
-            theme,
-            copied_code,
-            link_state,
+            view,
             cx,
         ),
         DocumentBlock::Blockquote(content) => {
@@ -1192,15 +1444,27 @@ fn render_block(
             document.code_block_at(block_path),
             block_path,
             document_path,
-            theme,
-            copied_code,
+            view,
             cx,
         ),
-        DocumentBlock::Table(table) => {
-            render_table(table, block_index, document_path, theme, link_state, cx)
-        }
+        DocumentBlock::Table(table) => render_table(table, block_index, document_path, view, cx),
         DocumentBlock::Image { alt, source } => {
             render_image(alt, source, block_index, document_path, theme)
+        }
+        DocumentBlock::Alert { kind, children } => {
+            render_alert(*kind, children, block_path, document, view, cx)
+        }
+        DocumentBlock::MermaidCard { source } => render_code_block(
+            Some("mermaid"),
+            source,
+            None,
+            block_path,
+            document_path,
+            view,
+            cx,
+        ),
+        DocumentBlock::FootnoteSection { notes } => {
+            render_footnote_section(notes, block_path, document, view, cx)
         }
         DocumentBlock::RawText(text) => {
             let debug_selector = format!("reader-block-{block_suffix}");
@@ -1214,11 +1478,15 @@ fn render_block(
         }
     };
 
+    let find_hit = block_path.len() == 1 && find_block == Some(block_path[0]);
     div()
         .w_full()
         .min_w_0()
         .mt(px(spacing.before))
         .mb(px(spacing.after))
+        .when(find_hit, |block| {
+            block.bg(theme.accent.opacity(0.14)).rounded(px(4.0))
+        })
         .child(content)
         .into_any_element()
 }
@@ -1414,6 +1682,7 @@ fn text_runs(
                 false,
                 false,
                 false,
+                false,
                 tabular_numbers,
                 theme,
             ));
@@ -1428,11 +1697,14 @@ fn text_runs(
             if style.strong { 700 } else { base_weight },
             if link_index.is_some() {
                 theme.primary
+            } else if style.footnote {
+                theme.muted_foreground
             } else {
                 base_color
             },
             style.emphasis,
             style.code,
+            style.strikethrough,
             link_index.is_some_and(|link_index| {
                 hovered_link == Some(link_index) || focused_link == Some(link_index)
             }),
@@ -1446,6 +1718,7 @@ fn text_runs(
             layout.text.len() - cursor,
             base_weight,
             base_color,
+            false,
             false,
             false,
             false,
@@ -1463,6 +1736,7 @@ fn text_run(
     color: gpui::Hsla,
     emphasis: bool,
     code: bool,
+    strikethrough: bool,
     underline: bool,
     tabular_numbers: bool,
     theme: Theme,
@@ -1491,7 +1765,10 @@ fn text_run(
             color: Some(theme.primary),
             wavy: false,
         }),
-        strikethrough: None,
+        strikethrough: strikethrough.then_some(StrikethroughStyle {
+            thickness: px(1.0),
+            color: None,
+        }),
     }
 }
 
@@ -1504,11 +1781,10 @@ fn render_list_item(
     block_path: &[usize],
     parent_list_depth: Option<usize>,
     document: &PreparedDocument,
-    theme: Theme,
-    copied_code: Option<(usize, Instant)>,
-    link_state: &ReaderLinkState<'_>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let theme = view.theme;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let block_debug_selector = format!("reader-block-{block_suffix}");
@@ -1546,9 +1822,7 @@ fn render_list_item(
             depth,
             block_path,
             document,
-            theme,
-            copied_code,
-            link_state,
+            view,
             cx,
         ))
         .into_any_element()
@@ -1562,11 +1836,10 @@ fn render_task_item(
     block_path: &[usize],
     parent_list_depth: Option<usize>,
     document: &PreparedDocument,
-    theme: Theme,
-    copied_code: Option<(usize, Instant)>,
-    link_state: &ReaderLinkState<'_>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let theme = view.theme;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let block_debug_selector = format!("reader-block-{block_suffix}");
@@ -1607,9 +1880,7 @@ fn render_task_item(
             depth,
             block_path,
             document,
-            theme,
-            copied_code,
-            link_state,
+            view,
             cx,
         ))
         .into_any_element()
@@ -1621,9 +1892,7 @@ fn render_list_children(
     list_depth: usize,
     block_path: &[usize],
     document: &PreparedDocument,
-    theme: Theme,
-    copied_code: Option<(usize, Instant)>,
-    link_state: &ReaderLinkState<'_>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let mut spacing = block_sequence_spacing(children);
@@ -1651,14 +1920,133 @@ fn render_list_children(
                     Some(list_depth),
                     spacing[child_index],
                     list_marker_is_visible(children, child_index),
-                    theme,
-                    copied_code,
-                    link_state,
+                    view,
                     cx,
                 )),
         );
     }
     column.into_any_element()
+}
+
+fn alert_accent(kind: AlertKind, theme: Theme) -> gpui::Hsla {
+    match kind {
+        AlertKind::Note | AlertKind::Tip => theme.primary,
+        AlertKind::Important | AlertKind::Warning => theme.accent,
+        AlertKind::Caution => theme.destructive,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_alert(
+    kind: AlertKind,
+    children: &[DocumentBlock],
+    block_path: &[usize],
+    document: &PreparedDocument,
+    view: ReaderView<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let accent = alert_accent(kind, theme);
+    let debug_selector = format!("reader-block-{block_suffix}");
+    div()
+        .id(("reader-block", block_index))
+        .debug_selector(move || debug_selector)
+        .flex()
+        .flex_col()
+        .w_full()
+        .min_w_0()
+        .border_l(px(3.0))
+        .border_color(accent)
+        .bg(accent.opacity(0.08))
+        .rounded(px(6.0))
+        .px(px(14.0))
+        .py(px(10.0))
+        .gap(px(6.0))
+        .child(
+            div()
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(12.0))
+                .text_color(accent)
+                .child(kind.label().to_owned()),
+        )
+        .child(render_list_children(
+            children,
+            0,
+            block_path,
+            document,
+            ReaderView {
+                find_block: None,
+                ..view
+            },
+            cx,
+        ))
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_footnote_section(
+    notes: &[(String, Vec<DocumentBlock>)],
+    block_path: &[usize],
+    document: &PreparedDocument,
+    view: ReaderView<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let debug_selector = format!("reader-block-{block_suffix}");
+    let mut list = div().flex().flex_col().gap(px(10.0)).w_full().min_w_0();
+    for (note_index, (label, children)) in notes.iter().enumerate() {
+        let mut note_path = block_path.to_vec();
+        note_path.push(note_index);
+        list = list.child(
+            div()
+                .flex()
+                .items_start()
+                .gap(px(8.0))
+                .w_full()
+                .min_w_0()
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(theme.muted_foreground)
+                        .child(footnote_ref_display(label)),
+                )
+                .child(render_list_children(
+                    children,
+                    0,
+                    &note_path,
+                    document,
+                    ReaderView {
+                        find_block: None,
+                        ..view
+                    },
+                    cx,
+                )),
+        );
+    }
+    div()
+        .id(("reader-block", block_index))
+        .debug_selector(move || debug_selector)
+        .flex()
+        .flex_col()
+        .w_full()
+        .min_w_0()
+        .pt(px(16.0))
+        .border_t_1()
+        .border_color(theme.border_subtle)
+        .gap(px(8.0))
+        .child(
+            div()
+                .text_size(px(12.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(theme.muted_foreground)
+                .child("Notes"),
+        )
+        .child(list)
+        .into_any_element()
 }
 
 fn format_ordered_marker(number: u64, depth: usize) -> String {
@@ -1715,7 +2103,11 @@ fn to_lower_roman(mut number: u64) -> String {
     output
 }
 
-fn highlighted_text_runs(highlighted: &HighlightedCode, dark: bool) -> Vec<TextRun> {
+fn highlighted_text_runs(
+    highlighted: &HighlightedCode,
+    dark: bool,
+    family: &'static str,
+) -> Vec<TextRun> {
     let source = if dark {
         &highlighted.dark_runs
     } else {
@@ -1727,7 +2119,7 @@ fn highlighted_text_runs(highlighted: &HighlightedCode, dark: bool) -> Vec<TextR
             let hex = ((run.color.red as u32) << 16)
                 | ((run.color.green as u32) << 8)
                 | run.color.blue as u32;
-            let mut run_font = font(Metrics::FONT_MONO);
+            let mut run_font = font(family);
             run_font.weight = FontWeight::NORMAL;
             run_font.style = if run.italic {
                 FontStyle::Italic
@@ -1753,10 +2145,11 @@ fn render_code_block(
     highlighted: Option<&HighlightedCode>,
     block_path: &[usize],
     document_path: &Path,
-    theme: Theme,
-    copied_code: Option<(usize, Instant)>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let theme = view.theme;
+    let copied_code = view.copied_code;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let copied = code_copy_feedback_is_active(copied_code, block_index, Instant::now());
@@ -1769,6 +2162,7 @@ fn render_code_block(
             StyledText::new(value.text.clone()).with_runs(highlighted_text_runs(
                 value,
                 theme.color_scheme == ColorScheme::Dark,
+                view.style.code_family,
             ))
         })
         .unwrap_or_else(|| StyledText::new(code.to_owned()));
@@ -1864,10 +2258,10 @@ fn render_code_block(
                 .scrollbar_width(px(6.0))
                 .px(px(18.0))
                 .py(px(14.0))
-                .font_family(Metrics::FONT_MONO)
+                .font_family(view.style.code_family)
                 .font_weight(FontWeight::NORMAL)
-                .text_size(px(15.5 * 0.875))
-                .line_height(px(15.5 * 0.875 * 1.6))
+                .text_size(px(view.zoom(15.5 * 0.875)))
+                .line_height(px(view.zoom(15.5 * 0.875) * 1.6))
                 .whitespace_nowrap()
                 .child(highlighted_text),
         )
@@ -1878,10 +2272,11 @@ fn render_table(
     table: &TableBlock,
     block_index: usize,
     document_path: &Path,
-    theme: Theme,
-    link_state: &ReaderLinkState<'_>,
+    view: ReaderView<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let theme = view.theme;
+    let link_state = view.link_state;
     let column_count = table
         .headers
         .len()
@@ -1891,9 +2286,9 @@ fn render_table(
         .grid()
         .grid_cols(column_count as u16)
         .min_w(px(column_count as f32 * 140.0))
-        .font_family(Metrics::FONT_SANS)
-        .text_size(px(15.5 * 0.925))
-        .line_height(px(15.5 * 0.925 * 1.5));
+        .font_family(view.style.content_family)
+        .text_size(px(view.zoom(15.5 * 0.925)))
+        .line_height(px(view.zoom(15.5 * 0.925) * 1.5));
     for column_index in 0..column_count {
         let content = table.headers.get(column_index).cloned().unwrap_or_default();
         let surface = LinkSurfaceKey::table_header(block_index, column_index);
@@ -1909,8 +2304,8 @@ fn render_table(
                     cell.border_r_1().border_color(theme.border_subtle)
                 })
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(15.5 * 0.925 * 0.8))
-                .line_height(px(15.5 * 0.925 * 1.3))
+                .text_size(px(view.zoom(15.5 * 0.925 * 0.8)))
+                .line_height(px(view.zoom(15.5 * 0.925 * 1.3)))
                 .text_color(theme.muted_foreground)
                 .child(render_inline_layout(
                     inline_layout_with_transform(&content, true),
@@ -2082,8 +2477,8 @@ mod tests {
     #[test]
     fn highlighted_runs_keep_lengths_fonts_and_theme_colors() {
         let highlighted = highlight_code(Some("rust"), "fn main() {}\n");
-        let light = highlighted_text_runs(&highlighted, false);
-        let dark = highlighted_text_runs(&highlighted, true);
+        let light = highlighted_text_runs(&highlighted, false, Metrics::FONT_MONO);
+        let dark = highlighted_text_runs(&highlighted, true, Metrics::FONT_MONO);
 
         assert_eq!(
             light.iter().map(|run| run.len).sum::<usize>(),
@@ -2172,6 +2567,39 @@ mod tests {
                 node_id: 0,
             }],
         );
+    }
+
+    #[test]
+    fn strikethrough_and_footnote_refs_style_the_painted_layout() {
+        let theme = Theme::for_appearance(gpui::WindowAppearance::Dark);
+        let layout = inline_layout(&[
+            InlineSpan::Strikethrough(vec![InlineSpan::Text("gone".into())]),
+            InlineSpan::Text(" ".into()),
+            InlineSpan::FootnoteRef { label: "1".into() },
+        ]);
+
+        assert_eq!(layout.text, "gone ¹");
+        assert_eq!(
+            layout.styles,
+            vec![
+                InlineStyleRange::strikethrough(0..4),
+                InlineStyleRange::footnote(5..7),
+            ],
+        );
+
+        let runs = text_runs(
+            &layout,
+            &[],
+            None,
+            None,
+            400,
+            theme.foreground,
+            theme,
+            false,
+        );
+        assert!(runs[0].strikethrough.is_some());
+        assert!(runs[1].strikethrough.is_none());
+        assert_eq!(runs[2].color, theme.muted_foreground);
     }
 
     #[test]

@@ -8,6 +8,19 @@ actions!(
         ToggleSidebar,
         CloseTab,
         ToggleWideMode,
-        Quit
+        Quit,
+        ToggleFind,
+        TogglePalette,
+        ToggleSettings,
+        ToggleShortcuts,
+        Dismiss,
+        FindNext,
+        FindPrevious,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
+        SidebarRecents,
+        SidebarFolder,
+        SidebarOutline
     ]
 );
