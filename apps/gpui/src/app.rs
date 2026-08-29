@@ -206,12 +206,7 @@ impl AppModel {
 }
 
 fn canonical_file_identity(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| {
-        path.parent()
-            .and_then(|parent| parent.canonicalize().ok())
-            .and_then(|parent| path.file_name().map(|name| parent.join(name)))
-            .unwrap_or_else(|| path.to_owned())
-    })
+    crate::session::file_identity(path)
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -2,6 +2,15 @@
 
 use std::path::{Path, PathBuf};
 
+pub fn file_identity(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        path.parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .and_then(|parent| path.file_name().map(|name| parent.join(name)))
+            .unwrap_or_else(|| path.to_owned())
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SavedWindowBounds {
     pub x: f32,
@@ -56,11 +65,12 @@ impl Recents {
     pub const CAP: usize = 20;
 
     pub fn note(&mut self, path: &Path) -> bool {
-        if self.0.first().is_some_and(|first| first == path) {
+        let path = file_identity(path);
+        if self.0.first().is_some_and(|first| first == &path) {
             return false;
         }
-        self.0.retain(|existing| existing != path);
-        self.0.insert(0, path.to_owned());
+        self.0.retain(|existing| existing != &path);
+        self.0.insert(0, path);
         self.0.truncate(Self::CAP);
         true
     }
@@ -76,6 +86,7 @@ impl Recents {
     pub fn from_paths(paths: Vec<PathBuf>) -> Self {
         let mut recents = Vec::new();
         for path in paths {
+            let path = file_identity(&path);
             if recents.iter().any(|existing| existing == &path) {
                 continue;
             }
@@ -134,6 +145,38 @@ mod tests {
             tabs.iter().collect::<Vec<_>>(),
             vec![Path::new("/a.md"), Path::new("/b.md"), Path::new("/c.md")]
         );
+    }
+
+    #[test]
+    fn recents_treat_macos_var_and_private_var_as_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("showcase.md");
+        std::fs::write(&file, "# Showcase").unwrap();
+        let canonical = file.canonicalize().unwrap();
+        if file == canonical {
+            return;
+        }
+
+        let mut recents = Recents::from_paths(vec![file.clone()]);
+        recents.note(&canonical);
+        let listed: Vec<_> = recents.iter().collect();
+        assert_eq!(listed, vec![canonical.as_path()]);
+    }
+
+    #[test]
+    fn recents_treat_symlink_and_canonical_path_as_one_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("showcase.md");
+        std::fs::write(&file, "# Showcase").unwrap();
+        let link = dir.path().join("also-showcase.md");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let canonical = file.canonicalize().unwrap();
+        assert_ne!(link.as_path(), canonical.as_path());
+
+        let mut recents = Recents::from_paths(vec![link.clone()]);
+        recents.note(&canonical);
+        let listed: Vec<_> = recents.iter().collect();
+        assert_eq!(listed, vec![canonical.as_path()]);
     }
 
     #[test]
