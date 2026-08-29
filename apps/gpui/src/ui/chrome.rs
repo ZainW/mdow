@@ -74,6 +74,7 @@ pub fn breadcrumb_segments(path: &Path) -> Vec<BreadcrumbSegment> {
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_sidebar(
     theme: Theme,
     mode: SidebarMode,

@@ -1195,6 +1195,7 @@ impl ReaderView<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_reader_item(
     document: &PreparedDocument,
     block_index: usize,

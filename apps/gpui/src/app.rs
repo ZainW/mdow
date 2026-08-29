@@ -1006,14 +1006,13 @@ impl MdowApp {
         let Some(pane) = self.reader_panes.get(&path).cloned() else {
             return false;
         };
-        let scrolled = pane.update(cx, |pane, cx| {
+        pane.update(cx, |pane, cx| {
             let scrolled = pane.scroll_by_key(key);
             if scrolled {
                 cx.notify();
             }
             scrolled
-        });
-        scrolled
+        })
     }
 
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
