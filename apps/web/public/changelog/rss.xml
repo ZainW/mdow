@@ -6,13 +6,25 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.7.2</title>
+      <link>https://mdow.wania.app/changelog#v1-7-2</link>
+      <guid isPermaLink="false">v1.7.2</guid>
+      <pubDate>Sat, 29 Aug 2026 01:31:03 GMT</pubDate>
+      <description>Latest release.
+
+- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
+- Restores tabs, preferences, and window bounds across launches
+- Virtualized the reader so large documents stay responsive
+- Opens local HTML in a native viewer without a webview
+- Fixed the GitHub Release workflow so Windows, macOS, and Linux artifacts all publish
+- Fixed clippy errors that blocked the native Mac beta artifacts</description>
+    </item>
+    <item>
       <title>v1.7.1</title>
       <link>https://mdow.wania.app/changelog#v1-7-1</link>
       <guid isPermaLink="false">v1.7.1</guid>
       <pubDate>Sat, 29 Aug 2026 00:40:30 GMT</pubDate>
-      <description>Latest release.
-
-- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
+      <description>- Native GPUI beta now includes find, command palette, settings, shortcuts, and sidebar modes
 - Restores tabs, preferences, and window bounds across launches
 - Virtualized the reader so large documents stay responsive
 - Opens local HTML in a native viewer without a webview

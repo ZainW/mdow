@@ -208,9 +208,9 @@ fn apply_implied_closes(name: &str, root: &mut Vec<Node>, stack: &mut Vec<OpenEl
     }
 }
 
-type OpenTag = (String, Vec<(String, String)>, bool, usize);
+type OpenTagScan = (String, Vec<(String, String)>, bool, usize);
 
-fn scan_open_tag(rest: &str) -> Option<OpenTag> {
+fn scan_open_tag(rest: &str) -> Option<OpenTagScan> {
     let bytes = rest.as_bytes();
     debug_assert_eq!(bytes.first(), Some(&b'<'));
     let mut index = 1;
