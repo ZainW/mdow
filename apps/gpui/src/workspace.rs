@@ -83,6 +83,12 @@ impl WorkspaceTree {
         collect_entries(&self.root, &mut entries);
         entries.into_iter().map(|entry| entry.path.as_path())
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        collect_files(&self.root, &mut files);
+        files
+    }
 }
 
 pub fn scan_workspace(root: &Path) -> Result<WorkspaceTree, WorkspaceError> {
@@ -272,6 +278,15 @@ fn collect_entries<'a>(entry: &'a WorkspaceEntry, entries: &mut Vec<&'a Workspac
     }
 }
 
+fn collect_files(entry: &WorkspaceEntry, files: &mut Vec<PathBuf>) {
+    if entry.kind == WorkspaceEntryKind::File {
+        files.push(entry.path.clone());
+    }
+    for child in &entry.children {
+        collect_files(child, files);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +352,16 @@ mod tests {
         assert_eq!(
             names(&tree.root.children),
             vec!["guides", "Alpha.md", "zeta.md"]
+        );
+        let files = tree.files();
+        let mut file_names = files
+            .iter()
+            .filter_map(|path| path.file_name()?.to_str())
+            .collect::<Vec<_>>();
+        file_names.sort_unstable();
+        assert_eq!(
+            file_names,
+            vec!["Alpha.md", "Guide.MARKDOWN", "start.md", "zeta.md"]
         );
         assert!(
             !tree

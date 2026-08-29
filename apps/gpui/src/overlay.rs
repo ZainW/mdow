@@ -1,17 +1,19 @@
 use crate::actions::Dismiss;
 use crate::document::DocumentBlock;
 use crate::prefs::{
-    CodeFont, ColumnWidth, ContentFont, InterfaceScale, PrefEdit, Prefs, ThemeMode,
+    CodeFont, ColumnWidth, ContentFont, InterfaceScale, PrefEdit, Prefs, READER_FONT_SIZE,
+    READER_LINE_HEIGHT, ThemeMode,
 };
 use crate::session::Recents;
 use crate::syntax::PreparedDocument;
 use crate::theme::{Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
-use crate::ui::primitives::compact_icon_button;
+use crate::ui::primitives::{compact_icon_button, icon};
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,
     IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px,
 };
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -523,32 +525,57 @@ pub fn command_catalog() -> &'static [CommandSpec] {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaletteItem {
     Command(&'static CommandSpec),
-    Recent(PathBuf),
+    File { path: PathBuf, recent: bool },
 }
 
-pub fn palette_items(query: &str, recents: &Recents) -> Vec<PaletteItem> {
-    let mut items = Vec::new();
+pub fn palette_items(
+    query: &str,
+    recents: &Recents,
+    workspace_files: &[PathBuf],
+) -> Vec<PaletteItem> {
+    let workspace_set = workspace_files.iter().cloned().collect::<HashSet<_>>();
+    let files = workspace_files
+        .iter()
+        .cloned()
+        .map(|path| PaletteItem::File {
+            path,
+            recent: false,
+        })
+        .chain(recents.iter().filter_map(|path| {
+            if workspace_set.contains(path) {
+                None
+            } else {
+                Some(PaletteItem::File {
+                    path: path.to_owned(),
+                    recent: true,
+                })
+            }
+        }))
+        .collect::<Vec<_>>();
+
     if query.is_empty() {
-        items.extend(
-            recents
-                .iter()
-                .map(|path| PaletteItem::Recent(path.to_owned())),
-        );
-        items.extend(command_catalog().iter().map(PaletteItem::Command));
-        return items;
+        return command_catalog()
+            .iter()
+            .map(PaletteItem::Command)
+            .chain(files)
+            .collect();
     }
+
     let mut scored = Vec::new();
-    for path in recents.iter() {
-        if let Some(score) = subsequence_score(query, &path_label(path)) {
-            scored.push((score, PaletteItem::Recent(path.to_owned())));
-        }
-    }
     for spec in command_catalog() {
         if let Some(score) = subsequence_score(query, spec.title) {
             scored.push((score, PaletteItem::Command(spec)));
         }
     }
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    for item in files {
+        let PaletteItem::File { path, recent } = item else {
+            continue;
+        };
+        if let Some(score) = subsequence_score(query, &path_label(&path)) {
+            scored.push((score, PaletteItem::File { path, recent }));
+        }
+    }
+    scored.sort_by(|left, right| right.0.cmp(&left.0));
     scored.into_iter().map(|(_, item)| item).collect()
 }
 
@@ -557,6 +584,20 @@ fn path_label(path: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("Untitled")
         .to_owned()
+}
+
+fn path_hint(path: &Path, recent: bool) -> String {
+    path.parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_owned())
+        .unwrap_or_else(|| {
+            if recent {
+                "Recent".into()
+            } else {
+                String::new()
+            }
+        })
 }
 
 fn subsequence_score(query: &str, candidate: &str) -> Option<u32> {
@@ -605,15 +646,21 @@ pub struct PaletteOverlay {
 impl EventEmitter<PaletteEvent> for PaletteOverlay {}
 
 impl PaletteOverlay {
-    pub fn new(recents: Recents, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let items = palette_items("", &recents);
-        let query = cx.new(|cx| Field::new("Search commands and recent files…", window, cx));
+    pub fn new(
+        recents: Recents,
+        workspace_files: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let items = palette_items("", &recents, &workspace_files);
+        let query = cx.new(|cx| Field::new("Search files and commands…", window, cx));
         let query_events = cx.subscribe(&query, {
             let recents = recents.clone();
+            let workspace_files = workspace_files.clone();
             move |this, field, event, cx| match event {
                 FieldEvent::Edited => {
                     let text = field.read(cx).text().to_owned();
-                    this.items = palette_items(&text, &recents);
+                    this.items = palette_items(&text, &recents, &workspace_files);
                     if this.selected >= this.items.len() {
                         this.selected = this.items.len().saturating_sub(1);
                     }
@@ -637,7 +684,7 @@ impl PaletteOverlay {
         };
         let action = match item {
             PaletteItem::Command(spec) => PaletteAction::Run(spec.id),
-            PaletteItem::Recent(path) => PaletteAction::Open(path.clone()),
+            PaletteItem::File { path, .. } => PaletteAction::Open(path.clone()),
         };
         cx.emit(PaletteEvent::Invoked(action));
     }
@@ -663,52 +710,48 @@ impl Render for PaletteOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_appearance(window.appearance());
         let selected = self.selected;
+        let commands = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| matches!(item, PaletteItem::Command(_)))
+            .collect::<Vec<_>>();
+        let files = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| matches!(item, PaletteItem::File { .. }))
+            .collect::<Vec<_>>();
         let mut list = div()
             .id("palette-list")
             .flex()
             .flex_col()
-            .max_h(px(320.0))
+            .max_h(px(400.0))
             .overflow_y_scroll();
-        for (index, item) in self.items.iter().enumerate() {
-            let label = match item {
-                PaletteItem::Command(spec) => spec.title.to_owned(),
-                PaletteItem::Recent(path) => path_label(path),
-            };
-            let hint = match item {
-                PaletteItem::Command(spec) => spec.keys.unwrap_or("").to_owned(),
-                PaletteItem::Recent(_) => "Recent".to_owned(),
-            };
+        if self.items.is_empty() {
             list = list.child(
                 div()
-                    .id(("palette-item", index))
-                    .debug_selector(move || format!("palette-item-{index}"))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .h(px(28.0))
                     .px(px(10.0))
-                    .rounded(px(6.0))
-                    .bg(if index == selected {
-                        theme.sidebar_accent
-                    } else {
-                        theme.sidebar_accent.opacity(0.0)
-                    })
+                    .py(px(16.0))
+                    .text_center()
                     .font_family(Metrics::FONT_SANS)
                     .text_size(px(12.0))
-                    .text_color(theme.foreground)
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.selected = index;
-                        this.invoke(cx);
-                    }))
-                    .child(label)
-                    .child(
-                        div()
-                            .text_color(theme.muted_foreground)
-                            .text_size(px(11.0))
-                            .child(hint),
-                    ),
+                    .text_color(theme.muted_foreground)
+                    .child("No matching files or commands"),
             );
+        } else {
+            if !commands.is_empty() {
+                list = list.child(palette_heading("Actions", theme));
+                for (index, item) in commands {
+                    list = list.child(palette_row(index, item, index == selected, theme, cx));
+                }
+            }
+            if !files.is_empty() {
+                list = list.child(palette_heading("Files", theme));
+                for (index, item) in files {
+                    list = list.child(palette_row(index, item, index == selected, theme, cx));
+                }
+            }
         }
         div()
             .key_context("Palette")
@@ -729,7 +772,84 @@ impl Render for PaletteOverlay {
                     .child(self.query.clone()),
             )
             .child(list)
+            .child(
+                div()
+                    .mt(px(8.0))
+                    .pt(px(6.0))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .flex()
+                    .justify_end()
+                    .gap(px(12.0))
+                    .font_family(Metrics::FONT_SANS)
+                    .text_size(px(10.0))
+                    .text_color(theme.muted_foreground.opacity(0.8))
+                    .child("↵ open")
+                    .child("esc dismiss"),
+            )
     }
+}
+
+fn palette_heading(title: &'static str, theme: Theme) -> impl IntoElement {
+    div()
+        .px(px(10.0))
+        .pt(px(8.0))
+        .pb(px(4.0))
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(10.0))
+        .text_color(theme.muted_foreground)
+        .child(title)
+}
+
+fn palette_row(
+    index: usize,
+    item: &PaletteItem,
+    selected: bool,
+    theme: Theme,
+    cx: &mut Context<PaletteOverlay>,
+) -> impl IntoElement {
+    let (icon_path, label, hint) = match item {
+        PaletteItem::Command(spec) => (
+            "icons/command.svg",
+            spec.title.to_owned(),
+            spec.keys.unwrap_or("").to_owned(),
+        ),
+        PaletteItem::File { path, recent } => {
+            ("icons/file.svg", path_label(path), path_hint(path, *recent))
+        }
+    };
+    div()
+        .id(("palette-item", index))
+        .debug_selector(move || format!("palette-item-{index}"))
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .h(px(28.0))
+        .px(px(10.0))
+        .rounded(px(6.0))
+        .bg(if selected {
+            theme.sidebar_accent
+        } else {
+            theme.sidebar_accent.opacity(0.0)
+        })
+        .hover(move |style| style.bg(theme.sidebar_accent.opacity(0.7)))
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(12.0))
+        .text_color(theme.foreground)
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _, _, cx| {
+            this.selected = index;
+            this.invoke(cx);
+        }))
+        .child(icon(icon_path, theme.muted_foreground, 14.0))
+        .child(div().min_w_0().flex_grow().truncate().child(label))
+        .child(
+            div()
+                .flex_none()
+                .text_color(theme.muted_foreground)
+                .text_size(px(11.0))
+                .child(hint),
+        )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -790,7 +910,19 @@ impl Render for SettingsPanel {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(settings_heading("Settings", theme))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(3.0))
+                            .child(settings_heading("Settings", theme))
+                            .child(
+                                div()
+                                    .text_color(theme.muted_foreground)
+                                    .text_size(px(12.0))
+                                    .child("Tune how markdown reads."),
+                            ),
+                    )
                     .child(compact_icon_button(
                         "settings-close",
                         "icons/x.svg",
@@ -800,6 +932,7 @@ impl Render for SettingsPanel {
                         cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Dismissed)),
                     )),
             )
+            .child(settings_preview(prefs, theme))
             .child(seg_row(
                 "Theme",
                 [
@@ -952,6 +1085,41 @@ impl Render for SettingsPanel {
     }
 }
 
+fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
+    div()
+        .px(px(12.0))
+        .py(px(10.0))
+        .rounded(px(8.0))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.muted.opacity(0.4))
+        .font_family(prefs.content_font.family())
+        .text_color(theme.foreground)
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(READER_FONT_SIZE * 1.25))
+                .line_height(px(READER_FONT_SIZE * 1.25 * 1.25))
+                .child("The quiet morning"),
+        )
+        .child(
+            div()
+                .mt(px(6.0))
+                .text_size(px(READER_FONT_SIZE))
+                .line_height(px(READER_FONT_SIZE * READER_LINE_HEIGHT))
+                .text_color(theme.foreground.opacity(0.85))
+                .child("A short paragraph to judge the reading face."),
+        )
+        .child(
+            div()
+                .mt(px(6.0))
+                .font_family(prefs.code_font.family())
+                .text_size(px(READER_FONT_SIZE * 0.875))
+                .text_color(theme.muted_foreground)
+                .child("const greeting = \"hello\""),
+        )
+}
+
 fn settings_heading(title: &'static str, theme: Theme) -> impl IntoElement {
     div()
         .font_weight(FontWeight::MEDIUM)
@@ -1086,22 +1254,53 @@ mod tests {
     }
 
     #[test]
-    fn palette_empty_query_lists_recents_then_commands() {
-        let recents = Recents::from_paths(vec![PathBuf::from("/notes/a.md")]);
-        let items = palette_items("", &recents);
-        assert!(matches!(items.first(), Some(PaletteItem::Recent(_))));
-        assert!(items.iter().any(|item| matches!(
-            item,
-            PaletteItem::Command(spec) if spec.id == CommandId::OpenFile
-        )));
+    fn palette_empty_query_lists_commands_then_workspace_then_extra_recents() {
+        let recents = Recents::from_paths(vec![
+            PathBuf::from("/notes/a.md"),
+            PathBuf::from("/vault/readme.md"),
+        ]);
+        let workspace = vec![
+            PathBuf::from("/vault/readme.md"),
+            PathBuf::from("/vault/guide.md"),
+        ];
+        let items = palette_items("", &recents, &workspace);
+        assert!(matches!(items.first(), Some(PaletteItem::Command(_))));
+        let files = items
+            .iter()
+            .filter_map(|item| match item {
+                PaletteItem::File { path, recent } => Some((path.as_path(), *recent)),
+                PaletteItem::Command(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            files,
+            vec![
+                (Path::new("/vault/readme.md"), false),
+                (Path::new("/vault/guide.md"), false),
+                (Path::new("/notes/a.md"), true),
+            ]
+        );
     }
 
     #[test]
     fn palette_filters_by_subsequence() {
-        let items = palette_items("thm drk", &Recents::default());
+        let items = palette_items("thm drk", &Recents::default(), &[]);
         assert!(items.iter().any(|item| matches!(
             item,
             PaletteItem::Command(spec) if spec.id == CommandId::ThemeDark
+        )));
+    }
+
+    #[test]
+    fn palette_query_matches_workspace_filenames() {
+        let items = palette_items(
+            "guide",
+            &Recents::default(),
+            &[PathBuf::from("/vault/guide.md")],
+        );
+        assert!(items.iter().any(|item| matches!(
+            item,
+            PaletteItem::File { path, recent: false } if path.ends_with("guide.md")
         )));
     }
 }
