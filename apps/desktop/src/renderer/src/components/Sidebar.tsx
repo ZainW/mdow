@@ -13,6 +13,7 @@ import {
 import { Clock, Folder, FolderOpen, List, Settings } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
+import { scrollBehavior } from '../lib/motion'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { isMac } from '../lib/utils'
 
@@ -55,7 +56,7 @@ export function Sidebar() {
         <SidebarHeader className="sidebar-drawer-header border-b border-border-subtle">
           <SidebarModeTabs mode={mode} onModeChange={setSidebarMode} roving={modeRoving} />
         </SidebarHeader>
-        <SidebarContent key={mode} className="drawer-mode">
+        <SidebarContent key={mode}>
           {mode === 'recents' && <RecentsList />}
           {mode === 'folder' && openFolderPath && (
             <Suspense fallback={<FolderTreeSkeleton />}>
@@ -188,8 +189,7 @@ function OutlineList({
     e.preventDefault()
     const el = document.getElementById(id)
     if (!el) return
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    el.scrollIntoView({ behavior: scrollBehavior('travel'), block: 'start' })
   }, [])
 
   if (headings.length === 0) {

@@ -1,3 +1,4 @@
+import { scrollBehavior } from '@renderer/lib/motion'
 import { cn } from '@renderer/lib/utils'
 import type { ComponentProps, HTMLAttributes, ReactNode, Ref } from 'react'
 import { useEffect, useState } from 'react'
@@ -90,7 +91,7 @@ export function ConversationScrollButton({
       onClick={() => {
         containerRef.current?.scrollTo({
           top: containerRef.current.scrollHeight,
-          behavior: 'smooth',
+          behavior: scrollBehavior('travel'),
         })
       }}
       {...props}

@@ -210,6 +210,7 @@ export function CommandPalette() {
       <DialogContent
         className="top-[20%] translate-y-0 overflow-hidden rounded-xl p-0 sm:max-w-lg"
         showCloseButton={false}
+        motion="none"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>

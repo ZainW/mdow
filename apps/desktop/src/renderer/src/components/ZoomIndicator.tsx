@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
+import { prefersReducedMotion } from '../lib/motion'
 import { useAppStore } from '../store/app-store'
 import { iconSize, iconStroke } from '../lib/icons'
 import { Button } from './ui/button'
@@ -51,7 +52,7 @@ export function ZoomIndicator() {
 
     clearTimeout(hideTimer.current)
     hideTimer.current = setTimeout(() => {
-      dispatch({ type: 'hide' })
+      dispatch({ type: prefersReducedMotion() ? 'unmount' : 'hide' })
     }, 2000)
 
     return () => clearTimeout(hideTimer.current)
@@ -68,21 +69,23 @@ export function ZoomIndicator() {
 
   const handleMouseLeave = () => {
     hideTimer.current = setTimeout(() => {
-      dispatch({ type: 'hide' })
+      dispatch({ type: prefersReducedMotion() ? 'unmount' : 'hide' })
     }, 1000)
   }
 
   if (!mounted && zoomLevel === 100) return null
 
   const persistentlyVisible = zoomLevel !== 100
+  const shown = visible || persistentlyVisible
+  const reduceMotion = prefersReducedMotion()
 
   return (
     <div
       className="zoom-indicator absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-[length:var(--control-font-size)] text-foreground shadow-sm"
       style={{
-        opacity: visible || persistentlyVisible ? 1 : 0,
-        transform: visible || persistentlyVisible ? 'scale(1)' : 'scale(0.95)',
-        pointerEvents: visible || persistentlyVisible ? 'auto' : 'none',
+        opacity: shown ? 1 : 0,
+        transform: reduceMotion ? undefined : shown ? 'scale(1)' : 'scale(0.95)',
+        pointerEvents: shown ? 'auto' : 'none',
       }}
       onTransitionEnd={handleTransitionEnd}
       onMouseEnter={handleMouseEnter}

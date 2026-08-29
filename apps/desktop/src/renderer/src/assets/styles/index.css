@@ -326,6 +326,13 @@
   --ease-out-ui: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* Theme flips must not replay color/hover transitions on every control. */
+html.theme-switching,
+html.theme-switching * {
+  transition: none;
+  animation: none;
+}
+
 /* Active file — subtle left accent bar + distinct bg.
    No font-weight change: it would shift neighbors when selecting. */
 .sidebar-drawer-header {
@@ -409,38 +416,11 @@
   scroll-margin-top: 1.5rem;
 }
 
-/* Drawer mode swap — gentle fade-in for the freshly-mounted content */
-.drawer-mode {
-  animation: drawer-mode-in 180ms var(--ease-out-ui) both;
-}
-
-@keyframes drawer-mode-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-}
-
-/* Document content — fade in when markdown render completes */
-.document-content-in {
-  animation: document-content-in 200ms var(--ease-out-ui) both;
-}
-
-@keyframes document-content-in {
-  from {
-    opacity: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-drawer,
-  .outline-link,
-  .drawer-mode,
-  .document-content-in {
-    transition-duration: 0ms !important;
-    animation: none !important;
+  .outline-link {
+    transition-duration: 0ms;
   }
-  .markdown-body {
+  html {
     scroll-behavior: auto;
   }
 }
@@ -487,7 +467,6 @@
     opacity: 1 !important;
     color: var(--foreground);
     background-color: color-mix(in oklch, var(--muted) 80%, transparent);
-    transform: scale(1.08);
   }
 }
 
@@ -643,45 +622,19 @@
   }
 }
 
-/* ── Sidebar drawer — width transition, gated by motion prefs ── */
-.sidebar-drawer {
-  transition: width 200ms var(--ease-out-ui);
-}
+/* Sidebar / companion drawers change width. Do not transition it: width
+   is a layout property, and ⌘B is a high-frequency keyboard action. */
 
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-drawer {
-    transition-duration: 0ms;
-  }
-}
-
-/* ── Zoom indicator — fade/scale, gated by motion prefs ── */
+/* ── Zoom indicator — occasional, opacity + scale only ── */
 .zoom-indicator {
   transition:
-    opacity 200ms var(--ease-out-ui),
-    transform 200ms var(--ease-out-ui);
+    opacity 150ms var(--ease-out-ui),
+    transform 150ms var(--ease-out-ui);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .zoom-indicator {
-    transition-duration: 0ms;
-  }
-}
-
-/* ── Search bar enter animation ──────────────────────────── */
-.search-bar {
-  animation: search-bar-in 200ms var(--ease-out-ui) both;
-}
-
-@keyframes search-bar-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .search-bar {
-    animation: none;
+    transition: none;
   }
 }
 
@@ -692,10 +645,6 @@ mark.search-highlight {
   border-radius: 3px;
   padding: 0;
   margin: 0;
-  transition:
-    background-color 150ms ease-out,
-    color 150ms ease-out,
-    box-shadow 150ms ease-out;
 }
 
 mark.search-highlight.search-highlight-active {
