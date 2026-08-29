@@ -15,3 +15,4 @@ CLAUDE.local.md
 *.tsbuildinfo
 skills-lock.json
 .audit/
+.verify-mdow/
