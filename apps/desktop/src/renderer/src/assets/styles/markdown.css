@@ -412,6 +412,7 @@
 }
 
 .markdown-body .mermaid-container svg {
+  width: auto;
   max-width: 100%;
   height: auto;
   background: transparent !important;

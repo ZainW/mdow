@@ -43,6 +43,13 @@ function applySvgToElement(el: HTMLElement, svg: string): void {
   if (svgEl) {
     svgEl.style.background = 'transparent'
     svgEl.style.backgroundColor = 'transparent'
+    svgEl.style.maxWidth = '100%'
+    svgEl.style.height = 'auto'
+    svgEl.style.width = 'auto'
+    const width = svgEl.getAttribute('width')
+    if (width === '100%' || width === '100') {
+      svgEl.removeAttribute('width')
+    }
   }
   el.setAttribute('role', 'img')
   if (!el.getAttribute('aria-label')) {

@@ -53,6 +53,7 @@ describe('mermaid theme lock', () => {
     expect(config.themeVariables.lineColor).toBe('#5e5e58')
     expect(config.themeVariables.background).toBe('transparent')
     expect(config.flowchart.htmlLabels).toBe(false)
+    expect(config.flowchart.useMaxWidth).toBe(false)
   })
 
   it('uses teal only as a single accent, not the default node fill', () => {

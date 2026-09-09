@@ -216,7 +216,7 @@ export interface MermaidInitConfig {
     curve: 'linear'
     padding: number
     wrappingWidth: number
-    useMaxWidth: true
+    useMaxWidth: false
   }
 }
 
@@ -237,7 +237,7 @@ export function getMermaidInitConfig(
       curve: 'linear',
       padding: 12,
       wrappingWidth: 200,
-      useMaxWidth: true,
+      useMaxWidth: false,
     },
   }
 }

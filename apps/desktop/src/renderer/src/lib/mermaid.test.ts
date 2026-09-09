@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
   mermaidMock.loadCount = 0
-  mermaidMock.render.mockResolvedValue({ svg: '<svg><text>ok</text></svg>' })
+  mermaidMock.render.mockResolvedValue({ svg: '<svg width="100%"><text>ok</text></svg>' })
   document.body.replaceChildren()
 })
 
@@ -50,6 +50,7 @@ describe('mermaid renderer', () => {
     expect(el.querySelector('svg')).toBeInTheDocument()
     expect(el.querySelector('iframe')).toBeNull()
     expect(el.querySelector('webview')).toBeNull()
+    expect(el.querySelector('svg')?.getAttribute('width')).toBeNull()
     expect(el.getAttribute('role')).toBe('img')
   })
 
