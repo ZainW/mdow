@@ -91,7 +91,7 @@ describe('MarkdownView startup', () => {
     expect(await screen.findByRole('heading', { name: 'Startup' })).toBeInTheDocument()
   })
 
-  it('centers the constrained reading column in the document pane', async () => {
+  it('centers the constrained reading column in the document pane', () => {
     const { container } = render(<MarkdownView tab={tab} />)
     const frame = container.querySelector('[data-reading-frame]')
     const column = container.querySelector('[data-reading-column]')
@@ -99,18 +99,18 @@ describe('MarkdownView startup', () => {
     expect(frame).toHaveClass('justify-center')
     expect(column).toHaveClass('w-full')
     expect(column).toHaveAttribute('role', 'tabpanel')
-    expect((column as HTMLElement).style.maxWidth).toBe('48rem')
+    if (!(column instanceof HTMLElement)) throw new Error('missing reading column')
+    expect(column.style.maxWidth).toBe('48rem')
   })
 
-  it('left-aligns the reading column in wide mode', async () => {
+  it('left-aligns the reading column in wide mode', () => {
     useAppStore.setState({ wideMode: true })
     const { container } = render(<MarkdownView tab={tab} />)
     const frame = container.querySelector('[data-reading-frame]')
-    const column = container.querySelector('[data-reading-column]') as HTMLElement
+    const column = container.querySelector('[data-reading-column]')
 
     expect(frame).toHaveClass('justify-start')
+    if (!(column instanceof HTMLElement)) throw new Error('missing reading column')
     expect(column.style.maxWidth).toBe('')
-
-    useAppStore.setState({ wideMode: false })
   })
 })

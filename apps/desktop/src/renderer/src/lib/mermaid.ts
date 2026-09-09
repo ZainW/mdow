@@ -32,9 +32,7 @@ export function initMermaid(isDark?: boolean): void {
 export function updateMermaidTheme(isDark?: boolean): void {
   mermaidOptions = getMermaidInitConfig(resolveMermaidPaletteId(isDark))
   if (mermaidPromise) {
-    void mermaidPromise.then((mermaid) =>
-      mermaid.initialize(mermaidOptions as Parameters<MermaidApi['initialize']>[0]),
-    )
+    void mermaidPromise.then((mermaid) => mermaid.initialize(mermaidOptions))
   }
 }
 
@@ -59,7 +57,7 @@ async function generateMermaidSvgUncached(
 ): Promise<string> {
   const mermaid = await loadMermaid()
   const options = getMermaidInitConfig(paletteId)
-  mermaid.initialize(options as Parameters<MermaidApi['initialize']>[0])
+  mermaid.initialize(options)
   const { svg } = await mermaid.render(`${blockId}-svg`, code)
   return svg
 }

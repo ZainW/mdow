@@ -45,8 +45,7 @@ describe('mermaid renderer', () => {
 
     expect(mermaidMock.loadCount).toBe(1)
     expect(mermaidMock.initialize).toHaveBeenCalled()
-    const initArg = mermaidMock.initialize.mock.calls[0]?.[0] as { theme?: string }
-    expect(initArg.theme).toBe('base')
+    expect(mermaidMock.initialize).toHaveBeenCalledWith(expect.objectContaining({ theme: 'base' }))
     expect(mermaidMock.render).toHaveBeenCalledWith('diagram-1-svg', 'flowchart TD\n  A --> B')
     expect(el.querySelector('svg')).toBeInTheDocument()
     expect(el.querySelector('iframe')).toBeNull()
