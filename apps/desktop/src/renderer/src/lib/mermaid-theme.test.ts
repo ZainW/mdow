@@ -45,24 +45,34 @@ describe('mermaid theme lock', () => {
     expect(getMermaidPaletteId(root)).toBe('fog-pine')
   })
 
-  it('initializes Mermaid with the base theme, not the stock rainbow themes', () => {
+  it('builds themeVariables from CSS custom properties, not stock Mermaid colors', () => {
     const config = getMermaidInitConfig('light')
-    expect(config.theme).toBe('base')
     expect(config.themeVariables.primaryColor).toBe('#faf9f5')
+    expect(config.themeVariables.mainBkg).toBe('#faf9f5')
+    expect(config.themeVariables.primaryTextColor).toBe('#3b3b3b')
     expect(config.themeVariables.primaryBorderColor).toBe('#d8d7d0')
     expect(config.themeVariables.lineColor).toBe('#5e5e58')
     expect(config.themeVariables.background).toBe('transparent')
+    expect(config.theme).toBe('base')
     expect(config.flowchart.htmlLabels).toBe(false)
     expect(config.flowchart.useMaxWidth).toBe(false)
   })
 
-  it('uses teal only as a single accent, not the default node fill', () => {
+  it('uses teal only as a selection stroke, never as a node or slice fill', () => {
+    const { paperWarm, teal } = MERMAID_PALETTES.light
     const variables = getMermaidThemeVariables(MERMAID_PALETTES.light)
-    expect(variables.primaryColor).not.toBe(MERMAID_PALETTES.light.teal)
-    expect(variables.pie1).toBe(MERMAID_PALETTES.light.teal)
-    expect(variables.pie2).toBe(MERMAID_PALETTES.light.paperWarm)
-    expect(variables.cScale1).toBe(MERMAID_PALETTES.light.teal)
-    expect(variables.cScale0).toBe(MERMAID_PALETTES.light.paperWarm)
+    const fillKeys = Object.entries(variables).filter(
+      ([key]) =>
+        /Color$|Bkg|pie\d+|cScale\d+/.test(key) &&
+        !/Text|Border|line|Font/i.test(key) &&
+        key !== 'background',
+    )
+    expect(variables.primaryColor).toBe(paperWarm)
+    expect(fillKeys.map(([, value]) => value)).not.toContain(teal)
+    const config = getMermaidInitConfig('light')
+    expect(config.themeCSS).toContain(teal)
+    expect(config.themeCSS).toContain('.node.selected')
+    expect(config.themeCSS).toContain(':hover')
   })
 
   it('prefers CSS custom properties when the app theme has set them', () => {

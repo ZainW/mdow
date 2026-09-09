@@ -97,7 +97,7 @@ export function readMermaidTokens(
 }
 
 export function getMermaidThemeVariables(tokens: MermaidTokens): Record<string, string> {
-  const { paper, paperWarm, ink, muted, line, teal, fontFamily, fontSize } = tokens
+  const { paper, paperWarm, ink, muted, line, fontFamily, fontSize } = tokens
   return {
     background: 'transparent',
     fontFamily,
@@ -141,9 +141,9 @@ export function getMermaidThemeVariables(tokens: MermaidTokens): Record<string, 
     altSectionBkgColor: paper,
     gridColor: line,
     cScale0: paperWarm,
-    cScale1: teal,
+    cScale1: paperWarm,
     cScale2: paperWarm,
-    pie1: teal,
+    pie1: paperWarm,
     pie2: paperWarm,
     pie3: paperWarm,
     pie4: paperWarm,
