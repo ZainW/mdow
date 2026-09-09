@@ -27,6 +27,16 @@ write_native_mac_info_plist \
 
 print "PASS: native mac plist supports distinct executable and display names"
 
+make_fake_sparkle_framework() {
+  local framework="$1"
+  mkdir -p "$framework/Versions/B/Updater.app/Contents/MacOS"
+  printf 'sparkle\n' >"$framework/Versions/B/Sparkle"
+  printf 'autoupdate\n' >"$framework/Versions/B/Autoupdate"
+  printf 'updater\n' >"$framework/Versions/B/Updater.app/Contents/MacOS/Updater"
+  ln -s B "$framework/Versions/Current"
+  ln -s Versions/Current/Sparkle "$framework/Sparkle"
+}
+
 PACKAGER="$ROOT_DIR/script/package_gpui_mac_beta.sh"
 
 fail() {
@@ -140,7 +150,7 @@ run_packager() {
   mkdir -p "$case_dir/log" "$case_dir/target" "$case_dir/dist" "$case_dir/tmp"
   make_fakes "$case_dir/fakes"
 
-  env \
+    env \
     -u APPLE_ID \
     -u APPLE_APP_SPECIFIC_PASSWORD \
     -u APPLE_TEAM_ID \
@@ -148,6 +158,9 @@ run_packager() {
     -u CSC_NAME \
     -u KEYCHAIN_PATH \
     -u NATIVE_MAC_CODESIGN_IDENTITY \
+    -u SPARKLE_ED_PUBLIC_KEY \
+    -u SPARKLE_FEED_URL \
+    -u SPARKLE_FRAMEWORK \
     ARCH=arm64 \
     VERSION=1.2.3 \
     GITHUB_RUN_NUMBER=456 \
@@ -209,6 +222,14 @@ info_plist="$app/Contents/Info.plist"
 assert_file "$app/Contents/Resources/MdowNative.icns"
 assert_dir "$app/Contents/Resources/assets/fonts"
 assert_dir "$app/Contents/Resources/assets/icons"
+if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$info_plist" >/dev/null 2>&1; then
+  fail "local ad-hoc package unexpectedly embedded SUFeedURL"
+fi
+if /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$info_plist" >/dev/null 2>&1; then
+  fail "local ad-hoc package unexpectedly embedded SUPublicEDKey"
+fi
+[[ ! -d "$app/Contents/Frameworks/Sparkle.framework" ]] || \
+  fail "local ad-hoc package without a public key unexpectedly bundled Sparkle"
 assert_file "$local_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip"
 assert_file "$local_case/dist/MdowNative-mac-beta.zip"
 assert_contains "$local_case/log/cargo" \
@@ -221,6 +242,33 @@ case "$(<"$local_case/log/verify-assets")" in
   "$ROOT_DIR"/*) fail "asset verification resolved into repository" ;;
 esac
 print "PASS: local package assembles, signs ad-hoc, and validates after extraction"
+
+sparkle_case="$test_dir/sparkle"
+make_fake_sparkle_framework "$sparkle_case/Sparkle.framework"
+run_packager \
+  "$sparkle_case" \
+  arm64 \
+  SPARKLE_ED_PUBLIC_KEY='pfIShU4dEXqPd5ObYNfDBiQWcXozk7estwzTnF9BamQ=' \
+  SPARKLE_FRAMEWORK="$sparkle_case/Sparkle.framework" \
+  >"$sparkle_case.output" 2>&1
+sparkle_app="$sparkle_case/dist/Mdow Native.app"
+sparkle_plist="$sparkle_app/Contents/Info.plist"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$sparkle_plist")" == \
+  "https://github.com/ZainW/mdow/releases/latest/download/appcast-native-mac.xml" ]] || \
+  fail "Sparkle feed URL must be the Native appcast"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$sparkle_plist")" == \
+  "pfIShU4dEXqPd5ObYNfDBiQWcXozk7estwzTnF9BamQ=" ]] || \
+  fail "Sparkle public key was not written"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' "$sparkle_plist")" == "true" ]] || \
+  fail "SUEnableAutomaticChecks must be true"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUAutomaticallyUpdate' "$sparkle_plist")" == "false" ]] || \
+  fail "SUAutomaticallyUpdate must stay false so install waits until ready"
+assert_dir "$sparkle_app/Contents/Frameworks/Sparkle.framework"
+[[ ! -d "$sparkle_app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]] || \
+  fail "Sparkle XPC services must be stripped for the non-sandboxed Native app"
+assert_contains "$sparkle_case/log/codesign" "Sparkle.framework"
+assert_not_contains "$sparkle_case.output" "latest-mac.yml"
+print "PASS: Sparkle framework, Native appcast feed, and EdDSA public key are packaged"
 
 wrong_asset_root_case="$test_dir/wrong-asset-root"
 if run_packager \

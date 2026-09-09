@@ -1,8 +1,8 @@
 use crate::{
     actions::{
-        CloseTab, Dismiss, FindNext, FindPrevious, OpenFile, OpenFolder, SidebarFolder,
-        SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts,
-        ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
+        CheckForUpdates, CloseTab, Dismiss, FindNext, FindPrevious, OpenFile, OpenFolder,
+        SidebarFolder, SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings,
+        ToggleShortcuts, ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
     },
     document::{DocumentError, ParsedDocument, load_source, parse_document},
     overlay::{
@@ -12,13 +12,14 @@ use crate::{
     persist::{SessionRole, StateStore, StoredPrefs},
     prefs::{ColumnWidth, PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
+    sparkle::{self, UpdateUi},
     syntax::prepare_document,
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
     ui::{
         chrome::{
             render_breadcrumb, render_error_banner, render_error_state, render_reload_error_banner,
-            render_sidebar, render_tab_bar, render_titlebar,
+            render_sidebar, render_tab_bar, render_titlebar, render_update_banner,
         },
         reader::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
@@ -269,6 +270,9 @@ pub struct MdowApp {
     file_watcher: FileWatcher,
     _watch_messages: Arc<Mutex<Receiver<WatchMessage>>>,
     _watch_poll_task: Task<()>,
+    update: UpdateUi,
+    update_dismissed: bool,
+    _update_poll_task: Task<()>,
     theme: Theme,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
@@ -354,6 +358,23 @@ impl MdowApp {
         });
 
         let wide_mode = prefs.reader_width.is_full();
+        let update_poll_task = cx.spawn(async move |this, cx| {
+            Timer::after(Duration::from_secs(sparkle::LAUNCH_CHECK_DELAY_SECS)).await;
+            let _ = this.update(cx, |_, _| {
+                sparkle::start();
+            });
+            loop {
+                Timer::after(Duration::from_millis(200)).await;
+                if this
+                    .update(cx, |this, cx| {
+                        this.poll_sparkle(cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         Self {
             model: AppModel::default(),
             sidebar_open: true,
@@ -371,6 +392,9 @@ impl MdowApp {
             file_watcher,
             _watch_messages: watch_messages,
             _watch_poll_task: watch_poll_task,
+            update: UpdateUi::default(),
+            update_dismissed: false,
+            _update_poll_task: update_poll_task,
             theme: Theme::for_appearance(window.appearance()),
             focus_handle,
             _appearance_subscription: appearance_subscription,
@@ -615,8 +639,65 @@ impl MdowApp {
             return;
         }
         self.wide_mode = self.prefs.get().reader_width.is_full();
-        self.overlays.refresh_settings(self.prefs.get(), cx);
+        self.overlays
+            .refresh_settings(self.prefs.get(), self.update.clone(), cx);
         cx.notify();
+    }
+
+    fn poll_sparkle(&mut self, cx: &mut Context<Self>) {
+        let next = sparkle::current_ui();
+        if self.update == next {
+            return;
+        }
+        if next.resets_dismissed() {
+            self.update_dismissed = false;
+        }
+        self.update = next;
+        self.overlays
+            .refresh_settings(self.prefs.get(), self.update.clone(), cx);
+        cx.notify();
+    }
+
+    fn check_for_updates(&mut self, cx: &mut Context<Self>) {
+        self.update_dismissed = false;
+        self.update = self
+            .update
+            .apply(sparkle::UpdateEvent::Checking { manual: true });
+        sparkle::check(true);
+        self.overlays
+            .refresh_settings(self.prefs.get(), self.update.clone(), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn download_update(&mut self, cx: &mut Context<Self>) {
+        if !self.update.can_download() {
+            return;
+        }
+        sparkle::download();
+        cx.notify();
+    }
+
+    pub(crate) fn install_update(&mut self, cx: &mut Context<Self>) {
+        if !self.update.can_install() {
+            return;
+        }
+        sparkle::install();
+        cx.notify();
+    }
+
+    pub(crate) fn dismiss_update_banner(&mut self, cx: &mut Context<Self>) {
+        self.update_dismissed = true;
+        sparkle::dismiss_choice();
+        cx.notify();
+    }
+
+    fn on_check_for_updates(
+        &mut self,
+        _: &CheckForUpdates,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.check_for_updates(cx);
     }
 
     fn toggle_overlay(&mut self, kind: OverlayKind, window: &mut Window, cx: &mut Context<Self>) {
@@ -656,7 +737,9 @@ impl MdowApp {
                 OpenOverlay::palette(view, events)
             }
             OverlayKind::Settings => {
-                let view = cx.new(|cx| SettingsPanel::new(*self.prefs.get(), window, cx));
+                let view = cx.new(|cx| {
+                    SettingsPanel::new(*self.prefs.get(), self.update.clone(), window, cx)
+                });
                 let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
                     this.on_settings_event(event, cx);
                 });
@@ -714,6 +797,7 @@ impl MdowApp {
             CommandId::FindInDocument => self.toggle_overlay(OverlayKind::Find, window, cx),
             CommandId::OpenSettings => self.toggle_overlay(OverlayKind::Settings, window, cx),
             CommandId::OpenShortcuts => self.toggle_overlay(OverlayKind::Shortcuts, window, cx),
+            CommandId::CheckForUpdates => self.check_for_updates(cx),
         }
     }
 
@@ -784,6 +868,9 @@ impl MdowApp {
     fn on_settings_event(&mut self, event: &SettingsEvent, cx: &mut Context<Self>) {
         match event {
             SettingsEvent::Edited(edit) => self.apply_pref(*edit, cx),
+            SettingsEvent::CheckForUpdates => self.check_for_updates(cx),
+            SettingsEvent::DownloadUpdate => self.download_update(cx),
+            SettingsEvent::InstallUpdate => self.install_update(cx),
             SettingsEvent::Dismissed => {
                 self.overlays.close(None);
                 cx.notify();
@@ -1275,6 +1362,7 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::on_toggle_palette))
             .on_action(cx.listener(Self::on_toggle_settings))
             .on_action(cx.listener(Self::on_toggle_shortcuts))
+            .on_action(cx.listener(Self::on_check_for_updates))
             .on_action(cx.listener(Self::on_dismiss))
             .on_action(cx.listener(Self::on_find_next))
             .on_action(cx.listener(Self::on_find_previous))
@@ -1328,6 +1416,11 @@ impl Render for MdowApp {
                             .child(breadcrumb)
                             .child(content),
                     ),
+            )
+            .children(
+                (!self.update_dismissed)
+                    .then(|| render_update_banner(self.theme, &self.update, cx))
+                    .flatten(),
             )
             .children(self.overlays.render_layer(self.theme))
     }

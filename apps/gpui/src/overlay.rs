@@ -5,6 +5,7 @@ use crate::prefs::{
     READER_LINE_HEIGHT, ThemeMode,
 };
 use crate::session::Recents;
+use crate::sparkle::UpdateUi;
 use crate::syntax::PreparedDocument;
 use crate::theme::{ColorScheme, Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
@@ -117,9 +118,9 @@ impl OverlayHost {
         }
     }
 
-    pub fn refresh_settings(&self, prefs: &Prefs, cx: &mut App) {
+    pub fn refresh_settings(&self, prefs: &Prefs, update: UpdateUi, cx: &mut App) {
         if let Some(OverlayView::Settings(view)) = self.open.as_ref().map(|open| &open.view) {
-            view.update(cx, |panel, cx| panel.refresh(*prefs, cx));
+            view.update(cx, |panel, cx| panel.refresh(*prefs, update, cx));
         }
     }
 
@@ -443,6 +444,7 @@ pub enum CommandId {
     FindInDocument,
     OpenSettings,
     OpenShortcuts,
+    CheckForUpdates,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -553,6 +555,12 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             id: CommandId::OpenShortcuts,
             title: "Keyboard Shortcuts",
             keys: Some("⌘/"),
+        },
+        #[cfg(target_os = "macos")]
+        CommandSpec {
+            id: CommandId::CheckForUpdates,
+            title: "Check for Updates",
+            keys: None,
         },
     ]
 }
@@ -890,28 +898,39 @@ fn palette_row(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SettingsEvent {
     Edited(PrefEdit),
+    CheckForUpdates,
+    DownloadUpdate,
+    InstallUpdate,
     Dismissed,
 }
 
 pub struct SettingsPanel {
     prefs: Prefs,
+    update: UpdateUi,
     focus_handle: FocusHandle,
 }
 
 impl EventEmitter<SettingsEvent> for SettingsPanel {}
 
 impl SettingsPanel {
-    pub fn new(prefs: Prefs, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        prefs: Prefs,
+        update: UpdateUi,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window);
         Self {
             prefs,
+            update,
             focus_handle,
         }
     }
 
-    pub fn refresh(&mut self, prefs: Prefs, cx: &mut Context<Self>) {
+    pub fn refresh(&mut self, prefs: Prefs, update: UpdateUi, cx: &mut Context<Self>) {
         self.prefs = prefs;
+        self.update = update;
         cx.notify();
     }
 }
@@ -1105,6 +1124,9 @@ impl Render for SettingsPanel {
                             .child(chip("Reset", false, PrefEdit::ZoomReset, theme, cx)),
                     ),
             )
+            .when(cfg!(target_os = "macos"), |panel| {
+                panel.child(settings_updates(self.update.clone(), theme, cx))
+            })
             .child(chip(
                 "Reset all settings",
                 false,
@@ -1158,6 +1180,62 @@ fn settings_heading(title: &'static str, theme: Theme) -> impl IntoElement {
         .child(title)
 }
 
+fn settings_updates(
+    update: UpdateUi,
+    theme: Theme,
+    cx: &mut Context<SettingsPanel>,
+) -> impl IntoElement {
+    let status = match &update {
+        UpdateUi::Idle => "Checks run quietly in the background.".to_owned(),
+        UpdateUi::Checking { .. } => "Checking for updates…".into(),
+        UpdateUi::Available { version } => format!("Mdow Native {version} is available"),
+        UpdateUi::Downloading { percent, .. } => format!("Downloading update… {percent}%"),
+        UpdateUi::Ready { .. } => "Update ready. Restart to apply.".into(),
+        UpdateUi::UpToDate { .. } => "You're on the latest version".into(),
+        UpdateUi::Failed { .. } => "Couldn't check for updates. Try again later.".into(),
+    };
+    let mut actions = div().flex().gap(px(6.0)).child(action_chip(
+        "Check for updates",
+        "settings-check-updates",
+        theme,
+        SettingsEvent::CheckForUpdates,
+        cx,
+    ));
+    if update.can_download() {
+        actions = actions.child(action_chip(
+            "Download",
+            "settings-download-update",
+            theme,
+            SettingsEvent::DownloadUpdate,
+            cx,
+        ));
+    }
+    if update.can_install() {
+        actions = actions.child(action_chip(
+            "Restart",
+            "settings-install-update",
+            theme,
+            SettingsEvent::InstallUpdate,
+            cx,
+        ));
+    }
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(6.0))
+        .pt(px(4.0))
+        .border_t_1()
+        .border_color(theme.border_subtle)
+        .child(div().text_color(theme.muted_foreground).child("Updates"))
+        .child(
+            div()
+                .text_color(theme.muted_foreground)
+                .text_size(px(11.0))
+                .child(status),
+        )
+        .child(actions)
+}
+
 fn seg_row<const N: usize>(
     label: &'static str,
     options: [(&'static str, bool, PrefEdit); N],
@@ -1205,6 +1283,29 @@ fn chip(
         })
         .cursor_pointer()
         .on_click(cx.listener(move |_, _, _, cx| cx.emit(SettingsEvent::Edited(edit))))
+        .child(label)
+}
+
+fn action_chip(
+    label: &'static str,
+    id: &'static str,
+    theme: Theme,
+    event: SettingsEvent,
+    cx: &mut Context<SettingsPanel>,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .debug_selector(move || id.to_string())
+        .px(px(8.0))
+        .h(px(28.0))
+        .flex()
+        .items_center()
+        .rounded(px(6.0))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.card)
+        .cursor_pointer()
+        .on_click(cx.listener(move |_, _, _, cx| cx.emit(event)))
         .child(label)
 }
 

@@ -1,0 +1,5 @@
+# Replace this file with the one-line base64 public EdDSA key from Sparkle's
+# generate_keys. Leave empty until keys exist. Packaging omits SUPublicEDKey
+# when this file has no key, which disables in-app updates.
+#
+# See apps/gpui/sparkle/README.md.
