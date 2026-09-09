@@ -79,11 +79,22 @@ jobs:
 
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"
 
           echo "=== Available signing identities ==="
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "Using CSC_NAME=$IDENTITY"
 
       - name: Ensure draft GitHub release exists
         shell: bash
@@ -99,12 +110,27 @@ jobs:
             gh release create "$TAG" --draft --title "$TAG" --notes "" 2>/dev/null || true
           fi
 
+      # Windows/Linux: CSC_LINK is unused. Do not pass it on mac — electron-builder
+      # 26.15.x (issue 10066) re-imports CSC_LINK into a temp keychain, then calls
+      # set-key-partition-list with the .p12 password instead of the keychain password.
       - name: Build and publish
+        if: matrix.platform != 'mac'
         run: pnpm run --filter desktop publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build and publish (mac)
+        if: matrix.platform == 'mac'
+        run: pnpm run --filter desktop publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
+          CSC_NAME: ${{ env.CSC_NAME }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
