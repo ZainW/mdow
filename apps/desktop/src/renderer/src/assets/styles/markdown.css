@@ -13,7 +13,7 @@
 }
 
 @supports (content-visibility: auto) {
-  .markdown-body > * {
+  .markdown-body > *:not(.mermaid):not(.mermaid-container) {
     content-visibility: auto;
     contain-intrinsic-size: auto 2.5rem;
   }
@@ -401,17 +401,112 @@
 }
 
 /* ── Mermaid Diagrams ── */
+/* In-process SVG (no iframe / WebView). Visual lock: ink on paper. */
 
 .markdown-body .mermaid-container {
   display: flex;
   justify-content: center;
   margin: 1.5em 0;
   overflow-x: auto;
+  background: transparent;
 }
 
 .markdown-body .mermaid-container svg {
   max-width: 100%;
   height: auto;
+  background: transparent !important;
+  font-family: var(--md-diagram-font);
+  font-size: var(--md-diagram-font-size);
+}
+
+.markdown-body .mermaid-container svg .node rect,
+.markdown-body .mermaid-container svg .node polygon,
+.markdown-body .mermaid-container svg .node circle,
+.markdown-body .mermaid-container svg .node ellipse,
+.markdown-body .mermaid-container svg .node path,
+.markdown-body .mermaid-container svg .actor,
+.markdown-body .mermaid-container svg .actor-box,
+.markdown-body .mermaid-container svg .classGroup rect,
+.markdown-body .mermaid-container svg .labelBox,
+.markdown-body .mermaid-container svg .note,
+.markdown-body .mermaid-container svg .note rect,
+.markdown-body .mermaid-container svg .statediagram-state rect,
+.markdown-body .mermaid-container svg .er.entityBox {
+  fill: var(--md-paper-warm) !important;
+  stroke: var(--md-line) !important;
+  stroke-width: 1px !important;
+  filter: none !important;
+}
+
+.markdown-body .mermaid-container svg .node rect,
+.markdown-body .mermaid-container svg .actor,
+.markdown-body .mermaid-container svg .classGroup rect,
+.markdown-body .mermaid-container svg .labelBox,
+.markdown-body .mermaid-container svg .note rect,
+.markdown-body .mermaid-container svg .statediagram-state rect,
+.markdown-body .mermaid-container svg .er.entityBox {
+  rx: var(--md-diagram-radius);
+  ry: var(--md-diagram-radius);
+}
+
+.markdown-body .mermaid-container svg .edgePath .path,
+.markdown-body .mermaid-container svg .flowchart-link,
+.markdown-body .mermaid-container svg .messageLine0,
+.markdown-body .mermaid-container svg .messageLine1,
+.markdown-body .mermaid-container svg .transition,
+.markdown-body .mermaid-container svg .relation,
+.markdown-body .mermaid-container svg .loopLine {
+  stroke: var(--md-ink-muted) !important;
+  stroke-width: 1px !important;
+  fill: none !important;
+}
+
+.markdown-body .mermaid-container svg marker path,
+.markdown-body .mermaid-container svg .arrowheadPath {
+  fill: var(--md-ink-muted) !important;
+  stroke: var(--md-ink-muted) !important;
+}
+
+.markdown-body .mermaid-container svg .cluster rect {
+  fill: transparent !important;
+  stroke: var(--md-line) !important;
+  stroke-width: 1px !important;
+}
+
+.markdown-body .mermaid-container svg .label,
+.markdown-body .mermaid-container svg .nodeLabel,
+.markdown-body .mermaid-container svg .edgeLabel,
+.markdown-body .mermaid-container svg .messageText,
+.markdown-body .mermaid-container svg .loopText,
+.markdown-body .mermaid-container svg .noteText,
+.markdown-body .mermaid-container svg .titleText,
+.markdown-body .mermaid-container svg text,
+.markdown-body .mermaid-container svg foreignObject,
+.markdown-body .mermaid-container svg foreignObject div,
+.markdown-body .mermaid-container svg foreignObject span {
+  font-family: var(--md-diagram-font) !important;
+  font-size: var(--md-diagram-font-size) !important;
+  fill: var(--md-ink) !important;
+  color: var(--md-ink) !important;
+  background: transparent !important;
+}
+
+.markdown-body .mermaid-container svg .edgeLabel rect,
+.markdown-body .mermaid-container svg .labelBkg {
+  fill: var(--md-paper) !important;
+  stroke: none !important;
+  filter: none !important;
+}
+
+.markdown-body .mermaid-container svg .node.selected > rect,
+.markdown-body .mermaid-container svg .node.selected > polygon,
+.markdown-body .mermaid-container svg .node.selected > circle,
+.markdown-body .mermaid-container svg .node:hover > rect,
+.markdown-body .mermaid-container svg .node:hover > polygon,
+.markdown-body .mermaid-container svg .node:hover > circle,
+.markdown-body .mermaid-container svg .node:hover > ellipse,
+.markdown-body .mermaid-container svg .node:focus-within > rect {
+  stroke: var(--md-teal) !important;
 }
 
 .markdown-body .mermaid-error {
