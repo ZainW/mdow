@@ -11,6 +11,67 @@ copy_native_mac_resources() {
   cp "$icon_source" "$resources_dir/$app_name.icns"
 }
 
+read_sparkle_public_ed_key() {
+  local key_file="$1"
+  if [[ -n "${SPARKLE_ED_PUBLIC_KEY:-}" ]]; then
+    printf '%s' "$SPARKLE_ED_PUBLIC_KEY" | tr -d '[:space:]'
+    return
+  fi
+  if [[ ! -f "$key_file" ]]; then
+    return 0
+  fi
+  awk 'NF && $1 !~ /^#/' "$key_file" | head -n 1 | tr -d '[:space:]'
+}
+
+sparkle_feed_url() {
+  printf '%s\n' "${SPARKLE_FEED_URL:-https://github.com/ZainW/mdow/releases/latest/download/appcast-native-mac.xml}"
+}
+
+copy_sparkle_framework() {
+  local source_framework="$1"
+  local app_contents="$2"
+  local ditto_bin="${3:-ditto}"
+  local frameworks_dir="$app_contents/Frameworks"
+  local dest="$frameworks_dir/Sparkle.framework"
+
+  if [[ ! -d "$source_framework" ]]; then
+    echo "Sparkle.framework not found at $source_framework" >&2
+    return 1
+  fi
+  mkdir -p "$frameworks_dir"
+  rm -rf -- "$dest"
+  "$ditto_bin" "$source_framework" "$dest"
+  rm -rf -- "$dest/Versions/B/XPCServices" "$dest/Versions/Current/XPCServices"
+}
+
+sign_sparkle_framework() {
+  local framework="$1"
+  local identity="$2"
+  local codesign_bin="${3:-codesign}"
+  local inner="$framework/Versions/Current"
+  if [[ ! -d "$inner" ]]; then
+    inner="$framework/Versions/B"
+  fi
+
+  local sign_args=(--force --options runtime --sign "$identity")
+  if [[ "$identity" != "-" ]]; then
+    sign_args=(--force --timestamp --options runtime --sign "$identity")
+  fi
+
+  if [[ -e "$inner/Autoupdate" ]]; then
+    if [[ "$identity" != "-" ]]; then
+      "$codesign_bin" --force --timestamp --options runtime --preserve-metadata=entitlements \
+        --sign "$identity" "$inner/Autoupdate"
+    else
+      "$codesign_bin" --force --options runtime --sign - "$inner/Autoupdate"
+    fi
+  fi
+  if [[ -d "$inner/Updater.app" ]]; then
+    "$codesign_bin" "${sign_args[@]}" "$inner/Updater.app"
+  fi
+  "$codesign_bin" "${sign_args[@]}" "$framework"
+}
+
 write_native_mac_info_plist() {
   local plist_path="$1"
   local executable_name="$2"
@@ -19,6 +80,8 @@ write_native_mac_info_plist() {
   local min_system_version="$5"
   local version="${6:-}"
   local build_number="${7:-}"
+  local sparkle_feed="${8:-}"
+  local sparkle_public_ed_key="${9:-}"
 
   {
     cat <<PLIST
@@ -65,6 +128,26 @@ PLIST
   <string>NSApplication</string>
   <key>NSQuitAlwaysKeepsWindows</key>
   <false/>
+PLIST
+
+    if [[ -n "$sparkle_public_ed_key" ]]; then
+      cat <<PLIST
+  <key>SUFeedURL</key>
+  <string>$sparkle_feed</string>
+  <key>SUPublicEDKey</key>
+  <string>$sparkle_public_ed_key</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
+  <key>SUShowReleaseNotes</key>
+  <false/>
+  <key>SUScheduledCheckInterval</key>
+  <integer>86400</integer>
+PLIST
+    fi
+
+    cat <<PLIST
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>

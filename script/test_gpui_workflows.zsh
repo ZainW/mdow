@@ -15,6 +15,8 @@ PACKAGE_JSON="$ROOT_DIR/package.json"
   exit 1
 }
 
+bash "$ROOT_DIR/script/fetch_sparkle.sh" --self-test
+
 ruby - "$WORKFLOW" "$RELEASE_WORKFLOW" "$PACKAGE_JSON" <<'RUBY'
 require 'json'
 require 'fileutils'
@@ -161,6 +163,8 @@ required_paths = [
   'script/test_package_gpui_mac_beta.zsh',
   'script/test_package_gpui_linux_beta.sh',
   'script/test_gpui_workflows.zsh',
+  'script/fetch_sparkle.sh',
+  'script/generate_native_mac_appcast.sh',
   '.github/workflows/gpui.yml',
   '.github/workflows/release.yml',
   'package.json',
@@ -474,6 +478,31 @@ assert(
     'gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber',
   ),
   'gpui-mac-beta must upload MdowNative GPUI ZIPs to the GitHub release',
+)
+appcast_generate = gpui_steps.find { |step| step['name'] == 'Generate Native Sparkle appcast' }
+assert(!appcast_generate.nil?, 'gpui-mac-beta must generate a Native Sparkle appcast')
+assert(
+  appcast_generate['run'].to_s.include?('script/generate_native_mac_appcast.sh'),
+  'gpui-mac-beta must run script/generate_native_mac_appcast.sh',
+)
+assert(
+  appcast_generate.dig('env', 'SPARKLE_PRIVATE_ED_KEY') == '${{ secrets.SPARKLE_PRIVATE_ED_KEY }}',
+  'gpui-mac-beta must pass SPARKLE_PRIVATE_ED_KEY only to appcast generation',
+)
+assert(
+  !gpui_package.fetch('env').key?('SPARKLE_PRIVATE_ED_KEY'),
+  'the Native zip packager must not receive the Sparkle private key',
+)
+appcast_upload = gpui_steps.find { |step| step['name'] == 'Upload Native Sparkle appcast' }
+assert(!appcast_upload.nil?, 'gpui-mac-beta must upload the Native Sparkle appcast')
+assert(
+  appcast_upload['run'].to_s.include?('dist/gpui-mac/appcast-native-mac.xml'),
+  'gpui-mac-beta must upload appcast-native-mac.xml to the GitHub release',
+)
+assert(
+  gpui_steps.index(release_archive_check) < gpui_steps.index(appcast_generate) &&
+    gpui_steps.index(appcast_generate) < gpui_steps.index(appcast_upload),
+  'gpui-mac-beta must generate the appcast after verifying ZIPs and before uploading it',
 )
 github_upload_line = github_release_upload.fetch('run').lines.map(&:strip).find do |line|
   Shellwords.shellsplit(line).first(3) == %w[gh release upload]

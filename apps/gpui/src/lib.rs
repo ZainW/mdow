@@ -7,6 +7,7 @@ pub mod overlay;
 pub mod persist;
 pub mod prefs;
 pub mod session;
+pub mod sparkle;
 pub mod syntax;
 pub mod tabs;
 pub mod theme;

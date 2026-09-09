@@ -4,6 +4,7 @@ use crate::{
     overlay::OverlayKind,
     prefs::SidebarMode,
     session::Recents,
+    sparkle::UpdateUi,
     tabs::DocumentTab,
     theme::{Metrics, Theme, TitlebarLayout},
     ui::{
@@ -1093,6 +1094,68 @@ pub fn render_reload_error_banner(
                 )),
         )
         .into_any_element()
+}
+
+pub fn render_update_banner(
+    theme: Theme,
+    update: &UpdateUi,
+    cx: &Context<MdowApp>,
+) -> Option<AnyElement> {
+    let copy = update.banner_copy()?;
+    let action = update.action_label();
+    let mut row = div()
+        .id("update-banner")
+        .debug_selector(|| "update-banner".into())
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .px(px(12.0))
+        .py(px(6.0))
+        .flex_none()
+        .border_t_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.muted.opacity(0.45))
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(11.0))
+        .text_color(theme.muted_foreground)
+        .child(div().min_w_0().flex_grow().truncate().child(copy));
+    if let Some(label) = action {
+        let event_download = update.can_download();
+        row = row.child(
+            div()
+                .id("update-banner-action")
+                .debug_selector(|| "update-banner-action".into())
+                .px(px(8.0))
+                .h(px(22.0))
+                .flex()
+                .items_center()
+                .rounded(px(5.0))
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.card)
+                .text_color(theme.foreground)
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if event_download {
+                        this.download_update(cx);
+                    } else {
+                        this.install_update(cx);
+                    }
+                }))
+                .child(label),
+        );
+    }
+    Some(
+        row.child(compact_icon_button(
+            "update-banner-dismiss",
+            "icons/x.svg",
+            22.0,
+            12.0,
+            theme,
+            cx.listener(|this, _, _, cx| this.dismiss_update_banner(cx)),
+        ))
+        .into_any_element(),
+    )
 }
 
 pub fn render_error_state(

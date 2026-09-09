@@ -3,6 +3,8 @@ use gpui::{
     App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType,
     TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, point, px, size,
 };
+#[cfg(target_os = "macos")]
+use mdow_gpui::actions::CheckForUpdates;
 use mdow_gpui::{
     actions::{
         CloseTab, Dismiss, FindNext, FindPrevious, NewWindow, OpenFile, OpenFolder, Quit,
@@ -55,14 +57,20 @@ fn default_window_title() -> &'static str {
 }
 
 fn app_menus() -> Vec<Menu> {
+    let mut app_items = vec![
+        MenuItem::os_submenu("Services", SystemMenuType::Services),
+        MenuItem::separator(),
+    ];
+    #[cfg(target_os = "macos")]
+    {
+        app_items.push(MenuItem::action("Check for Updates…", CheckForUpdates));
+        app_items.push(MenuItem::separator());
+    }
+    app_items.push(MenuItem::action("Quit Mdow Native", Quit));
     vec![
         Menu {
             name: "Mdow Native".into(),
-            items: vec![
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
-                MenuItem::separator(),
-                MenuItem::action("Quit Mdow Native", Quit),
-            ],
+            items: app_items,
         },
         Menu {
             name: "File".into(),
@@ -278,11 +286,28 @@ mod tests {
             OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"
         ));
         assert!(matches!(menus[0].items[1], OwnedMenuItem::Separator));
-        assert!(matches!(
-            &menus[0].items[2],
-            OwnedMenuItem::Action { name, action, .. }
-                if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
-        ));
+        #[cfg(target_os = "macos")]
+        {
+            assert!(matches!(
+                &menus[0].items[2],
+                OwnedMenuItem::Action { name, action, .. }
+                    if name == "Check for Updates…" && action.as_any().is::<CheckForUpdates>()
+            ));
+            assert!(matches!(menus[0].items[3], OwnedMenuItem::Separator));
+            assert!(matches!(
+                &menus[0].items[4],
+                OwnedMenuItem::Action { name, action, .. }
+                    if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
+            ));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(matches!(
+                &menus[0].items[2],
+                OwnedMenuItem::Action { name, action, .. }
+                    if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
+            ));
+        }
 
         let file_actions = menus[1]
             .items

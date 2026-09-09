@@ -138,6 +138,22 @@ cp -R "$ROOT_DIR/apps/gpui/assets" "$APP_CONTENTS/Resources/assets"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
+SPARKLE_PUBLIC_ED_KEY="$(read_sparkle_public_ed_key "$ROOT_DIR/apps/gpui/sparkle/public-ed-key.txt")"
+SPARKLE_FEED="$(sparkle_feed_url)"
+SPARKLE_FRAMEWORK="${SPARKLE_FRAMEWORK:-$ROOT_DIR/apps/gpui/vendor/Sparkle/Sparkle.framework}"
+DID_EMBED_SPARKLE=false
+if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
+    bash "$ROOT_DIR/script/fetch_sparkle.sh"
+  fi
+  if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
+    echo "Sparkle.framework is required when SUPublicEDKey is set: $SPARKLE_FRAMEWORK" >&2
+    exit 1
+  fi
+  copy_sparkle_framework "$SPARKLE_FRAMEWORK" "$APP_CONTENTS" "$DITTO"
+  DID_EMBED_SPARKLE=true
+fi
+
 write_native_mac_info_plist \
   "$INFO_PLIST" \
   "$EXECUTABLE_NAME" \
@@ -145,7 +161,9 @@ write_native_mac_info_plist \
   "$BUNDLE_ID" \
   "$MIN_SYSTEM_VERSION" \
   "$VERSION" \
-  "$BUILD_NUMBER"
+  "$BUILD_NUMBER" \
+  "$SPARKLE_FEED" \
+  "$SPARKLE_PUBLIC_ED_KEY"
 
 resolve_signing_identity() {
   if [[ -n "${NATIVE_MAC_CODESIGN_IDENTITY:-}" ]]; then
@@ -176,8 +194,14 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
 fi
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  if [[ "$DID_EMBED_SPARKLE" == "true" ]]; then
+    sign_sparkle_framework "$APP_CONTENTS/Frameworks/Sparkle.framework" "-" "$CODESIGN"
+  fi
   "$CODESIGN" --force --options runtime --sign - "$APP_BUNDLE"
 else
+  if [[ "$DID_EMBED_SPARKLE" == "true" ]]; then
+    sign_sparkle_framework "$APP_CONTENTS/Frameworks/Sparkle.framework" "$SIGNING_IDENTITY" "$CODESIGN"
+  fi
   "$CODESIGN" --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
 fi
 "$CODESIGN" --verify --deep --strict --verbose=2 "$APP_BUNDLE"
@@ -239,6 +263,19 @@ assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleIdentifier "$BUNDLE_ID"
 assert_plist_value "$EXTRACTED_INFO_PLIST" LSMinimumSystemVersion "$MIN_SYSTEM_VERSION"
 assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleShortVersionString "$VERSION"
 assert_plist_value "$EXTRACTED_INFO_PLIST" CFBundleVersion "$BUILD_NUMBER"
+if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  assert_plist_value "$EXTRACTED_INFO_PLIST" SUFeedURL "$SPARKLE_FEED"
+  assert_plist_value "$EXTRACTED_INFO_PLIST" SUPublicEDKey "$SPARKLE_PUBLIC_ED_KEY"
+  assert_plist_value "$EXTRACTED_INFO_PLIST" SUEnableAutomaticChecks "true"
+  if [[ ! -d "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework" ]]; then
+    echo "Extracted GPUI Mac beta is missing Sparkle.framework." >&2
+    exit 1
+  fi
+  if [[ -d "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]]; then
+    echo "Non-sandboxed Native builds must strip Sparkle XPC services." >&2
+    exit 1
+  fi
+fi
 "$CODESIGN" --verify --deep --strict --verbose=2 "$EXTRACTED_APP"
 EXTRACTED_ARCHS="$("$LIPO" -archs "$EXTRACTED_BINARY")"
 if [[ "$EXTRACTED_ARCHS" != "arm64" ]]; then

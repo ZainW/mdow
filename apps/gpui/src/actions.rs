@@ -22,6 +22,7 @@ actions!(
         ZoomReset,
         SidebarRecents,
         SidebarFolder,
-        SidebarOutline
+        SidebarOutline,
+        CheckForUpdates
     ]
 );

@@ -211,6 +211,11 @@ jobs:
           test -f "dist/gpui-mac/MdowNative-$VERSION-arm64-mac-beta.zip"
           test -f dist/gpui-mac/MdowNative-mac-beta.zip
 
+      - name: Generate Native Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: VERSION="${GITHUB_REF_NAME#v}" bash script/generate_native_mac_appcast.sh
+
       - name: Upload GPUI Mac beta workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -232,6 +237,17 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber
+
+      - name: Upload Native Sparkle appcast
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ -f dist/gpui-mac/appcast-native-mac.xml ]]; then
+            gh release upload "$TAG" dist/gpui-mac/appcast-native-mac.xml --clobber
+          else
+            echo "No Native appcast to upload (SPARKLE_PRIVATE_ED_KEY unset or generate skipped)."
+          fi
 
       - name: Clean up keychain
         if: ${{ always() }}
