@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "private": true,
   "description": "A quiet place to read markdown",
   "author": "Zain Wania",
@@ -65,7 +65,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.2.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.16.1",
     "electron-vite": "^5.0.0",
     "jsdom": "^30.0.1",
     "oxfmt": "^0.67.0",

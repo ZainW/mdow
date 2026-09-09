@@ -6,13 +6,25 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.9.2</title>
+      <link>https://mdow.wania.app/changelog#v1-9-2</link>
+      <guid isPermaLink="false">v1.9.2</guid>
+      <pubDate>Wed, 09 Sep 2026 15:20:19 GMT</pubDate>
+      <description>Latest release.
+
+- Fixed Mac Electron release signing so the `.dmg` and `.zip` publish after electron-builder 26.15.3 failed to unlock its temporary keychain
+- v1.9.1 published Windows, Linux, and Native beta artifacts; the Mac Electron app did not
+- Centered the reading column and rendered Mermaid as ink-on-paper SVG
+- Mac Native includes a Sparkle updater (disabled until signing keys are added)
+- Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
+-</description>
+    </item>
+    <item>
       <title>v1.9.1</title>
       <link>https://mdow.wania.app/changelog#v1-9-1</link>
       <guid isPermaLink="false">v1.9.1</guid>
       <pubDate>Wed, 09 Sep 2026 13:37:05 GMT</pubDate>
-      <description>Latest release.
-
-- Centered the reading column and rendered Mermaid as ink-on-paper SVG
+      <description>- Centered the reading column and rendered Mermaid as ink-on-paper SVG
 - Mac Native includes a Sparkle updater (disabled until signing keys are added)
 - Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
 - Upgraded desktop and website dependencies, including Electron 44 and Wrangler</description>

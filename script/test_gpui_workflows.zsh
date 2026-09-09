@@ -306,8 +306,29 @@ assert(
 )
 electron_publish = electron_steps.find { |step| step['name'] == 'Build and publish' }
 assert(
-  electron_publish && electron_publish['run'] == 'pnpm run --filter desktop publish',
-  'Electron release must keep the desktop publish command',
+  electron_publish &&
+    electron_publish['if'] == "matrix.platform != 'mac'" &&
+    electron_publish['run'] == 'pnpm run --filter desktop publish',
+  'Electron release must keep the desktop publish command for Windows and Linux',
+)
+electron_publish_mac = electron_steps.find { |step| step['name'] == 'Build and publish (mac)' }
+assert(
+  electron_publish_mac &&
+    electron_publish_mac['if'] == "matrix.platform == 'mac'" &&
+    electron_publish_mac['run'] == 'pnpm run --filter desktop publish',
+  'Electron mac publish must keep the desktop publish command',
+)
+assert(
+  electron_certificate['run'].include?('echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"') &&
+    electron_certificate['run'].include?('echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"'),
+  'Electron certificate import must export CSC_KEYCHAIN and CSC_NAME',
+)
+assert(
+  electron_publish_mac.dig('env', 'CSC_KEYCHAIN') == '${{ env.KEYCHAIN_PATH }}' &&
+    electron_publish_mac.dig('env', 'CSC_NAME') == '${{ env.CSC_NAME }}' &&
+    !electron_publish_mac.dig('env')&.key?('CSC_LINK') &&
+    !electron_publish_mac.dig('env')&.key?('CSC_KEY_PASSWORD'),
+  'Electron mac publish must use the pre-imported keychain and must not re-import CSC_LINK',
 )
 
 gpui_job = release_jobs.fetch('gpui-mac-beta')
