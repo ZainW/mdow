@@ -320,8 +320,9 @@ assert(
 )
 assert(
   electron_certificate['run'].include?('echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"') &&
-    electron_certificate['run'].include?('echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"'),
-  'Electron certificate import must export CSC_KEYCHAIN and CSC_NAME',
+    electron_certificate['run'].include?('echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"') &&
+    electron_certificate['run'].include?('${IDENTITY#Developer ID Application:}'),
+  'Electron certificate import must export CSC_KEYCHAIN and CSC_NAME without the Developer ID prefix',
 )
 assert(
   electron_publish_mac.dig('env', 'CSC_KEYCHAIN') == '${{ env.KEYCHAIN_PATH }}' &&

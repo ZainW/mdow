@@ -5,9 +5,19 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.9.2
+## v1.9.3
 
 Latest release.
+
+- Fixed Mac Electron `CSC_NAME` so electron-builder no longer rejects the `Developer ID Application:` prefix that blocked v1.9.2
+- v1.9.2 published Windows, Linux, and Native beta artifacts; the Mac Electron app did not
+- Fixed Mac Electron release signing so the `.dmg` and `.zip` publish after electron-builder 26.15.3 failed to unlock its temporary keychain
+- Centered the reading column and rendered Mermaid as ink-on-paper SVG
+- Mac Native includes a Sparkle updater (disabled until signing keys are added)
+- Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
+- Upgraded desktop and website dependencies, including Electron 44 and Wrangler
+
+## v1.9.2
 
 - Fixed Mac Electron release signing so the `.dmg` and `.zip` publish after electron-builder 26.15.3 failed to unlock its temporary keychain
 - v1.9.1 published Windows, Linux, and Native beta artifacts; the Mac Electron app did not
