@@ -15,6 +15,8 @@ PACKAGE_JSON="$ROOT_DIR/package.json"
   exit 1
 }
 
+bash "$ROOT_DIR/script/fetch_sparkle.sh" --self-test
+
 ruby - "$WORKFLOW" "$RELEASE_WORKFLOW" "$PACKAGE_JSON" <<'RUBY'
 require 'json'
 require 'fileutils'

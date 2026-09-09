@@ -9,6 +9,8 @@ description: What's new in Mdow
 
 Latest release.
 
+- Centered the reading column and rendered Mermaid as ink-on-paper SVG
+- Mac Native includes a Sparkle updater (disabled until signing keys are added)
 - Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
 - Upgraded desktop and website dependencies, including Electron 44 and Wrangler
 

@@ -43,4 +43,4 @@ Until the public key file is non-empty, packaging omits Sparkle keys and in-app 
 
 ## CI fetch
 
-`script/fetch_sparkle.sh` downloads Sparkle **2.9.6** (`Sparkle-2.9.6.tar.xz`) from GitHub Releases and verifies `sha256:52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192`. The framework is not vendored in git (`apps/gpui/vendor/` is gitignored). Mac CI `build.rs` fetches it before compiling the ObjC bridge.
+`script/fetch_sparkle.sh` downloads Sparkle **2.9.6** (`Sparkle-2.9.6.tar.xz`) from GitHub Releases and verifies `sha256:52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192`. It copies the **root** `Sparkle.framework` (the one with `Headers/Sparkle.h`), not the nested copy inside Sparkle Test App.app. The framework is not vendored in git (`apps/gpui/vendor/` is gitignored). Mac CI `build.rs` fetches it before compiling the ObjC bridge.
