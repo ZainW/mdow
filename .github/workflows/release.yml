@@ -81,6 +81,11 @@ jobs:
 
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
             | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          # electron-builder CSC_NAME must not include this prefix — it chooses
+          # Developer ID Application automatically (otherwise the build fails with
+          # "Please remove prefix Developer ID Application: from the specified name")
+          IDENTITY="${IDENTITY#Developer ID Application:}"
+          IDENTITY="${IDENTITY#"${IDENTITY%%[![:space:]]*}"}"
           if [ -z "$IDENTITY" ]; then
             echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
             security find-identity -v -p codesigning "$KEYCHAIN_PATH"
