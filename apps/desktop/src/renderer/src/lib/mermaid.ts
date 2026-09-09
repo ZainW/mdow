@@ -1,32 +1,21 @@
 import { defineCachedFunction } from 'ocache'
 import { rendererCacheStorage } from './cache-storage'
+import {
+  getMermaidInitConfig,
+  resolveMermaidPaletteId,
+  type MermaidInitConfig,
+  type MermaidPaletteId,
+} from './mermaid-theme'
 
 type MermaidApi = (typeof import('mermaid'))['default']
-interface MermaidOptions {
-  startOnLoad: false
-  theme: 'default' | 'dark'
-  securityLevel: 'loose'
-}
 
 let mermaidInitialized = false
 let mermaidPromise: Promise<MermaidApi> | null = null
-let mermaidOptions: MermaidOptions = {
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-}
+let mermaidOptions: MermaidInitConfig = getMermaidInitConfig('light')
 
-function getMermaidOptions(isDark: boolean): MermaidOptions {
-  return {
-    startOnLoad: false,
-    theme: isDark ? 'dark' : 'default',
-    securityLevel: 'loose',
-  }
-}
-
-function ensureMermaidInitialized(isDark: boolean): void {
+function ensureMermaidInitialized(paletteId: MermaidPaletteId): void {
   if (mermaidInitialized) return
-  mermaidOptions = getMermaidOptions(isDark)
+  mermaidOptions = getMermaidInitConfig(paletteId)
   mermaidInitialized = true
 }
 
@@ -35,13 +24,13 @@ async function loadMermaid(): Promise<MermaidApi> {
   return mermaidPromise
 }
 
-export function initMermaid(isDark: boolean): void {
-  mermaidOptions = getMermaidOptions(isDark)
+export function initMermaid(isDark?: boolean): void {
+  mermaidOptions = getMermaidInitConfig(resolveMermaidPaletteId(isDark))
   mermaidInitialized = true
 }
 
-export function updateMermaidTheme(isDark: boolean): void {
-  mermaidOptions = getMermaidOptions(isDark)
+export function updateMermaidTheme(isDark?: boolean): void {
+  mermaidOptions = getMermaidInitConfig(resolveMermaidPaletteId(isDark))
   if (mermaidPromise) {
     void mermaidPromise.then((mermaid) => mermaid.initialize(mermaidOptions))
   }
@@ -50,6 +39,18 @@ export function updateMermaidTheme(isDark: boolean): void {
 function applySvgToElement(el: HTMLElement, svg: string): void {
   el.className = 'mermaid mermaid-container'
   el.innerHTML = svg
+  const svgEl = el.querySelector('svg')
+  if (svgEl) {
+    svgEl.style.background = 'transparent'
+    svgEl.style.backgroundColor = 'transparent'
+    svgEl.style.maxWidth = '100%'
+    svgEl.style.height = 'auto'
+    svgEl.style.width = 'auto'
+    const width = svgEl.getAttribute('width')
+    if (width === '100%' || width === '100') {
+      svgEl.removeAttribute('width')
+    }
+  }
   el.setAttribute('role', 'img')
   if (!el.getAttribute('aria-label')) {
     el.setAttribute('aria-label', 'Mermaid diagram')
@@ -59,10 +60,11 @@ function applySvgToElement(el: HTMLElement, svg: string): void {
 async function generateMermaidSvgUncached(
   blockId: string,
   code: string,
-  isDark: boolean,
+  paletteId: MermaidPaletteId,
 ): Promise<string> {
   const mermaid = await loadMermaid()
-  mermaid.initialize(getMermaidOptions(isDark))
+  const options = getMermaidInitConfig(paletteId)
+  mermaid.initialize(options)
   const { svg } = await mermaid.render(`${blockId}-svg`, code)
   return svg
 }
@@ -75,16 +77,17 @@ const generateMermaidSvg = defineCachedFunction(generateMermaidSvgUncached, {
 
 export async function renderMermaidBlock(
   block: { id: string; code: string },
-  isDark = document.documentElement.classList.contains('dark'),
+  isDark?: boolean,
 ): Promise<void> {
-  ensureMermaidInitialized(isDark)
+  const paletteId = resolveMermaidPaletteId(isDark)
+  ensureMermaidInitialized(paletteId)
 
   const el = document.getElementById(block.id)
   if (!el) return
 
   try {
     el.replaceChildren()
-    const svg = await generateMermaidSvg(block.id, block.code, isDark)
+    const svg = await generateMermaidSvg(block.id, block.code, paletteId)
     applySvgToElement(el, svg)
   } catch (e) {
     el.className = 'mermaid-error'

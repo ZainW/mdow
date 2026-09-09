@@ -16,6 +16,7 @@ describe('bundled fonts', () => {
     'Charter-BoldItalic.woff2',
     'JetBrainsMono-Variable.woff2',
     'JetBrainsMono-Italic-Variable.woff2',
+    'IBMPlexMono-Regular.woff2',
   ])('%s is a valid WOFF2 asset', (filename) => {
     const font = readFileSync(resolve(FONT_DIR, filename))
 

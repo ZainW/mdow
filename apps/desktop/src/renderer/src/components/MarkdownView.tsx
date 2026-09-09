@@ -13,6 +13,7 @@ import {
   getContentFontFamily,
   getCodeFontFamily,
 } from '../lib/typography'
+import { cn } from '../lib/utils'
 import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
@@ -105,40 +106,46 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
         />
       )}
       <div
-        ref={contentRef}
-        id={`tabpanel-${tab.id}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${tab.id}`}
-        aria-busy={isRendering}
-        className="mx-auto px-12 py-8 text-foreground markdown-body"
-        style={
-          {
-            maxWidth: wideMode ? '100%' : READING_WIDTHS[readingWidth],
-            '--md-content-font': getContentFontFamily(contentFont),
-            '--md-code-font': getCodeFontFamily(codeFont),
-            '--md-font-size': `${MARKDOWN_FONT_SIZE * (zoomLevel / 100)}px`,
-            '--md-line-height': String(MARKDOWN_LINE_HEIGHT),
-          } as CSSProperties
-        }
+        data-reading-frame=""
+        className={cn('flex min-h-full w-full', wideMode ? 'justify-start' : 'justify-center')}
       >
-        {renderError ? (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm">
-            <p className="text-destructive">This document could not be rendered.</p>
-            <button
-              type="button"
-              className="mt-3 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-              onClick={handleRetry}
-            >
-              Try again
-            </button>
-          </div>
-        ) : renderResult ? (
-          <div key={renderVersion}>
-            <MarkdownContent result={renderResult} docPath={tab.path} />
-          </div>
-        ) : isRendering ? (
-          <DocumentSkeleton />
-        ) : null}
+        <div
+          ref={contentRef}
+          id={`tabpanel-${tab.id}`}
+          role="tabpanel"
+          aria-labelledby={`tab-${tab.id}`}
+          aria-busy={isRendering}
+          data-reading-column=""
+          className="markdown-body box-border w-full min-w-0 px-12 py-8 text-foreground"
+          style={
+            {
+              maxWidth: wideMode ? undefined : READING_WIDTHS[readingWidth],
+              '--md-content-font': getContentFontFamily(contentFont),
+              '--md-code-font': getCodeFontFamily(codeFont),
+              '--md-font-size': `${MARKDOWN_FONT_SIZE * (zoomLevel / 100)}px`,
+              '--md-line-height': String(MARKDOWN_LINE_HEIGHT),
+            } as CSSProperties
+          }
+        >
+          {renderError ? (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm">
+              <p className="text-destructive">This document could not be rendered.</p>
+              <button
+                type="button"
+                className="mt-3 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                onClick={handleRetry}
+              >
+                Try again
+              </button>
+            </div>
+          ) : renderResult ? (
+            <div key={renderVersion}>
+              <MarkdownContent result={renderResult} docPath={tab.path} />
+            </div>
+          ) : isRendering ? (
+            <DocumentSkeleton />
+          ) : null}
+        </div>
       </div>
       <ZoomIndicator />
     </div>

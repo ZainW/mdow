@@ -111,8 +111,8 @@ function createWindow(targetPath?: string): void {
   const savedBounds = getWindowBounds()
 
   const win = new BrowserWindow({
-    width: savedBounds?.width ?? 1000,
-    height: savedBounds?.height ?? 700,
+    width: savedBounds?.width ?? 1120,
+    height: savedBounds?.height ?? 760,
     x: savedBounds?.x,
     y: savedBounds?.y,
     minWidth: 600,
