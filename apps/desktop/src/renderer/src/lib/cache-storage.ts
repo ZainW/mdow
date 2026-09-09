@@ -1,4 +1,4 @@
-import { setStorage, type StorageInterface } from 'ocache'
+import type { StorageInterface } from 'ocache'
 
 interface StorageEntry<T = unknown> {
   value: T
@@ -50,10 +50,4 @@ export function createBoundedMemoryStorage(maxEntries: number): StorageInterface
   }
 }
 
-let rendererCacheStorageConfigured = false
-
-export function configureRendererCacheStorage(): void {
-  if (rendererCacheStorageConfigured) return
-  setStorage(createBoundedMemoryStorage(200))
-  rendererCacheStorageConfigured = true
-}
+export const rendererCacheStorage = createBoundedMemoryStorage(200)

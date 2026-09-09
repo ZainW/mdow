@@ -5,9 +5,14 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.9.0
+## v1.9.1
 
 Latest release.
+
+- Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
+- Upgraded desktop and website dependencies, including Electron 44, Vitest 5, and Wrangler
+
+## v1.9.0
 
 - Native settings now switch the reading face; Inter, Geist, Charter, and JetBrains Mono ship in the app
 - Native chrome: traffic-light clearance, sidebar toggle in the titlebar, double-click to zoom, and a finished command palette

@@ -7,9 +7,7 @@ import {
 } from 'comark'
 import { defineCachedFunction } from 'ocache'
 import type { LanguageRegistration, ThemeRegistration } from 'shiki'
-import { configureRendererCacheStorage } from './cache-storage'
-
-configureRendererCacheStorage()
+import { rendererCacheStorage } from './cache-storage'
 
 type ParseFn = ReturnType<typeof createMarkdownParser>
 type LanguageLoader = () => Promise<LanguageRegistration | LanguageRegistration[]>
@@ -418,6 +416,7 @@ async function renderMarkdownUncached(
 
 export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
   name: 'renderMarkdown',
+  storage: rendererCacheStorage,
   maxAge: 3600,
   getKey: (text: string, options?: { bypassCache?: boolean }) => {
     void options
