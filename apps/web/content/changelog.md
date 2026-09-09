@@ -10,7 +10,7 @@ description: What's new in Mdow
 Latest release.
 
 - Fixed Mac Restart after an in-app update so Squirrel.Mac finishes the swap before the app quits
-- Upgraded desktop and website dependencies, including Electron 44, Vitest 5, and Wrangler
+- Upgraded desktop and website dependencies, including Electron 44 and Wrangler
 
 ## v1.9.0
 
