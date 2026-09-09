@@ -229,10 +229,12 @@ pub fn is_supported() -> bool {
 pub fn start() -> bool {
     #[cfg(target_os = "macos")]
     {
-        return macos::start();
+        macos::start()
     }
     #[cfg(not(target_os = "macos"))]
-    false
+    {
+        false
+    }
 }
 
 pub fn check(manual: bool) {
@@ -260,10 +262,12 @@ pub fn dismiss_choice() {
 pub fn current_ui() -> UpdateUi {
     #[cfg(target_os = "macos")]
     {
-        return macos::snapshot();
+        macos::snapshot()
     }
     #[cfg(not(target_os = "macos"))]
-    UpdateUi::Idle
+    {
+        UpdateUi::Idle
+    }
 }
 
 #[cfg(target_os = "macos")]
