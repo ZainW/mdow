@@ -1,5 +1,5 @@
 import pkg from 'electron-updater'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, autoUpdater as nativeAutoUpdater } from 'electron'
 import log from 'electron-log'
 import { isAutoUpdateEnabled } from './store'
 
@@ -16,6 +16,27 @@ let manualCheckPending = false
 let intervalHandle: NodeJS.Timeout | null = null
 let startupHandle: NodeJS.Timeout | null = null
 let initialized = false
+
+type UpdateDownloadSource = 'electron-updater' | 'native'
+
+export function restartReadyFromElectronUpdater(platform: NodeJS.Platform): boolean {
+  return platform !== 'darwin'
+}
+
+export function shouldAnnounceDownloadedUpdate(
+  platform: NodeJS.Platform,
+  source: UpdateDownloadSource,
+): boolean {
+  return source === 'electron-updater'
+    ? restartReadyFromElectronUpdater(platform)
+    : !restartReadyFromElectronUpdater(platform)
+}
+
+export function scheduleQuitAndInstall(
+  quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void,
+): void {
+  setImmediate(() => quitAndInstall(false, true))
+}
 
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   if (initialized) return
@@ -47,8 +68,18 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void
   })
 
   autoUpdater.on('update-downloaded', () => {
-    send('updater:update-downloaded')
+    if (shouldAnnounceDownloadedUpdate(process.platform, 'electron-updater')) {
+      send('updater:update-downloaded')
+    }
   })
+
+  if (process.platform === 'darwin') {
+    nativeAutoUpdater.on('update-downloaded', () => {
+      if (shouldAnnounceDownloadedUpdate(process.platform, 'native')) {
+        send('updater:update-downloaded')
+      }
+    })
+  }
 
   autoUpdater.on('error', (err) => {
     log.error('Auto-updater error:', err)
@@ -85,7 +116,9 @@ export function downloadUpdate(): void {
 }
 
 export function installUpdate(): void {
-  autoUpdater.quitAndInstall()
+  scheduleQuitAndInstall((isSilent, isForceRunAfter) => {
+    autoUpdater.quitAndInstall(isSilent, isForceRunAfter)
+  })
 }
 
 export function setAutoUpdateScheduling(enabled: boolean): void {

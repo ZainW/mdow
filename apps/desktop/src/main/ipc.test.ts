@@ -26,6 +26,7 @@ const mockCompanionService = vi.hoisted(() => ({
   shutdown: vi.fn(),
 }))
 const mockGetMainWindow = vi.hoisted(() => vi.fn(() => mockWindow))
+const mockInstallUpdate = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -66,9 +67,10 @@ vi.mock('./store', () => ({
 }))
 
 vi.mock('./updater', () => ({
+  initAutoUpdater: vi.fn(),
   checkForUpdates: vi.fn(),
   downloadUpdate: vi.fn(),
-  installUpdate: vi.fn(),
+  installUpdate: mockInstallUpdate,
   setAutoUpdateScheduling: vi.fn(),
 }))
 
@@ -233,6 +235,14 @@ describe('ipc handlers', () => {
       await handler({}, 'openai/gpt-5.4')
       expect(mockCompanionService.setModel).toHaveBeenCalledWith('openai/gpt-5.4')
       await expect(handler({}, 'openai/gpt-5.4\nterminal')).rejects.toThrow(/invalid-model/i)
+    })
+  })
+
+  describe('updater:install', () => {
+    it('returns after scheduling install', async () => {
+      const handler = handlers.get('updater:install')!
+      await expect(handler({})).resolves.toBeUndefined()
+      expect(mockInstallUpdate).toHaveBeenCalledTimes(1)
     })
   })
 })

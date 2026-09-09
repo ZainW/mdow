@@ -279,6 +279,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   })
   ipcMain.handle('updater:install', async () => {
     const { installUpdate } = await loadInitializedUpdater(getMainWindow)
+    // Return before quitAndInstall so the renderer invoke does not die with the process.
     installUpdate()
   })
 
