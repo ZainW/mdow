@@ -45,6 +45,10 @@ mod macos {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
-        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", vendor.display());
+        // Development binaries need the vendored framework. Release binaries must
+        // resolve only the bundled copy so packaging checks cannot pass by accident.
+        if std::env::var("PROFILE").as_deref() != Ok("release") {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", vendor.display());
+        }
     }
 }

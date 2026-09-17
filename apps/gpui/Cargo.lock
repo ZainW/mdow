@@ -3221,6 +3221,7 @@ name = "mdow-gpui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "cc",
  "gpui",
  "notify",
@@ -3230,6 +3231,7 @@ dependencies = [
  "serde_json",
  "syntect",
  "tempfile",
+ "url",
 ]
 
 [[package]]

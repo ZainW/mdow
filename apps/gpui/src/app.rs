@@ -432,7 +432,7 @@ impl MdowApp {
         cx.notify();
     }
 
-    fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
+    pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
         let result = self.model.open_paths(paths);
         let document_opened = result.document_opened();
         let watch_error = document_opened

@@ -78,6 +78,10 @@ mkdir -p "$CARGO_TARGET_DIR/release"
 cat >"$CARGO_TARGET_DIR/release/mdow-gpui" <<'BINARY'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "--smoke-test" ]]; then
+  echo MDOW_SMOKE_OK
+  exit 0
+fi
 [[ "${1:-}" == "--verify-assets" ]]
 case "$PWD/" in
   "$FAKE_REPO_ROOT/"*)
@@ -149,6 +153,7 @@ run_packager() {
 
   mkdir -p "$case_dir/log" "$case_dir/target" "$case_dir/dist" "$case_dir/tmp"
   make_fakes "$case_dir/fakes"
+  make_fake_sparkle_framework "$case_dir/Sparkle.framework"
 
     env \
     -u APPLE_ID \
@@ -161,6 +166,8 @@ run_packager() {
     -u SPARKLE_ED_PUBLIC_KEY \
     -u SPARKLE_FEED_URL \
     -u SPARKLE_FRAMEWORK \
+    SPARKLE_FRAMEWORK="$case_dir/Sparkle.framework" \
+    SPARKLE_PUBLIC_KEY_FILE=/dev/null \
     ARCH=arm64 \
     VERSION=1.2.3 \
     GITHUB_RUN_NUMBER=456 \
@@ -228,8 +235,7 @@ fi
 if /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$info_plist" >/dev/null 2>&1; then
   fail "local ad-hoc package unexpectedly embedded SUPublicEDKey"
 fi
-[[ ! -d "$app/Contents/Frameworks/Sparkle.framework" ]] || \
-  fail "local ad-hoc package without a public key unexpectedly bundled Sparkle"
+assert_file "$app/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
 assert_file "$local_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip"
 assert_file "$local_case/dist/MdowNative-mac-beta.zip"
 assert_contains "$local_case/log/cargo" \
@@ -244,7 +250,6 @@ esac
 print "PASS: local package assembles, signs ad-hoc, and validates after extraction"
 
 sparkle_case="$test_dir/sparkle"
-make_fake_sparkle_framework "$sparkle_case/Sparkle.framework"
 run_packager \
   "$sparkle_case" \
   arm64 \
@@ -321,6 +326,7 @@ if run_packager \
   "$unsigned_ci_case" \
   arm64 \
   CI=true \
+  SPARKLE_ED_PUBLIC_KEY=abc123 \
   NATIVE_MAC_CODESIGN_IDENTITY=- \
   >"$unsigned_ci_case.output" 2>&1; then
   fail "unsigned CI package unexpectedly succeeded"
@@ -334,6 +340,7 @@ if run_packager \
   "$apple_development_case" \
   arm64 \
   CI=true \
+  SPARKLE_ED_PUBLIC_KEY=abc123 \
   "NATIVE_MAC_CODESIGN_IDENTITY=Apple Development: Test (TEAM123)" \
   "FAKE_CODESIGN_AUTHORITY=Apple Development: Test (TEAM123)" \
   APPLE_ID=test@example.com \
@@ -352,6 +359,7 @@ if run_packager \
   "$hash_identity_case" \
   arm64 \
   CI=true \
+  SPARKLE_ED_PUBLIC_KEY=abc123 \
   NATIVE_MAC_CODESIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567 \
   "FAKE_CODESIGN_AUTHORITY=Developer ID Application: Test (TEAM123)" \
   >"$hash_identity_case.output" 2>&1; then
@@ -367,6 +375,7 @@ run_packager \
   "$release_case" \
   arm64 \
   CI=true \
+  SPARKLE_ED_PUBLIC_KEY=abc123 \
   "NATIVE_MAC_CODESIGN_IDENTITY=Developer ID Application: Test (TEAM123)" \
   APPLE_ID=test@example.com \
   APPLE_APP_SPECIFIC_PASSWORD=test-password \

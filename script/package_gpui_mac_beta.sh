@@ -138,20 +138,19 @@ cp -R "$ROOT_DIR/apps/gpui/assets" "$APP_CONTENTS/Resources/assets"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
-SPARKLE_PUBLIC_ED_KEY="$(read_sparkle_public_ed_key "$ROOT_DIR/apps/gpui/sparkle/public-ed-key.txt")"
+SPARKLE_PUBLIC_ED_KEY="$(read_sparkle_public_ed_key "${SPARKLE_PUBLIC_KEY_FILE:-$ROOT_DIR/apps/gpui/sparkle/public-ed-key.txt}")"
 SPARKLE_FEED="$(sparkle_feed_url)"
 SPARKLE_FRAMEWORK="${SPARKLE_FRAMEWORK:-$ROOT_DIR/apps/gpui/vendor/Sparkle/Sparkle.framework}"
-DID_EMBED_SPARKLE=false
-if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-  if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
-    bash "$ROOT_DIR/script/fetch_sparkle.sh"
-  fi
-  if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
-    echo "Sparkle.framework is required when SUPublicEDKey is set: $SPARKLE_FRAMEWORK" >&2
-    exit 1
-  fi
-  copy_sparkle_framework "$SPARKLE_FRAMEWORK" "$APP_CONTENTS" "$DITTO"
-  DID_EMBED_SPARKLE=true
+# The executable links Sparkle unconditionally, even when updates are disabled.
+# Never depend on the build machine's copy to satisfy this load command.
+if [[ ! -d "$SPARKLE_FRAMEWORK" ]]; then
+  bash "$ROOT_DIR/script/fetch_sparkle.sh"
+fi
+copy_sparkle_framework "$SPARKLE_FRAMEWORK" "$APP_CONTENTS" "$DITTO"
+DID_EMBED_SPARKLE=true
+if [[ "${CI:-}" == "true" && -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  echo "A Sparkle public key is required for Native releases." >&2
+  exit 1
 fi
 
 write_native_mac_info_plist \
@@ -267,14 +266,14 @@ if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
   assert_plist_value "$EXTRACTED_INFO_PLIST" SUFeedURL "$SPARKLE_FEED"
   assert_plist_value "$EXTRACTED_INFO_PLIST" SUPublicEDKey "$SPARKLE_PUBLIC_ED_KEY"
   assert_plist_value "$EXTRACTED_INFO_PLIST" SUEnableAutomaticChecks "true"
-  if [[ ! -d "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework" ]]; then
-    echo "Extracted GPUI Mac beta is missing Sparkle.framework." >&2
-    exit 1
-  fi
-  if [[ -d "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]]; then
-    echo "Non-sandboxed Native builds must strip Sparkle XPC services." >&2
-    exit 1
-  fi
+fi
+if [[ ! -f "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" ]]; then
+  echo "Extracted GPUI Mac beta is missing Sparkle.framework." >&2
+  exit 1
+fi
+if [[ -d "$EXTRACTED_APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]]; then
+  echo "Non-sandboxed Native builds must strip Sparkle XPC services." >&2
+  exit 1
 fi
 "$CODESIGN" --verify --deep --strict --verbose=2 "$EXTRACTED_APP"
 EXTRACTED_ARCHS="$("$LIPO" -archs "$EXTRACTED_BINARY")"
@@ -295,6 +294,16 @@ if [[ "$VERIFIED_ASSET_ROOT" != "$EXPECTED_ASSET_ROOT" ]]; then
   echo "Extracted GPUI Mac beta reported asset root '$VERIFIED_ASSET_ROOT'; expected '$EXPECTED_ASSET_ROOT'." >&2
   exit 1
 fi
+
+# Exercise font registration, Metal initialization, and a real window from the ZIP.
+python3 - "$EXTRACTED_BINARY" <<'PYTHON'
+import subprocess
+import sys
+result = subprocess.run([sys.argv[1], "--smoke-test"], capture_output=True, text=True, timeout=30)
+if result.returncode != 0 or "MDOW_SMOKE_OK" not in result.stdout:
+    sys.exit(f"Native launch smoke test failed: {result.stdout}\n{result.stderr}")
+print("Native launch smoke test passed")
+PYTHON
 
 echo "Created GPUI Mac beta artifacts:"
 echo "$VERSIONED_ZIP"

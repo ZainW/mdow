@@ -38,10 +38,8 @@ if [[ ! -f "$VERSIONED_ZIP" ]]; then
 fi
 
 if [[ -z "${SPARKLE_PRIVATE_ED_KEY:-}" ]]; then
-  echo "SPARKLE_PRIVATE_ED_KEY is unset; skipping Native Sparkle appcast." >&2
-  echo "Add the secret and re-run a release after generating keys (see apps/gpui/sparkle/README.md)." >&2
-  rm -f "$APPCAST_OUT"
-  exit 0
+  echo "SPARKLE_PRIVATE_ED_KEY is required; refusing to release without native updates." >&2
+  exit 1
 fi
 
 bash "$ROOT_DIR/script/fetch_sparkle.sh"

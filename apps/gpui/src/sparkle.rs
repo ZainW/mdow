@@ -314,13 +314,17 @@ mod macos {
         unsafe {
             mdow_sparkle_set_event_callback(Some(on_event));
             let started = mdow_sparkle_start() != 0;
-            STARTED.store(true, Ordering::SeqCst);
+            STARTED.store(started, Ordering::SeqCst);
             started
         }
     }
 
     pub fn check(manual: bool) {
-        unsafe { mdow_sparkle_check(i32::from(manual)) }
+        if start() {
+            unsafe { mdow_sparkle_check(i32::from(manual)) }
+        } else if let Ok(mut state) = STATE.lock() {
+            *state = state.apply(UpdateEvent::Failed { manual });
+        }
     }
 
     pub fn download() {
