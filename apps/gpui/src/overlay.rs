@@ -900,6 +900,7 @@ pub enum SettingsEvent {
     Edited(PrefEdit),
     CheckForUpdates,
     DownloadUpdate,
+    ViewReleases,
     InstallUpdate,
     Dismissed,
 }
@@ -1193,12 +1194,21 @@ fn settings_updates(
         UpdateUi::Ready { .. } => "Update ready. Restart to apply.".into(),
         UpdateUi::UpToDate { .. } => "You're on the latest version".into(),
         UpdateUi::Failed { .. } => "Couldn't check for updates. Try again later.".into(),
+        UpdateUi::Unavailable { .. } => update.banner_copy().unwrap_or_default(),
     };
     let mut actions = div().flex().gap(px(6.0)).child(action_chip(
-        "Check for updates",
+        if update.needs_manual_download() {
+            "Open Releases"
+        } else {
+            "Check for updates"
+        },
         "settings-check-updates",
         theme,
-        SettingsEvent::CheckForUpdates,
+        if update.needs_manual_download() {
+            SettingsEvent::ViewReleases
+        } else {
+            SettingsEvent::CheckForUpdates
+        },
         cx,
     ));
     if update.can_download() {

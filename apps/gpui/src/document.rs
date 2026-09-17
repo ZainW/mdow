@@ -109,6 +109,46 @@ pub struct ParsedDocument {
 }
 
 impl ParsedDocument {
+    /// Map outline order to the containing virtualized reader block, including nested headings.
+    pub fn heading_block(&self, heading_index: usize) -> Option<usize> {
+        let mut remaining = heading_index;
+        for (index, block) in self.blocks.iter().enumerate() {
+            let count = heading_count(block);
+            if remaining < count {
+                return Some(index);
+            }
+            remaining -= count;
+        }
+        None
+    }
+
+    pub fn anchor_block(&self, fragment: &str) -> Option<usize> {
+        let fragment = percent_decode_url_path(fragment)?;
+        if fragment.is_empty() {
+            return (!self.blocks.is_empty()).then_some(0);
+        }
+        let mut used = std::collections::HashSet::new();
+        for (index, heading) in self.headings.iter().enumerate() {
+            let base: String = heading
+                .text
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-' || *c == '_')
+                .map(|c| if c.is_whitespace() { '-' } else { c })
+                .collect();
+            let mut slug = base.clone();
+            let mut suffix = 0;
+            while !used.insert(slug.clone()) {
+                suffix += 1;
+                slug = format!("{base}-{suffix}");
+            }
+            if slug == fragment {
+                return self.heading_block(index);
+            }
+        }
+        None
+    }
+
     pub fn plain_text(&self) -> String {
         self.blocks
             .iter()
@@ -625,8 +665,6 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 if let Some(frame) = inline_stack.pop() {
                     let content = frame.into_spans();
                     let level = level as u8;
-                    let text = plain_text_for_spans(&content);
-                    headings.push(Heading { level, text });
                     push_block(
                         DocumentBlock::Heading { level, content },
                         &mut blocks,
@@ -842,6 +880,9 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
         blocks.push(DocumentBlock::FootnoteSection { notes: footnotes });
     }
 
+    // Build navigation from rendered blocks, not parser events: plain blockquotes
+    // flatten headings and must not shift the indices of later outline entries.
+    collect_headings(&blocks, &mut headings);
     let title = headings
         .iter()
         .find(|heading| heading.level == 1)
@@ -889,6 +930,16 @@ fn parse_html_document(path: PathBuf, source: String) -> ParsedDocument {
         source,
         blocks,
         headings,
+    }
+}
+
+fn heading_count(block: &DocumentBlock) -> usize {
+    match block {
+        DocumentBlock::Heading { .. } => 1,
+        DocumentBlock::ListItem { children, .. }
+        | DocumentBlock::TaskItem { children, .. }
+        | DocumentBlock::Alert { children, .. } => children.iter().map(heading_count).sum(),
+        _ => 0,
     }
 }
 
@@ -1152,6 +1203,30 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn heading_navigation_handles_nested_duplicate_and_encoded_headings() {
+        let document = parse_document(
+            PathBuf::from("guide.md"),
+            "# Overview\n\n- ## Nested\n\n## Details\n\n## Details\n\n## Café & setup\n".into(),
+        );
+        assert_eq!(document.heading_block(0), Some(0));
+        assert_eq!(document.heading_block(1), Some(1));
+        assert_eq!(document.heading_block(2), Some(2));
+        assert_eq!(document.heading_block(3), Some(3));
+        assert_eq!(document.heading_block(99), None);
+        assert_eq!(document.anchor_block("details-1"), Some(3));
+        assert_eq!(document.anchor_block("caf%C3%A9--setup"), Some(4));
+        assert_eq!(document.anchor_block("missing"), None);
+        assert_eq!(document.anchor_block("%ZZ"), None);
+        assert_eq!(document.anchor_block(""), Some(0));
+        let quoted = parse_document(
+            PathBuf::from("quote.md"),
+            "> # Quoted title\n\n## Actual section\n".into(),
+        );
+        assert_eq!(quoted.headings.len(), 1);
+        assert_eq!(quoted.anchor_block("actual-section"), Some(1));
+    }
 
     #[test]
     fn frontmatter_title_is_extracted_and_not_rendered_as_markdown() {

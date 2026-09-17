@@ -870,6 +870,9 @@ impl MdowApp {
             SettingsEvent::Edited(edit) => self.apply_pref(*edit, cx),
             SettingsEvent::CheckForUpdates => self.check_for_updates(cx),
             SettingsEvent::DownloadUpdate => self.download_update(cx),
+            SettingsEvent::ViewReleases => {
+                let _ = open::that(sparkle::RELEASES_URL);
+            }
             SettingsEvent::InstallUpdate => self.install_update(cx),
             SettingsEvent::Dismissed => {
                 self.overlays.close(None);
@@ -1146,23 +1149,14 @@ impl MdowApp {
         }
     }
 
-    pub(crate) fn jump_to_heading(&mut self, text: &str, cx: &mut Context<Self>) {
-        let Some(document) = self.model.tabs.active().map(|tab| tab.document.clone()) else {
-            return;
-        };
-        let mut heading_index = 0usize;
-        for (block_index, block) in document.blocks.iter().enumerate() {
-            if matches!(block, crate::document::DocumentBlock::Heading { .. }) {
-                if document
-                    .headings
-                    .get(heading_index)
-                    .is_some_and(|heading| heading.text == text)
-                {
-                    self.scroll_reader_to_block(block_index, cx);
-                    return;
-                }
-                heading_index += 1;
-            }
+    pub(crate) fn jump_to_heading(&mut self, index: usize, cx: &mut Context<Self>) {
+        let block = self
+            .model
+            .tabs
+            .active()
+            .and_then(|tab| tab.document.heading_block(index));
+        if let Some(block) = block {
+            self.scroll_reader_to_block(block, cx);
         }
     }
 
@@ -1180,6 +1174,16 @@ impl MdowApp {
     ) {
         match classify_link(document_path, target) {
             LinkRoute::Markdown(path) => self.open_path(&path, cx),
+            LinkRoute::Anchor(fragment) => {
+                let block = self
+                    .model
+                    .tabs
+                    .active()
+                    .and_then(|tab| tab.document.anchor_block(&fragment));
+                if let Some(block) = block {
+                    self.scroll_reader_to_block(block, cx);
+                }
+            }
             LinkRoute::Web(url) => {
                 let _ = open::that(url);
             }
@@ -3096,6 +3100,42 @@ mod tests {
             })
             .unwrap()
         })
+    }
+
+    #[gpui::test]
+    fn outline_and_contents_links_reach_repeated_headings(cx: &mut TestAppContext) {
+        let filler = "A paragraph with enough content to scroll.\n\n".repeat(60);
+        let source = format!(
+            "# Intro\n\n[Contents](#details-1)\n\n## Details\n\n{filler}## Details\n\n{filler}"
+        );
+        let window = document_window(cx, &source);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        click_debug(&mut visual, "Outline");
+        click_debug(&mut visual, "outline-row-2");
+        window
+            .update(cx, |app, _, cx| {
+                let tab = app.model.tabs.active().unwrap();
+                let expected = tab.document.heading_block(2).unwrap();
+                let pane = app.reader_panes.get(tab.path()).unwrap().read(cx);
+                assert_eq!(pane.list_state().logical_scroll_top().item_ix, expected);
+                app.jump_to_heading(0, cx);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, _, cx| {
+                app.activate_link(Path::new("/tmp/click.md"), "#details-1", cx);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        window
+            .update(cx, |app, _, cx| {
+                let tab = app.model.tabs.active().unwrap();
+                let expected = tab.document.heading_block(2).unwrap();
+                let pane = app.reader_panes.get(tab.path()).unwrap().read(cx);
+                assert_eq!(pane.list_state().logical_scroll_top().item_ix, expected);
+            })
+            .unwrap();
     }
 
     #[gpui::test]

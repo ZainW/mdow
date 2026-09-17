@@ -131,7 +131,7 @@ static MdowSparkleHost *gHost;
 }
 
 - (void)showUpdaterError:(NSError *)error acknowledgement:(void (^)(void))acknowledgement {
-  (void)error;
+  NSLog(@"Mdow Native update check failed: %@", error);
   emit_event(MDOW_SPARKLE_FAILED, self.version, -1, self.flags);
   acknowledgement();
 }

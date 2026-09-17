@@ -649,8 +649,12 @@ fn render_outline_list(
             )
         });
     } else {
+        let base_level = headings
+            .iter()
+            .map(|heading| heading.level)
+            .min()
+            .unwrap_or(1);
         for (index, heading) in headings.iter().enumerate() {
-            let text = heading.text.clone();
             let color = if heading.level <= 2 {
                 theme.foreground
             } else {
@@ -661,15 +665,15 @@ fn render_outline_list(
                     ("outline-row", index),
                     ListRowStyle {
                         selected: false,
-                        indent: heading.level.saturating_sub(1) as f32 * 18.0,
+                        indent: heading.level.saturating_sub(base_level) as f32 * 12.0,
                     },
                     theme,
                 )
                 .text_color(color)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.jump_to_heading(&text, cx);
+                    this.jump_to_heading(index, cx);
                 }))
-                .child(heading.text.clone()),
+                .child(div().min_w_0().truncate().child(heading.text.clone())),
             );
         }
     }
@@ -1118,12 +1122,16 @@ pub fn render_update_banner(
         .font_family(Metrics::FONT_SANS)
         .text_size(px(11.0))
         .text_color(theme.muted_foreground)
-        .child(div().min_w_0().flex_grow().truncate().child(copy));
+        .child(div().min_w_0().flex_grow().child(copy));
     if let Some(label) = action {
         let event_download = update.can_download();
+        let manual_download = update.needs_manual_download();
         row = row.child(
             div()
                 .id("update-banner-action")
+                .tab_index(0)
+                .focusable()
+                .flex_none()
                 .debug_selector(|| "update-banner-action".into())
                 .px(px(8.0))
                 .h(px(22.0))
@@ -1136,7 +1144,9 @@ pub fn render_update_banner(
                 .text_color(theme.foreground)
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    if event_download {
+                    if manual_download {
+                        let _ = open::that(crate::sparkle::RELEASES_URL);
+                    } else if event_download {
                         this.download_update(cx);
                     } else {
                         this.install_update(cx);
