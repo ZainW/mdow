@@ -50,3 +50,5 @@ The linked Sparkle framework is always bundled, including local builds without u
 `pnpm run test:native-updater` builds a small host using the production Objective-C bridge. It serves a local feed, creates a disposable Ed25519 key, and verifies current-version checks, rejection of an invalid signature, downloading a valid signed archive, installation, and relaunch into version 2. Test bundles use `com.zain.mdow.updater-test` and temporary directories; production keys and the installed Mdow app are untouched.
 
 The Mac packager also launches the extracted ZIP with `--smoke-test` and requires a live window before accepting the package. Smoke tests use an in-memory session.
+
+For local signing without exporting the production key, set `SPARKLE_SIGNING_ACCOUNT=com.zain.mdow.gpui`, `VERSION`, and `DIST_DIR`, then run `bash script/generate_native_mac_appcast.sh`. If the CI secret is absent, build jobs upload the archives but publication remains blocked until the signed appcast is uploaded. This keeps incomplete updates off the latest-release feed.

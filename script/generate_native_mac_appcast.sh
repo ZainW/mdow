@@ -37,7 +37,7 @@ if [[ ! -f "$VERSIONED_ZIP" ]]; then
   exit 1
 fi
 
-if [[ -z "${SPARKLE_PRIVATE_ED_KEY:-}" ]]; then
+if [[ -z "${SPARKLE_PRIVATE_ED_KEY:-}" && -z "${SPARKLE_SIGNING_ACCOUNT:-}" ]]; then
   echo "SPARKLE_PRIVATE_ED_KEY is required; refusing to release without native updates." >&2
   exit 1
 fi
@@ -59,9 +59,13 @@ trap cleanup EXIT
 # is Sparkle's enclosure; the alias zip would duplicate the same bundle.
 cp "$VERSIONED_ZIP" "$TMP_DIR/$(basename "$VERSIONED_ZIP")"
 
-# Prefer stdin so the private key is never written to disk on the runner.
-printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$GENERATE_APPCAST" \
-  --ed-key-file - \
+# CI uses stdin; local release signing can keep the key entirely in Keychain.
+SIGN_ARGS=(--account "${SPARKLE_SIGNING_ACCOUNT:-ed25519}")
+if [[ -n "${SPARKLE_PRIVATE_ED_KEY:-}" ]]; then
+  SIGN_ARGS=(--ed-key-file -)
+fi
+printf '%s' "${SPARKLE_PRIVATE_ED_KEY:-}" | "$GENERATE_APPCAST" \
+  "${SIGN_ARGS[@]}" \
   --download-url-prefix "$DOWNLOAD_URL_PREFIX" \
   --maximum-versions 1 \
   --maximum-deltas 0 \

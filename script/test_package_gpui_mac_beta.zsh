@@ -79,6 +79,7 @@ cat >"$CARGO_TARGET_DIR/release/mdow-gpui" <<'BINARY'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == "--smoke-test" ]]; then
+  [[ "${FAKE_SMOKE_FAIL:-}" != "1" ]] || exit 1
   echo MDOW_SMOKE_OK
   exit 0
 fi
@@ -115,6 +116,10 @@ FAKE
 set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_TOOL_LOG/ditto"
 /usr/bin/ditto "$@"
+if [[ "${1:-}" == "-x" && "${FAKE_DROP_FRAMEWORK:-}" == "1" ]]; then
+  destination="${!#}"
+  rm -rf "$destination/Mdow Native.app/Contents/Frameworks/Sparkle.framework"
+fi
 if [[ "${1:-}" == "-x" && -n "${FAKE_EXTRACTED_PLIST_KEY:-}" ]]; then
   destination="${!#}"
   extracted_plist="$destination/Mdow Native.app/Contents/Info.plist"
@@ -185,7 +190,12 @@ run_packager() {
     XCRUN="$case_dir/fakes/xcrun" \
     SPCTL="$case_dir/fakes/spctl" \
     "$@" \
-    bash "$PACKAGER"
+    python3 -c '
+import pathlib, subprocess, sys
+result = subprocess.run(["bash", sys.argv[1]], capture_output=True, timeout=60)
+pathlib.Path(sys.argv[2]).write_bytes(result.stdout + result.stderr)
+sys.exit(result.returncode)
+' "$PACKAGER" "$case_dir.output"
 }
 
 [[ -f "$PACKAGER" ]] || fail "missing GPUI packager: $PACKAGER"
@@ -204,7 +214,7 @@ JS
   fail "old Swift beta packager still exists"
 
 repo_tmp_case="$test_dir/repo-tmp"
-if run_packager "$repo_tmp_case" arm64 TMPDIR=. >"$repo_tmp_case.output" 2>&1; then
+if run_packager "$repo_tmp_case" arm64 TMPDIR=. ; then
   fail "repository-contained TMPDIR unexpectedly packaged"
 fi
 assert_contains "$repo_tmp_case.output" "Temporary directory base must be outside repository"
@@ -212,7 +222,7 @@ assert_contains "$repo_tmp_case.output" "Temporary directory base must be outsid
 print "PASS: repository-contained relative TMPDIR fails before building"
 
 local_case="$test_dir/local"
-run_packager "$local_case" arm64 >"$local_case.output" 2>&1
+run_packager "$local_case" arm64
 
 app="$local_case/dist/Mdow Native.app"
 binary="$app/Contents/MacOS/MdowNative"
@@ -255,7 +265,7 @@ run_packager \
   arm64 \
   SPARKLE_ED_PUBLIC_KEY='pfIShU4dEXqPd5ObYNfDBiQWcXozk7estwzTnF9BamQ=' \
   SPARKLE_FRAMEWORK="$sparkle_case/Sparkle.framework" \
-  >"$sparkle_case.output" 2>&1
+
 sparkle_app="$sparkle_case/dist/Mdow Native.app"
 sparkle_plist="$sparkle_app/Contents/Info.plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$sparkle_plist")" == \
@@ -280,7 +290,7 @@ if run_packager \
   "$wrong_asset_root_case" \
   arm64 \
   FAKE_VERIFY_ASSET_ROOT="$ROOT_DIR/apps/gpui/assets" \
-  >"$wrong_asset_root_case.output" 2>&1; then
+  ; then
   fail "checkout-relative asset root unexpectedly passed extracted package validation"
 fi
 assert_contains "$wrong_asset_root_case.output" "asset root"
@@ -305,7 +315,7 @@ for plist_case in \
     arm64 \
     FAKE_EXTRACTED_PLIST_KEY="$plist_key" \
     FAKE_EXTRACTED_PLIST_VALUE="$plist_value" \
-    >"$plist_case_dir.output" 2>&1; then
+    ; then
     fail "extracted package with mismatched $plist_key unexpectedly passed validation"
   fi
   assert_contains "$plist_case_dir.output" "$plist_key"
@@ -313,7 +323,7 @@ done
 print "PASS: extracted package revalidates complete plist identity, version, and build"
 
 wrong_arch_case="$test_dir/wrong-arch"
-if run_packager "$wrong_arch_case" x86_64 >"$wrong_arch_case.output" 2>&1; then
+if run_packager "$wrong_arch_case" x86_64 ; then
   fail "x86_64 binary unexpectedly packaged"
 fi
 [[ ! -s "$wrong_arch_case/log/codesign" ]] || fail "wrong architecture reached signing"
@@ -328,7 +338,7 @@ if run_packager \
   CI=true \
   SPARKLE_ED_PUBLIC_KEY=abc123 \
   NATIVE_MAC_CODESIGN_IDENTITY=- \
-  >"$unsigned_ci_case.output" 2>&1; then
+  ; then
   fail "unsigned CI package unexpectedly succeeded"
 fi
 [[ ! -s "$unsigned_ci_case/log/codesign" ]] || fail "unsigned CI package reached signing"
@@ -346,7 +356,7 @@ if run_packager \
   APPLE_ID=test@example.com \
   APPLE_APP_SPECIFIC_PASSWORD=test-password \
   APPLE_TEAM_ID=TEAM123 \
-  >"$apple_development_case.output" 2>&1; then
+  ; then
   fail "Apple Development signature unexpectedly passed CI release validation"
 fi
 [[ ! -e "$apple_development_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip" ]] || \
@@ -362,7 +372,7 @@ if run_packager \
   SPARKLE_ED_PUBLIC_KEY=abc123 \
   NATIVE_MAC_CODESIGN_IDENTITY=0123456789ABCDEF0123456789ABCDEF01234567 \
   "FAKE_CODESIGN_AUTHORITY=Developer ID Application: Test (TEAM123)" \
-  >"$hash_identity_case.output" 2>&1; then
+  ; then
   fail "Developer ID certificate hash bypassed CI notarization credentials"
 fi
 [[ ! -e "$hash_identity_case/dist/MdowNative-1.2.3-arm64-mac-beta.zip" ]] || \
@@ -380,7 +390,7 @@ run_packager \
   APPLE_ID=test@example.com \
   APPLE_APP_SPECIFIC_PASSWORD=test-password \
   APPLE_TEAM_ID=TEAM123 \
-  >"$release_case.output" 2>&1
+
 assert_contains "$release_case/log/xcrun" "notarytool submit"
 assert_contains "$release_case/log/xcrun" "--wait"
 assert_contains "$release_case/log/xcrun" "stapler staple"
@@ -393,5 +403,19 @@ case "$(<"$release_case/log/verify-assets")" in
   "$ROOT_DIR"/*) fail "release asset verification resolved into repository" ;;
 esac
 print "PASS: release package is notarized, stapled, extracted, assessed, and asset-verified"
+
+missing_framework_case="$test_dir/missing-framework"
+if run_packager "$missing_framework_case" arm64 FAKE_DROP_FRAMEWORK=1; then
+  fail "archive without the linked Sparkle framework was accepted"
+fi
+assert_contains "$missing_framework_case.output" "missing Sparkle.framework"
+print "PASS: extracted archive requires Sparkle even with updates disabled"
+
+failed_launch_case="$test_dir/failed-launch"
+if run_packager "$failed_launch_case" arm64 FAKE_SMOKE_FAIL=1; then
+  fail "archive whose window cannot launch was accepted"
+fi
+assert_contains "$failed_launch_case.output" "Native launch smoke test failed"
+print "PASS: a startup failure rejects the archive"
 
 print "PASS: GPUI mac beta packaging contract"
