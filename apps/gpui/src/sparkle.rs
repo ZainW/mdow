@@ -4,6 +4,7 @@
 //! module without Sparkle and never offers install.
 
 pub const NATIVE_APPCAST_FILENAME: &str = "appcast-native-mac.xml";
+pub const RELEASES_URL: &str = "https://github.com/ZainW/mdow/releases/latest";
 pub const GITHUB_REPO: &str = "ZainW/mdow";
 pub const DEFAULT_CHECK_INTERVAL_SECS: u64 = 86_400;
 pub const LAUNCH_CHECK_DELAY_SECS: u64 = 2;
@@ -122,6 +123,9 @@ pub enum UpdateUi {
     Failed {
         manual: bool,
     },
+    Unavailable {
+        manual: bool,
+    },
 }
 
 impl UpdateUi {
@@ -139,6 +143,8 @@ impl UpdateUi {
                 Some("Couldn't check for updates. Try again later.".into())
             }
             Self::Failed { manual: false } => None,
+            Self::Unavailable { manual: true } => Some("This build has no automatic updates. Download the latest Native app from Releases.".into()),
+            Self::Unavailable { manual: false } => None,
         }
     }
 
@@ -154,8 +160,14 @@ impl UpdateUi {
         matches!(self, Self::Ready { .. })
     }
 
+    pub fn needs_manual_download(&self) -> bool {
+        matches!(self, Self::Unavailable { .. })
+    }
+
     pub fn action_label(&self) -> Option<&'static str> {
-        if self.can_download() {
+        if self.needs_manual_download() {
+            Some("Releases")
+        } else if self.can_download() {
             Some("Download")
         } else if self.can_install() {
             Some("Restart")
@@ -175,6 +187,7 @@ impl UpdateUi {
             UpdateEvent::Ready { version } => Self::Ready { version },
             UpdateEvent::UpToDate { manual } => Self::UpToDate { manual },
             UpdateEvent::Failed { manual } => Self::Failed { manual },
+            UpdateEvent::Unavailable { manual } => Self::Unavailable { manual },
             UpdateEvent::Idle => Self::Idle,
         }
     }
@@ -187,6 +200,7 @@ impl UpdateUi {
                 | Self::Ready { .. }
                 | Self::UpToDate { manual: true }
                 | Self::Failed { manual: true }
+                | Self::Unavailable { manual: true }
         )
     }
 }
@@ -200,6 +214,7 @@ pub enum UpdateEvent {
     Ready { version: String },
     UpToDate { manual: bool },
     Failed { manual: bool },
+    Unavailable { manual: bool },
 }
 
 impl UpdateEvent {
@@ -323,7 +338,12 @@ mod macos {
         if start() {
             unsafe { mdow_sparkle_check(i32::from(manual)) }
         } else if let Ok(mut state) = STATE.lock() {
-            *state = state.apply(UpdateEvent::Failed { manual });
+            let configured = unsafe { mdow_sparkle_is_enabled() != 0 };
+            *state = state.apply(if configured {
+                UpdateEvent::Failed { manual }
+            } else {
+                UpdateEvent::Unavailable { manual }
+            });
         }
     }
 
@@ -347,6 +367,22 @@ mod macos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unconfigured_builds_offer_manual_recovery_instead_of_retrying() {
+        let state = UpdateUi::Idle.apply(UpdateEvent::Unavailable { manual: true });
+        assert!(
+            state
+                .banner_copy()
+                .unwrap()
+                .contains("no automatic updates")
+        );
+        assert_eq!(state.action_label(), Some("Releases"));
+        assert!(state.resets_dismissed());
+        assert!(!state.can_download());
+        assert!(!state.can_install());
+        assert!(!UpdateUi::Unavailable { manual: false }.shows_banner());
+    }
 
     #[test]
     fn native_feed_is_github_latest_appcast_not_electron_yml() {

@@ -115,17 +115,17 @@ impl BlockStyle {
     pub fn heading(level: u8) -> Self {
         let (scale, font_weight, line_height, letter_spacing_em, margin_top_em, margin_bottom_em) =
             match level {
-                1 => (1.875, 700, 1.2, -0.025, 2.0, 0.6),
-                2 => (1.5, 650, 1.25, -0.02, 1.8, 0.5),
-                3 => (1.15, 600, 1.3, -0.01, 1.5, 0.4),
-                4 => (1.0, 600, 1.4, 0.0, 1.3, 0.3),
-                5 => (0.95, 600, 1.4, 0.0, 1.2, 0.25),
-                _ => (0.875, 600, 1.4, 0.03, 1.0, 0.2),
+                1 => (1.75, 600, 1.25, -0.025, 1.5, 0.5),
+                2 => (1.375, 600, 1.3, -0.02, 1.5, 0.5),
+                3 => (1.125, 600, 1.4, -0.01, 1.5, 0.4),
+                4 => (1.0, 500, 1.4, 0.0, 1.3, 0.3),
+                5 => (0.9375, 500, 1.4, 0.0, 1.2, 0.25),
+                _ => (0.875, 500, 1.4, 0.0, 1.0, 0.2),
             };
         let muted = level >= 4;
-        let uppercase = level >= 6;
+        let uppercase = false;
         Self {
-            font_size: 15.5 * scale,
+            font_size: READER_FONT_SIZE * scale,
             font_weight,
             line_height,
             letter_spacing_em,
@@ -162,9 +162,9 @@ impl BlockStyle {
 
     fn body() -> Self {
         Self {
-            font_size: 15.5,
+            font_size: READER_FONT_SIZE,
             font_weight: 400,
-            line_height: 1.65,
+            line_height: 1.75,
             letter_spacing_em: 0.0,
             margin_top_em: 0.0,
             margin_bottom_em: 1.0,
@@ -693,12 +693,16 @@ fn append_inline_text(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LinkRoute {
     Markdown(PathBuf),
+    Anchor(String),
     Web(String),
     Local(PathBuf),
     Inert,
 }
 
 pub fn classify_link(document_path: &Path, target: &str) -> LinkRoute {
+    if let Some(fragment) = target.strip_prefix('#') {
+        return LinkRoute::Anchor(fragment.to_owned());
+    }
     let lower = target.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         return LinkRoute::Web(target.to_owned());
@@ -851,14 +855,14 @@ fn block_margins(
     if let Some(group) = list_group(block) {
         return BlockMargins {
             top: if previous.and_then(list_group) == Some(group) {
-                15.5 * 0.35
+                16.0 * 0.35
             } else {
-                15.5
+                16.0
             },
             bottom: if next.and_then(list_group) == Some(group) {
-                3.875
+                4.0
             } else {
-                15.5
+                16.0
             },
         };
     }
@@ -876,19 +880,19 @@ fn block_margins(
         | DocumentBlock::Table(_)
         | DocumentBlock::Alert { .. }
         | DocumentBlock::FootnoteSection { .. } => BlockMargins {
-            top: 19.375,
-            bottom: 19.375,
+            top: 20.0,
+            bottom: 20.0,
         },
         DocumentBlock::ThematicBreak => BlockMargins {
-            top: 31.0,
-            bottom: 31.0,
+            top: 32.0,
+            bottom: 32.0,
         },
         DocumentBlock::Paragraph(_)
         | DocumentBlock::Blockquote(_)
         | DocumentBlock::Image { .. }
         | DocumentBlock::RawText(_) => BlockMargins {
             top: 0.0,
-            bottom: 15.5,
+            bottom: 16.0,
         },
         DocumentBlock::ListItem { .. } | DocumentBlock::TaskItem { .. } => unreachable!(),
     }
@@ -913,11 +917,7 @@ pub fn block_sequence_spacing(blocks: &[DocumentBlock]) -> Vec<BlockSpacing> {
         .iter()
         .enumerate()
         .map(|(index, margin)| BlockSpacing {
-            before: if index == 0
-                && matches!(
-                    blocks.first(),
-                    Some(DocumentBlock::Heading { level: 1, .. })
-                ) {
+            before: if index == 0 && matches!(blocks.first(), Some(DocumentBlock::Heading { .. })) {
                 0.0
             } else if let Some(previous) = index.checked_sub(1).and_then(|i| margins.get(i)) {
                 previous.bottom.max(margin.top)
@@ -1818,7 +1818,7 @@ fn render_list_item(
         .min_w_0()
         .gap(px(if marker_visible { 8.0 } else { 0.0 }))
         .ml(px(
-            indentation_depth as f32 * 24.8 + if marker_visible { 0.0 } else { 3.875 }
+            indentation_depth as f32 * 24.8 + if marker_visible { 0.0 } else { 4.0 }
         ))
         .when(marker_visible, |row| {
             row.child(
@@ -2264,8 +2264,8 @@ fn render_code_block(
                 .py(px(14.0))
                 .font_family(view.style.code_family)
                 .font_weight(FontWeight::NORMAL)
-                .text_size(px(view.zoom(15.5 * 0.875)))
-                .line_height(px(view.zoom(15.5 * 0.875) * 1.6))
+                .text_size(px(view.zoom(16.0 * 0.875)))
+                .line_height(px(view.zoom(16.0 * 0.875) * 1.6))
                 .whitespace_nowrap()
                 .child(highlighted_text),
         )
@@ -2291,8 +2291,8 @@ fn render_table(
         .grid_cols(column_count as u16)
         .min_w(px(column_count as f32 * 140.0))
         .font_family(view.style.content_family)
-        .text_size(px(view.zoom(15.5 * 0.925)))
-        .line_height(px(view.zoom(15.5 * 0.925) * 1.5));
+        .text_size(px(view.zoom(16.0 * 0.925)))
+        .line_height(px(view.zoom(16.0 * 0.925) * 1.5));
     for column_index in 0..column_count {
         let content = table.headers.get(column_index).cloned().unwrap_or_default();
         let surface = LinkSurfaceKey::table_header(block_index, column_index);
@@ -2308,11 +2308,11 @@ fn render_table(
                     cell.border_r_1().border_color(theme.border_subtle)
                 })
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(view.zoom(15.5 * 0.925 * 0.8)))
-                .line_height(px(view.zoom(15.5 * 0.925 * 1.3)))
+                .text_size(px(view.zoom(14.0)))
+                .line_height(px(view.zoom(16.0 * 0.925 * 1.3)))
                 .text_color(theme.muted_foreground)
                 .child(render_inline_layout(
-                    inline_layout_with_transform(&content, true),
+                    inline_layout(&content),
                     document_path,
                     surface,
                     600,
@@ -2443,10 +2443,10 @@ mod tests {
 
     #[test]
     fn reader_surface_metrics_match_markdown_css() {
-        assert_eq!(BlockStyle::body().font_size, 15.5);
-        assert_eq!(BlockStyle::body().line_height, 1.65);
-        assert_eq!(BlockStyle::heading(1).font_size, 15.5 * 1.875);
-        assert_eq!(BlockStyle::heading(2).margin_top_em, 1.8);
+        assert_eq!(BlockStyle::body().font_size, 16.0);
+        assert_eq!(BlockStyle::body().line_height, 1.75);
+        assert_eq!(BlockStyle::heading(1).font_size, 16.0 * 1.75);
+        assert_eq!(BlockStyle::heading(2).margin_top_em, 1.5);
         assert_eq!(BlockStyle::blockquote().padding, [6.2, 16.0]);
         assert_eq!(BlockStyle::code_block().radius, 10.0);
         assert_eq!(BlockStyle::code_block().padding, [14.0, 18.0]);
@@ -2506,12 +2506,12 @@ mod tests {
     #[test]
     fn heading_styles_preserve_the_complete_six_level_hierarchy() {
         let expected = [
-            (29.0625, 700, 1.2, -0.025, 2.0, 0.6, false, false),
-            (23.25, 650, 1.25, -0.02, 1.8, 0.5, false, false),
-            (17.825, 600, 1.3, -0.01, 1.5, 0.4, false, false),
-            (15.5, 600, 1.4, 0.0, 1.3, 0.3, true, false),
-            (14.725, 600, 1.4, 0.0, 1.2, 0.25, true, false),
-            (13.5625, 600, 1.4, 0.03, 1.0, 0.2, true, true),
+            (28.0, 600, 1.25, -0.025, 1.5, 0.5, false, false),
+            (22.0, 600, 1.3, -0.02, 1.5, 0.5, false, false),
+            (18.0, 600, 1.4, -0.01, 1.5, 0.4, false, false),
+            (16.0, 500, 1.4, 0.0, 1.3, 0.3, true, false),
+            (15.0, 500, 1.4, 0.0, 1.2, 0.25, true, false),
+            (14.0, 500, 1.4, 0.0, 1.0, 0.2, true, false),
         ];
 
         for (level, expected) in (1_u8..=6).zip(expected) {
@@ -2694,21 +2694,21 @@ mod tests {
 
         assert_eq!(
             spacing[0].before, 0.0,
-            "only a first H1 resets its top margin"
+            "a leading heading has no redundant top margin"
         );
-        assert_eq!(spacing[1].before, 19.375);
+        assert_eq!(spacing[1].before, 20.0);
         assert_eq!(
-            spacing[2].before, 19.375,
+            spacing[2].before, 20.0,
             "code/table margins collapse to max"
         );
-        assert_eq!(spacing[3].before, 19.375);
+        assert_eq!(spacing[3].before, 20.0);
         assert_eq!(
             spacing[4].before,
-            15.5 * 0.35,
+            16.0 * 0.35,
             "adjacent items use the CSS li + li margin"
         );
         assert_eq!(
-            spacing[4].after, 15.5,
+            spacing[4].after, 16.0,
             "the list group retains a 1em outer margin"
         );
 
@@ -2716,7 +2716,7 @@ mod tests {
             level: 2,
             content: vec![InlineSpan::Text("Section".into())],
         }]);
-        assert_eq!(first_h2[0].before, BlockStyle::heading(2).font_size * 1.8);
+        assert_eq!(first_h2[0].before, 0.0);
     }
 
     #[test]
@@ -2736,7 +2736,7 @@ mod tests {
 
         let spacing = block_sequence_spacing(&blocks);
 
-        assert_eq!(spacing[1].before, 15.5);
+        assert_eq!(spacing[1].before, 16.0);
     }
 
     #[test]
@@ -2754,7 +2754,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(block_sequence_spacing(&blocks)[1].before, 15.5 * 0.35);
+        assert_eq!(block_sequence_spacing(&blocks)[1].before, 16.0 * 0.35);
     }
 
     #[test]
@@ -2845,9 +2845,9 @@ mod tests {
         ];
 
         let nested_spacing = block_sequence_spacing(&nested_boundaries);
-        assert_eq!(nested_spacing[1].before, 15.5);
-        assert_eq!(nested_spacing[2].before, 15.5);
-        assert_eq!(block_sequence_spacing(&same_depth)[1].before, 15.5 * 0.35);
+        assert_eq!(nested_spacing[1].before, 16.0);
+        assert_eq!(nested_spacing[2].before, 16.0);
+        assert_eq!(block_sequence_spacing(&same_depth)[1].before, 16.0 * 0.35);
     }
 
     #[test]
@@ -2886,7 +2886,10 @@ mod tests {
             classify_link(document, "https://mdow.dev/docs"),
             LinkRoute::Web("https://mdow.dev/docs".into()),
         );
-        assert_eq!(classify_link(document, "#details"), LinkRoute::Inert);
+        assert_eq!(
+            classify_link(document, "#details"),
+            LinkRoute::Anchor("details".into())
+        );
         assert_eq!(
             classify_link(document, "javascript:alert(1)"),
             LinkRoute::Inert

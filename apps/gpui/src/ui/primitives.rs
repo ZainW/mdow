@@ -129,7 +129,10 @@ pub fn list_row(id: (&'static str, usize), style: ListRowStyle, theme: Theme) ->
         .flex()
         .items_center()
         .h(px(28.0))
-        .px(px(8.0 + style.indent))
+        .min_w_0()
+        .flex_none()
+        .pl(px(10.0 + style.indent))
+        .pr(px(10.0))
         .rounded(px(5.0))
         .bg(if selected {
             theme.sidebar_accent
@@ -140,7 +143,7 @@ pub fn list_row(id: (&'static str, usize), style: ListRowStyle, theme: Theme) ->
             row.hover(move |style| style.bg(theme.sidebar_accent))
         })
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(12.0))
+        .text_size(px(Metrics::APP_FONT_SIZE))
         .text_color(theme.foreground)
         .cursor_pointer()
         .focus(move |style| style.border_1().border_color(theme.primary))

@@ -1,7 +1,7 @@
 //! Typed preference values. Illegal combinations do not exist. No IO, no wire strings.
 
-pub const READER_FONT_SIZE: f32 = 15.5;
-pub const READER_LINE_HEIGHT: f32 = 1.65;
+pub const READER_FONT_SIZE: f32 = 16.0;
+pub const READER_LINE_HEIGHT: f32 = 1.75;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeMode {

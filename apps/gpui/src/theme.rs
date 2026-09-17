@@ -77,7 +77,7 @@ impl Metrics {
     pub const TAB_CLOSE_END_MARGIN: f32 = 4.0;
     pub const BREADCRUMB_HEIGHT: f32 = 28.0;
     pub const READER_MAX_WIDTH: f32 = 768.0;
-    pub const READER_INSET: f32 = 48.0;
+    pub const READER_INSET: f32 = 32.0;
     pub const READER_TOP_PADDING: f32 = 32.0;
     pub const READER_BOTTOM_PADDING: f32 = 40.0;
     pub const RADIUS: f32 = 8.0;
@@ -294,8 +294,8 @@ mod tests {
         assert_eq!(
             layout.reader,
             Region {
-                x: 292.0,
-                width: 780.0,
+                x: 276.0,
+                width: 812.0,
             }
         );
     }
