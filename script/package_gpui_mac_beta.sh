@@ -196,7 +196,7 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   if [[ "$DID_EMBED_SPARKLE" == "true" ]]; then
     sign_sparkle_framework "$APP_CONTENTS/Frameworks/Sparkle.framework" "-" "$CODESIGN"
   fi
-  "$CODESIGN" --force --options runtime --sign - "$APP_BUNDLE"
+  "$CODESIGN" --force --sign - "$APP_BUNDLE"
 else
   if [[ "$DID_EMBED_SPARKLE" == "true" ]]; then
     sign_sparkle_framework "$APP_CONTENTS/Frameworks/Sparkle.framework" "$SIGNING_IDENTITY" "$CODESIGN"

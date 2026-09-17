@@ -251,6 +251,7 @@ assert_file "$local_case/dist/MdowNative-mac-beta.zip"
 assert_contains "$local_case/log/cargo" \
   "build --release --locked --manifest-path $ROOT_DIR/apps/gpui/Cargo.toml"
 assert_contains "$local_case/log/codesign" "--sign -"
+assert_not_contains "$local_case/log/codesign" "--options runtime"
 assert_file "$local_case/log/verify-assets"
 [[ -z "$(find "$local_case/tmp" -mindepth 1 -maxdepth 1 -print -quit)" ]] || \
   fail "local package left temporary directories behind"
@@ -391,6 +392,7 @@ run_packager \
   APPLE_APP_SPECIFIC_PASSWORD=test-password \
   APPLE_TEAM_ID=TEAM123 \
 
+assert_contains "$release_case/log/codesign" "--options runtime"
 assert_contains "$release_case/log/xcrun" "notarytool submit"
 assert_contains "$release_case/log/xcrun" "--wait"
 assert_contains "$release_case/log/xcrun" "stapler staple"

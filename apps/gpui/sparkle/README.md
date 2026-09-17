@@ -39,7 +39,7 @@ The linked Sparkle framework is always bundled, including local builds without u
 
 - `cargo run` outside a `.app` does not start Sparkle.
 - Override the feed with `MDOW_SPARKLE_FEED_URL` (for isolated test hosts; Info.plist ships the production URL).
-- Local packages re-sign every embedded Sparkle executable with the same ad-hoc identity.
+- Local packages re-sign every embedded Sparkle executable ad-hoc without hardened runtime, which requires a real Team ID for library validation on newer macOS. Developer ID releases always enable hardened runtime.
 
 ## CI fetch
 
