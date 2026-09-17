@@ -23,11 +23,13 @@ use std::{borrow::Cow, ffi::OsString, path::PathBuf};
 enum WindowSeed {
     RestoreSession,
     Blank,
+    Smoke,
     RestoreSessionThenOpen(Option<PathBuf>),
 }
 
 struct LaunchArgs {
     verify_assets: bool,
+    smoke_test: bool,
     document_path: Option<PathBuf>,
 }
 
@@ -36,11 +38,14 @@ where
     T: Into<OsString>,
 {
     let mut verify_assets = false;
+    let mut smoke_test = false;
     let mut document_path = None;
 
     for argument in args.into_iter().skip(1).map(Into::into) {
         if argument == "--verify-assets" {
             verify_assets = true;
+        } else if argument == "--smoke-test" {
+            smoke_test = true;
         } else if document_path.is_none() && !argument.to_string_lossy().starts_with('-') {
             document_path = Some(PathBuf::from(argument));
         }
@@ -48,6 +53,7 @@ where
 
     LaunchArgs {
         verify_assets,
+        smoke_test,
         document_path,
     }
 }
@@ -134,6 +140,10 @@ fn main() -> anyhow::Result<()> {
         .collect::<anyhow::Result<Vec<_>>>()?;
     let launch_path = launch_args.document_path;
     let application = Application::new().with_assets(MdowAssets::new(asset_root));
+    let (open_sender, open_receiver) = async_channel::unbounded();
+    application.on_open_urls(move |urls| {
+        let _ = open_sender.try_send(urls);
+    });
     application.on_reopen(|cx| {
         if cx.windows().is_empty() {
             open_main_window(WindowSeed::RestoreSession, cx);
@@ -191,17 +201,71 @@ fn main() -> anyhow::Result<()> {
         });
         cx.set_menus(app_menus());
 
-        let _primary = open_main_window(WindowSeed::RestoreSessionThenOpen(launch_path), cx);
+        let seed = if launch_args.smoke_test {
+            WindowSeed::Smoke
+        } else {
+            WindowSeed::RestoreSessionThenOpen(launch_path)
+        };
+        let primary = open_main_window(seed, cx);
+        cx.spawn(async move |cx| {
+            while let Ok(urls) = open_receiver.recv().await {
+                let _ = cx.update(|cx| open_file_urls(urls, cx));
+            }
+        })
+        .detach();
+        if launch_args.smoke_test {
+            cx.spawn(async move |cx| {
+                gpui::Timer::after(std::time::Duration::from_secs(3)).await;
+                primary
+                    .update(cx, |_, _, _| ())
+                    .expect("smoke window remains alive");
+                println!("MDOW_SMOKE_OK");
+                let _ = cx.update(|cx| cx.quit());
+            })
+            .detach();
+        }
         cx.activate(true);
     });
     Ok(())
 }
 
+fn local_file_paths(urls: Vec<String>) -> Vec<PathBuf> {
+    urls.into_iter()
+        .filter_map(|value| url::Url::parse(&value).ok()?.to_file_path().ok())
+        .collect()
+}
+
+fn open_file_urls(urls: Vec<String>, cx: &mut App) {
+    let paths = local_file_paths(urls);
+    if paths.is_empty() {
+        return;
+    }
+    let window = cx
+        .active_window()
+        .and_then(|window| window.downcast::<MdowApp>())
+        .or_else(|| {
+            cx.windows()
+                .into_iter()
+                .find_map(|window| window.downcast::<MdowApp>())
+        })
+        .unwrap_or_else(|| open_main_window(WindowSeed::RestoreSession, cx));
+    let _ = window.update(cx, |app, window, cx| {
+        app.open_paths(paths, cx);
+        window.activate_window();
+    });
+    cx.activate(true);
+}
+
 fn open_main_window(seed: WindowSeed, cx: &mut App) -> WindowHandle<MdowApp> {
-    let store = StateStore::open_default();
+    let store = if matches!(seed, WindowSeed::Smoke) {
+        StateStore::in_memory()
+    } else {
+        StateStore::open_default()
+    };
     let Restored { prefs, session } = store.load();
     let (restore, launch_path, role) = match seed {
         WindowSeed::RestoreSession => (true, None, SessionRole::Owner),
+        WindowSeed::Smoke => (false, None, SessionRole::Transient),
         WindowSeed::Blank => (false, None, SessionRole::Transient),
         WindowSeed::RestoreSessionThenOpen(path) => (true, path, SessionRole::Owner),
     };
@@ -247,6 +311,22 @@ mod tests {
     use super::*;
     use gpui::OwnedMenuItem;
     use std::ffi::OsString;
+
+    #[test]
+    fn finder_urls_decode_spaces_unicode_and_ignore_non_file_schemes() {
+        assert_eq!(
+            local_file_paths(vec![
+                "file:///tmp/hello%20world.md".into(),
+                "file:///tmp/caf%C3%A9.mdx".into(),
+                "https://example.com/test.md".into(),
+                "invalid".into(),
+            ]),
+            vec![
+                PathBuf::from("/tmp/hello world.md"),
+                PathBuf::from("/tmp/café.mdx")
+            ]
+        );
+    }
 
     #[test]
     fn launch_path_is_the_first_non_flag_argument_only() {

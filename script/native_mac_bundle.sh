@@ -53,7 +53,7 @@ sign_sparkle_framework() {
     inner="$framework/Versions/B"
   fi
 
-  local sign_args=(--force --options runtime --sign "$identity")
+  local sign_args=(--force --sign "$identity")
   if [[ "$identity" != "-" ]]; then
     sign_args=(--force --timestamp --options runtime --sign "$identity")
   fi
@@ -63,7 +63,7 @@ sign_sparkle_framework() {
       "$codesign_bin" --force --timestamp --options runtime --preserve-metadata=entitlements \
         --sign "$identity" "$inner/Autoupdate"
     else
-      "$codesign_bin" --force --options runtime --sign - "$inner/Autoupdate"
+      "$codesign_bin" --force --sign - "$inner/Autoupdate"
     fi
   fi
   if [[ -d "$inner/Updater.app" ]]; then

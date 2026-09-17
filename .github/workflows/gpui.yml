@@ -11,6 +11,7 @@ name: GPUI verification
       - 'script/test_package_gpui_linux_beta.sh'
       - 'script/test_gpui_workflows.zsh'
       - 'script/fetch_sparkle.sh'
+      - 'script/test_native_updater.py'
       - 'script/generate_native_mac_appcast.sh'
       - '.github/workflows/gpui.yml'
       - '.github/workflows/release.yml'
@@ -25,6 +26,7 @@ name: GPUI verification
       - 'script/test_package_gpui_linux_beta.sh'
       - 'script/test_gpui_workflows.zsh'
       - 'script/fetch_sparkle.sh'
+      - 'script/test_native_updater.py'
       - 'script/generate_native_mac_appcast.sh'
       - '.github/workflows/gpui.yml'
       - '.github/workflows/release.yml'
@@ -68,6 +70,7 @@ jobs:
       - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
       - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
       - run: pnpm run test:gpui-workflows
+      - run: pnpm run test:native-updater
       - run: pnpm run test:package:gpui-mac-beta
       - run: pnpm run test:package:gpui-linux-beta
       - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta

@@ -146,6 +146,8 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
   gpui-mac-beta:
+    env:
+      SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -179,6 +181,7 @@ jobs:
       - run: cargo test --locked --manifest-path apps/gpui/Cargo.toml
       - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
       - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
+      - run: pnpm run test:native-updater
       - run: pnpm run test:package:gpui-mac-beta
       - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
         env:
@@ -243,6 +246,7 @@ jobs:
           test -f dist/gpui-mac/MdowNative-mac-beta.zip
 
       - name: Generate Native Sparkle appcast
+        if: env.SPARKLE_PRIVATE_ED_KEY != ''
         env:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: VERSION="${GITHUB_REF_NAME#v}" bash script/generate_native_mac_appcast.sh
@@ -270,15 +274,13 @@ jobs:
           gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber
 
       - name: Upload Native Sparkle appcast
+        if: env.SPARKLE_PRIVATE_ED_KEY != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          if [[ -f dist/gpui-mac/appcast-native-mac.xml ]]; then
-            gh release upload "$TAG" dist/gpui-mac/appcast-native-mac.xml --clobber
-          else
-            echo "No Native appcast to upload (SPARKLE_PRIVATE_ED_KEY unset or generate skipped)."
-          fi
+          test -s dist/gpui-mac/appcast-native-mac.xml
+          gh release upload "$TAG" dist/gpui-mac/appcast-native-mac.xml --clobber
 
       - name: Clean up keychain
         if: ${{ always() }}
@@ -381,4 +383,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          # Keep releases in draft until the signed Native feed is present. A
+          # maintainer can sign locally from Keychain when no CI key is configured.
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx appcast-native-mac.xml
           gh release edit "$TAG" --draft=false --latest
