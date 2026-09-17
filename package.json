@@ -14,7 +14,8 @@
     "lint": "turbo lint",
     "fmt": "turbo fmt",
     "fmt:check": "turbo fmt:check",
-    "test": "turbo test"
+    "test": "turbo test",
+    "test:native-updater": "python3 script/test_native_updater.py"
   },
   "devDependencies": {
     "turbo": "^2.10.12"

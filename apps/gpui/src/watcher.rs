@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "# Second");
         // OS event batching and a loaded runner can place writes in separate
         // debounce windows. Exact coalescing is covered by the clock-driven test.
-        while let Some(reloaded) = receive_path(&messages, Duration::from_millis(300)) {
+        if let Some(reloaded) = receive_path(&messages, Duration::from_millis(300)) {
             assert_eq!(reloaded, path);
         }
     }
