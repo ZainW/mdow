@@ -1,6 +1,6 @@
 import { _electron as electron } from 'playwright'
 import electronPath from 'electron'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,8 @@ const budgets = {
   inAppOpenMs: 1_000,
   superFirstContentMs: 3_500,
   superMermaidReadyMs: 8_000,
+  // ~3MB: the super fixture repeated 1,000 times. Measured from launch to the last block in the DOM.
+  hugeFullRenderMs: 2_500,
   themeToggleStableMs: 64,
   scrollP95FrameMs: 35,
   scrollLongFrames: 8,
@@ -42,6 +44,89 @@ async function createLargeFixture(workDir) {
   return target
 }
 
+async function createHugeFixture(workDir) {
+  const source = await readFile(superFixture, 'utf8')
+  const sections = Array.from({ length: 1_000 }, (_, i) =>
+    [`# Huge Fixture Iteration ${i + 1}`, source].join('\n\n'),
+  )
+  const target = join(workDir, 'huge.md')
+  await writeFile(target, [...sections, '# Huge Fixture End'].join('\n\n---\n\n'))
+  return target
+}
+
+// Pixels between the scroller's top edge and a heading's top.
+function headingOffset(page, id) {
+  return page.evaluate((headingId) => {
+    const scroller = document.querySelector('[data-markdown-scroller]')
+    const heading = document.getElementById(headingId)
+    if (!scroller || !heading) return Number.NaN
+    return heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  }, id)
+}
+
+function assertLandsOn(name, offset) {
+  // Headings sit a margin below the edge they were scrolled to; anything else means we missed.
+  if (!(offset >= -2 && offset < 64)) {
+    throw new Error(`${name} landed ${offset}px from the target heading`)
+  }
+}
+
+// Long documents use estimated block heights until blocks render, so navigation has to land on
+// the right content regardless. Checks outline jumps, tab switches, and live reloads.
+async function checkHugeNavigation(run, hugeFixture) {
+  const { app, page } = run
+  await page.getByRole('radio', { name: 'Outline' }).click()
+  // Follow an in-document link through the app's own click handler.
+  await page.evaluate(() => {
+    const link = document.createElement('a')
+    link.href = '#huge-fixture-iteration-900'
+    document.querySelector('.markdown-body .comark-content')?.prepend(link)
+    link.click()
+    link.remove()
+  })
+  await page.waitForTimeout(800)
+  assertLandsOn('anchor jump', await headingOffset(page, 'huge-fixture-iteration-900'))
+  const activeOutline = await page
+    .locator('a.outline-link[data-active="true"]')
+    .getAttribute('href')
+  // The fixture's own title sits right under the iteration heading, inside the scroll-spy line.
+  const expectedActive = ['#huge-fixture-iteration-900', '#super-markdown-performance-fixture-899']
+  if (!expectedActive.includes(activeOutline ?? '')) {
+    throw new Error(`outline highlighted ${activeOutline} after the jump`)
+  }
+
+  const other = join(dirname(hugeFixture), 'other.md')
+  await writeFile(other, '# Other Document\n')
+  await app.evaluate(
+    ({ BrowserWindow }, payload) =>
+      BrowserWindow.getAllWindows()[0]?.webContents.send('file:opened', payload),
+    { path: other, content: '# Other Document\n' },
+  )
+  await page.waitForSelector('#other-document')
+  await page.locator('[data-tab]').first().click()
+  await page.waitForSelector('#huge-fixture-end', { state: 'attached' })
+  await page.waitForTimeout(800)
+  assertLandsOn('tab switch restore', await headingOffset(page, 'huge-fixture-iteration-900'))
+
+  await appendFile(hugeFixture, '\n\n# Live Reload Marker\n')
+  await page.waitForSelector('#live-reload-marker', { state: 'attached', timeout: 10_000 })
+  await page.waitForTimeout(800)
+  assertLandsOn('live reload', await headingOffset(page, 'huge-fixture-iteration-900'))
+  console.log('huge navigation: anchor jump, outline, tab switch, and live reload land on target')
+}
+
+async function measureHugeRun(hugeFixture, { checkNavigation = false } = {}) {
+  const run = await launchForFile(hugeFixture, 'huge')
+  try {
+    await run.page.waitForSelector('#huge-fixture-end', { state: 'attached', timeout: 30_000 })
+    const fullRenderMs = performance.now() - run.startedAt
+    if (checkNavigation) await checkHugeNavigation(run, hugeFixture)
+    return fullRenderMs
+  } finally {
+    await closeRun(run)
+  }
+}
+
 async function launchForFile(filePath, label) {
   const userDataDir = await mkdtemp(join(tmpdir(), `mdow-${label}-user-data-`))
   const startedAt = performance.now()
@@ -51,10 +136,10 @@ async function launchForFile(filePath, label) {
     args: [`--user-data-dir=${userDataDir}`, appDir, filePath],
   })
   const page = await app.firstWindow()
-  await page.waitForSelector('.markdown-body h1', { timeout: 10_000 })
+  await page.waitForSelector('.markdown-body h1', { timeout: 30_000 })
   const firstContentMs = performance.now() - startedAt
 
-  return { app, page, userDataDir, firstContentMs }
+  return { app, page, userDataDir, firstContentMs, startedAt }
 }
 
 async function waitForMermaid(page) {
@@ -236,6 +321,15 @@ try {
   console.log(`small samples: inAppOpen=[${formatSamples(inAppOpenSamples)}]`)
   assertBudget('small median first content', small.firstContentMs, budgets.smallFirstContentMs)
   assertBudget('median in-app open', small.inAppOpenMs, budgets.inAppOpenMs)
+
+  const hugeFixture = await createHugeFixture(workDir)
+  const hugeSamples = [
+    await measureHugeRun(hugeFixture),
+    await measureHugeRun(hugeFixture, { checkNavigation: true }),
+  ]
+  const hugeFullRenderMs = Math.min(...hugeSamples)
+  console.log(`huge (3MB): fullRender=${hugeFullRenderMs.toFixed(1)}ms`)
+  assertBudget('huge full render', hugeFullRenderMs, budgets.hugeFullRenderMs)
 
   const superRun = await launchForFile(largeFixture, 'super')
   try {

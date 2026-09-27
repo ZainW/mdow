@@ -5,119 +5,21 @@ import {
   type MarkdownDocument,
   type Node,
 } from 'comark'
-import { defineCachedFunction } from 'ocache'
-import type { LanguageRegistration, ThemeRegistration } from 'shiki'
-import { rendererCacheStorage } from './cache-storage'
+import { memoizeAsync } from './cache-storage'
+import { normalizeLanguage } from './highlight'
+import { SECTION_TAG } from './markdown-sections'
 
 type ParseFn = ReturnType<typeof createMarkdownParser>
-type LanguageLoader = () => Promise<LanguageRegistration | LanguageRegistration[]>
 
 interface ParserFeatures {
-  highlight: boolean
   math: boolean
   mermaid: boolean
 }
 
-const loadJavascript = () => import('shiki/langs/javascript.mjs').then((m) => m.default)
-const loadTypescript = () => import('shiki/langs/typescript.mjs').then((m) => m.default)
-const loadPython = () => import('shiki/langs/python.mjs').then((m) => m.default)
-const loadRust = () => import('shiki/langs/rust.mjs').then((m) => m.default)
-const loadGo = () => import('shiki/langs/go.mjs').then((m) => m.default)
-const loadJava = () => import('shiki/langs/java.mjs').then((m) => m.default)
-const loadC = () => import('shiki/langs/c.mjs').then((m) => m.default)
-const loadCpp = () => import('shiki/langs/cpp.mjs').then((m) => m.default)
-const loadCsharp = () => import('shiki/langs/csharp.mjs').then((m) => m.default)
-const loadRuby = () => import('shiki/langs/ruby.mjs').then((m) => m.default)
-const loadSwift = () => import('shiki/langs/swift.mjs').then((m) => m.default)
-const loadKotlin = () => import('shiki/langs/kotlin.mjs').then((m) => m.default)
-const loadHtml = () => import('shiki/langs/html.mjs').then((m) => m.default)
-const loadCss = () => import('shiki/langs/css.mjs').then((m) => m.default)
-const loadJson = () => import('shiki/langs/json.mjs').then((m) => m.default)
-const loadYaml = () => import('shiki/langs/yaml.mjs').then((m) => m.default)
-const loadToml = () => import('shiki/langs/toml.mjs').then((m) => m.default)
-const loadXml = () => import('shiki/langs/xml.mjs').then((m) => m.default)
-const loadMarkdown = () => import('shiki/langs/markdown.mjs').then((m) => m.default)
-const loadSql = () => import('shiki/langs/sql.mjs').then((m) => m.default)
-const loadBash = () => import('shiki/langs/bash.mjs').then((m) => m.default)
-const loadShell = () => import('shiki/langs/shellscript.mjs').then((m) => m.default)
-const loadDiff = () => import('shiki/langs/diff.mjs').then((m) => m.default)
-const loadGraphql = () => import('shiki/langs/graphql.mjs').then((m) => m.default)
-const loadDockerfile = () => import('shiki/langs/dockerfile.mjs').then((m) => m.default)
-const loadLua = () => import('shiki/langs/lua.mjs').then((m) => m.default)
-const loadZig = () => import('shiki/langs/zig.mjs').then((m) => m.default)
-const loadElixir = () => import('shiki/langs/elixir.mjs').then((m) => m.default)
-const loadHaskell = () => import('shiki/langs/haskell.mjs').then((m) => m.default)
-const loadOcaml = () => import('shiki/langs/ocaml.mjs').then((m) => m.default)
-const loadJsx = () => import('shiki/langs/jsx.mjs').then((m) => m.default)
-const loadTsx = () => import('shiki/langs/tsx.mjs').then((m) => m.default)
-const loadPhp = () => import('shiki/langs/php.mjs').then((m) => m.default)
-
-const languageLoaders: Record<string, LanguageLoader> = {
-  javascript: loadJavascript,
-  js: loadJavascript,
-  mjs: loadJavascript,
-  cjs: loadJavascript,
-  typescript: loadTypescript,
-  ts: loadTypescript,
-  python: loadPython,
-  py: loadPython,
-  rust: loadRust,
-  rs: loadRust,
-  go: loadGo,
-  java: loadJava,
-  c: loadC,
-  cpp: loadCpp,
-  cxx: loadCpp,
-  'c++': loadCpp,
-  csharp: loadCsharp,
-  cs: loadCsharp,
-  'c#': loadCsharp,
-  ruby: loadRuby,
-  rb: loadRuby,
-  swift: loadSwift,
-  kotlin: loadKotlin,
-  kt: loadKotlin,
-  html: loadHtml,
-  css: loadCss,
-  json: loadJson,
-  yaml: loadYaml,
-  yml: loadYaml,
-  toml: loadToml,
-  xml: loadXml,
-  markdown: loadMarkdown,
-  md: loadMarkdown,
-  mdx: loadMarkdown,
-  sql: loadSql,
-  bash: loadBash,
-  sh: loadShell,
-  shell: loadShell,
-  shellscript: loadShell,
-  zsh: loadShell,
-  diff: loadDiff,
-  patch: loadDiff,
-  graphql: loadGraphql,
-  gql: loadGraphql,
-  dockerfile: loadDockerfile,
-  docker: loadDockerfile,
-  lua: loadLua,
-  zig: loadZig,
-  elixir: loadElixir,
-  ex: loadElixir,
-  haskell: loadHaskell,
-  hs: loadHaskell,
-  ocaml: loadOcaml,
-  ml: loadOcaml,
-  jsx: loadJsx,
-  tsx: loadTsx,
-  php: loadPhp,
-}
-
-const languagePromises = new Map<string, Promise<LanguageRegistration | LanguageRegistration[]>>()
-let themesPromise: Promise<{ light: ThemeRegistration; dark: ThemeRegistration }> | null = null
 const parserPromises = new Map<string, Promise<ParseFn>>()
 
 // Convert soft line breaks (`\n` inside text nodes) to <br>, GitHub-flavored.
-// Skips <pre>/<code> subtrees so the highlight plugin's line separators stay intact.
+// Skips <pre>/<code> subtrees so code keeps its literal newlines.
 function walkBreaks(node: unknown): void {
   if (!Array.isArray(node) || node.length <= 2) return
   const arr = node as unknown[]
@@ -154,14 +56,6 @@ const breaksOutsideCode: ComarkPlugin = {
 
 const fencePattern = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/gm
 
-function normalizeLanguage(language: string): string {
-  return language
-    .trim()
-    .toLowerCase()
-    .replace(/^language-/, '')
-    .split(/\s+/)[0]
-}
-
 function detectParserFeatures(text: string): ParserFeatures {
   const infos: string[] = []
   for (const match of text.matchAll(fencePattern)) {
@@ -169,106 +63,18 @@ function detectParserFeatures(text: string): ParserFeatures {
   }
 
   return {
-    highlight: infos.some((info) => {
-      const language = normalizeLanguage(info)
-      return language.length > 0 && language !== 'mermaid'
-    }),
     math: /(^|[^\\])\$/.test(text),
     mermaid: infos.some((info) => normalizeLanguage(info) === 'mermaid'),
   }
 }
 
 function parserKey(features: ParserFeatures): string {
-  return [
-    features.highlight ? 'highlight' : 'plain',
-    features.math ? 'math' : 'no-math',
-    features.mermaid ? 'mermaid' : 'no-mermaid',
-  ].join(':')
-}
-
-async function loadHighlightThemes(): Promise<{
-  light: ThemeRegistration
-  dark: ThemeRegistration
-}> {
-  themesPromise ??= Promise.all([
-    import('shiki/themes/github-light.mjs'),
-    import('shiki/themes/github-dark.mjs'),
-  ]).then(([light, dark]) => ({ light: light.default, dark: dark.default }))
-  return themesPromise
-}
-
-function loadLanguage(
-  language: string,
-): Promise<LanguageRegistration | LanguageRegistration[]> | null {
-  const normalized = normalizeLanguage(language)
-  const loader = languageLoaders[normalized]
-  if (!loader) return null
-
-  let promise = languagePromises.get(normalized)
-  if (!promise) {
-    promise = loader()
-    languagePromises.set(normalized, promise)
-  }
-  return promise
-}
-
-function collectCodeLanguages(tree: MarkdownDocument): string[] {
-  const languages = new Set<string>()
-
-  function visit(node: Node): void {
-    if (!isElement(node)) return
-
-    if (node[0] === 'pre') {
-      const language = node[1].language
-      if (typeof language === 'string' && normalizeLanguage(language) !== 'mermaid') {
-        languages.add(language)
-      }
-    }
-
-    for (const child of getChildren(node)) visit(child)
-  }
-
-  for (const node of tree.nodes) visit(node)
-  return [...languages]
-}
-
-const lazyHighlight: ComarkPlugin = {
-  name: 'lazy-highlight',
-  async post(state) {
-    const codeLanguages = collectCodeLanguages(state.tree)
-    if (codeLanguages.length === 0) return
-
-    const languagePromisesToLoad = codeLanguages
-      .map((language) => loadLanguage(language))
-      .filter((promise): promise is Promise<LanguageRegistration | LanguageRegistration[]> =>
-        Boolean(promise),
-      )
-    if (languagePromisesToLoad.length === 0) return
-
-    const languageResults = await Promise.all(languagePromisesToLoad)
-    const languages = languageResults.filter(
-      (language): language is LanguageRegistration | LanguageRegistration[] => Boolean(language),
-    )
-    const [themes, { highlightCodeBlocks }] = await Promise.all([
-      loadHighlightThemes(),
-      import('comark/plugins/shiki'),
-    ])
-
-    state.tree = await highlightCodeBlocks(state.tree, {
-      registerDefaultThemes: false,
-      registerDefaultLanguages: false,
-      themes,
-      languages,
-    })
-  },
+  return [features.math ? 'math' : 'no-math', features.mermaid ? 'mermaid' : 'no-mermaid'].join(':')
 }
 
 async function createParser(features: ParserFeatures): Promise<ParseFn> {
   const plugins: ComarkPlugin[] = []
 
-  if (features.highlight) {
-    plugins.push(lazyHighlight)
-  }
   if (features.math) {
     const { default: math } = await import('comark/plugins/math')
     plugins.push(math({ throwOnError: false }))
@@ -297,7 +103,7 @@ async function getParser(text: string): Promise<ParseFn> {
 
 export async function initMarkdown(): Promise<void> {
   const parse = await getParser('plain')
-  await parse('```ts\n//\n```')
+  await parse('# Warm\n\n- list\n\n```ts\n//\n```')
 }
 
 export interface DocHeading {
@@ -354,11 +160,128 @@ function appendClassName(node: ElementNode, className: string): void {
   }
 }
 
-async function renderMarkdownUncached(
-  text: string,
-  options?: { bypassCache?: boolean },
-): Promise<RenderResult> {
-  void options
+// Documents with many top-level blocks are grouped into heading-aligned sections. Each section
+// is one content-visibility box, so Chromium tracks a few hundred boxes instead of tens of
+// thousands, and the per-section height estimate keeps the scrollbar honest before layout.
+const SECTION_MIN_BLOCKS = 160
+const SECTION_TARGET_BLOCKS = 24
+const SECTION_MAX_BLOCKS = 200
+// Rough characters per rendered line in the default reading column.
+const CHARS_PER_LINE = 85
+
+function countDescendants(node: Node, tag: string): number {
+  if (!isElement(node)) return 0
+  let count = node[0] === tag ? 1 : 0
+  for (const child of getChildren(node)) count += countDescendants(child, tag)
+  return count
+}
+
+function textLines(node: Node): number {
+  return Math.max(1, Math.ceil(getNodeText(node).length / CHARS_PER_LINE))
+}
+
+/** Estimated rendered height of a top-level block, in em. Only needs to be roughly right. */
+export function estimateBlockHeight(node: Node): number {
+  if (!isElement(node)) return 0
+  const tag = node[0]
+  switch (tag) {
+    case 'h1':
+      return 4.5
+    case 'h2':
+    case 'h3':
+      return 3.5
+    case 'h4':
+    case 'h5':
+    case 'h6':
+      return 2.5
+    case 'hr':
+      return 4
+    case 'pre': {
+      const code = typeof node[1].code === 'string' ? node[1].code : getNodeText(node)
+      return 4 + code.split('\n').length * 1.4
+    }
+    case 'table':
+      return 3 + countDescendants(node, 'tr') * 2.3
+    case 'ul':
+    case 'ol':
+      return 1 + countDescendants(node, 'li') * 1.75
+    case 'mermaid':
+      return 16
+    default:
+      return 1 + textLines(node) * 1.65
+  }
+}
+
+function isSectionBreak(node: Node): boolean {
+  return isElement(node) && (node[0] === 'h1' || node[0] === 'h2' || node[0] === 'h3')
+}
+
+// Two-lane FNV-1a over a block's tags, attributes, and text. Sections carry the combined value
+// as a signature so a live reload only re-renders the sections whose content changed.
+interface HashState {
+  a: number
+  b: number
+}
+
+function mixString(state: HashState, value: string): void {
+  let { a, b } = state
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    a = Math.imul(a ^ code, 0x01000193)
+    b = Math.imul(b ^ code, 0x5bd1e995)
+  }
+  a = Math.imul(a ^ value.length, 0x01000193)
+  state.a = a
+  state.b = b
+}
+
+function mixAttributes(state: HashState, attrs: Record<string, unknown>): void {
+  for (const key in attrs) {
+    // `code` repeats the fence body, which is already hashed as the <code> child's text.
+    if (key === 'code') continue
+    const value = attrs[key]
+    mixString(state, key)
+    mixString(state, typeof value === 'string' ? value : (JSON.stringify(value) ?? ''))
+  }
+}
+
+export function groupIntoSections(nodes: Node[], signatures?: string[]): Node[] {
+  if (nodes.length < SECTION_MIN_BLOCKS) return nodes
+
+  const sections: Node[] = []
+  let current: Node[] = []
+  let currentSignatures: string[] = []
+  let estimate = 0
+  const flush = () => {
+    if (current.length === 0) return
+    const attrs: Record<string, unknown> = { estimate: Math.round(estimate) }
+    if (signatures) attrs.signature = currentSignatures.join(',')
+    sections.push([SECTION_TAG, attrs, ...current] as ElementNode)
+    current = []
+    currentSignatures = []
+    estimate = 0
+  }
+
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index]
+    // Break before a heading so each section opens with the block whose top margin sets the
+    // gap; margins cannot collapse across a content-visibility boundary.
+    if (
+      (current.length >= SECTION_TARGET_BLOCKS && isSectionBreak(node)) ||
+      current.length >= SECTION_MAX_BLOCKS
+    ) {
+      flush()
+    }
+    current.push(node)
+    if (signatures) currentSignatures.push(signatures[index])
+    estimate += estimateBlockHeight(node)
+  }
+  flush()
+  return sections
+}
+
+/** Parses and post-processes a document on the current thread (main thread or worker). */
+export async function renderMarkdownInThread(text: string): Promise<RenderResult> {
   const parse = await getParser(text)
   const tree = await parse(text)
 
@@ -367,11 +290,18 @@ async function renderMarkdownUncached(
   const headings: DocHeading[] = []
   const slugCounts = new Map<string, number>()
 
+  const hash: HashState = { a: 0x811c9dc5, b: 0x9747b28c }
+
   function visit(node: Node): void {
+    if (typeof node === 'string') {
+      mixString(hash, node)
+      return
+    }
     if (!isElement(node)) return
 
     const tag = node[0]
     const attrs = node[1]
+    mixString(hash, tag)
 
     if (/^h[1-6]$/.test(tag)) {
       const headingText = getNodeText(node).trim()
@@ -390,6 +320,14 @@ async function renderMarkdownUncached(
       }
     }
 
+    if (tag === 'pre') {
+      // Hand the raw fence body to CodeBlock, which highlights it lazily near the viewport.
+      const code = node[2]
+      if (isElement(code) && code[0] === 'code' && typeof code[2] === 'string') {
+        attrs.code = code[2]
+      }
+    }
+
     if (tag === 'mermaid') {
       const code = typeof attrs.content === 'string' ? attrs.content : ''
       const id =
@@ -401,10 +339,19 @@ async function renderMarkdownUncached(
       mermaidBlocks.push({ id, code })
     }
 
+    // Attributes are hashed after the passes above have assigned ids and classes.
+    mixAttributes(hash, attrs)
     for (const child of getChildren(node)) visit(child)
   }
 
-  for (const node of tree.nodes) visit(node)
+  const signatures: string[] = []
+  for (const node of tree.nodes) {
+    hash.a = 0x811c9dc5
+    hash.b = 0x9747b28c
+    visit(node)
+    signatures.push(`${(hash.a >>> 0).toString(36)}.${(hash.b >>> 0).toString(36)}`)
+  }
+  tree.nodes = groupIntoSections(tree.nodes, signatures)
 
   return {
     tree,
@@ -414,16 +361,12 @@ async function renderMarkdownUncached(
   }
 }
 
-export const renderMarkdown = defineCachedFunction(renderMarkdownUncached, {
-  name: 'renderMarkdown',
-  storage: rendererCacheStorage,
-  maxAge: 3600,
-  getKey: (text: string, options?: { bypassCache?: boolean }) => {
-    void options
-    return text
-  },
-  shouldBypassCache: (text: string, options?: { bypassCache?: boolean }) => {
-    void text
-    return options?.bypassCache === true
-  },
+// Keyed by document text. Kept small: a render of a very large document holds its whole tree.
+export const renderMarkdown = memoizeAsync<
+  [text: string, options?: { bypassCache?: boolean }],
+  RenderResult
+>((text) => renderMarkdownInThread(text), {
+  maxEntries: 24,
+  getKey: (text) => text,
+  shouldBypassCache: (_text, options?: { bypassCache?: boolean }) => options?.bypassCache === true,
 })

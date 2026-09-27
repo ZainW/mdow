@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect } from 'react'
 import { useAppStore, selectActiveTab, type Tab } from './store/app-store'
 import { useTheme } from './hooks/useTheme'
 import { useFolderTree } from './hooks/useFolderTree'
@@ -14,29 +14,40 @@ import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import { CommandPalette } from './components/CommandPalette'
 import { UpdateBanner } from './components/UpdateBanner'
-import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { CheatSheetOverlay } from './components/CheatSheetOverlay'
-import { SettingsDialog } from './components/SettingsDialog'
 import {
-  CompanionPanel,
-  CompanionShell,
+  LazyCompanionPanel,
+  LazyCompanionShell,
   useCompanionBootstrap,
-} from './components/companion/CompanionPanel'
+} from './components/companion/CompanionLazy'
+import { DeferredMount } from './components/DeferredMount'
 import { SidebarProvider } from './components/ui/sidebar'
 import { Button } from './components/ui/button'
 import { basename, isDocumentPath, isHtmlPath } from './lib/path-utils'
 import { TitlebarInset } from './components/TitlebarInset'
 import { Logo } from './components/Logo'
-import { IconLab } from './dev/IconLab'
 import { FileText, PanelRightOpen } from 'lucide-react'
 
 const isIconLab = import.meta.env.VITE_ICON_LAB === 'true'
+const IconLab = lazy(() => import('./dev/IconLab').then((mod) => ({ default: mod.IconLab })))
+const CommandPalette = lazy(() =>
+  import('./components/CommandPalette').then((mod) => ({ default: mod.CommandPalette })),
+)
+const SettingsDialog = lazy(() =>
+  import('./components/SettingsDialog').then((mod) => ({ default: mod.SettingsDialog })),
+)
+const ShortcutsDialog = lazy(() =>
+  import('./components/ShortcutsDialog').then((mod) => ({ default: mod.ShortcutsDialog })),
+)
 
 function App(): React.JSX.Element {
   if (isIconLab) {
-    return <IconLab />
+    return (
+      <Suspense fallback={null}>
+        <IconLab />
+      </Suspense>
+    )
   }
   return (
     <AppErrorBoundary>
@@ -91,7 +102,7 @@ function SplitPane({
     <section
       aria-label={`${paneLabel} document pane`}
       data-active-pane={isActive}
-      className="group/pane relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background outline-none data-[active-pane=true]:z-10"
+      className="group/pane relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background outline-none data-[active-pane=true]:z-(--z-raised)"
       onPointerDown={() => setActivePane(pane)}
     >
       <div className="flex h-(--breadcrumb-height) shrink-0 items-center gap-2 border-b border-border-subtle bg-background px-3 text-[length:var(--breadcrumb-text-size)]">
@@ -156,7 +167,7 @@ function StartupSplash(): React.JSX.Element {
   return (
     <div className="flex h-screen w-screen flex-col bg-background">
       <TitlebarInset />
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="startup-splash flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
         <Logo className="h-12 w-12 rounded-[22%] shadow-sm ring-1 ring-border/40" />
         <p className="text-sm text-muted-foreground/80">Loading…</p>
       </div>
@@ -175,6 +186,7 @@ function MainApp(): React.JSX.Element {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const interfaceScale = useAppStore((s) => s.interfaceScale)
+  const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen)
   const openMarkdownFile = useOpenMarkdownFile()
 
   useTheme()
@@ -250,7 +262,7 @@ function MainApp(): React.JSX.Element {
       >
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <CompanionShell>
+          <LazyCompanionShell>
             <Sidebar />
             <main aria-label="Document" className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <TabBar />
@@ -258,12 +270,18 @@ function MainApp(): React.JSX.Element {
               <MainContent activeTab={activeTab} />
               <UpdateBanner />
             </main>
-            <CompanionPanel />
-          </CompanionShell>
-          <CommandPalette />
+            <LazyCompanionPanel />
+          </LazyCompanionShell>
+          <DeferredMount when={commandPaletteOpen}>
+            <CommandPalette />
+          </DeferredMount>
           <CheatSheetOverlay />
-          <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
-          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+          <DeferredMount when={shortcutsDialogOpen}>
+            <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
+          </DeferredMount>
+          <DeferredMount when={settingsOpen}>
+            <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+          </DeferredMount>
         </div>
       </div>
     </SidebarProvider>

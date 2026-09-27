@@ -1,5 +1,5 @@
-import Store from 'electron-store'
 import { existsSync } from 'fs'
+import { JsonStore } from './json-store'
 
 interface SessionTab {
   path: string
@@ -58,10 +58,10 @@ const storeDefaults: StoreSchema = {
   companionLastModel: null,
 }
 
-let store: Store<StoreSchema> | null = null
+let store: JsonStore<StoreSchema> | null = null
 
-function getStore(): Store<StoreSchema> {
-  store ??= new Store<StoreSchema>({ defaults: storeDefaults })
+function getStore(): JsonStore<StoreSchema> {
+  store ??= new JsonStore<StoreSchema>({ defaults: storeDefaults })
   return store
 }
 

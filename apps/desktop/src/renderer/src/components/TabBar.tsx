@@ -159,7 +159,7 @@ export function TabBar() {
                   )}
                   <div
                     className={cn(
-                      'tab-btn flex h-(--tab-height) max-w-(--tab-max-width) items-center gap-1.5 self-center rounded-md text-[length:var(--control-font-size)]',
+                      'tab-btn flex h-(--tab-height) max-w-(--tab-max-width) items-center gap-1.5 self-center rounded-md text-[length:var(--control-font-size)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50',
                       isActive
                         ? 'bg-card text-foreground shadow-[0_1px_0_var(--color-border-subtle),0_1px_2px_oklch(0_0_0/0.04)] ring-1 ring-border-subtle'
                         : 'text-muted-foreground',
@@ -188,7 +188,7 @@ export function TabBar() {
                           handleClose(tab.id)
                         }
                       }}
-                      className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit"
+                      className="flex min-w-0 items-center gap-1.5 px-2.5 text-inherit outline-none"
                     >
                       {tab.error ? (
                         <AlertCircle

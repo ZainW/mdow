@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { RenderResult } from '../../lib/markdown'
+import type { ScrollAnchor } from '../../lib/scroll-anchor'
 import type { PaneId } from '../../../../shared/types'
 
 export interface Tab {
@@ -7,6 +8,7 @@ export interface Tab {
   path: string
   content: string
   scrollPosition: number
+  scrollAnchor?: ScrollAnchor | null
   error?: FileError | null
 }
 
@@ -42,7 +44,7 @@ export interface TabSlice {
   disableSplitView: () => void
   toggleSplitView: () => void
   updateTabContent: (path: string, content: string) => void
-  updateTabScroll: (tabId: string, scrollPosition: number) => void
+  updateTabScroll: (tabId: string, scrollPosition: number, anchor?: ScrollAnchor | null) => void
   setTabError: (path: string, error: FileError) => void
   clearTabError: (tabId: string) => void
   setOpeningPath: (path: string | null) => void
@@ -107,6 +109,10 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
               ? { primaryPaneTabId: existing.id }
               : { secondaryPaneTabId: existing.id }
             : {}
+        // Same bytes (re-opened from recents, Finder, or session restore): keep the rendered tree.
+        if (existing.content === file.content && !existing.error) {
+          return activate ? { activeTabId: existing.id, ...panePatch } : {}
+        }
         return {
           activeTabId: activate ? existing.id : state.activeTabId,
           ...panePatch,
@@ -437,11 +443,11 @@ export const createTabSlice: StateCreator<TabSlice, [], [], TabSlice> = (set) =>
       }
     }),
 
-  updateTabScroll: (tabId, scrollPosition) =>
+  updateTabScroll: (tabId, scrollPosition, anchor = null) =>
     set((state) => ({
       tabs: state.tabs.map((t) => {
         if (t.id !== tabId || t.scrollPosition === scrollPosition) return t
-        return { ...t, scrollPosition }
+        return { ...t, scrollPosition, scrollAnchor: anchor }
       }),
     })),
 

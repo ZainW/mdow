@@ -218,7 +218,7 @@ export function FolderTree() {
               className="h-7"
             />
             {filterQuery.trim() && (
-              <p className="mt-1 px-1 text-[10px] text-muted-foreground/70">
+              <p className="mt-1 px-1 text-[10px] text-muted-foreground-subtle">
                 {filteredPaths.length} match{filteredPaths.length === 1 ? '' : 'es'}
               </p>
             )}

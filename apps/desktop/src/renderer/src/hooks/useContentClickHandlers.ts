@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type { RenderResult } from '../lib/markdown'
-import { scrollBehavior } from '../lib/motion'
+import { findMarkdownScroller, scrollToTarget } from '../lib/scroll-to'
 import { isDocumentPath, resolveRelativePath } from '../lib/path-utils'
 
 export function useContentClickHandlers({
@@ -45,7 +45,8 @@ export function useContentClickHandlers({
         event.preventDefault()
         const id = decodeURIComponent(href.slice(1))
         const target = container.querySelector(`#${CSS.escape(id)}`) ?? document.getElementById(id)
-        target?.scrollIntoView({ behavior: scrollBehavior('travel'), block: 'start' })
+        const scroller = target && findMarkdownScroller(target)
+        if (target && scroller) scrollToTarget(scroller, target, { smooth: true })
         return
       }
 

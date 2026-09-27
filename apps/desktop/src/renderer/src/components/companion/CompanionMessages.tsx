@@ -67,7 +67,7 @@ function AssistantParts({ message }: { message: CompanionMessage }) {
     <>
       {streaming && message.parts.length === 0 && (
         <output className="flex items-center gap-2 py-1.5 text-xs text-muted-foreground">
-          <CircleEllipsis className="size-3.5 shrink-0 animate-pulse" aria-hidden />
+          <CircleEllipsis className="size-3.5 shrink-0 motion-safe:animate-pulse" aria-hidden />
           <span>Connecting to local agent…</span>
         </output>
       )}

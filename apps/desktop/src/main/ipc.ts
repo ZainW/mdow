@@ -10,6 +10,7 @@ import { applyWindowChrome } from './window-chrome'
 import { validatePath, validateDocumentPath, isAllowedExternalUrl } from './path-validation'
 import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allowed-paths'
 import { rebuildMenu } from './menu'
+import { markRendererReady, takeLaunchFiles } from './launch-files'
 import { getCompanionService } from './companion/service'
 import type { CompanionProviderId, CompanionSendPayload, CompanionSettings } from '../shared/types'
 
@@ -199,7 +200,10 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle('store:get-recents', () => getRecents())
 
-  ipcMain.handle('store:get-state', () => getAppState())
+  ipcMain.handle('store:get-state', (event) => {
+    markRendererReady(event.sender)
+    return { ...getAppState(), launchFiles: takeLaunchFiles() }
+  })
   ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) => {
     const {
       companionCustomCommand: _customCommand,

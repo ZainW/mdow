@@ -82,6 +82,45 @@ export function useAppInit(): void {
           })
       }
 
+      const failedPaths: string[] = []
+      const restoreTab = async (path: string, activate: boolean): Promise<boolean> => {
+        try {
+          const content = await window.api.readFile(path)
+          openTab({ path, content }, { activate })
+          return true
+        } catch {
+          failedPaths.push(path)
+          return false
+        }
+      }
+
+      // Files the OS asked us to open (Finder, `open -a`, argv) win focus over the saved session.
+      const [launchFile, ...otherLaunchFiles] = state.launchFiles ?? []
+      if (launchFile) {
+        try {
+          const content = await window.api.readFile(launchFile)
+          openTab({ path: launchFile, content })
+        } catch (err) {
+          openErrorTab(launchFile, { type: getReadErrorType(err), path: launchFile })
+        }
+        useAppStore.setState({ initialized: true })
+
+        void (async () => {
+          for (const path of [
+            ...(state.sessionTabs ?? []).map((tab) => tab.path),
+            ...otherLaunchFiles,
+          ]) {
+            if (path === launchFile) continue
+            // oxlint-disable-next-line no-await-in-loop -- restore background tabs sequentially to avoid an I/O burst at startup.
+            await restoreTab(path, false)
+          }
+          if (failedPaths.length > 0) {
+            console.warn(`Failed to restore ${failedPaths.length} tab(s):`, failedPaths)
+          }
+        })()
+        return
+      }
+
       if (state.sessionTabs?.length) {
         const activePath = state.sessionActiveTabPath
         const activeTab = activePath
@@ -91,21 +130,9 @@ export function useAppInit(): void {
           ? state.sessionTabs.filter((tab) => tab.path !== activeTab.path)
           : state.sessionTabs
 
-        const failedPaths: string[] = []
-
-        const restoreTab = async (tab: { path: string }, activate: boolean): Promise<boolean> => {
-          try {
-            const content = await window.api.readFile(tab.path)
-            openTab({ path: tab.path, content }, { activate })
-            return true
-          } catch {
-            failedPaths.push(tab.path)
-            return false
-          }
-        }
-
-        const restoredActive = activeTab ? await restoreTab(activeTab, true) : false
+        const restoredActive = activeTab ? await restoreTab(activeTab.path, true) : false
         useAppStore.setState({ initialized: true })
+        const restoredActiveId = useAppStore.getState().activeTabId
 
         void (async () => {
           let hasActiveTab = restoredActive
@@ -113,16 +140,19 @@ export function useAppInit(): void {
 
           for (const tab of inactiveTabs) {
             // oxlint-disable-next-line no-await-in-loop -- restore background tabs sequentially to avoid an I/O burst at startup.
-            const restored = await restoreTab(tab, !hasActiveTab)
+            const restored = await restoreTab(tab.path, !hasActiveTab)
             if (restored && !hasActiveTab) {
               hasActiveTab = true
               fallbackActivePath = tab.path
             }
           }
 
+          // Only settle the active tab if the reader has not moved on (e.g. opened a file from
+          // Finder, or switched tabs) while the background tabs were loading.
+          const { tabs, activeTabId } = useAppStore.getState()
           const targetActivePath = restoredActive ? activeTab?.path : fallbackActivePath
-          if (targetActivePath) {
-            const tabs = useAppStore.getState().tabs
+          const untouched = activeTabId === restoredActiveId || activeTabId === null
+          if (targetActivePath && untouched) {
             const active = tabs.find((t) => t.path === targetActivePath)
             if (active) {
               useAppStore.setState({ activeTabId: active.id })

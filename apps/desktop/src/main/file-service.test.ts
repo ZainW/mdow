@@ -49,7 +49,7 @@ describe('file-service watchers', () => {
     vi.useRealTimers()
   })
 
-  it('debounces change events by 300ms', async () => {
+  it('debounces change events by 120ms', async () => {
     const onChange = vi.fn()
     watchFile('/docs/readme.md', onChange)
 
@@ -61,7 +61,9 @@ describe('file-service watchers', () => {
     expect(onChange).not.toHaveBeenCalled()
 
     mockReadFile.mockResolvedValue('updated')
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(119)
+    expect(mockReadFile).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
 
     expect(mockReadFile).toHaveBeenCalledOnce()
     expect(onChange).toHaveBeenCalledOnce()

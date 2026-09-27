@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+/* `dark:` follows the same `.dark` class as the theme tokens (toggled inside withoutTransitions),
+   not the media query, so utilities and tokens always flip together. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @font-face {
   font-family: 'Inter';
   src: url('../fonts/InterVariable.woff2') format('woff2');
@@ -119,6 +123,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground-subtle: var(--muted-foreground-subtle);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
@@ -151,6 +156,8 @@
     --secondary-foreground: oklch(0.35 0.02 50);
     --muted: oklch(0.96 0.006 70);
     --muted-foreground: oklch(0.45 0.015 50);
+    /* Tertiary text tier; still >= 4.5:1 on background (use instead of muted-foreground/60). */
+    --muted-foreground-subtle: oklch(0.52 0.012 50);
     --accent: oklch(0.62 0.16 55);
     --accent-foreground: oklch(1 0 0);
     --destructive: oklch(0.55 0.2 25);
@@ -184,6 +191,19 @@
     --md-diagram-font: 'IBM Plex Mono', 'Geist Mono', ui-monospace, monospace;
     --md-diagram-font-size: 13.5px;
     --md-diagram-radius: 6px;
+
+    --md-alert-note: oklch(0.55 0.17 255);
+    --md-alert-tip: oklch(0.55 0.14 150);
+    --md-alert-important: oklch(0.55 0.17 295);
+    --md-alert-warning: oklch(0.6 0.13 75);
+    --md-alert-caution: oklch(0.56 0.19 25);
+
+    /* Layering scale — use these instead of ad-hoc z values. */
+    --z-raised: 10;
+    --z-sticky: 20;
+    --z-drawer: 40;
+    --z-overlay: 45;
+    --z-modal: 50;
 
     --icon-size-xs: 10px;
     --icon-size-sm: 12px;
@@ -306,11 +326,12 @@
     --secondary-foreground: oklch(0.92 0 0);
     --muted: oklch(0.19 0 0);
     --muted-foreground: oklch(0.65 0 0);
+    --muted-foreground-subtle: oklch(0.6 0 0);
     --accent: oklch(0.75 0.15 80);
     --accent-foreground: oklch(0.14 0 0);
     --destructive: oklch(0.6 0.2 25);
     --border: oklch(0.27 0 0);
-    --border-subtle: oklch(0.22 0 0);
+    --border-subtle: oklch(0.24 0 0);
     --input: oklch(0.27 0 0);
     --ring: oklch(0.68 0.15 260);
     --radius: 0.5rem;
@@ -339,10 +360,17 @@
     --md-diagram-font: 'IBM Plex Mono', 'Geist Mono', ui-monospace, monospace;
     --md-diagram-font-size: 13.5px;
     --md-diagram-radius: 6px;
+
+    --md-alert-note: oklch(0.68 0.14 255);
+    --md-alert-tip: oklch(0.68 0.13 150);
+    --md-alert-important: oklch(0.68 0.14 295);
+    --md-alert-warning: oklch(0.74 0.13 75);
+    --md-alert-caution: oklch(0.66 0.17 25);
   }
 
-  :root[data-palette='fog-pine'],
-  [data-palette='fog-pine'] {
+  /* Light-only paper palette: must not override the dark tokens above. */
+  :root[data-palette='fog-pine']:not(.dark),
+  :not(.dark) [data-palette='fog-pine'] {
     --md-paper: #f1f3ed;
     --md-paper-warm: #e7eae2;
     --md-ink: #1d2620;
@@ -638,6 +666,18 @@ html.theme-switching * {
   box-shadow: none !important;
 }
 
+/* ── Startup splash ──
+   Startup is usually faster than a glance; only show the splash if it is not. */
+.startup-splash {
+  animation: startup-splash-in 180ms ease-out 400ms both;
+}
+
+@keyframes startup-splash-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* ── Code block copy button ──────────────────────────────── */
 .code-block-wrapper {
   position: relative;
@@ -681,23 +721,46 @@ html.theme-switching * {
   }
 }
 
-.copy-code-btn .copy-icon {
-  display: block;
-  transition: opacity 120ms ease-out;
+.copy-code-btn {
+  --copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E");
+  --copied-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
-.copy-code-btn .copy-icon-done {
+/* Icons are CSS masks rather than inline SVG: a long document can hold thousands of code blocks,
+   and two SVG subtrees per block add up to tens of thousands of DOM nodes. */
+.copy-code-btn::before,
+.copy-code-btn::after {
+  content: '';
   position: absolute;
-  opacity: 0;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  mask: var(--copy-icon) center / contain no-repeat;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms var(--ease-out-ui);
 }
 
-.copy-code-btn[data-copied='true'] .copy-icon-default {
+.copy-code-btn::after {
+  mask-image: var(--copied-icon);
   opacity: 0;
+  transform: scale(0.8);
 }
 
-.copy-code-btn[data-copied='true'] .copy-icon-done {
-  opacity: 1;
+.copy-code-btn[data-copied='true'] {
   color: var(--foreground);
+}
+
+.copy-code-btn[data-copied='true']::before {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.copy-code-btn[data-copied='true']::after {
+  opacity: 1;
+  transform: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -719,7 +782,8 @@ html.theme-switching * {
 
 @media (prefers-reduced-motion: reduce) {
   .copy-code-btn,
-  .copy-code-btn .copy-icon {
+  .copy-code-btn::before,
+  .copy-code-btn::after {
     transition: none;
   }
 }
@@ -741,34 +805,24 @@ html.theme-switching * {
 }
 
 /* ── In-document search highlights ───────────────────────── */
-mark.search-highlight {
-  background-color: oklch(0.93 0.08 85) !important;
+::highlight(mdow-search) {
+  background-color: oklch(0.93 0.08 85);
   color: inherit;
-  border-radius: 3px;
-  padding: 0;
-  margin: 0;
 }
 
-mark.search-highlight.search-highlight-active {
-  background-color: oklch(0.82 0.12 260) !important;
+::highlight(mdow-search-active) {
+  background-color: oklch(0.82 0.12 260);
   color: oklch(0.15 0 0);
-  border-radius: 3px;
-  box-shadow:
-    0 0 0 2px oklch(0.55 0.17 260 / 0.25),
-    0 1px 3px oklch(0.55 0.17 260 / 0.15);
 }
 
-.dark mark.search-highlight {
-  background-color: oklch(0.45 0.08 85) !important;
+.dark ::highlight(mdow-search) {
+  background-color: oklch(0.45 0.08 85);
   color: oklch(0.92 0 0);
 }
 
-.dark mark.search-highlight.search-highlight-active {
-  background-color: oklch(0.45 0.12 260) !important;
+.dark ::highlight(mdow-search-active) {
+  background-color: oklch(0.45 0.12 260);
   color: oklch(0.92 0 0);
-  box-shadow:
-    0 0 0 2px oklch(0.68 0.15 260 / 0.3),
-    0 1px 3px oklch(0.68 0.15 260 / 0.2);
 }
 
 /* @pierre/trees integration — map library CSS variables to sidebar tokens */

@@ -6,8 +6,8 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(() => true),
 }))
 
-vi.mock('electron-store', () => ({
-  default: class TestStore {
+vi.mock('./json-store', () => ({
+  JsonStore: class TestStore {
     private values = new Map<string, unknown>()
 
     constructor(options: { defaults: Record<string, unknown> }) {

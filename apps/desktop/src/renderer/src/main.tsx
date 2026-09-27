@@ -15,7 +15,10 @@ const queryClient = new QueryClient({
 })
 
 function runMarkdownWarmup(): void {
-  void import('./lib/markdown').then(({ initMarkdown }) => initMarkdown())
+  void import('./lib/markdown')
+    .then(({ initMarkdown }) => initMarkdown())
+    .then(() => import('./lib/highlight'))
+    .then(({ warmHighlighter }) => warmHighlighter())
 }
 
 function scheduleMarkdownWarmup(): void {

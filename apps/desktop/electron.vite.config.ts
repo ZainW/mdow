@@ -14,17 +14,10 @@ export default defineConfig({
     },
     plugins: [tailwindcss(), react()],
     build: {
+      // Less JavaScript to parse and compile on every launch.
+      minify: true,
       rollupOptions: {
         input: resolve('src/renderer/index.html'),
-        output: {
-          manualChunks(id: string) {
-            if (id.includes('/components/SettingsDialog')) return 'ui-settings'
-            if (id.includes('/components/ShortcutsDialog')) return 'ui-shortcuts'
-            if (id.includes('/components/CommandPalette')) return 'ui-command'
-            if (id.includes('/components/companion/')) return 'companion'
-            return undefined
-          },
-        },
       },
     },
     server: {

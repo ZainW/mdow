@@ -11,8 +11,8 @@ function setTabRenderInStore(tabId: string, result: RenderResult): void {
 }
 
 async function renderMarkdownContent(content: string): Promise<RenderResult> {
-  const { renderMarkdown } = await import('../lib/markdown')
-  return renderMarkdown(content)
+  const { renderDocument } = await import('../lib/markdown-client')
+  return renderDocument(content)
 }
 
 export interface RenderUi {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { initMarkdown, renderMarkdown } from './markdown'
-import { updateMermaidTheme } from './mermaid'
 
 function makeLargeDocument(sectionCount: number): string {
   return Array.from({ length: sectionCount }, (_, i) =>
@@ -56,40 +55,20 @@ describe('markdown rendering performance', () => {
     expect(result.mermaidBlocks).toHaveLength(60)
   })
 
-  it('theme refresh avoids full re-parse (Shiki uses dual-theme CSS)', async () => {
-    await initMarkdown()
-    const markdown = makeLargeDocument(250)
-    const result = await renderMarkdown(markdown)
-
-    const reparseStart = performance.now()
-    await renderMarkdown(markdown, { bypassCache: true })
-    const reparseMs = performance.now() - reparseStart
-
-    updateMermaidTheme(true)
-    const themeRefreshStart = performance.now()
-    // Prose + code blocks flip via `.dark` CSS only; diagrams are the only re-render work.
-    const themeRefreshMs = performance.now() - themeRefreshStart
-
-    expect(reparseMs).toBeGreaterThan(25)
-    expect(themeRefreshMs).toBeLessThan(5)
-    expect(result.mermaidBlocks).toHaveLength(0)
-  })
-
-  it('full re-parse is orders of magnitude slower than CSS-only theme refresh', async () => {
+  it('defers syntax highlighting, so re-parsing a large document stays cheap', async () => {
     await initMarkdown()
     const markdown = makeLargeDocument(250)
     await renderMarkdown(markdown)
 
     const reparseStart = performance.now()
-    await renderMarkdown(markdown, { bypassCache: true })
+    const result = await renderMarkdown(markdown, { bypassCache: true })
     const reparseMs = performance.now() - reparseStart
 
-    updateMermaidTheme(true)
-    const themeRefreshStart = performance.now()
-    const themeRefreshMs = performance.now() - themeRefreshStart
-
-    expect(reparseMs).toBeGreaterThan(25)
-    expect(themeRefreshMs).toBeLessThan(2)
-    expect(reparseMs / Math.max(themeRefreshMs, 0.001)).toBeGreaterThan(25)
+    // Code blocks come back as plain text plus their raw source; CodeBlock highlights them
+    // once they near the viewport, and theme flips are CSS-only (dual-theme variables).
+    const pre = JSON.stringify(result.tree.nodes).match(/\["pre",\{[^}]*"code":"const value0 = 0/)
+    expect(pre).not.toBeNull()
+    expect(JSON.stringify(result.tree.nodes)).not.toContain('--shiki-dark')
+    expect(reparseMs).toBeLessThan(500)
   })
 })

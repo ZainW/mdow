@@ -197,6 +197,8 @@ export interface AppState {
   companionPreferredProvider: CompanionProviderId | null
   companionCustomCommand: string
   companionLastModel: string | null
+  /** Documents the OS asked the app to open before this window could receive them. */
+  launchFiles?: string[]
 }
 
 export interface FolderOpenResult extends ScanResult {

@@ -4,12 +4,12 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(() => true),
 }))
 
-// Mock electron-store before importing the module
-vi.mock('electron-store', () => {
+// Mock the settings file store before importing the module
+vi.mock('./json-store', () => {
   const storeData = new Map<string, unknown>()
 
   return {
-    default: class MockStore {
+    JsonStore: class MockStore {
       private defaults: Record<string, unknown>
 
       constructor(opts: { defaults: Record<string, unknown> }) {
@@ -47,7 +47,7 @@ import { existsSync } from 'fs'
 
 // Get reference to the mock's internal data for resetting
 // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- accessing mock internals
-const { __storeData: storeData } = (await import('electron-store')) as unknown as {
+const { __storeData: storeData } = (await import('./json-store')) as unknown as {
   __storeData: Map<string, unknown>
 }
 

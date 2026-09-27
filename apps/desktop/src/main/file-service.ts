@@ -8,6 +8,9 @@ interface FileWatcherState {
   onChange: (event: FileWatchEvent) => void
 }
 
+// Editors write a save as a quick burst of events; wait for it to settle before reading.
+const FILE_CHANGE_DEBOUNCE_MS = 120
+
 const fileWatchers = new Map<string, FileWatcherState>()
 let activeWatchPath: string | null = null
 
@@ -49,7 +52,7 @@ export function watchFile(filePath: string, onChange: (event: FileWatchEvent) =>
         .catch(() => {
           // File might be temporarily unavailable during save
         })
-    }, 300)
+    }, FILE_CHANGE_DEBOUNCE_MS)
   })
 
   watcher.on('unlink', () => {

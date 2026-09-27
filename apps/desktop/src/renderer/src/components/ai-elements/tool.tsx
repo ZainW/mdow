@@ -26,7 +26,7 @@ const statusLabels: Record<CompanionToolState, string> = {
 
 const statusIcons: Record<CompanionToolState, ReactNode> = {
   pending: <CircleIcon className="size-3.5 text-muted-foreground" />,
-  running: <ClockIcon className="size-3.5 animate-pulse text-amber-600" />,
+  running: <ClockIcon className="size-3.5 text-amber-600 motion-safe:animate-pulse" />,
   completed: <CheckCircleIcon className="size-3.5 text-emerald-600" />,
   error: <XCircleIcon className="size-3.5 text-destructive" />,
   cancelled: <XCircleIcon className="size-3.5 text-muted-foreground" />,

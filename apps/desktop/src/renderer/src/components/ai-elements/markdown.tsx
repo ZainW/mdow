@@ -124,7 +124,8 @@ export function CompanionMarkdown({
     <div
       className={cn(
         'companion-md flex flex-col gap-2 break-words [&_code]:font-mono [&_pre]:font-mono',
-        streaming && 'after:ml-0.5 after:inline-block after:animate-pulse after:content-["▍"]',
+        streaming &&
+          'after:ml-0.5 after:inline-block motion-safe:after:animate-pulse after:content-["▍"]',
         className,
       )}
       dangerouslySetInnerHTML={{ __html: html }}

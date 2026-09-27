@@ -50,13 +50,13 @@ export function SearchBar({
   }
 
   return (
-    <div className="search-bar sticky top-0 z-20 ml-auto flex w-fit items-center gap-1.5 rounded-bl-xl border-b border-l border-border/50 bg-background/90 px-3 py-2 shadow-md backdrop-blur-md">
+    <div className="search-bar pointer-events-auto flex w-fit items-center gap-1.5 rounded-bl-xl border-b border-l border-border/50 bg-background/90 px-3 py-2 shadow-md backdrop-blur-md">
       <Input
         ref={inputRef}
         type="text"
         aria-label="Search in document"
         className="w-44 px-2"
-        placeholder="Search..."
+        placeholder="Search…"
         value={query}
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -70,7 +70,7 @@ export function SearchBar({
       </span>
       <span
         aria-hidden
-        className="hidden items-center gap-1 text-[length:var(--control-xs-font-size)] text-muted-foreground/60 lg:flex"
+        className="hidden items-center gap-1 text-[length:var(--control-xs-font-size)] text-muted-foreground-subtle lg:flex"
         title="Enter: next match · Shift+Enter: previous · Esc: close"
       >
         <Kbd>↵</Kbd>

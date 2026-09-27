@@ -6,15 +6,6 @@ import { useOpenFolderDialog } from './useOpenFolderDialog'
 import { useOpenMarkdownFile } from './useOpenMarkdownFile'
 import { useQueryClient } from '@tanstack/react-query'
 
-function hashContent(content: string): string {
-  let hash = 0
-  for (let i = 0; i < content.length; i++) {
-    hash = (hash << 5) - hash + content.charCodeAt(i)
-    hash |= 0
-  }
-  return String(hash)
-}
-
 function useActiveTabWatch(): void {
   const watchedPathRef = useRef<string | null>(null)
 
@@ -77,7 +68,8 @@ export function useAppMenuBindings(): void {
 
   const onFileChanged = useEffectEvent((data: { path: string; content: string }) => {
     const tab = useAppStore.getState().tabs.find((t) => t.path === data.path)
-    if (!tab || hashContent(tab.content) === hashContent(data.content)) return
+    // Direct comparison: exact, and far cheaper than hashing multi-megabyte documents.
+    if (!tab || tab.content === data.content) return
     updateTabContent(data.path, data.content)
   })
 

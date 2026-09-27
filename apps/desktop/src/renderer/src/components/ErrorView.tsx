@@ -69,7 +69,7 @@ export function ErrorView({ error, tabId }: ErrorViewProps) {
           <p className="text-sm leading-relaxed text-muted-foreground">{msg.body}</p>
         </div>
         <p
-          className="max-w-full truncate font-mono text-xs text-muted-foreground/60"
+          className="max-w-full truncate font-mono text-xs text-muted-foreground-subtle"
           title={error.path}
         >
           {displayPath}

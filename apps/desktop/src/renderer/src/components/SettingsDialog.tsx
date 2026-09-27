@@ -98,7 +98,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5 sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-3rem)] gap-5 overflow-y-auto overscroll-contain sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Tune how markdown reads.</DialogDescription>
@@ -172,7 +172,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </Field>
 
         <Field label="Code font">
-          <FontGrid groupLabel="Code font" cols={3}>
+          <FontGrid groupLabel="Code font" cols={4}>
             {CODE_FONTS.map((font) => (
               <FontTile
                 key={font.value}
@@ -270,7 +270,7 @@ function PresetToggleGroup<TValue extends string>({
           key={opt.value}
           value={opt.value}
           aria-label={opt.label}
-          className="flex-1 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15"
+          className="flex-1 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:bg-input dark:data-pressed:ring-foreground/15"
         >
           {opt.label}
         </ToggleGroupItem>
@@ -304,7 +304,7 @@ function ThemeRadiogroup({
           value={opt.value}
           aria-label={opt.label}
           className={cn(
-            'flex-1 gap-1.5 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:ring-foreground/15',
+            'flex-1 gap-1.5 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:bg-input dark:data-pressed:ring-foreground/15',
           )}
         >
           <opt.Icon
@@ -382,7 +382,7 @@ function FontTile({
         'transition-[background-color,border-color,box-shadow,transform] duration-150',
         'active:scale-[0.98] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
         active
-          ? 'border-foreground/25 bg-accent/10 ring-1 ring-foreground/10 dark:border-foreground/30 dark:bg-accent/15 dark:ring-foreground/20'
+          ? 'border-foreground/25 bg-foreground/[0.04] ring-1 ring-foreground/10 dark:border-foreground/30 dark:bg-foreground/[0.06] dark:ring-foreground/20'
           : 'border-border-subtle bg-background hover:border-border hover:bg-muted/60',
       )}
     >

@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore, type SidebarMode } from '../store/app-store'
 import { RecentsList } from './RecentsList'
 import { Button } from './ui/button'
@@ -13,7 +14,7 @@ import {
 import { Clock, Folder, FolderOpen, List, Settings } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
 import { EmptyState } from './EmptyState'
-import { scrollBehavior } from '../lib/motion'
+import { findMarkdownScroller, scrollToTarget } from '../lib/scroll-to'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { isMac } from '../lib/utils'
 
@@ -25,6 +26,7 @@ const MODE_CONFIG: Record<SidebarMode, { label: string; Icon: typeof Clock }> = 
 }
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 const FolderTree = lazy(() => import('./FolderTree').then((mod) => ({ default: mod.FolderTree })))
+const OUTLINE_ROW_ESTIMATE = 26
 type SidebarModeRoving = ReturnType<typeof useRovingFocus<HTMLDivElement>>
 
 export function Sidebar() {
@@ -113,7 +115,7 @@ function SidebarModeTabs({
       ref={roving.containerRef}
       role="radiogroup"
       aria-label="Sidebar mode"
-      className="grid grid-cols-3 gap-1"
+      className="flex gap-0.5"
     >
       {MODES.map((item) => (
         <SidebarModeTab
@@ -151,7 +153,7 @@ function SidebarModeTab({
       aria-checked={checked}
       aria-label={label}
       title={label}
-      className={`h-7 min-w-0 justify-center gap-1.5 px-1.5 text-xs ${
+      className={`h-7 min-w-0 flex-auto justify-center gap-1 px-1 text-[length:var(--sidebar-title-size)] ${
         checked
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
@@ -185,11 +187,31 @@ function OutlineList({
   activeId: string | null
   hasActiveDoc: boolean
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // Long documents have tens of thousands of headings; only the visible rows are rendered.
+  // oxlint-disable-next-line react/incompatible-library -- the outline is not memoized by the compiler; the virtualizer drives its re-renders.
+  const virtualizer = useVirtualizer({
+    count: headings.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => OUTLINE_ROW_ESTIMATE,
+    overscan: 12,
+  })
+  const activeIndex = useMemo(
+    () => (activeId ? headings.findIndex((h) => h.id === activeId) : -1),
+    [headings, activeId],
+  )
+
+  // Keep the reader's current heading in view as they scroll the document.
+  useEffect(() => {
+    if (activeIndex >= 0) virtualizer.scrollToIndex(activeIndex, { align: 'auto' })
+  }, [activeIndex, virtualizer])
+
   const handleClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault()
     const el = document.getElementById(id)
-    if (!el) return
-    el.scrollIntoView({ behavior: scrollBehavior('travel'), block: 'start' })
+    const scroller = el && findMarkdownScroller(el)
+    if (!el || !scroller) return
+    scrollToTarget(scroller, el, { smooth: true })
   }, [])
 
   if (headings.length === 0) {
@@ -207,28 +229,37 @@ function OutlineList({
     )
   }
   return (
-    <SidebarGroup>
-      <SidebarGroupContent>
-        <ul className="flex flex-col gap-px px-1.5 py-1">
-          {headings.map((h) => {
-            const isActive = h.id === activeId
-            return (
-              <li key={h.id}>
-                <a
-                  href={`#${h.id}`}
-                  data-active={isActive}
-                  onClick={(e) => handleClick(e, h.id)}
-                  className="outline-link block truncate rounded text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
-                  style={{ paddingLeft: 6 + (h.level - 1) * 10 }}
-                  title={h.text}
+    <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <SidebarGroup>
+        <SidebarGroupContent>
+          <ul className="relative px-1.5 py-1" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualizer.getVirtualItems().map((row) => {
+              const h = headings[row.index]
+              const isActive = row.index === activeIndex
+              return (
+                <li
+                  key={h.id}
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute inset-x-1.5 top-0 pb-px"
+                  style={{ transform: `translateY(${row.start}px)` }}
                 >
-                  {h.text}
-                </a>
-              </li>
-            )
-          })}
-        </ul>
-      </SidebarGroupContent>
-    </SidebarGroup>
+                  <a
+                    href={`#${h.id}`}
+                    data-active={isActive}
+                    onClick={(e) => handleClick(e, h.id)}
+                    className="outline-link block truncate rounded text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
+                    style={{ paddingLeft: 6 + (h.level - 1) * 10 }}
+                    title={h.text}
+                  >
+                    {h.text}
+                  </a>
+                </li>
+              )
+            })}
+          </ul>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    </div>
   )
 }

@@ -165,14 +165,14 @@ export function getMermaidThemeCSS(tokens: MermaidTokens): string {
   return `
     svg { background: transparent !important; }
     .node rect, .node polygon, .node circle, .node ellipse, .node path,
-    .actor, .actor-box, .classGroup rect, .labelBox, .note, .note rect,
+    rect.actor, rect.actor-box, .classGroup rect, .labelBox, .note, .note rect,
     .statediagram-state rect, .er.entityBox, .requirement, .quoted {
       fill: ${paperWarm} !important;
       stroke: ${line} !important;
       stroke-width: 1px !important;
       filter: none !important;
     }
-    .node rect, .actor, .classGroup rect, .labelBox, .note rect,
+    .node rect, rect.actor, .classGroup rect, .labelBox, .note rect,
     .statediagram-state rect, .er.entityBox {
       rx: ${radius} !important;
       ry: ${radius} !important;
@@ -187,7 +187,7 @@ export function getMermaidThemeCSS(tokens: MermaidTokens): string {
       fill: ${muted} !important;
       stroke: ${muted} !important;
     }
-    .label, .nodeLabel, .edgeLabel, .actor, .messageText, .loopText, .noteText,
+    .label, .nodeLabel, .edgeLabel, text.actor, text.actor > tspan, .messageText, .loopText, .noteText,
     .titleText, text {
       font-family: ${fontFamily} !important;
       font-size: ${fontSize} !important;

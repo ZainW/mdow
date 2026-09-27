@@ -34,7 +34,7 @@ export class AppErrorBoundary extends Component<Props, State> {
               The application encountered an unexpected error.
             </p>
             {this.state.error && (
-              <p className="mt-3 max-w-lg font-mono text-xs text-muted-foreground/70">
+              <p className="mt-3 max-w-lg font-mono text-xs text-muted-foreground-subtle">
                 {this.state.error.message}
               </p>
             )}

@@ -151,7 +151,7 @@ export function WelcomeView() {
         </div>
         {recents.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="font-mono text-[0.6875rem] tracking-[0.18em] text-muted-foreground/70 uppercase">
+            <p className="font-mono text-[0.6875rem] tracking-[0.18em] text-muted-foreground-subtle uppercase">
               Recent
             </p>
             <ul className="flex flex-col gap-px">

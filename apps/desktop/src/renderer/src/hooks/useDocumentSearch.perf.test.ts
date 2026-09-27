@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySearchHighlights } from '../lib/search-highlight'
+import { findSearchRanges } from '../lib/search-highlight'
 
 function makeSearchableDom(sectionCount: number): HTMLElement {
   const root = document.createElement('div')
@@ -11,14 +11,14 @@ function makeSearchableDom(sectionCount: number): HTMLElement {
   return root
 }
 
-describe('document search highlight performance', () => {
-  it('highlights a large document within the typing budget', () => {
-    const container = makeSearchableDom(240)
+describe('document search performance', () => {
+  it('finds matches in a large document within the typing budget', () => {
+    const container = makeSearchableDom(2_400)
     const startedAt = performance.now()
 
-    const count = applySearchHighlights(container, 'performance')
+    const ranges = findSearchRanges(container, 'performance')
 
     expect(performance.now() - startedAt).toBeLessThan(120)
-    expect(count).toBeGreaterThan(200)
+    expect(ranges).toHaveLength(2_400)
   })
 })

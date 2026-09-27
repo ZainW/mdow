@@ -1,3 +1,11 @@
+// In-document search paints matches with the CSS Custom Highlight API: matches are Ranges, and
+// the DOM is never modified. That keeps search compatible with React re-rendering blocks under
+// it (lazy syntax highlighting, live reload) and makes clearing a search free.
+
+const MATCH_HIGHLIGHT = 'mdow-search'
+const ACTIVE_HIGHLIGHT = 'mdow-search-active'
+const SKIP_SELECTOR = '.copy-code-btn, .code-lang-badge, .mermaid-container'
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -19,14 +27,14 @@ export function findMatchRanges(
 
 export function shouldSkipSearchTextNode(node: Text): boolean {
   const parent = node.parentElement
-  return (
-    !parent || Boolean(parent.closest('mark.search-highlight, .copy-code-btn, .mermaid-container'))
-  )
+  return !parent || Boolean(parent.closest(SKIP_SELECTOR))
 }
 
-export function applySearchHighlights(container: HTMLElement, query: string): number {
-  if (!query) return 0
+/** Every match of `query` in `container`'s text, in document order. */
+export function findSearchRanges(container: HTMLElement, query: string): Range[] {
+  if (!query) return []
 
+  const regex = new RegExp(escapeRegExp(query), 'gi')
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       return node instanceof Text && !shouldSkipSearchTextNode(node)
@@ -35,46 +43,44 @@ export function applySearchHighlights(container: HTMLElement, query: string): nu
     },
   })
 
-  const textNodes: Text[] = []
+  const ranges: Range[] = []
   while (walker.nextNode()) {
     const node = walker.currentNode
-    if (node instanceof Text) textNodes.push(node)
-  }
-
-  let matchIndex = 0
-
-  for (const node of textNodes) {
-    const text = node.textContent || ''
-    const ranges = findMatchRanges(text, query)
-    if (ranges.length === 0) continue
-
-    const fragment = document.createDocumentFragment()
-    let lastEnd = 0
-    for (const { start, end } of ranges) {
-      if (start > lastEnd) {
-        fragment.appendChild(document.createTextNode(text.slice(lastEnd, start)))
-      }
-      const mark = document.createElement('mark')
-      mark.className = 'search-highlight'
-      mark.setAttribute('data-match-index', String(matchIndex++))
-      mark.textContent = text.slice(start, end)
-      fragment.appendChild(mark)
-      lastEnd = end
+    const text = node.nodeValue
+    if (!text) continue
+    regex.lastIndex = 0
+    for (const match of text.matchAll(regex)) {
+      const range = document.createRange()
+      range.setStart(node, match.index)
+      range.setEnd(node, match.index + match[0].length)
+      ranges.push(range)
     }
-    if (lastEnd < text.length) {
-      fragment.appendChild(document.createTextNode(text.slice(lastEnd)))
-    }
-    node.parentNode!.replaceChild(fragment, node)
   }
-
-  return matchIndex
+  return ranges
 }
 
-export function removeSearchHighlights(container: HTMLElement): void {
-  for (const mark of container.querySelectorAll('mark.search-highlight')) {
-    const parent = mark.parentNode
-    if (!parent) continue
-    parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark)
-    parent.normalize()
+function highlightRegistry(): HighlightRegistry | null {
+  return typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined'
+    ? CSS.highlights
+    : null
+}
+
+export function paintSearchHighlights(ranges: readonly Range[], activeIndex: number): void {
+  const registry = highlightRegistry()
+  if (!registry) return
+  registry.set(MATCH_HIGHLIGHT, new Highlight(...ranges))
+  const active = ranges[activeIndex]
+  if (active) {
+    const highlight = new Highlight(active)
+    highlight.priority = 1
+    registry.set(ACTIVE_HIGHLIGHT, highlight)
+  } else {
+    registry.delete(ACTIVE_HIGHLIGHT)
   }
+}
+
+export function clearSearchHighlights(): void {
+  const registry = highlightRegistry()
+  registry?.delete(MATCH_HIGHLIGHT)
+  registry?.delete(ACTIVE_HIGHLIGHT)
 }

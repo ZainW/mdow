@@ -12,11 +12,40 @@
   color: var(--foreground);
 }
 
+/* Let the browser skip style, layout, and paint for blocks far off-screen. The blocks are the
+   children of comark's root, not of .markdown-body (which only wraps that root). Intrinsic sizes
+   are rough per-kind estimates; `auto` remembers the real size once a block has rendered. */
 @supports (content-visibility: auto) {
-  .markdown-body > *:not(.mermaid):not(.mermaid-container) {
+  .markdown-body .comark-content > *:not(.mermaid):not(.mermaid-container) {
     content-visibility: auto;
-    contain-intrinsic-size: auto 2.5rem;
+    contain-intrinsic-size: auto 3em;
+    /* Paint containment clips to the box; leave room for focus rings on edge-hugging links. */
+    overflow-clip-margin: 4px;
   }
+
+  .markdown-body .comark-content > :is(h1, h2, h3, h4, h5, h6, hr) {
+    contain-intrinsic-size: auto 2em;
+  }
+
+  .markdown-body .comark-content > :is(ul, ol, blockquote) {
+    contain-intrinsic-size: auto 5em;
+  }
+
+  .markdown-body .comark-content > :is(.code-block-wrapper, .table-wrap) {
+    contain-intrinsic-size: auto 9em;
+  }
+
+  /* Long documents: one box per section instead of per block (see groupIntoSections). */
+  .markdown-body .comark-content > .md-section {
+    contain-intrinsic-size: auto var(--md-section-estimate, 60em);
+  }
+}
+
+/* A section boundary is a formatting-context boundary, so margins no longer collapse across it.
+   Sections open with a heading, so dropping the closing margin keeps the heading's top margin
+   as the gap, the same result collapsing would give. */
+.markdown-body .md-section > :last-child {
+  margin-bottom: 0;
 }
 
 /* ── Headings ── */
@@ -43,6 +72,11 @@
   margin-top: 0;
 }
 
+/* Sections open with their heading; only the document's first one sits flush. */
+.markdown-body .md-section:not(:first-child) > h1:first-child {
+  margin-top: 2em;
+}
+
 .markdown-body h2 {
   font-size: 1.5em;
   font-weight: 650;
@@ -64,7 +98,6 @@
   font-weight: 600;
   line-height: 1.4;
   margin: 1.3em 0 0.3em;
-  color: var(--muted-foreground);
 }
 
 .markdown-body h5 {
@@ -72,7 +105,6 @@
   font-weight: 600;
   line-height: 1.4;
   margin: 1.2em 0 0.25em;
-  color: var(--muted-foreground);
 }
 
 .markdown-body h6 {
@@ -157,6 +189,10 @@
   letter-spacing: 0.02em;
   text-transform: lowercase;
   color: var(--muted-foreground);
+  /* Own surface so a long first line of code never shows through the label. */
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--muted);
   pointer-events: none;
   user-select: none;
 }
@@ -197,7 +233,7 @@
 }
 
 .dark .markdown-body .code-block-wrapper {
-  background: var(--shiki-dark-bg);
+  background: var(--muted);
   border-color: var(--border);
   /* Soft top-edge highlight reads as a lifted card on dark backgrounds; a
      drop-shadow does nothing against a near-black page. */
@@ -207,7 +243,7 @@
 /* ── Blockquotes ── */
 
 .markdown-body blockquote {
-  border-left: 3px solid var(--border);
+  border-left: 3px solid color-mix(in oklch, var(--muted-foreground) 45%, transparent);
   padding: 0.4em 1em;
   margin: 0 0 1em;
   color: var(--muted-foreground);
@@ -381,23 +417,23 @@
 }
 
 .markdown-body .markdown-alert-tip {
-  border-left-color: #238636;
+  border-left-color: var(--md-alert-tip);
 }
 
 .markdown-body .markdown-alert-note {
-  border-left-color: #1f6feb;
+  border-left-color: var(--md-alert-note);
 }
 
 .markdown-body .markdown-alert-important {
-  border-left-color: #8957e5;
+  border-left-color: var(--md-alert-important);
 }
 
 .markdown-body .markdown-alert-warning {
-  border-left-color: #9e6a03;
+  border-left-color: var(--md-alert-warning);
 }
 
 .markdown-body .markdown-alert-caution {
-  border-left-color: #da3633;
+  border-left-color: var(--md-alert-caution);
 }
 
 /* ── Mermaid Diagrams ── */
@@ -425,8 +461,8 @@
 .markdown-body .mermaid-container svg .node circle,
 .markdown-body .mermaid-container svg .node ellipse,
 .markdown-body .mermaid-container svg .node path,
-.markdown-body .mermaid-container svg .actor,
-.markdown-body .mermaid-container svg .actor-box,
+.markdown-body .mermaid-container svg rect.actor,
+.markdown-body .mermaid-container svg rect.actor-box,
 .markdown-body .mermaid-container svg .classGroup rect,
 .markdown-body .mermaid-container svg .labelBox,
 .markdown-body .mermaid-container svg .note,
@@ -440,7 +476,7 @@
 }
 
 .markdown-body .mermaid-container svg .node rect,
-.markdown-body .mermaid-container svg .actor,
+.markdown-body .mermaid-container svg rect.actor,
 .markdown-body .mermaid-container svg .classGroup rect,
 .markdown-body .mermaid-container svg .labelBox,
 .markdown-body .mermaid-container svg .note rect,
@@ -482,6 +518,7 @@
 .markdown-body .mermaid-container svg .noteText,
 .markdown-body .mermaid-container svg .titleText,
 .markdown-body .mermaid-container svg text,
+.markdown-body .mermaid-container svg text.actor,
 .markdown-body .mermaid-container svg foreignObject,
 .markdown-body .mermaid-container svg foreignObject div,
 .markdown-body .mermaid-container svg foreignObject span {

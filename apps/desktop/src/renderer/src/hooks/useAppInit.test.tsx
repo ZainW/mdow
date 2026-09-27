@@ -72,4 +72,70 @@ describe('useAppInit', () => {
     expect(state.activeTabId).toBe(state.tabs[0].id)
     expect(readFile).toHaveBeenCalledWith('/docs/active.md')
   })
+
+  it('focuses a file the OS opened at launch over the saved session', async () => {
+    const readFile = vi.fn((path: string) => Promise.resolve(`# ${path}`))
+
+    Object.defineProperty(window, 'api', {
+      value: {
+        getAppState: vi.fn().mockResolvedValue(
+          appState({
+            sessionTabs: [{ path: '/docs/a.md' }, { path: '/docs/b.md' }],
+            sessionActiveTabPath: '/docs/b.md',
+            launchFiles: ['/downloads/new.md'],
+          }),
+        ),
+        readFile,
+        readFolderTree: vi.fn(),
+        saveAppState: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+    })
+
+    renderHook(() => useAppInit())
+
+    await waitFor(() => expect(useAppStore.getState().tabs).toHaveLength(3))
+    const state = useAppStore.getState()
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId)
+    expect(active?.path).toBe('/downloads/new.md')
+    expect(readFile.mock.calls[0][0]).toBe('/downloads/new.md')
+  })
+
+  it('does not steal focus back after the reader switches tabs during restore', async () => {
+    let releaseInactive: (content: string) => void = () => {}
+    const readFile = vi.fn((path: string) =>
+      path === '/docs/inactive.md'
+        ? new Promise<string>((resolve) => {
+            releaseInactive = resolve
+          })
+        : Promise.resolve(`# ${path}`),
+    )
+
+    Object.defineProperty(window, 'api', {
+      value: {
+        getAppState: vi.fn().mockResolvedValue(
+          appState({
+            sessionTabs: [{ path: '/docs/active.md' }, { path: '/docs/inactive.md' }],
+            sessionActiveTabPath: '/docs/active.md',
+          }),
+        ),
+        readFile,
+        readFolderTree: vi.fn(),
+        saveAppState: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+    })
+
+    renderHook(() => useAppInit())
+    await waitFor(() => expect(useAppStore.getState().initialized).toBe(true))
+
+    useAppStore.getState().openTab({ path: '/finder/opened.md', content: '# Opened' })
+    releaseInactive('# Inactive')
+
+    await waitFor(() => expect(useAppStore.getState().tabs).toHaveLength(3))
+    await Promise.resolve()
+    const state = useAppStore.getState()
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId)
+    expect(active?.path).toBe('/finder/opened.md')
+  })
 })

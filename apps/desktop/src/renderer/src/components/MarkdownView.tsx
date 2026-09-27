@@ -72,8 +72,11 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
   useHeadingObserver({ scrollRef, contentRef, renderResult })
   useScrollRestoration({
     scrollRef,
+    contentRef,
     tabId: tab.id,
     scrollPosition: tab.scrollPosition,
+    scrollAnchor: tab.scrollAnchor,
+    renderVersion,
     updateTabScroll,
   })
   useContentClickHandlers({
@@ -94,17 +97,25 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
   }
 
   return (
-    <div ref={scrollRef} className="group/content relative flex-1 overflow-y-auto">
-      {searchOpen && isActive && (
-        <SearchBar
-          matchCount={matchCount}
-          currentIndex={currentIndex}
-          onNext={next}
-          onPrev={prev}
-          onClose={handleCloseSearch}
-          onQueryChange={setSearchQuery}
-        />
-      )}
+    <div
+      ref={scrollRef}
+      data-markdown-scroller=""
+      className="group/content relative flex-1 overflow-y-auto"
+    >
+      {searchOpen &&
+        isActive && (
+          // Zero-height sticky rail: the bar floats over the document instead of pushing it down.
+          <div className="pointer-events-none sticky top-0 z-20 flex h-0 items-start justify-end">
+            <SearchBar
+              matchCount={matchCount}
+              currentIndex={currentIndex}
+              onNext={next}
+              onPrev={prev}
+              onClose={handleCloseSearch}
+              onQueryChange={setSearchQuery}
+            />
+          </div>
+        )}
       <div
         data-reading-frame=""
         className={cn('flex min-h-full w-full', wideMode ? 'justify-start' : 'justify-center')}
@@ -139,7 +150,9 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
               </button>
             </div>
           ) : renderResult ? (
-            <div key={renderVersion}>
+            // Keyed by tab, not render: a reload of the same file reconciles in place (sections
+            // with unchanged content are skipped), while switching documents starts fresh.
+            <div key={tab.id}>
               <MarkdownContent result={renderResult} docPath={tab.path} />
             </div>
           ) : isRendering ? (

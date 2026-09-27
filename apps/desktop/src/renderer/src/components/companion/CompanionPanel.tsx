@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import type { CompanionProviderId, CompanionProviderStatus } from '../../../../shared/types'
 import { cn, isMac } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
@@ -148,14 +148,6 @@ function CompanionBody({
   )
 }
 
-export function useCompanionBootstrap() {
-  useEffect(() => {
-    return window.api.onCompanionUpdate((update) => {
-      useAppStore.getState().applyCompanionUpdate(update)
-    })
-  }, [])
-}
-
 async function refreshCompanionMeta() {
   const [providers, settings] = await Promise.all([
     window.api.detectCompanionProviders(),
@@ -177,17 +169,51 @@ export function CompanionPanel() {
   const presentation = useAppStore((state) => state.companionPresentation)
   const setPresentation = useAppStore((state) => state.setCompanionPresentation)
   const open = presentation === 'drawer'
+  const asideRef = useRef<HTMLElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(open)
 
   useEffect(() => {
     if (open) void refreshCompanionMeta()
   }, [open])
 
+  // Move focus into the drawer when the user opens it, and hand it back when it closes.
+  // The initial mount is skipped so a restored session never steals focus on launch.
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current
+    wasOpenRef.current = open
+    if (open === wasOpen) return
+    const aside = asideRef.current
+    if (open) {
+      const active = document.activeElement
+      returnFocusRef.current = active instanceof HTMLElement ? active : null
+      const target =
+        aside?.querySelector<HTMLElement>('textarea') ??
+        aside?.querySelector<HTMLElement>('button:not([disabled])')
+      target?.focus()
+      return
+    }
+    if (aside?.contains(document.activeElement)) returnFocusRef.current?.focus()
+    returnFocusRef.current = null
+  }, [open])
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    // Portaled popups (model picker, context popover) bubble through React but not the DOM.
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+    event.stopPropagation()
+    setPresentation('closed')
+  }
+
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Escape closes the drawer from any control inside it
     <aside
+      ref={asideRef}
       aria-label="AI companion"
+      onKeyDown={handleKeyDown}
       className={cn(
         'overflow-hidden bg-background',
-        'max-lg:fixed max-lg:right-0 max-lg:bottom-0 max-lg:z-40 max-lg:shadow-xl max-lg:ring-1 max-lg:ring-foreground/10 max-lg:dark:shadow-none',
+        'max-lg:fixed max-lg:right-0 max-lg:bottom-0 max-lg:z-(--z-drawer) max-lg:shadow-xl max-lg:ring-1 max-lg:ring-foreground/10 max-lg:dark:shadow-none',
         isMac ? 'max-lg:top-7' : 'max-lg:top-0',
         'lg:relative lg:z-auto lg:shrink-0 lg:border-l lg:border-border-subtle',
         open
@@ -217,9 +243,18 @@ export function CompanionWorkspace() {
 
   if (presentation !== 'workspace') return null
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+    event.stopPropagation()
+    setPresentation('drawer')
+  }
+
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Escape returns to the document from any control inside it
     <section
       aria-label="AI companion workspace"
+      onKeyDown={handleKeyDown}
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
     >
       <CompanionBody layout="workspace" onBack={() => setPresentation('drawer')} />

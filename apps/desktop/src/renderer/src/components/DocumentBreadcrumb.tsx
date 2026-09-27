@@ -22,7 +22,7 @@ export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
   const segments = parentSegmentsWithPaths(tab.path, openFolderPath)
 
   return (
-    <div className="flex h-(--breadcrumb-height) shrink-0 items-center gap-2 border-b border-border-subtle bg-background px-3 text-[length:var(--breadcrumb-text-size)] text-muted-foreground/80">
+    <div className="flex h-(--breadcrumb-height) shrink-0 items-center gap-2 border-b border-border-subtle bg-background px-3 text-[length:var(--breadcrumb-text-size)] text-muted-foreground-subtle">
       <nav
         aria-label="Document path"
         className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
@@ -60,7 +60,7 @@ export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
           {displayTitle}
         </button>
         {displayTitle !== filename && (
-          <span className="ml-1 truncate text-[length:var(--breadcrumb-secondary-size)] text-muted-foreground/60">
+          <span className="ml-1 truncate text-[length:var(--breadcrumb-secondary-size)] text-muted-foreground-subtle">
             {filename}
           </span>
         )}

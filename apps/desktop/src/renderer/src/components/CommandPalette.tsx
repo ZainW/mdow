@@ -220,7 +220,7 @@ export function CommandPalette() {
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder="Search files and commands..."
+            placeholder="Search files and commands…"
           />
           <CommandList>
             <CommandEmpty>No matching files or commands</CommandEmpty>
@@ -254,7 +254,7 @@ export function CommandPalette() {
                       <FileText />
                       <span className="min-w-0 truncate">{file.name}</span>
                       {dir && (
-                        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
+                        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground-subtle">
                           {dir}
                         </span>
                       )}
@@ -264,7 +264,7 @@ export function CommandPalette() {
               </CommandGroup>
             )}
           </CommandList>
-          <div className="flex items-center justify-end gap-3 border-t border-border-subtle bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground/80">
+          <div className="flex items-center justify-end gap-3 border-t border-border-subtle bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground-subtle">
             <span className="flex items-center gap-1">
               <Kbd>↵</Kbd> run/open
             </span>

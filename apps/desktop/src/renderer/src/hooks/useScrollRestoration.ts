@@ -1,42 +1,68 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { captureScrollAnchor, restoreScrollPosition, type ScrollAnchor } from '../lib/scroll-anchor'
 
+const SAVE_DEBOUNCE_MS = 150
+
+/**
+ * Remembers where the reader is in each tab and puts them back there when the tab's content is
+ * rendered again: after switching tabs, and after a live reload of the same file.
+ */
 export function useScrollRestoration({
   scrollRef,
+  contentRef,
   tabId,
   scrollPosition,
+  scrollAnchor,
+  renderVersion,
   updateTabScroll,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>
+  contentRef: RefObject<HTMLDivElement | null>
   tabId: string
   scrollPosition: number
-  updateTabScroll: (tabId: string, scrollPosition: number) => void
+  scrollAnchor: ScrollAnchor | null | undefined
+  renderVersion: number
+  updateTabScroll: (tabId: string, scrollPosition: number, anchor: ScrollAnchor | null) => void
 }): void {
-  const prevTabIdRef = useRef(tabId)
+  const savedRef = useRef({ scrollPosition, scrollAnchor })
+  savedRef.current = { scrollPosition, scrollAnchor }
+  const restoringRef = useRef<() => void>(() => {})
 
   useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return undefined
-    let timer: ReturnType<typeof setTimeout>
+    const scroller = scrollRef.current
+    const container = contentRef.current
+    if (!scroller || !container) return undefined
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const save = () => {
+      timer = undefined
+      updateTabScroll(tabId, scroller.scrollTop, captureScrollAnchor(scroller, container))
+    }
     const handler = () => {
       clearTimeout(timer)
-      timer = setTimeout(() => {
-        updateTabScroll(tabId, el.scrollTop)
-      }, 150)
+      timer = setTimeout(save, SAVE_DEBOUNCE_MS)
     }
-    el.addEventListener('scroll', handler, { passive: true })
+    scroller.addEventListener('scroll', handler, { passive: true })
     return () => {
-      clearTimeout(timer)
-      el.removeEventListener('scroll', handler)
+      scroller.removeEventListener('scroll', handler)
+      // Switching tabs commits once more with the old document still in the DOM, so a pending
+      // save can still read the right position.
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        save()
+      }
     }
-  }, [scrollRef, tabId, updateTabScroll])
+  }, [scrollRef, contentRef, tabId, updateTabScroll])
 
   useLayoutEffect(() => {
-    if (prevTabIdRef.current !== tabId) {
-      const el = scrollRef.current
-      if (el) {
-        el.scrollTo(0, scrollPosition)
-      }
-      prevTabIdRef.current = tabId
-    }
-  }, [scrollRef, tabId, scrollPosition])
+    const scroller = scrollRef.current
+    const container = contentRef.current
+    if (!scroller || !container || renderVersion === 0) return undefined
+    const { scrollAnchor: anchor, scrollPosition: top } = savedRef.current
+    restoringRef.current()
+    restoringRef.current = restoreScrollPosition(scroller, container, anchor, top)
+    return undefined
+  }, [scrollRef, contentRef, renderVersion])
+
+  useEffect(() => () => restoringRef.current(), [])
 }

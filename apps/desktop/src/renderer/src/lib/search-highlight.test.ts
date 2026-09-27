@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  applySearchHighlights,
+  clearSearchHighlights,
   findMatchRanges,
-  removeSearchHighlights,
+  findSearchRanges,
+  paintSearchHighlights,
   shouldSkipSearchTextNode,
 } from './search-highlight'
 
@@ -24,83 +25,83 @@ describe('findMatchRanges', () => {
   })
 })
 
+function textIn(element: HTMLElement): Text {
+  const node = element.firstChild
+  if (!(node instanceof Text)) throw new Error('expected a text node')
+  return node
+}
+
 describe('shouldSkipSearchTextNode', () => {
-  it('skips text inside existing search highlights', () => {
-    const container = document.createElement('div')
-    const mark = document.createElement('mark')
-    mark.className = 'search-highlight'
-    mark.textContent = 'skip me'
-    container.appendChild(mark)
-    const node = mark.firstChild as Text
-    expect(shouldSkipSearchTextNode(node)).toBe(true)
-  })
-
-  it('skips text inside copy-code buttons', () => {
-    const container = document.createElement('div')
-    const button = document.createElement('button')
-    button.className = 'copy-code-btn'
-    button.textContent = 'Copy'
-    container.appendChild(button)
-    const node = button.firstChild as Text
-    expect(shouldSkipSearchTextNode(node)).toBe(true)
-  })
-
-  it('skips text inside mermaid containers', () => {
-    const container = document.createElement('div')
-    const diagram = document.createElement('div')
-    diagram.className = 'mermaid-container'
-    diagram.textContent = 'graph TD'
-    container.appendChild(diagram)
-    const node = diagram.firstChild as Text
-    expect(shouldSkipSearchTextNode(node)).toBe(true)
+  it.each(['copy-code-btn', 'code-lang-badge', 'mermaid-container'])('skips text in .%s', (cls) => {
+    const element = document.createElement('div')
+    element.className = cls
+    element.textContent = 'skip me'
+    expect(shouldSkipSearchTextNode(textIn(element))).toBe(true)
   })
 
   it('accepts normal text nodes', () => {
     const container = document.createElement('div')
     container.textContent = 'searchable text'
-    const node = container.firstChild as Text
-    expect(shouldSkipSearchTextNode(node)).toBe(false)
+    expect(shouldSkipSearchTextNode(textIn(container))).toBe(false)
   })
 })
 
-describe('applySearchHighlights / removeSearchHighlights', () => {
-  it('wraps matches in mark elements and returns the count', () => {
+describe('findSearchRanges', () => {
+  it('returns one range per match without touching the DOM', () => {
     const container = document.createElement('div')
-    const paragraph = document.createElement('p')
-    paragraph.textContent = 'hello world hello'
-    container.appendChild(paragraph)
+    container.innerHTML = '<p>hello world hello</p><p>say <strong>hello</strong></p>'
+    const before = container.innerHTML
 
-    const count = applySearchHighlights(container, 'hello')
+    const ranges = findSearchRanges(container, 'hello')
 
-    expect(count).toBe(2)
-    expect(container.querySelectorAll('mark.search-highlight')).toHaveLength(2)
-    expect(container.querySelectorAll('mark.search-highlight')[0].textContent).toBe('hello')
+    expect(ranges).toHaveLength(3)
+    expect(ranges.map((range) => range.toString())).toEqual(['hello', 'hello', 'hello'])
+    expect(container.innerHTML).toBe(before)
   })
 
-  it('skips nodes that should not be highlighted', () => {
+  it('skips excluded subtrees', () => {
     const container = document.createElement('div')
-    const paragraph = document.createElement('p')
-    paragraph.textContent = 'visible'
-    const mark = document.createElement('mark')
-    mark.className = 'search-highlight'
-    mark.textContent = 'hidden'
-    container.append(paragraph, mark)
-
-    applySearchHighlights(container, 'hidden')
-
-    expect(container.querySelectorAll('mark.search-highlight')).toHaveLength(1)
+    container.innerHTML = '<p>ts code</p><span class="code-lang-badge">ts</span>'
+    expect(findSearchRanges(container, 'ts')).toHaveLength(1)
   })
 
-  it('removeSearchHighlights unwraps marks back to text', () => {
+  it('returns nothing for an empty query', () => {
     const container = document.createElement('div')
-    const paragraph = document.createElement('p')
-    paragraph.textContent = 'hello world'
-    container.appendChild(paragraph)
+    container.textContent = 'anything'
+    expect(findSearchRanges(container, '')).toEqual([])
+  })
+})
 
-    applySearchHighlights(container, 'hello')
-    removeSearchHighlights(container)
+describe('paintSearchHighlights', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
 
-    expect(container.querySelectorAll('mark.search-highlight')).toHaveLength(0)
-    expect(container.textContent).toBe('hello world')
+  it('registers match and active highlights when the API exists', () => {
+    const registry = new Map<string, unknown>()
+    class FakeHighlight {
+      ranges: Range[]
+      priority = 0
+      constructor(...ranges: Range[]) {
+        this.ranges = ranges
+      }
+    }
+    vi.stubGlobal('CSS', { highlights: registry })
+    vi.stubGlobal('Highlight', FakeHighlight)
+
+    const container = document.createElement('div')
+    container.textContent = 'a b a'
+    const ranges = findSearchRanges(container, 'a')
+    paintSearchHighlights(ranges, 1)
+
+    expect((registry.get('mdow-search') as FakeHighlight).ranges).toHaveLength(2)
+    expect((registry.get('mdow-search-active') as FakeHighlight).ranges).toEqual([ranges[1]])
+
+    clearSearchHighlights()
+    expect(registry.size).toBe(0)
+  })
+
+  it('is a no-op without the Highlight API', () => {
+    expect(() => paintSearchHighlights([], 0)).not.toThrow()
   })
 })

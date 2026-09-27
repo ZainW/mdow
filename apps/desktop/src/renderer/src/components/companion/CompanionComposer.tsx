@@ -177,6 +177,8 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
             setActiveMentionIndex(-1)
           }}
           onKeyDown={(event) => {
+            // Enter confirms an IME candidate (CJK input); it must not send or pick a mention.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
             if (mentionResults.length > 0) {
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
@@ -232,7 +234,7 @@ export function CompanionComposer({ providerId }: { providerId: CompanionProvide
           {streaming ? <Square /> : <Send />}
         </Button>
       </div>
-      <p className="mt-1 px-1 text-[10px] text-muted-foreground/70">
+      <p className="mt-1 px-1 text-[10px] text-muted-foreground-subtle">
         <kbd className="font-sans">⏎</kbd> to send · <kbd className="font-sans">⇧⏎</kbd> for newline
       </p>
     </div>

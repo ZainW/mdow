@@ -75,6 +75,19 @@ describe('mermaid theme lock', () => {
     expect(config.themeCSS).toContain(':hover')
   })
 
+  it('fills sequence actor boxes with paper and their labels with ink', () => {
+    // Mermaid puts class="actor" on both the <rect> and its <text>; a bare `.actor` in the ink
+    // text rule painted the box ink too, hiding the label.
+    const { themeCSS } = getMermaidInitConfig('light')
+    const inkRule = themeCSS.slice(themeCSS.indexOf('.label, .nodeLabel'))
+    const inkSelectors = inkRule.slice(0, inkRule.indexOf('{'))
+    expect(inkSelectors).toContain('text.actor')
+    expect(inkSelectors).not.toMatch(/(^|[\s,])\.actor\b/)
+    expect(themeCSS).toContain('rect.actor,')
+    expect(MARKDOWN_CSS).toContain('svg rect.actor,')
+    expect(MARKDOWN_CSS).not.toMatch(/svg \.actor,/)
+  })
+
   it('prefers CSS custom properties when the app theme has set them', () => {
     document.documentElement.style.setProperty('--md-ink', '#111111')
     document.documentElement.style.setProperty('--md-paper-warm', '#eeeeee')

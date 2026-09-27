@@ -73,7 +73,7 @@ describe('CommandPalette', () => {
 
   it('shows the quick-open chrome when open', () => {
     renderWithProviders(<CommandPalette />)
-    expect(screen.getByPlaceholderText('Search files and commands...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search files and commands…')).toBeInTheDocument()
     expect(screen.getByText('run/open')).toBeInTheDocument()
     expect(screen.getByText('dismiss')).toBeInTheDocument()
   })

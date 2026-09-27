@@ -94,7 +94,7 @@ export function RecentsList() {
                       <span className="truncate">{basename(path)}</span>
                     </span>
                     {dir && (
-                      <span className="w-full truncate pl-5 text-[10px] text-muted-foreground/60">
+                      <span className="w-full truncate pl-5 text-[10px] text-muted-foreground-subtle">
                         {dir}
                       </span>
                     )}

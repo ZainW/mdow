@@ -81,7 +81,7 @@ export function ZoomIndicator() {
 
   return (
     <div
-      className="zoom-indicator absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-[length:var(--control-font-size)] text-foreground shadow-sm"
+      className="zoom-indicator absolute bottom-4 right-4 z-(--z-sticky) flex items-center gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 text-[length:var(--control-font-size)] text-foreground shadow-sm"
       style={{
         opacity: shown ? 1 : 0,
         transform: reduceMotion ? undefined : shown ? 'scale(1)' : 'scale(0.95)',
@@ -100,7 +100,7 @@ export function ZoomIndicator() {
       >
         <Minus size={iconSize.md} strokeWidth={iconStroke.emphasis} aria-hidden />
       </Button>
-      <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
+      <span className="min-w-[4.5ch] text-center tabular-nums" aria-live="polite">
         {zoomLevel}%
       </span>
       <Button variant="ghost" size="icon-xs" onClick={zoomIn} aria-label="Zoom in" title="Zoom in">

@@ -7,7 +7,16 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' mdow-local: data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' mdow-local:"
     />
+    <meta name="color-scheme" content="light dark" />
     <title>Mdow</title>
+    <script>
+      // Apply the theme before first paint. Electron's nativeTheme drives prefers-color-scheme,
+      // and the saved theme is applied to it before this window is created.
+      document.documentElement.classList.toggle(
+        'dark',
+        matchMedia('(prefers-color-scheme: dark)').matches,
+      )
+    </script>
   </head>
   <body>
     <div id="root"></div>

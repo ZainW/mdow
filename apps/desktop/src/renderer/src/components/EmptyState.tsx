@@ -34,7 +34,9 @@ export function EmptyState({
         />
         <div className="text-sidebar-foreground/80">{title}</div>
         {hint && (
-          <p className="text-[11px] leading-snug text-muted-foreground/70 max-w-[22ch]">{hint}</p>
+          <p className="text-[11px] leading-snug text-muted-foreground-subtle max-w-[22ch]">
+            {hint}
+          </p>
         )}
         {action && <div className="mt-1">{action}</div>}
       </div>

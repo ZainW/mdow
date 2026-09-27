@@ -24,6 +24,7 @@ import { applyWindowChrome, getWindowChromeOptions } from './window-chrome'
 import { isDocumentPath, validateDocumentPath, validatePath } from './path-validation'
 import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
 import { getDevelopmentUserDataPath } from './runtime-paths'
+import { isRendererReady, queueLaunchFile } from './launch-files'
 
 const windows = new Set<BrowserWindow>()
 const windowPaths = new Map<BrowserWindow, string>()
@@ -78,9 +79,21 @@ function setupWebContentsSecurity(win: BrowserWindow): void {
 }
 
 function openFile(filePath: string): void {
+  let resolved: string
+  try {
+    resolved = validateDocumentPath(filePath)
+  } catch {
+    return
+  }
+
+  const win = getMainWindow()
+  if (!win || win.isDestroyed() || !isRendererReady(win.webContents)) {
+    queueLaunchFile(resolved)
+    return
+  }
+
   void (async () => {
     try {
-      const resolved = validateDocumentPath(filePath)
       const content = await readFileContent(resolved)
       addRecent(resolved)
       registerAllowedFile(resolved)
@@ -88,23 +101,14 @@ function openFile(filePath: string): void {
         app.addRecentDocument(resolved)
       }
       setActiveFileWatch(resolved)
-      const allWindows = BrowserWindow.getAllWindows()
-      for (const win of allWindows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('file:opened', { path: resolved, content })
-        }
-      }
+      if (win.isDestroyed()) return
+      win.webContents.send('file:opened', { path: resolved, content })
+      if (win.isMinimized()) win.restore()
+      win.focus()
     } catch {
-      // Invalid file path
+      // Unreadable file
     }
   })()
-}
-
-function openFileFromArgv(argv: string[], _win: BrowserWindow): void {
-  const filePath = argv.find(isDocumentPath)
-  if (filePath) {
-    openFile(filePath)
-  }
 }
 
 function createWindow(targetPath?: string): void {
@@ -169,9 +173,6 @@ function createWindow(targetPath?: string): void {
 
   win.webContents.on('did-finish-load', () => {
     win.webContents.send('theme:changed', nativeTheme.shouldUseDarkColors)
-    if (!targetPath && windows.size === 1) {
-      openFileFromArgv(process.argv, win)
-    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -205,7 +206,9 @@ function scheduleAutoUpdaterInit(): void {
   }, AUTO_UPDATER_INIT_DELAY_MS)
 }
 
-if (is.dev) {
+// Keep dev runs out of the installed app's profile, unless a caller (e.g. the perf harness)
+// pins an explicit --user-data-dir.
+if (is.dev && !app.commandLine.hasSwitch('user-data-dir')) {
   const developmentUserDataPath = getDevelopmentUserDataPath(app.getPath('appData'))
   mkdirSync(developmentUserDataPath, { recursive: true })
   app.setPath('userData', developmentUserDataPath)
@@ -253,6 +256,9 @@ if (!gotTheLock) {
   })
 
   app.setName('Mdow')
+
+  const argvDocument = process.argv.slice(1).find(isDocumentPath)
+  if (argvDocument) openFile(argvDocument)
 
   void app.whenReady().then(() => {
     registerLocalProtocol()

@@ -15,6 +15,7 @@ const ComarkMath = lazy(() =>
 
 import type { RenderResult } from '../../lib/markdown'
 import { resolveRelativePath } from '../../lib/path-utils'
+import { SECTION_TAG } from '../../lib/markdown-sections'
 import { ALERT_TYPES, AlertCallout } from './AlertCallout'
 import { CodeBlock } from './CodeBlock'
 import { MermaidBlock } from './MermaidBlock'
@@ -27,6 +28,32 @@ function rewriteImageSrc(src: string, docPath: string): string {
   return `mdow-local://local/${encodeURIComponent(resolved)}`
 }
 
+interface MarkdownSectionProps {
+  estimate?: number
+  signature?: string
+  children?: React.ReactNode
+}
+
+// Sections whose content signature is unchanged skip re-rendering entirely, so a live reload of
+// a long document only touches what changed.
+const MarkdownSection = memo(
+  function MarkdownSection({ estimate, children }: MarkdownSectionProps): React.JSX.Element {
+    return (
+      <div
+        className="md-section"
+        style={
+          typeof estimate === 'number'
+            ? ({ '--md-section-estimate': `${estimate}em` } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {children}
+      </div>
+    )
+  },
+  (prev, next) => prev.signature !== undefined && prev.signature === next.signature,
+)
+
 function createMarkdownComponents(docPath: string) {
   const alertComponents = Object.fromEntries(
     ALERT_TYPES.map((type) => [
@@ -36,6 +63,7 @@ function createMarkdownComponents(docPath: string) {
   )
 
   return {
+    [SECTION_TAG]: MarkdownSection,
     pre: CodeBlock,
     mermaid: MermaidBlock,
     math: ComarkMath,

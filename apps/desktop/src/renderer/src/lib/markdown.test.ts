@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { initMarkdown, renderMarkdown } from './markdown'
+import { groupIntoSections, initMarkdown, renderMarkdown } from './markdown'
+import { SECTION_TAG } from './markdown-sections'
 
 describe('renderMarkdown', () => {
   it('extracts headings h1 through h6 with slug ids', async () => {
@@ -75,5 +76,39 @@ describe('renderMarkdown', () => {
     const serialized = JSON.stringify(result.tree.nodes)
     expect(serialized).toContain('math')
     expect(serialized).toContain('x^2')
+  })
+
+  it('keeps short documents flat', async () => {
+    const result = await renderMarkdown('# One\n\nText\n\n## Two\n\nMore', { bypassCache: true })
+    expect(result.tree.nodes.some((node) => Array.isArray(node) && node[0] === SECTION_TAG)).toBe(
+      false,
+    )
+  })
+
+  it('groups long documents into heading-aligned sections without losing blocks', async () => {
+    const markdown = Array.from(
+      { length: 120 },
+      (_, i) => `## Part ${i}\n\nParagraph ${i}.\n\n- item`,
+    ).join('\n\n')
+    const result = await renderMarkdown(markdown, { bypassCache: true })
+    const sections = result.tree.nodes.filter(
+      (node) => Array.isArray(node) && node[0] === SECTION_TAG,
+    ) as unknown as [string, Record<string, unknown>, ...unknown[]][]
+
+    expect(sections.length).toBe(result.tree.nodes.length)
+    expect(sections.length).toBeGreaterThan(1)
+    for (const section of sections) {
+      expect((section[2] as unknown[])[0]).toBe('h2')
+      expect(section[1].estimate).toBeGreaterThan(0)
+    }
+    const blockCount = sections.reduce((sum, section) => sum + section.length - 2, 0)
+    expect(blockCount).toBe(360)
+    expect(result.headings).toHaveLength(120)
+  })
+
+  it('splits a heading-less run once a section reaches its size cap', () => {
+    const nodes = Array.from({ length: 450 }, (_, i) => ['p', {}, `p${i}`] as ['p', {}, string])
+    const sections = groupIntoSections(nodes)
+    expect(sections.map((section) => (section as unknown[]).length - 2)).toEqual([200, 200, 50])
   })
 })

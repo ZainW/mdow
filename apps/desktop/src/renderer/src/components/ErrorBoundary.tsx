@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
               An error occurred while rendering this document.
             </p>
             {this.state.error && (
-              <p className="mt-2 max-w-md font-mono text-xs text-muted-foreground/70">
+              <p className="mt-2 max-w-md font-mono text-xs text-muted-foreground-subtle">
                 {this.state.error.message}
               </p>
             )}
