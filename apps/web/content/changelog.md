@@ -5,9 +5,23 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.9.3
+## v1.10.0
 
 Latest release.
+
+- Huge documents open about 5× faster: a 3 MB file renders fully in under a second, 9 MB in about 1.5 s
+- Syntax highlighting and Mermaid diagrams render as you scroll to them, nearest first
+- Large files parse in the background so the window stays responsive
+- Outline jumps, links, tab switches, and live reload land exactly where you left off, even in huge files
+- Live reload is faster and only re-renders the parts of the document that changed
+- In-document search no longer rewrites the page and stays fast on huge files; the search bar floats instead of pushing the document down
+- The outline stays fast with tens of thousands of headings and follows your reading position
+- Opening a file from Finder while Mdow is closed now opens it in front instead of losing it
+- No theme flash on launch, and a smaller, faster app startup
+- Fixed unreadable menu highlights, invisible sequence-diagram labels, and a Settings dialog that could not scroll
+- Better contrast, focus rings, and reduced-motion support across the app
+
+## v1.9.3
 
 - Fixed Mac Electron `CSC_NAME` so electron-builder no longer rejects the `Developer ID Application:` prefix that blocked v1.9.2
 - v1.9.2 published Windows, Linux, and Native beta artifacts; the Mac Electron app did not

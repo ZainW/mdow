@@ -6,17 +6,29 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.10.0</title>
+      <link>https://mdow.wania.app/changelog#v1-10-0</link>
+      <guid isPermaLink="false">v1.10.0</guid>
+      <pubDate>Sun, 27 Sep 2026 22:45:55 GMT</pubDate>
+      <description>Latest release.
+
+- Huge documents open about 5× faster: a 3 MB file renders fully in under a second, 9 MB in about 1.5 s
+- Syntax highlighting and Mermaid diagrams render as you scroll to them, nearest first
+- Large files parse in the background so the window stays responsive
+- Outline jumps, links, tab switches, and live reload land exactly where you left off, even in huge files
+- Live reload is faster and only re-renders the parts of the document that changed
+- In-document search no longer</description>
+    </item>
+    <item>
       <title>v1.9.3</title>
       <link>https://mdow.wania.app/changelog#v1-9-3</link>
       <guid isPermaLink="false">v1.9.3</guid>
       <pubDate>Wed, 09 Sep 2026 15:50:33 GMT</pubDate>
-      <description>Latest release.
-
-- Fixed Mac Electron `CSC_NAME` so electron-builder no longer rejects the `Developer ID Application:` prefix that blocked v1.9.2
+      <description>- Fixed Mac Electron `CSC_NAME` so electron-builder no longer rejects the `Developer ID Application:` prefix that blocked v1.9.2
 - v1.9.2 published Windows, Linux, and Native beta artifacts; the Mac Electron app did not
 - Fixed Mac Electron release signing so the `.dmg` and `.zip` publish after electron-builder 26.15.3 failed to unlock its temporary keychain
 - Centered the reading column and rendered Mermaid as ink-on-paper SVG
-- Mac Native includes a Sparkle updater (disabled</description>
+- Mac Native includes a Sparkle updater (disabled until signing</description>
     </item>
     <item>
       <title>v1.9.2</title>
