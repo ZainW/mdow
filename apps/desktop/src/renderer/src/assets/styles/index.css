@@ -847,6 +847,20 @@ html.theme-switching * {
    is a layout property, and ⌘B is a high-frequency keyboard action. */
 
 /* ── Zoom indicator — occasional, opacity + scale only ── */
+/* Floating pills over the document (zoom HUD, find bar): raised surface, hairline ring. */
+.floating-surface {
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 12px 32px oklch(0 0 0 / 0.18);
+}
+
+.dark .floating-surface {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 12px 32px oklch(0 0 0 / 0.6);
+}
+
 .zoom-indicator {
   transition:
     opacity 150ms var(--ease-out-ui),
@@ -860,24 +874,16 @@ html.theme-switching * {
 }
 
 /* ── In-document search highlights ───────────────────────── */
+/* Every match gets a soft accent wash; the active match is solid accent with dark ink,
+   so it reads as "you are here" in both themes. */
 ::highlight(mdow-search) {
-  background-color: oklch(0.93 0.08 85);
+  background-color: color-mix(in oklab, var(--accent) 26%, transparent);
   color: inherit;
 }
 
 ::highlight(mdow-search-active) {
-  background-color: oklch(0.82 0.12 260);
-  color: oklch(0.15 0 0);
-}
-
-.dark ::highlight(mdow-search) {
-  background-color: oklch(0.45 0.08 85);
-  color: oklch(0.92 0 0);
-}
-
-.dark ::highlight(mdow-search-active) {
-  background-color: oklch(0.45 0.12 260);
-  color: oklch(0.92 0 0);
+  background-color: var(--accent);
+  color: oklch(0.2 0.03 70);
 }
 
 /* @pierre/trees integration — map library CSS variables to sidebar tokens */
