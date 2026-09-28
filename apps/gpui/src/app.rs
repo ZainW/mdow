@@ -279,9 +279,9 @@ pub struct MdowApp {
     focused_link: Option<LinkFocusKey>,
     reader_panes: HashMap<PathBuf, Entity<ReaderPane>>,
     reader_link_focus_handles: HashMap<(PathBuf, LinkFocusKey), FocusHandle>,
-    file_watcher: FileWatcher,
-    _watch_messages: Arc<Mutex<Receiver<WatchMessage>>>,
-    _watch_poll_task: Task<()>,
+    /// `None` when the platform watcher could not start; documents then open without live reload.
+    file_watcher: Option<FileWatcher>,
+    _watch_poll_task: Option<Task<()>>,
     update: UpdateUi,
     update_dismissed: bool,
     _update_poll_task: Task<()>,
@@ -338,46 +338,29 @@ impl MdowApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::boot_with_watcher(prefs, store, role, FileWatcher::new(), window, cx)
+    }
+
+    pub(crate) fn boot_with_watcher(
+        prefs: Prefs,
+        store: StateStore,
+        role: SessionRole,
+        file_watcher: anyhow::Result<FileWatcher>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window);
         let appearance_subscription = cx.observe_window_appearance(window, |this, window, cx| {
             this.theme = Theme::resolve(this.prefs.get().theme_mode, window.appearance());
             cx.notify();
         });
-        let file_watcher = FileWatcher::new().expect("create Mdow file watcher");
-        let watch_messages = file_watcher.messages();
-        let poll_messages = watch_messages.clone();
-        let watch_poll_task = cx.spawn(async move |this, cx| {
-            loop {
-                Timer::after(Duration::from_millis(100)).await;
-                let messages = {
-                    let Ok(receiver) = poll_messages.lock() else {
-                        break;
-                    };
-                    receiver.try_iter().collect::<Vec<_>>()
-                };
-                if messages.is_empty() {
-                    continue;
-                }
-                if this
-                    .update(cx, |this, cx| {
-                        let mut changed = false;
-                        for WatchMessage::Reload(path) in messages {
-                            if this.model.tabs.get(&path).is_some() {
-                                let _ = this.model.reload_path(&path);
-                                changed = true;
-                            }
-                        }
-                        if changed {
-                            cx.notify();
-                        }
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
+        let file_watcher = file_watcher
+            .inspect_err(|error| eprintln!("Mdow: live reload is unavailable: {error:#}"))
+            .ok();
+        let watch_poll_task = file_watcher
+            .as_ref()
+            .map(|watcher| Self::spawn_watch_poll(watcher.messages(), cx));
 
         let wide_mode = prefs.reader_width.is_full();
         let update_poll_task = cx.spawn(async move |this, cx| {
@@ -412,7 +395,6 @@ impl MdowApp {
             reader_panes: HashMap::new(),
             reader_link_focus_handles: HashMap::new(),
             file_watcher,
-            _watch_messages: watch_messages,
             _watch_poll_task: watch_poll_task,
             update: UpdateUi::default(),
             update_dismissed: false,
@@ -422,6 +404,43 @@ impl MdowApp {
             focus_handle,
             _appearance_subscription: appearance_subscription,
         }
+    }
+
+    fn spawn_watch_poll(
+        poll_messages: Arc<Mutex<Receiver<WatchMessage>>>,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                Timer::after(Duration::from_millis(100)).await;
+                let messages = {
+                    let Ok(receiver) = poll_messages.lock() else {
+                        break;
+                    };
+                    receiver.try_iter().collect::<Vec<_>>()
+                };
+                if messages.is_empty() {
+                    continue;
+                }
+                if this
+                    .update(cx, |this, cx| {
+                        let mut changed = false;
+                        for WatchMessage::Reload(path) in messages {
+                            if this.model.tabs.get(&path).is_some() {
+                                let _ = this.model.reload_path(&path);
+                                changed = true;
+                            }
+                        }
+                        if changed {
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
     }
 
     pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
@@ -490,13 +509,14 @@ impl MdowApp {
     }
 
     fn watch_document(&mut self, path: &Path) -> Result<(), UserFacingError> {
-        self.file_watcher
-            .watch(path)
-            .map_err(|error| UserFacingError {
-                title: "Couldn't watch this file".into(),
-                body: error.to_string(),
-                path: path.to_owned(),
-            })
+        let Some(file_watcher) = self.file_watcher.as_mut() else {
+            return Ok(());
+        };
+        file_watcher.watch(path).map_err(|error| UserFacingError {
+            title: "Couldn't watch this file".into(),
+            body: error.to_string(),
+            path: path.to_owned(),
+        })
     }
 
     fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
@@ -2095,6 +2115,42 @@ mod tests {
             })
             .unwrap();
         assert_eq!(scroll_handle.scroll_px_offset_for_scrollbar().y, px(-64.0));
+    }
+
+    #[gpui::test]
+    fn missing_file_watcher_degrades_to_opening_without_live_reload(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let path = root.path().join("README.md");
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    MdowApp::boot_with_watcher(
+                        Prefs::default(),
+                        StateStore::in_memory(),
+                        SessionRole::Owner,
+                        Err(anyhow::anyhow!("watcher unavailable")),
+                        window,
+                        cx,
+                    )
+                })
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |app, _, cx| {
+                app.open_path(&path, cx);
+                app.open_paths([root.path().join("guides/start.md")], cx);
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.file_watcher.is_none());
+                assert_eq!(app.model.tabs.len(), 2);
+                assert!(app.open_error.is_none());
+            })
+            .unwrap();
     }
 
     #[gpui::test]
