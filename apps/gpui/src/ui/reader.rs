@@ -2372,7 +2372,7 @@ impl Render for ReaderPane {
         let viewport = list(list_state.clone(), move |block_index, _, cx| {
             app.update(cx, |app, cx| {
                 let handles = app.ensure_block_link_focus_handles(&document, block_index, cx);
-                let paint = app.reader_paint_state(cx);
+                let paint = app.reader_paint_state(&document.path, cx);
                 let link_state = ReaderLinkState {
                     hovered: paint.hovered_link,
                     focused: paint.focused_link,

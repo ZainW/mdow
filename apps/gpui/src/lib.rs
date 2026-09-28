@@ -10,6 +10,7 @@ pub mod persist;
 pub mod prefs;
 pub mod session;
 pub mod sparkle;
+pub mod split;
 pub mod syntax;
 pub mod tabs;
 pub mod theme;

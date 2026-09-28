@@ -10,8 +10,8 @@ use crate::{
     ui::{
         field::Field,
         primitives::{
-            border_width, compact_icon_button, count_label, icon, icon_button, kbd, outline_button,
-            pluralize, segment, segmented_track, text_button,
+            border_width, compact_icon_button, count_label, icon, icon_button, icon_toggle_button,
+            kbd, outline_button, pluralize, segment, segmented_track, text_button,
         },
     },
     workspace::{
@@ -126,11 +126,7 @@ fn sidebar_toggle(theme: Theme, cx: &Context<MdowApp>) -> impl IntoElement {
 
 /// Traffic-light clearance plus the sidebar toggle, when the sidebar is hidden.
 fn titlebar_leading(leading: TitlebarLeading, theme: Theme, cx: &Context<MdowApp>) -> Div {
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .h_full()
+    titlebar_controls(theme)
         .child(div().w(px(leading.clearance)).h_full().flex_none())
         .when(leading.sidebar_toggle, |row| {
             row.child(
@@ -140,33 +136,44 @@ fn titlebar_leading(leading: TitlebarLeading, theme: Theme, cx: &Context<MdowApp
                     .flex_none()
                     .items_center()
                     .justify_center()
-                    .size(px(Metrics::TITLEBAR_BUTTON))
+                    .size(px(leading.button))
                     .child(sidebar_toggle(theme, cx)),
             )
         })
 }
 
-fn titlebar_drag_area(id: &'static str) -> Stateful<Div> {
+/// A run of titlebar buttons, pinned from the top so they sit in the centre of the full row
+/// (the row's bottom hairline would otherwise nudge `items_center` up by half a pixel).
+fn titlebar_controls(theme: Theme) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_start()
+        .h_full()
+        .pt(px((theme.ui.titlebar_height - theme.ui.button) / 2.0))
+}
+
+fn titlebar_drag_area(id: &'static str, theme: Theme) -> Stateful<Div> {
     div()
         .id(id)
         .debug_selector(move || id.to_string())
         .flex_grow()
-        .min_w(px(24.0))
+        .min_w(px(theme.ui.space(24.0)))
         .h_full()
         .on_click(zoom_on_double_click)
 }
 
-fn section_header() -> Div {
+fn section_header(theme: Theme) -> Div {
     div()
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(6.0))
-        .h(px(Metrics::SECTION_HEADER_HEIGHT))
-        .pl(px(14.0))
-        .pr(px(8.0))
+        .gap(px(theme.ui.space(6.0)))
+        .h(px(theme.ui.section_header_height()))
+        .pl(px(theme.ui.space(14.0)))
+        .pr(px(theme.ui.space(8.0)))
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(11.0))
+        .text_size(px(theme.ui.text(11.0)))
 }
 
 fn section_title(text: impl Into<gpui::SharedString>, theme: Theme, strong: bool) -> Div {
@@ -179,7 +186,7 @@ fn section_title(text: impl Into<gpui::SharedString>, theme: Theme, strong: bool
         } else {
             FontWeight::NORMAL
         })
-        .text_size(px(12.0))
+        .text_size(px(theme.ui.text(12.0)))
         .text_color(if strong {
             theme.foreground
         } else {
@@ -217,7 +224,7 @@ fn sidebar_row(
                 theme.sidebar_accent.opacity(0.0)
             })
             .font_family(Metrics::FONT_SANS)
-            .text_size(px(12.0))
+            .text_size(px(theme.ui.text(12.0)))
             .cursor_pointer()
             .when(!active, |row| {
                 row.hover(move |style| style.bg(theme.sidebar_accent.opacity(0.7)))
@@ -265,8 +272,8 @@ pub fn render_sidebar(theme: Theme, props: SidebarProps<'_>, cx: &Context<MdowAp
         .flex_none()
         .items_center()
         .justify_end()
-        .h(px(Metrics::SIDEBAR_HEADER_HEIGHT))
-        .pr(px(Metrics::SIDEBAR_HEADER_END_INSET))
+        .h(px(theme.ui.titlebar_height))
+        .pr(px(theme.ui.space(Metrics::SIDEBAR_HEADER_END_INSET)))
         .on_click(zoom_on_double_click)
         .child(sidebar_toggle(theme, cx));
 
@@ -288,8 +295,8 @@ pub fn render_sidebar(theme: Theme, props: SidebarProps<'_>, cx: &Context<MdowAp
     }
     let segmented = div()
         .flex_none()
-        .mx(px(Metrics::SEGMENTED_INSET))
-        .mb(px(Metrics::SEGMENTED_GAP_BELOW))
+        .mx(px(theme.ui.space(Metrics::SEGMENTED_INSET)))
+        .mb(px(theme.ui.space(Metrics::SEGMENTED_GAP_BELOW)))
         .child(track);
 
     let (section, body) = match mode {
@@ -303,7 +310,7 @@ pub fn render_sidebar(theme: Theme, props: SidebarProps<'_>, cx: &Context<MdowAp
         .flex_none()
         .border_t_1()
         .border_color(theme.border_subtle)
-        .p(px(8.0))
+        .p(px(theme.ui.space(8.0)))
         .child(border_width(
             div()
                 .id("sidebar-settings")
@@ -312,9 +319,9 @@ pub fn render_sidebar(theme: Theme, props: SidebarProps<'_>, cx: &Context<MdowAp
                 .focusable()
                 .flex()
                 .items_center()
-                .gap(px(8.0))
-                .h(px(28.0))
-                .px(px(8.0))
+                .gap(px(theme.ui.space(8.0)))
+                .h(px(theme.ui.space(28.0)))
+                .px(px(theme.ui.space(8.0)))
                 .w_full()
                 .rounded(px(6.0))
                 .border_color(theme.primary.opacity(0.0))
@@ -324,12 +331,16 @@ pub fn render_sidebar(theme: Theme, props: SidebarProps<'_>, cx: &Context<MdowAp
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.click_toggle_overlay(OverlayKind::Settings, window, cx);
                 }))
-                .child(icon("icons/settings.svg", theme.muted_foreground, 14.0))
+                .child(icon(
+                    "icons/settings.svg",
+                    theme.muted_foreground,
+                    theme.ui.space(14.0),
+                ))
                 .child(
                     div()
                         .flex_grow()
                         .font_family(Metrics::FONT_SANS)
-                        .text_size(px(12.0))
+                        .text_size(px(theme.ui.text(12.0)))
                         .text_color(theme.muted_foreground)
                         .child("Settings"),
                 )
@@ -366,26 +377,30 @@ fn workspace_error_note(theme: Theme, error: UserFacingError) -> AnyElement {
     div()
         .flex()
         .items_start()
-        .gap(px(7.0))
-        .mx(px(8.0))
-        .mb(px(6.0))
-        .px(px(8.0))
-        .py(px(7.0))
+        .gap(px(theme.ui.space(7.0)))
+        .mx(px(theme.ui.space(8.0)))
+        .mb(px(theme.ui.space(6.0)))
+        .px(px(theme.ui.space(8.0)))
+        .py(px(theme.ui.space(7.0)))
         .flex_none()
         .rounded(px(6.0))
         .border_1()
         .border_color(theme.destructive.opacity(0.32))
         .bg(theme.destructive.opacity(0.08))
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(11.0))
-        .child(icon("icons/alert-circle.svg", theme.destructive, 13.0))
+        .text_size(px(theme.ui.text(11.0)))
+        .child(icon(
+            "icons/alert-circle.svg",
+            theme.destructive,
+            theme.ui.space(13.0),
+        ))
         .child(
             div()
                 .min_w_0()
                 .flex_grow()
                 .flex()
                 .flex_col()
-                .gap(px(1.0))
+                .gap(px(theme.ui.space(1.0)))
                 .child(
                     div()
                         .truncate()
@@ -426,25 +441,25 @@ fn sidebar_empty(
         .flex()
         .flex_col()
         .items_center()
-        .pt(px(36.0))
-        .px(px(20.0))
+        .pt(px(theme.ui.space(36.0)))
+        .px(px(theme.ui.space(20.0)))
         .font_family(Metrics::FONT_SANS)
         .child(icon(icon_path, theme.muted_foreground.opacity(0.55), 22.0))
         .child(
             div()
-                .mt(px(10.0))
+                .mt(px(theme.ui.space(10.0)))
                 .font_weight(FontWeight::MEDIUM)
-                .text_size(px(13.0))
+                .text_size(px(theme.ui.text(13.0)))
                 .text_color(theme.foreground)
                 .child(title),
         )
         .child(
             div()
-                .mt(px(6.0))
-                .max_w(px(190.0))
+                .mt(px(theme.ui.space(6.0)))
+                .max_w(px(theme.ui.space(190.0)))
                 .text_center()
-                .text_size(px(12.0))
-                .line_height(px(18.0))
+                .text_size(px(theme.ui.text(12.0)))
+                .line_height(px(theme.ui.space(18.0)))
                 .text_color(theme.muted_foreground)
                 .child(hint),
         )
@@ -464,7 +479,7 @@ fn folder_section(
         cx.listener(|this, _, _, cx| this.open_folder_prompt(cx)),
     );
     let Some(workspace) = props.workspace else {
-        let header = section_header()
+        let header = section_header(theme)
             .child(section_title("No folder", theme, false))
             .child(open_folder);
         let body = scroll_list("workspace-scroll")
@@ -475,7 +490,7 @@ fn folder_section(
                     "No folder open",
                     "Open or drop a folder to browse its Markdown files.",
                 )
-                .child(div().mt(px(14.0)).child(outline_button(
+                .child(div().mt(px(theme.ui.space(14.0))).child(outline_button(
                     "sidebar-empty-open-folder",
                     "Open Folder",
                     "icons/folder-open.svg",
@@ -488,7 +503,7 @@ fn folder_section(
     };
 
     let file_count = workspace.file_count();
-    let header = section_header()
+    let header = section_header(theme)
         .child(section_title(workspace.root.name.clone(), theme, true))
         .child(count_label(pluralize(file_count, "file", "files"), theme))
         .child(open_folder);
@@ -502,19 +517,19 @@ fn folder_section(
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(6.0))
-        .h(px(28.0))
-        .mx(px(10.0))
-        .mb(px(4.0))
-        .pl(px(8.0))
-        .pr(px(8.0))
+        .gap(px(theme.ui.space(6.0)))
+        .h(px(theme.ui.space(28.0)))
+        .mx(px(theme.ui.space(10.0)))
+        .mb(px(theme.ui.space(4.0)))
+        .pl(px(theme.ui.space(8.0)))
+        .pr(px(theme.ui.space(8.0)))
         .rounded(px(6.0))
         .border_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface_well)
         .overflow_hidden()
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(12.0))
+        .text_size(px(theme.ui.text(12.0)))
         .text_color(theme.foreground)
         .child(
             div()
@@ -535,11 +550,11 @@ fn folder_section(
             list = list.child(
                 div()
                     .debug_selector(|| "folder-filter-empty".into())
-                    .pt(px(28.0))
-                    .px(px(12.0))
+                    .pt(px(theme.ui.space(28.0)))
+                    .px(px(theme.ui.space(12.0)))
                     .text_center()
                     .font_family(Metrics::FONT_SANS)
-                    .text_size(px(12.0))
+                    .text_size(px(theme.ui.text(12.0)))
                     .text_color(theme.muted_foreground)
                     .child("No matching files"),
             );
@@ -556,12 +571,12 @@ fn folder_section(
             if rows.is_empty() {
                 list = list.child(
                     div()
-                        .px(px(12.0))
-                        .pt(px(36.0))
+                        .px(px(theme.ui.space(12.0)))
+                        .pt(px(theme.ui.space(36.0)))
                         .text_center()
                         .font_family(Metrics::FONT_SANS)
-                        .text_size(px(12.0))
-                        .line_height(px(18.0))
+                        .text_size(px(theme.ui.text(12.0)))
+                        .line_height(px(theme.ui.space(18.0)))
                         .text_color(theme.muted_foreground)
                         .child("No Markdown files in this folder."),
                 );
@@ -576,11 +591,11 @@ fn folder_section(
             div()
                 .debug_selector(|| "workspace-truncated".into())
                 .flex_none()
-                .mt(px(6.0))
-                .px(px(10.0))
-                .py(px(6.0))
+                .mt(px(theme.ui.space(6.0)))
+                .px(px(theme.ui.space(10.0)))
+                .py(px(theme.ui.space(6.0)))
                 .font_family(Metrics::FONT_SANS)
-                .text_size(px(11.0))
+                .text_size(px(theme.ui.text(11.0)))
                 .text_color(theme.muted_foreground)
                 .child(format!(
                     "Showing the first {} files",
@@ -640,7 +655,7 @@ fn workspace_row(
         .flex()
         .items_center()
         .justify_center()
-        .size(px(18.0))
+        .size(px(theme.ui.space(18.0)))
         .flex_none()
         .rounded(px(4.0))
         .when(directory, |button| {
@@ -664,7 +679,7 @@ fn workspace_row(
             icon(
                 "icons/chevron-right.svg",
                 theme.muted_foreground.opacity(0.7),
-                10.0,
+                theme.ui.space(10.0),
             )
             .when(row.expanded, |chevron| {
                 chevron.with_transformation(Transformation::rotate(percentage(0.25)))
@@ -675,13 +690,13 @@ fn workspace_row(
     sidebar_row(
         ("workspace-row", index),
         is_active,
-        Metrics::TREE_ROW_HEIGHT,
+        theme.ui.tree_row_height(),
         theme,
     )
     .tab_group()
-    .gap(px(4.0))
+    .gap(px(theme.ui.space(4.0)))
     .pl(px(8.0 + row.depth as f32 * 10.0))
-    .pr(px(6.0))
+    .pr(px(theme.ui.space(6.0)))
     .text_color(if is_active {
         theme.foreground
     } else {
@@ -720,13 +735,13 @@ fn outline_section(
 ) -> (Div, AnyElement) {
     let headings = props.headings.unwrap_or(&[]);
     let header = match props.document_title {
-        Some(title) => section_header()
+        Some(title) => section_header(theme)
             .child(section_title(title.to_owned(), theme, true))
             .child(count_label(
                 pluralize(headings.len(), "heading", "headings"),
                 theme,
             )),
-        None => section_header().child(section_title("Outline", theme, false)),
+        None => section_header(theme).child(section_title("Outline", theme, false)),
     };
     let mut list = scroll_list("outline-scroll").track_scroll(props.outline_scroll);
     if headings.is_empty() {
@@ -762,11 +777,11 @@ fn outline_section(
             let mut row = sidebar_row(
                 ("outline-row", index),
                 active,
-                Metrics::OUTLINE_ROW_HEIGHT,
+                theme.ui.outline_row_height(),
                 theme,
             )
-            .pl(px(8.0))
-            .pr(px(6.0))
+            .pl(px(theme.ui.space(8.0)))
+            .pr(px(theme.ui.space(6.0)))
             .text_color(color)
             .on_click(cx.listener(move |this, _, _, cx| this.jump_to_heading(index, cx)));
             for _ in 0..depth {
@@ -776,8 +791,8 @@ fn outline_section(
                         .w(px(1.0))
                         .h_full()
                         .flex_none()
-                        .ml(px(6.0))
-                        .mr(px(5.0))
+                        .ml(px(theme.ui.space(6.0)))
+                        .mr(px(theme.ui.space(5.0)))
                         .bg(theme.border_subtle),
                 );
             }
@@ -788,7 +803,7 @@ fn outline_section(
                         .items_center()
                         .min_w_0()
                         .flex_grow()
-                        .pl(px(4.0))
+                        .pl(px(theme.ui.space(4.0)))
                         .child(div().min_w_0().truncate().child(heading.text.clone())),
                 ),
             );
@@ -803,7 +818,7 @@ fn recents_section(
     cx: &Context<MdowApp>,
 ) -> (Div, AnyElement) {
     let has_recents = !props.recents.is_empty();
-    let header = section_header()
+    let header = section_header(theme)
         .child(section_title("Recent files", theme, true))
         .child(
             text_button(
@@ -856,11 +871,11 @@ pub fn recent_row(
     let open_path = path.to_owned();
     let menu_path = path.to_owned();
     let welcome = style == RecentRowStyle::Welcome;
-    sidebar_row(id, active, Metrics::RECENT_ROW_HEIGHT, theme)
+    sidebar_row(id, active, theme.ui.recent_row_height(), theme)
         .gap(px(if welcome { 9.0 } else { 8.0 }))
         .pl(px(if welcome { 10.0 } else { 8.0 }))
         .pr(px(if welcome { 10.0 } else { 6.0 }))
-        .when(welcome, |row| row.text_size(px(13.0)))
+        .when(welcome, |row| row.text_size(px(theme.ui.text(13.0))))
         .on_click(cx.listener(move |this, _, _, cx| this.open_path(&open_path, cx)))
         .on_mouse_down(
             MouseButton::Right,
@@ -882,7 +897,7 @@ pub fn recent_row(
                 .text_color(theme.foreground)
                 .child(name),
         )
-        .child(div().flex_grow().min_w(px(8.0)))
+        .child(div().flex_grow().min_w(px(theme.ui.space(8.0))))
         .child(
             div()
                 .flex_none()
@@ -917,12 +932,12 @@ pub fn render_tab_bar(
         .flex()
         // Pinned from the top: the horizontal scrollbar gutter must not re-centre the tabs.
         .items_start()
-        .pt(px((Metrics::TAB_BAR_HEIGHT - Metrics::TAB_HEIGHT) / 2.0))
+        .pt(px(theme.ui.tab_inset_top()))
         .min_w_0()
         .flex_grow()
         .h_full()
         .gap(px(Metrics::TAB_GAP))
-        .px(px(Metrics::TAB_LIST_INSET))
+        .px(px(theme.ui.space(Metrics::TAB_LIST_INSET)))
         .overflow_x_scroll()
         .scrollbar_width(px(6.0));
 
@@ -955,9 +970,9 @@ pub fn render_tab_bar(
             .tab_group()
             .flex()
             .items_center()
-            .h(px(Metrics::TAB_HEIGHT))
-            .max_w(px(Metrics::TAB_MAX_WIDTH))
-            .min_w(px(92.0))
+            .h(px(theme.ui.tab_height))
+            .max_w(px(theme.ui.tab_max_width))
+            .min_w(px(theme.ui.space(92.0)))
             .flex_none()
             .rounded(px(Metrics::TAB_RADIUS))
             .border_1()
@@ -977,7 +992,7 @@ pub fn render_tab_bar(
             .when(is_active, |tab| tab.shadow_sm())
             .font_family(Metrics::FONT_SANS)
             .font_weight(FontWeight::NORMAL)
-            .text_size(px(12.0))
+            .text_size(px(theme.ui.text(12.0)))
             .text_color(if is_active {
                 theme.foreground
             } else {
@@ -1016,8 +1031,8 @@ pub fn render_tab_bar(
             .flex()
             .items_center()
             .justify_center()
-            .size(px(Metrics::TAB_CLOSE_SIZE))
-            .mr(px(Metrics::TAB_CLOSE_END_MARGIN))
+            .size(px(theme.ui.tab_close))
+            .mr(px(theme.ui.space(Metrics::TAB_CLOSE_END_MARGIN)))
             .flex_none()
             .rounded(px(4.0))
             .border_1()
@@ -1031,7 +1046,7 @@ pub fn render_tab_bar(
                 this.close_tab(&close_path, cx);
             }))
             .child(
-                icon("icons/x.svg", close_icon_color, 12.0)
+                icon("icons/x.svg", close_icon_color, theme.ui.space(12.0))
                     .group_hover(group, move |style| style.text_color(theme.muted_foreground)),
             );
         close = match focus.get(index) {
@@ -1045,14 +1060,14 @@ pub fn render_tab_bar(
                     .items_center()
                     .min_w_0()
                     .flex_grow()
-                    .gap(px(Metrics::TAB_CONTENT_GAP))
-                    .pl(px(Metrics::TAB_CONTENT_INSET))
+                    .gap(px(theme.ui.space(Metrics::TAB_CONTENT_GAP)))
+                    .pl(px(theme.ui.space(Metrics::TAB_CONTENT_INSET)))
                     .child(icon(
                         "icons/file.svg",
                         theme
                             .muted_foreground
                             .opacity(if is_active { 0.82 } else { 0.62 }),
-                        Metrics::TAB_ICON_SIZE,
+                        theme.ui.tab_icon,
                     ))
                     .child(
                         div()
@@ -1066,7 +1081,7 @@ pub fn render_tab_bar(
             .child(close);
         tabs = tabs.child(tab);
     }
-    tabs = tabs.child(titlebar_drag_area("titlebar-drag"));
+    tabs = tabs.child(titlebar_drag_area("titlebar-drag", theme));
 
     div()
         .id("tab-bar")
@@ -1081,13 +1096,9 @@ pub fn render_tab_bar(
         .child(titlebar_leading(layout.titlebar_leading, theme, cx))
         .child(tabs)
         .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(2.0))
-                .h_full()
-                .px(px(6.0))
-                .flex_none()
+            titlebar_controls(theme)
+                .gap(px(theme.ui.space(2.0)))
+                .px(px(theme.ui.space(6.0)))
                 .child(icon_button(
                     "toggle-find",
                     "icons/search.svg",
@@ -1102,6 +1113,16 @@ pub fn render_tab_bar(
                     theme,
                     cx.listener(|this, _, window, cx| {
                         this.click_toggle_overlay(OverlayKind::Palette, window, cx);
+                    }),
+                ))
+                .child(icon_toggle_button(
+                    "toggle-split-view",
+                    "icons/columns-2.svg",
+                    app.split.is_enabled(),
+                    theme,
+                    cx.listener(|this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.toggle_split_view(cx);
                     }),
                 )),
         )
@@ -1123,13 +1144,13 @@ pub fn render_empty_toolbar(
         .h(px(layout.tab_bar_height))
         .flex_none()
         .child(titlebar_leading(layout.titlebar_leading, theme, cx))
-        .child(titlebar_drag_area("titlebar-drag"))
+        .child(titlebar_drag_area("titlebar-drag", theme))
         .child(
             div()
                 .flex()
                 .items_center()
                 .h_full()
-                .px(px(6.0))
+                .px(px(theme.ui.space(6.0)))
                 .flex_none()
                 .child(icon_button(
                     "toggle-palette",
@@ -1151,7 +1172,7 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
         .items_center()
         .min_w_0()
         .flex_grow()
-        .gap(px(2.0))
+        .gap(px(theme.ui.space(2.0)))
         .overflow_hidden();
     for (index, segment) in segments.into_iter().enumerate() {
         let reveal = segment.path.clone();
@@ -1159,7 +1180,7 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
             .child(
                 div()
                     .id(("breadcrumb-segment", index))
-                    .max_w(px(128.0))
+                    .max_w(px(theme.ui.space(128.0)))
                     .truncate()
                     .rounded(px(4.0))
                     .cursor_pointer()
@@ -1171,7 +1192,7 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
             .child(icon(
                 "icons/chevron-right.svg",
                 theme.muted_foreground.opacity(0.38),
-                10.0,
+                theme.ui.space(10.0),
             ));
     }
     let reveal_current = tab.path().to_owned();
@@ -1180,7 +1201,7 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
         .flex()
         .items_center()
         .min_w_0()
-        .px(px(2.0))
+        .px(px(theme.ui.space(2.0)))
         .rounded(px(4.0))
         .font_weight(FontWeight::MEDIUM)
         .cursor_pointer()
@@ -1190,17 +1211,17 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(11.0))
+                .text_size(px(theme.ui.text(11.0)))
                 .text_color(theme.foreground.opacity(0.85))
                 .child(display.primary),
         );
     if let Some(filename) = display.secondary {
         current = current.child(
             div()
-                .ml(px(4.0))
+                .ml(px(theme.ui.space(4.0)))
                 .min_w_0()
                 .truncate()
-                .text_size(px(10.0))
+                .text_size(px(theme.ui.text(10.0)))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(theme.muted_foreground.opacity(0.60))
                 .child(filename),
@@ -1212,16 +1233,16 @@ pub fn render_breadcrumb(theme: Theme, tab: &DocumentTab, cx: &Context<MdowApp>)
         .debug_selector(|| "breadcrumb".into())
         .flex()
         .items_center()
-        .h(px(Metrics::BREADCRUMB_HEIGHT))
-        .px(px(12.0))
-        .gap(px(8.0))
+        .h(px(theme.ui.breadcrumb_height))
+        .px(px(theme.ui.space(12.0)))
+        .gap(px(theme.ui.space(8.0)))
         .flex_none()
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.background)
         .font_family(Metrics::FONT_SANS)
         .font_weight(FontWeight::NORMAL)
-        .text_size(px(11.0))
+        .text_size(px(theme.ui.text(11.0)))
         .child(trail)
         .child(compact_icon_button(
             "toggle-wide-mode",
@@ -1238,24 +1259,28 @@ fn banner(theme: Theme, tint: gpui::Hsla) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(8.0))
-        .mx(px(10.0))
-        .mt(px(8.0))
-        .px(px(10.0))
-        .py(px(7.0))
+        .gap(px(theme.ui.space(8.0)))
+        .mx(px(theme.ui.space(10.0)))
+        .mt(px(theme.ui.space(8.0)))
+        .px(px(theme.ui.space(10.0)))
+        .py(px(theme.ui.space(7.0)))
         .flex_none()
         .rounded(px(7.0))
         .border_1()
         .border_color(tint.opacity(0.35))
         .bg(tint.opacity(0.08))
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(11.0))
+        .text_size(px(theme.ui.text(11.0)))
         .text_color(theme.foreground)
 }
 
 pub fn render_error_banner(theme: Theme, error: &UserFacingError) -> AnyElement {
     banner(theme, theme.destructive)
-        .child(icon("icons/alert-circle.svg", theme.destructive, 14.0))
+        .child(icon(
+            "icons/alert-circle.svg",
+            theme.destructive,
+            theme.ui.space(14.0),
+        ))
         .child(
             div()
                 .font_weight(FontWeight::MEDIUM)
@@ -1282,7 +1307,11 @@ pub fn render_reload_error_banner(
         .debug_selector(|| "reload-error-banner".into())
         .child(
             banner(theme, theme.destructive)
-                .child(icon("icons/alert-circle.svg", theme.destructive, 14.0))
+                .child(icon(
+                    "icons/alert-circle.svg",
+                    theme.destructive,
+                    theme.ui.space(14.0),
+                ))
                 .child(
                     div()
                         .font_weight(FontWeight::MEDIUM)
@@ -1317,7 +1346,7 @@ fn banner_button(
     text_button(id, label, theme, on_click)
         .border_color(theme.border)
         .bg(theme.card)
-        .text_size(px(11.0))
+        .text_size(px(theme.ui.text(11.0)))
         .text_color(theme.foreground)
 }
 
@@ -1330,7 +1359,11 @@ pub fn render_deleted_banner(theme: Theme, path: &Path, cx: &Context<MdowApp>) -
         .debug_selector(|| "deleted-banner".into())
         .child(
             banner(theme, theme.accent)
-                .child(icon("icons/alert-circle.svg", theme.accent, 14.0))
+                .child(icon(
+                    "icons/alert-circle.svg",
+                    theme.accent,
+                    theme.ui.space(14.0),
+                ))
                 .child(
                     div()
                         .flex_none()
@@ -1343,7 +1376,7 @@ pub fn render_deleted_banner(theme: Theme, path: &Path, cx: &Context<MdowApp>) -
                         .flex_grow()
                         .truncate()
                         .font_family(Metrics::FONT_MONO)
-                        .text_size(px(10.5))
+                        .text_size(px(theme.ui.text(10.5)))
                         .text_color(theme.muted_foreground)
                         .child(path.to_string_lossy().into_owned()),
                 )
@@ -1379,15 +1412,15 @@ pub fn render_update_banner(
         .debug_selector(|| "update-banner".into())
         .flex()
         .items_center()
-        .gap(px(8.0))
-        .px(px(12.0))
-        .py(px(6.0))
+        .gap(px(theme.ui.space(8.0)))
+        .px(px(theme.ui.space(12.0)))
+        .py(px(theme.ui.space(6.0)))
         .flex_none()
         .border_t_1()
         .border_color(theme.border_subtle)
         .bg(theme.muted.opacity(0.45))
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(11.0))
+        .text_size(px(theme.ui.text(11.0)))
         .text_color(theme.muted_foreground)
         .child(div().min_w_0().flex_grow().child(copy));
     if let Some(label) = action {
@@ -1400,8 +1433,8 @@ pub fn render_update_banner(
                 .focusable()
                 .flex_none()
                 .debug_selector(|| "update-banner-action".into())
-                .px(px(8.0))
-                .h(px(22.0))
+                .px(px(theme.ui.space(8.0)))
+                .h(px(theme.ui.space(22.0)))
                 .flex()
                 .items_center()
                 .rounded(px(5.0))

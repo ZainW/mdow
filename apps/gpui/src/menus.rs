@@ -9,7 +9,7 @@ use crate::{
         Minimize, NewWindow, NextTab, OpenFile, OpenFolder, OpenRecent, OpenWebsite, PreviousTab,
         Quit, Redo, ShowAll, SidebarFolder, SidebarOutline, SidebarRecents, ToggleFind,
         ToggleFullScreen, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar,
-        ToggleWideMode, Undo, Zoom, ZoomIn, ZoomOut, ZoomReset,
+        ToggleSplitView, ToggleWideMode, Undo, Zoom, ZoomIn, ZoomOut, ZoomReset,
     },
     ui::field,
 };
@@ -124,6 +124,7 @@ pub fn app_menus(recents: &[PathBuf]) -> Vec<Menu> {
                 MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Previous Tab", PreviousTab),
                 MenuItem::separator(),
+                MenuItem::action("Toggle Split View", ToggleSplitView),
                 MenuItem::action("Toggle Wide Mode", ToggleWideMode),
                 MenuItem::action("Zoom In", ZoomIn),
                 MenuItem::action("Zoom Out", ZoomOut),
@@ -230,6 +231,11 @@ mod tests {
             find_action(&menus[3], "Toggle Full Screen")
                 .as_any()
                 .is::<ToggleFullScreen>()
+        );
+        assert!(
+            find_action(&menus[3], "Toggle Split View")
+                .as_any()
+                .is::<ToggleSplitView>()
         );
         let window = &menus[4];
         assert!(find_action(window, "Minimize").as_any().is::<Minimize>());
