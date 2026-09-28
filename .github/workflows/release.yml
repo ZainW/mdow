@@ -159,7 +159,7 @@ jobs:
       - name: Ensure Metal toolchain is available
         run: xcrun metal -v || xcodebuild -downloadComponent MetalToolchain
 
-      - uses: dtolnay/rust-toolchain@1.93.0
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
 
@@ -309,7 +309,7 @@ jobs:
             xvfb \
             zip
 
-      - uses: dtolnay/rust-toolchain@1.93.0
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
 
