@@ -72,6 +72,22 @@ pub fn icon_button(
     theme: Theme,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    icon_toggle_button(id, icon_path, false, theme, on_click)
+}
+
+/// An icon button that can stay pressed (a filled well) while its mode is on.
+pub fn icon_toggle_button(
+    id: &'static str,
+    icon_path: &'static str,
+    pressed: bool,
+    theme: Theme,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let glyph = if pressed {
+        theme.foreground
+    } else {
+        theme.muted_foreground
+    };
     div()
         .id(id)
         .debug_selector(move || id.to_string())
@@ -84,6 +100,7 @@ pub fn icon_button(
         .justify_center()
         .size(px(theme.ui.button))
         .rounded(px(6.0))
+        .when(pressed, |button| button.bg(theme.muted))
         .text_color(theme.muted_foreground)
         .cursor_pointer()
         .hover(move |style| style.bg(theme.muted).text_color(theme.foreground))
@@ -91,7 +108,7 @@ pub fn icon_button(
         .focus(move |style| style.border_1().border_color(theme.primary))
         .on_click(on_click)
         .child(
-            icon(icon_path, theme.muted_foreground, theme.ui.icon)
+            icon(icon_path, glyph, theme.ui.icon)
                 .group_hover(id, move |style| style.text_color(theme.foreground)),
         )
 }

@@ -1,5 +1,6 @@
 //! Snapshot of what was open. Produced from live state or disk, never synced field by field.
 
+use crate::split::SessionSplit;
 use std::path::{Path, PathBuf};
 
 pub fn file_identity(path: &Path) -> PathBuf {
@@ -124,9 +125,16 @@ pub struct Session {
     pub last_folder: Option<PathBuf>,
     pub recents: Recents,
     pub window: Option<SavedWindowBounds>,
+    /// Side-by-side panes, when split view was open.
+    pub split: Option<SessionSplit>,
 }
 
 impl Session {
+    pub fn with_split(mut self, split: Option<SessionSplit>) -> Self {
+        self.split = split;
+        self
+    }
+
     pub fn from_parts(
         tab_paths: impl IntoIterator<Item = PathBuf>,
         active: Option<PathBuf>,
@@ -139,6 +147,7 @@ impl Session {
             last_folder,
             recents,
             window,
+            split: None,
         }
     }
 }

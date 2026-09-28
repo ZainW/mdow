@@ -3,8 +3,8 @@ use crate::{
         CheckForUpdates, CloseTab, Dismiss, FindNext, FindPrevious, NextTab, OpenFile, OpenFolder,
         PreviousTab, SelectLastTab, SelectTab1, SelectTab2, SelectTab3, SelectTab4, SelectTab5,
         SelectTab6, SelectTab7, SelectTab8, SidebarFolder, SidebarOutline, SidebarRecents,
-        ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar, ToggleWideMode,
-        ZoomIn, ZoomOut, ZoomReset,
+        ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar, ToggleSplitView,
+        ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
     },
     actions::{ClearRecents, Minimize, OpenRecent, ToggleFullScreen, Zoom},
     document::{DocumentError, ParsedDocument, load_source, parse_document},
@@ -16,6 +16,7 @@ use crate::{
     prefs::{PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
     sparkle::{self, UpdateUi},
+    split::{PaneId, SplitState},
     syntax::prepare_document,
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
@@ -31,6 +32,7 @@ use crate::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
             clear_expired_code_copy_feedback, document_link_focus_targets,
         },
+        split_view::{SplitPane, render_split},
         welcome::{DropSummary, drop_overlay, error_state, welcome},
         zoom_hud::{self, ZoomHud, ZoomHudHandlers, render_zoom_hud},
     },
@@ -336,6 +338,7 @@ pub enum ContextAction {
     CloseOtherTabs(PathBuf),
     CloseTabsToRight(PathBuf),
     CloseAllTabs,
+    OpenInPane(PathBuf, PaneId),
     CopyPath(PathBuf),
     Reveal(PathBuf),
     RemoveRecent(PathBuf),
@@ -385,6 +388,15 @@ pub fn tab_context_menu(path: &Path, tab_paths: &[PathBuf]) -> ContextMenuSpec {
         ),
         menu_item("Close All", ContextAction::CloseAllTabs),
         menu_separator(),
+        menu_item(
+            "Open in Left Pane",
+            ContextAction::OpenInPane(path.to_owned(), PaneId::Primary),
+        ),
+        menu_item(
+            "Open in Right Pane",
+            ContextAction::OpenInPane(path.to_owned(), PaneId::Secondary),
+        ),
+        menu_separator(),
         menu_item("Copy Path", ContextAction::CopyPath(path.to_owned())),
         menu_item("Reveal in Finder", ContextAction::Reveal(path.to_owned())),
     ]
@@ -432,6 +444,10 @@ pub struct MdowApp {
     pub model: AppModel,
     pub sidebar_open: bool,
     pub wide_mode: bool,
+    /// Side-by-side panes; the focused pane always shows the active tab.
+    pub split: SplitState,
+    /// True while the split divider is being dragged, so it stays highlighted.
+    divider_dragging: bool,
     prefs: StoredPrefs,
     overlays: OverlayHost,
     last_window_bounds: Option<SavedWindowBounds>,
@@ -565,6 +581,8 @@ impl MdowApp {
             model: AppModel::default(),
             sidebar_open: true,
             wide_mode,
+            split: SplitState::default(),
+            divider_dragging: false,
             prefs: StoredPrefs::restore(prefs, store, role),
             overlays: OverlayHost::default(),
             last_window_bounds: None,
@@ -879,6 +897,76 @@ impl MdowApp {
         self.click_toggle_wide_mode(cx);
     }
 
+    fn on_toggle_split_view(
+        &mut self,
+        _: &ToggleSplitView,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_split_view(cx);
+    }
+
+    /// Shows `path` in the focused reader after a split change, keeping find, the outline and
+    /// the session pointed at it.
+    fn show_split_target(&mut self, target: Option<PathBuf>, cx: &mut Context<Self>) {
+        if let Some(target) = target {
+            self.model.tabs.activate(&target);
+        }
+        self.active_document_changed(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_split_view(&mut self, cx: &mut Context<Self>) {
+        if self.model.tabs.is_empty() {
+            return;
+        }
+        let tabs = self.tab_paths();
+        let active = self.model.tabs.active().map(|tab| tab.path().to_owned());
+        let target = self.split.toggle(&tabs, active.as_deref());
+        self.show_split_target(target, cx);
+    }
+
+    /// Clicking into a pane makes it the one find, the outline, zoom feedback and keyboard
+    /// scrolling act on.
+    pub(crate) fn focus_pane(&mut self, pane: PaneId, cx: &mut Context<Self>) {
+        if !self.split.is_enabled() || self.split.active_pane() == pane {
+            return;
+        }
+        let target = self.split.set_active_pane(pane);
+        self.show_split_target(target, cx);
+    }
+
+    pub(crate) fn open_in_pane(&mut self, path: &Path, pane: PaneId, cx: &mut Context<Self>) {
+        let tabs = self.tab_paths();
+        let active = self.model.tabs.active().map(|tab| tab.path().to_owned());
+        let target = self
+            .split
+            .set_pane_tab(pane, path, &tabs, active.as_deref());
+        if target.is_some() {
+            self.show_split_target(target, cx);
+        }
+    }
+
+    pub(crate) fn drag_split_divider(&mut self, x: f32, width: f32, cx: &mut Context<Self>) {
+        self.divider_dragging = true;
+        if self.split.drag_divider_to(x, width) {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn end_split_divider_drag(&mut self, cx: &mut Context<Self>) {
+        self.divider_dragging = false;
+        self.persist_session();
+        cx.notify();
+    }
+
+    pub(crate) fn reset_split_divider(&mut self, cx: &mut Context<Self>) {
+        if self.split.reset_ratio() {
+            self.persist_session();
+            cx.notify();
+        }
+    }
+
     pub(crate) fn click_toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_open = !self.sidebar_open;
         cx.notify();
@@ -926,6 +1014,16 @@ impl MdowApp {
             }
             self.model.tabs.activate(tabs.active());
             let _ = self.watch_all_documents();
+            let open = self.tab_paths();
+            if let Some(target) = session
+                .split
+                .as_ref()
+                .and_then(|saved| self.split.restore(saved, &open))
+            {
+                self.model.tabs.activate(&target);
+            } else if let Some(active) = self.model.tabs.active().map(|tab| tab.path().to_owned()) {
+                self.split.activated(&active, &open);
+            }
         }
         self.last_window_bounds = session.window;
         self.clear_reader_transient_state();
@@ -1091,6 +1189,7 @@ impl MdowApp {
                 self.apply_pref(PrefEdit::Sidebar(SidebarMode::Outline), cx)
             }
             CommandId::ToggleWideMode => self.apply_pref(PrefEdit::ToggleFull, cx),
+            CommandId::ToggleSplitView => self.toggle_split_view(cx),
             CommandId::LineWidth(width) => self.apply_pref(PrefEdit::LineWidth(width), cx),
             CommandId::ThemeSystem => self.apply_pref(PrefEdit::Theme(ThemeMode::System), cx),
             CommandId::ThemeLight => self.apply_pref(PrefEdit::Theme(ThemeMode::Light), cx),
@@ -1106,6 +1205,10 @@ impl MdowApp {
     }
 
     fn active_document_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(active) = self.model.tabs.active().map(|tab| tab.path().to_owned()) {
+            let tabs = self.tab_paths();
+            self.split.activated(&active, &tabs);
+        }
         self.clear_reader_transient_state();
         let document = self.model.tabs.active().map(|tab| tab.document.clone());
         self.overlays.retarget_find(document, cx);
@@ -1123,6 +1226,7 @@ impl MdowApp {
             self.model.recents.clone(),
             self.last_window_bounds,
         )
+        .with_split(self.split.session())
     }
 
     fn scroll_reader_to_block(&mut self, block: usize, cx: &mut Context<Self>) {
@@ -1323,7 +1427,22 @@ impl MdowApp {
         self.focused_link = None;
     }
 
-    pub(crate) fn reader_paint_state(&self, cx: &App) -> ReaderPaintState {
+    /// Transient reader feedback (find hit, hovered/focused link, copied code) belongs to the
+    /// focused document; the other split pane paints none of it.
+    pub(crate) fn reader_paint_state(&self, document: &Path, cx: &App) -> ReaderPaintState {
+        let focused = self
+            .model
+            .tabs
+            .active()
+            .is_some_and(|tab| tab.path() == document);
+        if !focused {
+            return ReaderPaintState {
+                copied_code: None,
+                hovered_link: None,
+                focused_link: None,
+                find_block: None,
+            };
+        }
         ReaderPaintState {
             copied_code: self.copied_code,
             hovered_link: self.hovered_link,
@@ -1543,7 +1662,16 @@ impl MdowApp {
     }
 
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let Some(path) = self.model.tabs.get(path).map(|tab| tab.path().to_owned()) else {
+            return;
+        };
+        let path = path.as_path();
         if self.model.close_tab(path) {
+            let tabs = self.tab_paths();
+            let active = self.model.tabs.active().map(|tab| tab.path().to_owned());
+            if let Some(target) = self.split.closed(path, &tabs, active.as_deref()) {
+                self.model.tabs.activate(&target);
+            }
             self.tab_focus.remove(path);
             self.reader_panes.remove(path);
             self.reader_link_focus_handles
@@ -1761,6 +1889,7 @@ impl MdowApp {
                 let tabs = self.tab_paths();
                 self.close_tabs(tabs, cx);
             }
+            ContextAction::OpenInPane(path, pane) => self.open_in_pane(&path, pane, cx),
             ContextAction::CopyPath(path) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(
                     path.to_string_lossy().into_owned(),
@@ -1908,6 +2037,55 @@ impl MdowApp {
     }
 }
 
+impl MdowApp {
+    /// Banners plus the reader for one open document. Window-level open errors only show in
+    /// the focused pane.
+    fn render_document_surface(
+        &mut self,
+        path: &Path,
+        focused: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme;
+        let tab = self
+            .model
+            .tabs
+            .get(path)
+            .expect("split panes only render open documents");
+        let (document, path, reload_error) = (
+            tab.document.clone(),
+            tab.path().to_owned(),
+            tab.reload_error.clone(),
+        );
+        let mut surface = div()
+            .flex()
+            .flex_col()
+            .flex_grow()
+            .min_w_0()
+            .min_h_0()
+            .bg(theme.background);
+        if focused && let Some(error) = self.open_error.as_ref() {
+            surface = surface.child(render_error_banner(theme, error));
+        }
+        if self.model.is_deleted(&path) {
+            surface = surface.child(render_deleted_banner(theme, &path, cx));
+        } else if let Some(body) = reload_error {
+            surface = surface.child(render_reload_error_banner(
+                theme,
+                &UserFacingError {
+                    title: "Couldn't reload this file".into(),
+                    body,
+                    path: path.clone(),
+                },
+                cx,
+            ));
+        }
+        let pane = self.ensure_reader_pane(document, window, cx);
+        surface.child(pane).into_any_element()
+    }
+}
+
 impl Focusable for MdowApp {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
         self.focus_handle.clone()
@@ -2027,45 +2205,50 @@ impl Render for MdowApp {
         } else {
             let tab_focus = self.sync_tab_focus(cx);
             let tab_bar = render_tab_bar(theme, self, &layout, &tab_focus, window, cx);
-            let tab = self
-                .model
-                .tabs
-                .active()
-                .expect("a non-empty tab set always has an active document");
-            let breadcrumb = render_breadcrumb(theme, tab, cx);
-            let (document, path, reload_error) = (
-                tab.document.clone(),
-                tab.path().to_owned(),
-                tab.reload_error.clone(),
-            );
-            let mut surface = div()
-                .flex()
-                .flex_col()
-                .flex_grow()
-                .min_w_0()
-                .min_h_0()
-                .bg(theme.background);
-            if let Some(error) = self.open_error.as_ref() {
-                surface = surface.child(render_error_banner(theme, error));
-            }
-            if self.model.is_deleted(&path) {
-                surface = surface.child(render_deleted_banner(theme, &path, cx));
-            } else if let Some(body) = reload_error {
-                surface = surface.child(render_reload_error_banner(
+            main = main.child(tab_bar);
+            if self.split.is_enabled() {
+                let active_pane = self.split.active_pane();
+                let panes = [PaneId::Primary, PaneId::Secondary].map(|pane| {
+                    let path = self.split.pane_path(pane).map(Path::to_owned);
+                    let title = path.as_deref().and_then(|path| {
+                        self.model
+                            .tabs
+                            .get(path)
+                            .map(crate::ui::chrome::breadcrumb_display)
+                    });
+                    let content =
+                        path.filter(|path| self.model.tabs.get(path).is_some())
+                            .map(|path| {
+                                self.render_document_surface(&path, pane == active_pane, window, cx)
+                            });
+                    SplitPane {
+                        pane,
+                        title: title.map(|display| display.primary),
+                        active: pane == active_pane,
+                        content,
+                    }
+                });
+                let [primary, secondary] = panes;
+                main = main.child(render_split(
                     theme,
-                    &UserFacingError {
-                        title: "Couldn't reload this file".into(),
-                        body,
-                        path: path.clone(),
-                    },
+                    &self.split,
+                    layout.main.width,
+                    self.divider_dragging,
+                    primary,
+                    secondary,
                     cx,
                 ));
+            } else {
+                let tab = self
+                    .model
+                    .tabs
+                    .active()
+                    .expect("a non-empty tab set always has an active document");
+                let breadcrumb = render_breadcrumb(theme, tab, cx);
+                let path = tab.path().to_owned();
+                let surface = self.render_document_surface(&path, true, window, cx);
+                main = main.child(breadcrumb).child(surface);
             }
-            let pane = self.ensure_reader_pane(document, window, cx);
-            main = main
-                .child(tab_bar)
-                .child(breadcrumb)
-                .child(surface.child(pane));
         }
         main = main.children(zoom_hud);
 
@@ -2117,6 +2300,7 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::toggle_sidebar))
             .on_action(cx.listener(Self::close_active_tab))
             .on_action(cx.listener(Self::toggle_wide_mode))
+            .on_action(cx.listener(Self::on_toggle_split_view))
             .on_action(cx.listener(Self::on_toggle_find))
             .on_action(cx.listener(Self::on_toggle_palette))
             .on_action(cx.listener(Self::on_toggle_settings))
@@ -2187,6 +2371,7 @@ impl Render for MdowApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overlay::command_catalog;
     use crate::session::Recents;
     use crate::theme::{TrafficLightClearance, TrafficLights};
     use crate::ui::reader::reader_key_target;
@@ -3036,8 +3221,8 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
 
         // Sidebar toggle, Recents, Folder, Outline, Clear, both recent rows, Settings, both tabs,
-        // find, palette, wide-mode, then the first tab's nested close target.
-        focus_next(&mut visual, 14);
+        // find, palette, split view, wide-mode, then the first tab's nested close target.
+        focus_next(&mut visual, 15);
         activate_focused(&mut visual, "space");
 
         window
@@ -3719,7 +3904,7 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
         assert!(visual.debug_bounds("reader-link-focus-0-0").is_some());
-        for _ in 0..12 {
+        for _ in 0..16 {
             visual.simulate_event(KeyDownEvent {
                 keystroke: Keystroke::parse("tab").unwrap(),
                 is_held: false,
@@ -4239,7 +4424,7 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
-        for _ in 0..12 {
+        for _ in 0..16 {
             visual.simulate_event(KeyDownEvent {
                 keystroke: Keystroke::parse("tab").unwrap(),
                 is_held: false,
@@ -4316,7 +4501,7 @@ mod tests {
             })
             .unwrap();
 
-        for _ in 0..12 {
+        for _ in 0..16 {
             visual.simulate_event(KeyDownEvent {
                 keystroke: Keystroke::parse("tab").unwrap(),
                 is_held: false,
@@ -4769,6 +4954,9 @@ mod tests {
                 "Close to the Right (off)",
                 "Close All",
                 "-",
+                "Open in Left Pane",
+                "Open in Right Pane",
+                "-",
                 "Copy Path",
                 "Reveal in Finder"
             ]
@@ -4809,7 +4997,7 @@ mod tests {
         // Clicking an item runs it; an outside click dismisses.
         visual.simulate_mouse_down(tab, MouseButton::Right, Modifiers::none());
         redraw(&mut visual);
-        click_debug(&mut visual, "context-menu-item-5");
+        click_debug(&mut visual, "context-menu-item-8");
         assert_eq!(
             visual.read_from_clipboard().and_then(|item| item.text()),
             Some(second.to_string_lossy().into_owned())
@@ -5134,5 +5322,419 @@ mod tests {
                 );
             })
             .unwrap();
+    }
+
+    fn split_window(cx: &mut TestAppContext) -> (gpui::WindowHandle<MdowApp>, Vec<PathBuf>) {
+        let paths = ["left", "right", "third"]
+            .map(|name| PathBuf::from(format!("/tmp/split-{name}.md")))
+            .to_vec();
+        let long = (0..80)
+            .map(|index| format!("Paragraph {index} keeps each split pane overflowing."))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let mut model = AppModel::default();
+        for path in &paths {
+            model
+                .tabs
+                .open(parse_document(path.clone(), format!("# Split\n\n{long}\n")));
+        }
+        model.tabs.activate(&paths[0]);
+        let window = cx.update(|cx| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::new(
+                        point(px(0.0), px(0.0)),
+                        gpui::size(px(1400.0), px(800.0)),
+                    ))),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = MdowApp::new(window, cx);
+                        app.model = model;
+                        app
+                    })
+                },
+            )
+            .unwrap()
+        });
+        (window, paths)
+    }
+
+    fn split_panes(
+        window: gpui::WindowHandle<MdowApp>,
+        visual: &mut VisualTestContext,
+    ) -> (bool, Option<PathBuf>, Option<PathBuf>, PaneId, PathBuf) {
+        window
+            .update(visual, |app, _, _| {
+                (
+                    app.split.is_enabled(),
+                    app.split.pane_path(PaneId::Primary).map(Path::to_owned),
+                    app.split.pane_path(PaneId::Secondary).map(Path::to_owned),
+                    app.split.active_pane(),
+                    app.model.tabs.active().unwrap().path().to_owned(),
+                )
+            })
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn toggle_split_view_shows_two_panes_under_one_tab_strip(cx: &mut TestAppContext) {
+        let (window, paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("split-view").is_none());
+        assert!(visual.debug_bounds("breadcrumb").is_some());
+
+        visual.dispatch_action(ToggleSplitView);
+        redraw(&mut visual);
+        assert_eq!(
+            split_panes(window, &mut visual),
+            (
+                true,
+                Some(paths[0].clone()),
+                Some(paths[1].clone()),
+                PaneId::Primary,
+                paths[0].clone()
+            )
+        );
+        // Each pane has its own header; the single breadcrumb gives way, like Electron, so the
+        // panes start right under the tab strip.
+        let tab_bar = visual.debug_bounds("tab-bar").unwrap();
+        let left = visual.debug_bounds("split-pane-primary").unwrap();
+        let right = visual.debug_bounds("split-pane-secondary").unwrap();
+        assert_eq!(left.top(), tab_bar.bottom());
+        assert_eq!(right.top(), tab_bar.bottom());
+        assert!(right.left() > left.right() - px(0.5));
+        assert!((left.size.width - right.size.width).abs() <= px(1.0));
+        assert!(visual.debug_bounds("split-pane-header-primary").is_some());
+        assert!(visual.debug_bounds("close-split-view").is_some());
+
+        // The tab-bar button closes it again, keeping the focused document.
+        click_debug(&mut visual, "toggle-split-view");
+        redraw(&mut visual);
+        let (enabled, _, secondary, _, active) = split_panes(window, &mut visual);
+        assert!(!enabled);
+        assert_eq!(secondary, None);
+        assert_eq!(active, paths[0]);
+    }
+
+    #[gpui::test]
+    fn palette_command_toggles_split_view(cx: &mut TestAppContext) {
+        let (window, _paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        window
+            .update(cx, |app, window, cx| {
+                app.run_command(CommandId::ToggleSplitView, window, cx)
+            })
+            .unwrap();
+        assert!(split_panes(window, &mut visual).0);
+        assert!(
+            command_catalog()
+                .iter()
+                .any(|spec| spec.id == CommandId::ToggleSplitView
+                    && spec.title == "Toggle Split View")
+        );
+    }
+
+    #[gpui::test]
+    fn tab_menu_assigns_documents_to_the_left_and_right_panes(cx: &mut TestAppContext) {
+        let (window, paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        let third = visual.debug_bounds("document-tab-2").unwrap().center();
+        visual.simulate_mouse_down(third, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        // Close, Close Others, Close to the Right, Close All, -, Open in Left, Open in Right.
+        click_debug(&mut visual, "context-menu-item-6");
+        redraw(&mut visual);
+        assert_eq!(
+            split_panes(window, &mut visual),
+            (
+                true,
+                Some(paths[0].clone()),
+                Some(paths[2].clone()),
+                PaneId::Secondary,
+                paths[2].clone()
+            )
+        );
+
+        window
+            .update(cx, |app, _, cx| {
+                app.run_context_action(
+                    ContextAction::OpenInPane(paths[1].clone(), PaneId::Primary),
+                    cx,
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            split_panes(window, &mut visual),
+            (
+                true,
+                Some(paths[1].clone()),
+                Some(paths[2].clone()),
+                PaneId::Primary,
+                paths[1].clone()
+            )
+        );
+
+        // Clicking a tab retargets only the focused (left) pane.
+        click_debug(&mut visual, "document-tab-0");
+        let (_, primary, secondary, _, _) = split_panes(window, &mut visual);
+        assert_eq!(primary, Some(paths[0].clone()));
+        assert_eq!(secondary, Some(paths[2].clone()));
+    }
+
+    #[gpui::test]
+    fn clicking_a_pane_focuses_it_for_find_outline_and_keyboard_scrolling(cx: &mut TestAppContext) {
+        let (window, paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.dispatch_action(ToggleSplitView);
+        redraw(&mut visual);
+        redraw(&mut visual);
+
+        let right = visual
+            .debug_bounds("split-pane-secondary")
+            .unwrap()
+            .center();
+        visual.simulate_mouse_down(right, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(right, MouseButton::Left, Modifiers::none());
+        redraw(&mut visual);
+        let (_, _, _, pane, active) = split_panes(window, &mut visual);
+        assert_eq!(pane, PaneId::Secondary);
+        assert_eq!(active, paths[1]);
+
+        // Keyboard scrolling moves only the focused pane; each pane keeps its own offset.
+        visual.simulate_keystrokes("down down");
+        let offsets = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, cx| {
+                    (
+                        app.reader_list_state(&paths[0], cx)
+                            .unwrap()
+                            .scroll_px_offset_for_scrollbar()
+                            .y,
+                        app.reader_list_state(&paths[1], cx)
+                            .unwrap()
+                            .scroll_px_offset_for_scrollbar()
+                            .y,
+                    )
+                })
+                .unwrap()
+        };
+        assert_eq!(offsets(&mut visual), (px(0.0), px(-80.0)));
+
+        // Find opens against the focused document and follows focus to the other pane.
+        visual.dispatch_action(ToggleFind);
+        let find_document = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, cx| {
+                    app.overlays
+                        .find()
+                        .unwrap()
+                        .read(cx)
+                        .document_path()
+                        .map(Path::to_owned)
+                })
+                .unwrap()
+        };
+        assert_eq!(find_document(&mut visual), Some(paths[1].clone()));
+        let left = visual.debug_bounds("split-pane-primary").unwrap().center();
+        visual.simulate_mouse_down(left, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(left, MouseButton::Left, Modifiers::none());
+        assert_eq!(find_document(&mut visual), Some(paths[0].clone()));
+        visual.simulate_keystrokes("escape");
+        visual.simulate_keystrokes("down");
+        assert_eq!(offsets(&mut visual), (px(-40.0), px(-80.0)));
+
+        // The outline follows the focused document.
+        window
+            .update(cx, |app, _, cx| {
+                assert_eq!(app.model.tabs.active().unwrap().path(), paths[0]);
+                assert!(app.active_outline_heading(cx).is_some());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn dragging_the_divider_resizes_the_panes_and_double_click_resets(cx: &mut TestAppContext) {
+        let (window, _paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.dispatch_action(ToggleSplitView);
+        redraw(&mut visual);
+        let split = visual.debug_bounds("split-view").unwrap();
+        let divider = visual.debug_bounds("split-divider").unwrap().center();
+        let before = visual
+            .debug_bounds("split-pane-primary")
+            .unwrap()
+            .size
+            .width;
+
+        visual.simulate_mouse_move(divider, None, Modifiers::none());
+        visual.simulate_mouse_down(divider, MouseButton::Left, Modifiers::none());
+        let target = point(divider.x - px(150.0), divider.y);
+        visual.simulate_mouse_move(
+            point(divider.x - px(20.0), divider.y),
+            Some(MouseButton::Left),
+            Modifiers::none(),
+        );
+        visual.simulate_mouse_move(target, Some(MouseButton::Left), Modifiers::none());
+        visual.simulate_mouse_up(target, MouseButton::Left, Modifiers::none());
+        redraw(&mut visual);
+        let after = visual
+            .debug_bounds("split-pane-primary")
+            .unwrap()
+            .size
+            .width;
+        assert!(
+            (after - (before - px(150.0))).abs() <= px(1.5),
+            "dragged {before:?} -> {after:?}"
+        );
+
+        // Dragging far left stops at the minimum pane width.
+        let divider = visual.debug_bounds("split-divider").unwrap().center();
+        visual.simulate_mouse_down(divider, MouseButton::Left, Modifiers::none());
+        let far = point(split.left() + px(10.0), divider.y);
+        visual.simulate_mouse_move(
+            point(divider.x - px(20.0), divider.y),
+            Some(MouseButton::Left),
+            Modifiers::none(),
+        );
+        visual.simulate_mouse_move(far, Some(MouseButton::Left), Modifiers::none());
+        visual.simulate_mouse_up(far, MouseButton::Left, Modifiers::none());
+        redraw(&mut visual);
+        let min = visual
+            .debug_bounds("split-pane-primary")
+            .unwrap()
+            .size
+            .width;
+        assert!(
+            (min - px(crate::split::MIN_PANE_WIDTH)).abs() <= px(1.0),
+            "{min:?}"
+        );
+
+        // Double-click puts it back to an even split.
+        let divider = visual.debug_bounds("split-divider").unwrap().center();
+        visual.simulate_event(gpui::MouseDownEvent {
+            position: divider,
+            button: MouseButton::Left,
+            modifiers: Modifiers::none(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        visual.simulate_event(gpui::MouseUpEvent {
+            position: divider,
+            button: MouseButton::Left,
+            modifiers: Modifiers::none(),
+            click_count: 1,
+        });
+        visual.simulate_event(gpui::MouseDownEvent {
+            position: divider,
+            button: MouseButton::Left,
+            modifiers: Modifiers::none(),
+            click_count: 2,
+            first_mouse: false,
+        });
+        visual.simulate_event(gpui::MouseUpEvent {
+            position: divider,
+            button: MouseButton::Left,
+            modifiers: Modifiers::none(),
+            click_count: 2,
+        });
+        redraw(&mut visual);
+        let reset = visual
+            .debug_bounds("split-pane-primary")
+            .unwrap()
+            .size
+            .width;
+        assert!((reset - before).abs() <= px(1.0), "{reset:?} vs {before:?}");
+    }
+
+    #[gpui::test]
+    fn split_view_is_saved_in_the_session_and_restored(cx: &mut TestAppContext) {
+        let (window, paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        window
+            .update(cx, |app, _, cx| {
+                app.open_in_pane(&paths[2], PaneId::Secondary, cx);
+                app.split.drag_divider_to(600.0, 1000.0);
+            })
+            .unwrap();
+        let session = window
+            .update(cx, |app, _, _| app.session_snapshot())
+            .unwrap();
+        let saved = session.split.clone().expect("split saved");
+        assert_eq!(saved.primary, paths[0]);
+        assert_eq!(saved.secondary, paths[2]);
+        assert_eq!(saved.active_pane, PaneId::Secondary);
+        assert_eq!(saved.ratio, 0.6);
+
+        // A fresh window restores the panes from the session (documents reopen from disk).
+        let root = markdown_workspace();
+        let first = root.path().join("README.md").canonicalize().unwrap();
+        let second = root.path().join("guides/start.md").canonicalize().unwrap();
+        let restored = Session::from_parts(
+            [first.clone(), second.clone()],
+            Some(first.clone()),
+            None,
+            Recents::default(),
+            None,
+        )
+        .with_split(Some(crate::split::SessionSplit {
+            primary: first.clone(),
+            secondary: second.clone(),
+            active_pane: PaneId::Secondary,
+            ratio: 0.4,
+        }));
+        let fresh = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.restore_session(restored, cx);
+                    app
+                })
+            })
+            .unwrap()
+        });
+        fresh
+            .update(cx, |app, _, _| {
+                assert!(app.split.is_enabled());
+                assert_eq!(app.split.pane_path(PaneId::Primary), Some(first.as_path()));
+                assert_eq!(
+                    app.split.pane_path(PaneId::Secondary),
+                    Some(second.as_path())
+                );
+                assert_eq!(app.split.active_pane(), PaneId::Secondary);
+                assert_eq!(app.split.ratio(), 0.4);
+                assert_eq!(app.model.tabs.active().unwrap().path(), second);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn closing_a_pane_document_backfills_then_collapses_the_split(cx: &mut TestAppContext) {
+        let (window, paths) = split_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.dispatch_action(ToggleSplitView);
+        redraw(&mut visual);
+        window
+            .update(cx, |app, _, cx| app.close_tab(&paths[1], cx))
+            .unwrap();
+        let (enabled, primary, secondary, _, _) = split_panes(window, &mut visual);
+        assert!(enabled);
+        assert_eq!(primary, Some(paths[0].clone()));
+        assert_eq!(secondary, Some(paths[2].clone()));
+
+        window
+            .update(cx, |app, _, cx| app.close_tab(&paths[2], cx))
+            .unwrap();
+        redraw(&mut visual);
+        let (enabled, primary, secondary, _, active) = split_panes(window, &mut visual);
+        assert!(!enabled);
+        assert_eq!(primary, Some(paths[0].clone()));
+        assert_eq!(secondary, None);
+        assert_eq!(active, paths[0]);
     }
 }

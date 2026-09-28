@@ -9,6 +9,7 @@ actions!(
         ToggleSidebar,
         CloseTab,
         ToggleWideMode,
+        ToggleSplitView,
         Quit,
         ToggleFind,
         TogglePalette,

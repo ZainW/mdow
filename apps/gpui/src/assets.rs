@@ -26,6 +26,7 @@ const REQUIRED_ICONS: &[&str] = &[
     "icons/check.svg",
     "icons/chevron-down.svg",
     "icons/clock.svg",
+    "icons/columns-2.svg",
     "icons/chevron-right.svg",
     "icons/chevron-up.svg",
     "icons/command.svg",

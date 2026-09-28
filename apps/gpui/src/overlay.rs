@@ -318,6 +318,13 @@ impl FindOverlay {
         }
     }
 
+    /// The document find searches (the focused split pane's, when split).
+    pub fn document_path(&self) -> Option<&Path> {
+        self.document
+            .as_ref()
+            .map(|document| document.path.as_path())
+    }
+
     pub fn retarget(&mut self, document: Option<Arc<PreparedDocument>>, cx: &mut Context<Self>) {
         self.document = document;
         let query = self.query.read(cx).text().to_owned();
@@ -498,6 +505,7 @@ pub enum CommandId {
     SidebarFolder,
     SidebarOutline,
     ToggleWideMode,
+    ToggleSplitView,
     LineWidth(LineWidth),
     ThemeSystem,
     ThemeLight,
@@ -569,6 +577,11 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             id: CommandId::ToggleWideMode,
             title: "Toggle Wide Mode",
             keys: Some("⇧⌘W"),
+        },
+        CommandSpec {
+            id: CommandId::ToggleSplitView,
+            title: "Toggle Split View",
+            keys: Some("⌘\\"),
         },
         CommandSpec {
             id: CommandId::LineWidth(LineWidth::Narrow),

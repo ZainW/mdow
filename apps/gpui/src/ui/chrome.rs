@@ -10,8 +10,8 @@ use crate::{
     ui::{
         field::Field,
         primitives::{
-            border_width, compact_icon_button, count_label, icon, icon_button, kbd, outline_button,
-            pluralize, segment, segmented_track, text_button,
+            border_width, compact_icon_button, count_label, icon, icon_button, icon_toggle_button,
+            kbd, outline_button, pluralize, segment, segmented_track, text_button,
         },
     },
     workspace::{
@@ -1113,6 +1113,16 @@ pub fn render_tab_bar(
                     theme,
                     cx.listener(|this, _, window, cx| {
                         this.click_toggle_overlay(OverlayKind::Palette, window, cx);
+                    }),
+                ))
+                .child(icon_toggle_button(
+                    "toggle-split-view",
+                    "icons/columns-2.svg",
+                    app.split.is_enabled(),
+                    theme,
+                    cx.listener(|this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.toggle_split_view(cx);
                     }),
                 )),
         )
