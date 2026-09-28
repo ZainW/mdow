@@ -21,6 +21,7 @@ use crate::{
     tabs::TabSet,
     theme::{Metrics, ShellLayout, Theme},
     ui::{
+        cheat_sheet::{self, CheatSheetHold, render_cheat_sheet},
         chrome::{
             SidebarProps, TabFocus, render_breadcrumb, render_deleted_banner, render_empty_toolbar,
             render_error_banner, render_reload_error_banner, render_sidebar, render_tab_bar,
@@ -475,6 +476,8 @@ pub struct MdowApp {
     update_dismissed: bool,
     _update_poll_task: Task<()>,
     zoom_hud: ZoomHud,
+    cheat_sheet: CheatSheetHold,
+    _activation_subscription: Subscription,
     theme: Theme,
     window_title: Option<String>,
     focus_handle: FocusHandle,
@@ -547,6 +550,11 @@ impl MdowApp {
         });
         let folder_filter_events = cx.subscribe_in(&folder_filter, window, Self::on_filter_event);
         focus_handle.focus(window);
+        let activation_subscription = cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active() && this.cheat_sheet.reset() {
+                cx.notify();
+            }
+        });
         let appearance_subscription = cx.observe_window_appearance(window, |this, window, cx| {
             this.theme = this.resolve_theme(window);
             cx.notify();
@@ -608,6 +616,8 @@ impl MdowApp {
             update_dismissed: false,
             _update_poll_task: update_poll_task,
             zoom_hud: ZoomHud::default(),
+            cheat_sheet: CheatSheetHold::default(),
+            _activation_subscription: activation_subscription,
             theme: Theme::for_appearance(window.appearance()),
             window_title: None,
             focus_handle,
@@ -1398,6 +1408,44 @@ impl MdowApp {
             self.expire_zoom_hud_after(generation, zoom_hud::HOVER_GRACE, cx);
         }
         cx.notify();
+    }
+
+    /// Palette, settings, shortcuts, find or a context menu own the screen: no cheat sheet.
+    fn cheat_sheet_blocked(&self) -> bool {
+        self.overlays.kind().is_some() || self.context_menu.is_some()
+    }
+
+    fn cheat_sheet_modifiers_changed(
+        &mut self,
+        modifiers: gpui::Modifiers,
+        cx: &mut Context<Self>,
+    ) {
+        let was_visible = self.cheat_sheet.is_visible();
+        let blocked = self.cheat_sheet_blocked();
+        if let Some(generation) = self.cheat_sheet.modifiers_changed(modifiers, blocked) {
+            // The executor's timer (unlike smol's `Timer`) follows the test clock.
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(cheat_sheet::HOLD_DELAY)
+                    .await;
+                this.update(cx, |this, cx| {
+                    let blocked = this.cheat_sheet_blocked();
+                    if this.cheat_sheet.timer_fired(generation, blocked) {
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
+        if was_visible != self.cheat_sheet.is_visible() {
+            cx.notify();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cheat_sheet_visible(&self) -> bool {
+        self.cheat_sheet.is_visible()
     }
 
     #[cfg(test)]
@@ -2256,6 +2304,12 @@ impl Render for MdowApp {
             .drop_state
             .is_active()
             .then(|| drop_overlay(theme, self.drop_state.summary()));
+        if self.cheat_sheet_blocked() {
+            self.cheat_sheet.reset();
+        }
+        let cheat_sheet_layer = self.cheat_sheet.is_visible().then(|| {
+            render_cheat_sheet(&self.cheat_sheet, zoom_hud::prefers_reduced_motion(), theme)
+        });
         let context_menu_layer = self
             .context_menu
             .as_ref()
@@ -2264,7 +2318,15 @@ impl Render for MdowApp {
         div()
             .id("mdow-root")
             .track_focus(&self.focus_handle)
+            .on_modifiers_changed(cx.listener(
+                |this, event: &gpui::ModifiersChangedEvent, _, cx| {
+                    this.cheat_sheet_modifiers_changed(event.modifiers, cx);
+                },
+            ))
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                if this.cheat_sheet.key_down() {
+                    cx.notify();
+                }
                 let modifiers = event.keystroke.modifiers;
                 let key = event.keystroke.key.as_str();
                 if reader_key_modifiers_are_allowed(
@@ -2364,6 +2426,7 @@ impl Render for MdowApp {
             )
             .children(self.overlays.render_layer(theme))
             .children(drop_overlay_layer)
+            .children(cheat_sheet_layer)
             .children(context_menu_layer)
     }
 }
@@ -5736,5 +5799,95 @@ mod tests {
         assert_eq!(primary, Some(paths[0].clone()));
         assert_eq!(secondary, None);
         assert_eq!(active, paths[0]);
+    }
+
+    #[gpui::test]
+    fn holding_command_alone_shows_the_cheat_sheet_after_the_electron_delay(
+        cx: &mut TestAppContext,
+    ) {
+        let (window, _first, _second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        let visible = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, _| app.cheat_sheet_visible())
+                .unwrap()
+        };
+
+        visual.simulate_modifiers_change(Modifiers::command());
+        visual
+            .executor()
+            .advance_clock(cheat_sheet::HOLD_DELAY - Duration::from_millis(50));
+        visual.run_until_parked();
+        assert!(!visible(&mut visual), "too early");
+        visual.executor().advance_clock(Duration::from_millis(60));
+        visual.run_until_parked();
+        assert!(visible(&mut visual));
+        redraw(&mut visual);
+        let sheet = visual
+            .debug_bounds("cheat-sheet")
+            .expect("cheat sheet painted");
+        let viewport = visual.update(|window, _| window.viewport_size());
+        // Bottom-centred like Electron's `bottom-6 left-1/2 -translate-x-1/2`.
+        assert!((sheet.center().x - viewport.width / 2.0).abs() <= px(1.0));
+        assert!((viewport.height - sheet.bottom() - px(24.0)).abs() <= px(4.0));
+
+        // Releasing ⌘ dismisses it.
+        visual.simulate_modifiers_change(Modifiers::none());
+        assert!(!visible(&mut visual));
+
+        // Any other key while it is up dismisses it too.
+        visual.simulate_modifiers_change(Modifiers::command());
+        visual.executor().advance_clock(cheat_sheet::HOLD_DELAY);
+        visual.run_until_parked();
+        assert!(visible(&mut visual));
+        visual.simulate_event(KeyDownEvent {
+            keystroke: Keystroke::parse("cmd-j").unwrap(),
+            is_held: false,
+        });
+        assert!(!visible(&mut visual));
+        visual.simulate_modifiers_change(Modifiers::none());
+    }
+
+    #[gpui::test]
+    fn command_combos_and_open_modals_never_show_the_cheat_sheet(cx: &mut TestAppContext) {
+        let (window, _first, _second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        let visible = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, _| app.cheat_sheet_visible())
+                .unwrap()
+        };
+
+        // A ⌘ combo (⌘2 switches tabs in the app); holding ⌘ afterwards does not pop the sheet.
+        visual.simulate_modifiers_change(Modifiers::command());
+        visual.simulate_keystrokes("cmd-2");
+        visual.executor().advance_clock(cheat_sheet::HOLD_DELAY * 2);
+        visual.run_until_parked();
+        assert!(!visible(&mut visual));
+        visual.simulate_modifiers_change(Modifiers::none());
+
+        // Releasing early cancels the pending peek.
+        visual.simulate_modifiers_change(Modifiers::command());
+        visual.executor().advance_clock(Duration::from_millis(200));
+        visual.simulate_modifiers_change(Modifiers::none());
+        visual.executor().advance_clock(cheat_sheet::HOLD_DELAY);
+        visual.run_until_parked();
+        assert!(!visible(&mut visual));
+
+        // ⌘⇧ is a chord, not a peek.
+        visual.simulate_modifiers_change(Modifiers::command_shift());
+        visual.executor().advance_clock(cheat_sheet::HOLD_DELAY);
+        visual.run_until_parked();
+        assert!(!visible(&mut visual));
+        visual.simulate_modifiers_change(Modifiers::none());
+
+        // With the palette open the sheet stays away.
+        visual.dispatch_action(TogglePalette);
+        visual.simulate_modifiers_change(Modifiers::command());
+        visual.executor().advance_clock(cheat_sheet::HOLD_DELAY);
+        visual.run_until_parked();
+        assert!(!visible(&mut visual));
     }
 }

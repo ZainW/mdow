@@ -1,3 +1,4 @@
+pub mod cheat_sheet;
 pub mod chrome;
 pub mod field;
 pub mod graphic;
