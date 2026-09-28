@@ -119,6 +119,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
+  --color-surface-well: var(--surface-well);
+  --color-surface-raised: var(--surface-raised);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -163,6 +165,10 @@
     --destructive: oklch(0.55 0.2 25);
     --border: oklch(0.89 0.01 70);
     --border-subtle: oklch(0.93 0.008 70);
+    /* Recessed track for segmented controls/steppers, and the raised thumb that sits in it. */
+    --surface-well: oklch(0.945 0.008 70);
+    --surface-raised: oklch(0.995 0.003 70);
+    --shadow-raised: 0 1px 2px oklch(0.3 0.04 50 / 0.08);
     --input: oklch(0.89 0.01 70);
     --ring: oklch(0.55 0.17 260);
     --radius: 0.5rem;
@@ -332,6 +338,9 @@
     --destructive: oklch(0.6 0.2 25);
     --border: oklch(0.27 0 0);
     --border-subtle: oklch(0.24 0 0);
+    --surface-well: oklch(0.175 0 0);
+    --surface-raised: oklch(0.235 0 0);
+    --shadow-raised: 0 1px 2px oklch(0 0 0 / 0.4);
     --input: oklch(0.27 0 0);
     --ring: oklch(0.68 0.15 260);
     --radius: 0.5rem;
@@ -466,7 +475,7 @@ html.theme-switching * {
 /* Active file — subtle left accent bar + distinct bg.
    No font-weight change: it would shift neighbors when selecting. */
 .sidebar-drawer-header {
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.625rem 0.375rem;
 }
 
 .outline-link {
@@ -533,12 +542,47 @@ html.theme-switching * {
 .outline-link[data-active='true']::before {
   content: '';
   position: absolute;
-  left: -3px;
+  left: 0;
   top: 4px;
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
   background-color: var(--accent);
+}
+
+/* Indent guides: one hairline per nesting level, running the full row height
+   (row padding + the 1px gap between rows) so they read as continuous lines. */
+.outline-guide {
+  position: relative;
+}
+.outline-guide::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: calc(-1 * var(--sidebar-row-padding-y));
+  bottom: calc(-1 * var(--sidebar-row-padding-y) - 1px);
+  width: 1px;
+  background-color: var(--border-subtle);
+}
+
+/* Segmented controls: color-only feedback, fast enough to feel instant. */
+.segmented-item {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sidebar-kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--muted);
+  border: 1px solid var(--border-subtle);
+  color: var(--muted-foreground);
 }
 
 /* Smooth scroll target offset so anchored headings aren't flush with viewport top */
@@ -547,7 +591,8 @@ html.theme-switching * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .outline-link {
+  .outline-link,
+  .segmented-item {
     transition-duration: 0ms;
   }
   html {

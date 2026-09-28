@@ -61,7 +61,7 @@ describe('FolderTree', () => {
   it('filters visible folder paths by file name', async () => {
     renderWithProviders(<FolderTree />)
 
-    fireEvent.change(screen.getByPlaceholderText('Filter folder...'), {
+    fireEvent.change(screen.getByPlaceholderText('Filter files'), {
       target: { value: 'guide' },
     })
 
