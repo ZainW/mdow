@@ -16,8 +16,8 @@ use crate::{
     workspace::{WorkspaceEntryKind, WorkspaceTree},
 };
 use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, StatefulInteractiveElement, Transformation, div,
-    percentage, prelude::*, px,
+    AnyElement, Context, FontWeight, IntoElement, MouseButton, StatefulInteractiveElement,
+    Transformation, div, percentage, prelude::*, px,
 };
 use std::path::{Path, PathBuf};
 
@@ -776,6 +776,7 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                 .unwrap_or_else(|| "Untitled".into());
             let activate_path = path.clone();
             let close_path = path.clone();
+            let middle_close_path = path.clone();
             let tab = div()
                 .id(("document-tab", index))
                 .debug_selector(move || format!("document-tab-{index}"))
@@ -816,6 +817,13 @@ pub fn render_tab_bar(theme: Theme, app: &MdowApp, cx: &Context<MdowApp>) -> Any
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.activate_tab(&activate_path, cx);
                 }))
+                .on_mouse_up(
+                    MouseButton::Middle,
+                    cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.close_tab(&middle_close_path, cx);
+                    }),
+                )
                 .child(
                     div()
                         .flex()

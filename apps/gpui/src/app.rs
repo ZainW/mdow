@@ -2140,6 +2140,28 @@ mod tests {
     }
 
     #[gpui::test]
+    fn middle_clicking_a_tab_closes_it(cx: &mut TestAppContext) {
+        let (window, first, second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        let center = visual
+            .debug_bounds("document-tab-1")
+            .expect("second tab should be painted")
+            .center();
+
+        visual.simulate_mouse_down(center, MouseButton::Middle, Modifiers::none());
+        visual.simulate_mouse_up(center, MouseButton::Middle, Modifiers::none());
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.len(), 1);
+                assert!(app.model.tabs.get(&second).is_none());
+                assert_eq!(app.model.tabs.active().unwrap().path(), first);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
     fn tab_close_target_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
