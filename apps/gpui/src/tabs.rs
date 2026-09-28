@@ -176,7 +176,10 @@ mod tests {
 
         tabs.open_prepared(prepared);
 
-        assert!(tabs.active().unwrap().document.code_block(0).is_some());
+        assert!(matches!(
+            tabs.active().unwrap().document.blocks[0],
+            crate::document::DocumentBlock::CodeBlock { .. }
+        ));
     }
 
     #[test]
@@ -190,13 +193,10 @@ mod tests {
 
         assert!(tabs.replace_prepared(replacement));
         assert_eq!(tabs.active().unwrap().path(), Path::new("/tmp/b.md"));
-        assert!(
-            tabs.get(Path::new("/tmp/a.md"))
-                .unwrap()
-                .document
-                .code_block(0)
-                .is_some()
-        );
+        assert!(matches!(
+            &tabs.get(Path::new("/tmp/a.md")).unwrap().document.blocks[0],
+            crate::document::DocumentBlock::CodeBlock { code, .. } if code == "const n = 2;\n"
+        ));
     }
 
     #[test]

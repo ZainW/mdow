@@ -137,6 +137,16 @@ impl ParsedDocument {
         if fragment.is_empty() {
             return (!self.blocks.is_empty()).then_some(0);
         }
+        if let Some(label) = fragment.strip_prefix("fn-")
+            && let Some(block) = self.footnote_block(label)
+        {
+            return Some(block);
+        }
+        if let Some(label) = fragment.strip_prefix("fnref-")
+            && let Some(block) = self.footnote_ref_block(label)
+        {
+            return Some(block);
+        }
         let mut used = std::collections::HashSet::new();
         for (index, heading) in self.headings.iter().enumerate() {
             let base: String = heading
@@ -157,6 +167,21 @@ impl ParsedDocument {
             }
         }
         None
+    }
+
+    /// The reader block holding the footnote section entry for `label`.
+    pub fn footnote_block(&self, label: &str) -> Option<usize> {
+        self.blocks.iter().position(|block| {
+            matches!(block, DocumentBlock::FootnoteSection { notes }
+                if notes.iter().any(|(note, _)| note == label))
+        })
+    }
+
+    /// The reader block holding the first reference to footnote `label`.
+    pub fn footnote_ref_block(&self, label: &str) -> Option<usize> {
+        self.blocks
+            .iter()
+            .position(|block| block_references_footnote(block, label))
     }
 
     pub fn plain_text(&self) -> String {
@@ -183,34 +208,137 @@ pub enum InlineSpan {
     FootnoteRef {
         label: String,
     },
+    /// The `↩` link at the end of a footnote that jumps back to its first reference.
+    FootnoteBackref {
+        label: String,
+    },
+    Superscript(Vec<InlineSpan>),
+    Subscript(Vec<InlineSpan>),
+    /// `<mark>` from inline HTML.
+    Mark(Vec<InlineSpan>),
+    /// `<kbd>` from inline HTML.
+    Kbd(Vec<InlineSpan>),
     SoftBreak,
     HardBreak,
 }
 
+/// Raised or lowered text. GPUI text runs cannot shift the baseline or change size inside one
+/// paragraph, so text whose every character has a Unicode super/subscript form is painted with
+/// those characters; anything else keeps its characters and asks the font for its `sups`/`subs`
+/// OpenType feature (Inter supports both; fonts without it paint regular glyphs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Script {
+    Super,
+    Sub,
+}
+
+fn script_char(character: char, script: Script) -> Option<char> {
+    const SUPER_DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+    const SUB_DIGITS: [char; 10] = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+    if let Some(digit) = character.to_digit(10) {
+        return Some(match script {
+            Script::Super => SUPER_DIGITS[digit as usize],
+            Script::Sub => SUB_DIGITS[digit as usize],
+        });
+    }
+    match (script, character) {
+        (_, ' ') => Some(' '),
+        (Script::Super, '+') => Some('⁺'),
+        (Script::Super, '-') => Some('⁻'),
+        (Script::Super, '=') => Some('⁼'),
+        (Script::Super, '(') => Some('⁽'),
+        (Script::Super, ')') => Some('⁾'),
+        (Script::Super, 'n') => Some('ⁿ'),
+        (Script::Super, 'i') => Some('ⁱ'),
+        (Script::Sub, '+') => Some('₊'),
+        (Script::Sub, '-') => Some('₋'),
+        (Script::Sub, '=') => Some('₌'),
+        (Script::Sub, '(') => Some('₍'),
+        (Script::Sub, ')') => Some('₎'),
+        (Script::Sub, 'a') => Some('ₐ'),
+        (Script::Sub, 'e') => Some('ₑ'),
+        (Script::Sub, 'o') => Some('ₒ'),
+        (Script::Sub, 'x') => Some('ₓ'),
+        (Script::Sub, 'h') => Some('ₕ'),
+        (Script::Sub, 'k') => Some('ₖ'),
+        (Script::Sub, 'l') => Some('ₗ'),
+        (Script::Sub, 'm') => Some('ₘ'),
+        (Script::Sub, 'n') => Some('ₙ'),
+        (Script::Sub, 'p') => Some('ₚ'),
+        (Script::Sub, 's') => Some('ₛ'),
+        (Script::Sub, 't') => Some('ₜ'),
+        _ => None,
+    }
+}
+
+/// The painted form of super/subscript text: Unicode script characters when every character
+/// has one, otherwise the text unchanged (see [`Script`]).
+pub fn script_text(text: &str, script: Script) -> std::borrow::Cow<'_, str> {
+    if text.trim().is_empty() {
+        return text.into();
+    }
+    match text
+        .chars()
+        .map(|character| script_char(character, script))
+        .collect::<Option<String>>()
+    {
+        Some(mapped) => mapped.into(),
+        None => text.into(),
+    }
+}
+
+/// Whether [`script_text`] maps this text to Unicode script characters.
+pub fn script_is_unicode(text: &str, script: Script) -> bool {
+    matches!(script_text(text, script), std::borrow::Cow::Owned(_))
+}
+
+pub const FOOTNOTE_BACKREF: &str = "↩";
+
+/// Link target of a footnote reference; resolved by [`ParsedDocument::anchor_block`].
+pub fn footnote_target(label: &str) -> String {
+    format!("#fn-{label}")
+}
+
+/// Link target of a footnote's backlink; resolved by [`ParsedDocument::anchor_block`].
+pub fn footnote_backref_target(label: &str) -> String {
+    format!("#fnref-{label}")
+}
+
 impl InlineSpan {
     pub fn plain_text(&self) -> String {
-        match self {
-            Self::Text(text) | Self::Code(text) => text.clone(),
-            Self::Emphasis(content) | Self::Strong(content) | Self::Strikethrough(content) => {
-                plain_text_for_spans(content)
-            }
-            Self::Link { label, .. } => plain_text_for_spans(label),
-            Self::FootnoteRef { label } => footnote_ref_display(label),
-            Self::SoftBreak | Self::HardBreak => "\n".into(),
-        }
+        self.text_with("\n", None)
     }
 
     /// The text find searches. It stays byte-aligned with what the reader paints, but soft breaks
     /// (painted as line breaks) fold to spaces so a one-line query can match across them.
     pub fn find_text(&self) -> String {
+        self.text_with(" ", None)
+    }
+
+    fn text_with(&self, soft_break: &str, script: Option<Script>) -> String {
+        let children = |content: &[InlineSpan], script: Option<Script>| {
+            content
+                .iter()
+                .map(|span| span.text_with(soft_break, script))
+                .collect::<String>()
+        };
         match self {
-            Self::Text(text) | Self::Code(text) => text.clone(),
-            Self::Emphasis(content) | Self::Strong(content) | Self::Strikethrough(content) => {
-                find_text_for_spans(content)
-            }
-            Self::Link { label, .. } => find_text_for_spans(label),
+            Self::Text(text) => match script {
+                Some(script) => script_text(text, script).into_owned(),
+                None => text.clone(),
+            },
+            Self::Code(text) => text.clone(),
+            Self::Emphasis(content)
+            | Self::Strong(content)
+            | Self::Strikethrough(content)
+            | Self::Mark(content)
+            | Self::Kbd(content) => children(content, script),
+            Self::Superscript(content) => children(content, Some(Script::Super)),
+            Self::Subscript(content) => children(content, Some(Script::Sub)),
+            Self::Link { label, .. } => children(label, script),
             Self::FootnoteRef { label } => footnote_ref_display(label),
-            Self::SoftBreak => " ".into(),
+            Self::FootnoteBackref { .. } => FOOTNOTE_BACKREF.into(),
+            Self::SoftBreak => soft_break.into(),
             Self::HardBreak => "\n".into(),
         }
     }
@@ -247,7 +375,8 @@ pub enum DocumentBlock {
         depth: usize,
         children: Vec<DocumentBlock>,
     },
-    Blockquote(Vec<InlineSpan>),
+    /// A plain `>` quote keeps its nested blocks (paragraphs, lists, code, nested quotes).
+    Blockquote(Vec<DocumentBlock>),
     Alert {
         kind: AlertKind,
         children: Vec<DocumentBlock>,
@@ -259,6 +388,8 @@ pub enum DocumentBlock {
     CodeBlock {
         language: Option<String>,
         code: String,
+        /// 1-based line ranges from fence meta such as `ts {1,3-5}` (Electron's `highlights`).
+        highlights: LineHighlights,
     },
     MermaidCard {
         source: String,
@@ -274,11 +405,12 @@ pub enum DocumentBlock {
 impl DocumentBlock {
     pub(crate) fn plain_text(&self) -> String {
         match self {
-            Self::Heading { content, .. }
-            | Self::Paragraph(content)
-            | Self::Blockquote(content) => plain_text_for_spans(content),
+            Self::Heading { content, .. } | Self::Paragraph(content) => {
+                plain_text_for_spans(content)
+            }
             Self::ListItem { children, .. }
             | Self::TaskItem { children, .. }
+            | Self::Blockquote(children)
             | Self::Alert { children, .. } => plain_text_for_blocks(children),
             Self::FootnoteSection { notes } => notes
                 .iter()
@@ -298,11 +430,12 @@ impl DocumentBlock {
     /// (painted as line breaks) fold to spaces so a one-line query can match across them.
     pub fn find_text(&self) -> String {
         match self {
-            Self::Heading { content, .. }
-            | Self::Paragraph(content)
-            | Self::Blockquote(content) => find_text_for_spans(content),
+            Self::Heading { content, .. } | Self::Paragraph(content) => {
+                find_text_for_spans(content)
+            }
             Self::ListItem { children, .. }
             | Self::TaskItem { children, .. }
+            | Self::Blockquote(children)
             | Self::Alert { children, .. } => find_text_for_blocks(children),
             Self::FootnoteSection { notes } => notes
                 .iter()
@@ -317,6 +450,109 @@ impl DocumentBlock {
             Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
         }
     }
+}
+
+/// Highlighted code lines as inclusive 1-based ranges.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LineHighlights(pub Vec<(usize, usize)>);
+
+impl LineHighlights {
+    pub fn contains(&self, line: usize) -> bool {
+        self.0
+            .iter()
+            .any(|(start, end)| (*start..=*end).contains(&line))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// A fenced code block's info string, split the way comark's `parseCodeblockInfo` does:
+/// `lang {1,3-5} [file.ts] meta` (highlights and filename in either order).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodeInfo {
+    pub language: Option<String>,
+    pub highlights: LineHighlights,
+    pub filename: Option<String>,
+    pub meta: Option<String>,
+}
+
+/// JavaScript `Number.parseInt(value, 10)` on a trimmed string: leading digits only.
+fn parse_leading_int(value: &str) -> Option<usize> {
+    let value = value.trim();
+    let digits = value
+        .char_indices()
+        .take_while(|(_, character)| character.is_ascii_digit())
+        .last()
+        .map(|(index, character)| &value[..index + character.len_utf8()])?;
+    digits.parse().ok()
+}
+
+pub fn parse_code_info(info: &str) -> CodeInfo {
+    let mut result = CodeInfo::default();
+    let mut remaining = info.trim();
+    let language_end = remaining
+        .find(|character: char| character.is_whitespace() || matches!(character, '[' | '{'))
+        .unwrap_or(remaining.len());
+    if language_end > 0 {
+        result.language = Some(remaining[..language_end].to_owned());
+        remaining = remaining[language_end..].trim();
+    }
+    loop {
+        if let Some(rest) = remaining.strip_prefix('{') {
+            let Some(close) = rest.find('}').filter(|close| *close > 0) else {
+                break;
+            };
+            let mut ranges = Vec::new();
+            for part in rest[..close].split(',') {
+                let part = part.trim();
+                if part.contains('-') {
+                    let mut bounds = part.split('-');
+                    if let (Some(start), Some(end)) = (
+                        bounds.next().and_then(parse_leading_int),
+                        bounds.next().and_then(parse_leading_int),
+                    ) && start <= end
+                    {
+                        ranges.push((start, end));
+                    }
+                } else if let Some(line) = parse_leading_int(part) {
+                    ranges.push((line, line));
+                }
+            }
+            if !ranges.is_empty() {
+                result.highlights = LineHighlights(ranges);
+            }
+            remaining = rest[close + 1..].trim();
+        } else if remaining.starts_with('[') {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, character) in remaining.char_indices() {
+                match character {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let Some(close) = close else {
+                break;
+            };
+            result.filename = Some(remaining[1..close].replace("\\\\", ""));
+            remaining = remaining[close + 1..].trim();
+        } else {
+            break;
+        }
+    }
+    if !remaining.is_empty() {
+        result.meta = Some(remaining.to_owned());
+    }
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,17 +645,76 @@ enum InlineContainer {
     Strikethrough,
     Link(String),
     Image(String),
+    Superscript,
+    Subscript,
+    /// An element opened by inline HTML; closed by its matching end tag or by the enclosing
+    /// block ending.
+    Html {
+        tag: String,
+        kind: HtmlInline,
+    },
     Flatten,
 }
 
-/// One open `>` quote: untyped quotes flatten to inline text, GFM alerts keep child blocks.
+/// The safe inline HTML subset the reader renders; every other tag keeps only its text.
+#[derive(Debug, Clone)]
+enum HtmlInline {
+    Strong,
+    Emphasis,
+    Strikethrough,
+    Code,
+    Kbd,
+    Superscript,
+    Subscript,
+    Mark,
+    Link(String),
+    Transparent,
+}
+
+impl HtmlInline {
+    fn for_tag(tag: &str, attrs: &[(String, String)]) -> Self {
+        match tag {
+            "strong" | "b" => Self::Strong,
+            "em" | "i" | "cite" | "var" | "dfn" => Self::Emphasis,
+            "s" | "del" | "strike" => Self::Strikethrough,
+            "code" | "samp" | "tt" => Self::Code,
+            "kbd" => Self::Kbd,
+            "sup" => Self::Superscript,
+            "sub" => Self::Subscript,
+            "mark" => Self::Mark,
+            "a" => attrs
+                .iter()
+                .find(|(name, value)| name == "href" && !value.trim().is_empty())
+                .map_or(Self::Transparent, |(_, href)| {
+                    Self::Link(href.trim().to_owned())
+                }),
+            _ => Self::Transparent,
+        }
+    }
+}
+
+/// One open `>` quote. Plain quotes and GFM alerts both keep their child blocks.
 #[derive(Debug)]
-enum QuoteFrame {
-    Plain(Vec<InlineSpan>),
-    Alert {
-        kind: AlertKind,
-        children: Vec<DocumentBlock>,
-    },
+struct QuoteFrame {
+    kind: Option<AlertKind>,
+    children: Vec<DocumentBlock>,
+    /// Open list items when the quote started; the quote is the innermost container while no
+    /// newer item is open.
+    item_depth: usize,
+    /// Open lists when the quote started; lists inside the quote indent from zero again.
+    list_base: usize,
+}
+
+impl QuoteFrame {
+    fn into_block(self) -> DocumentBlock {
+        match self.kind {
+            Some(kind) => DocumentBlock::Alert {
+                kind,
+                children: self.children,
+            },
+            None => DocumentBlock::Blockquote(self.children),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -512,7 +807,7 @@ impl ItemContext {
 
 #[derive(Debug)]
 struct CodeContext {
-    language: Option<String>,
+    info: CodeInfo,
     code: String,
 }
 
@@ -593,6 +888,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     // document blocks wait here, so nested pushes need no special routing.
     let mut stashed_main_blocks = None::<(String, Vec<DocumentBlock>)>;
     let (frontmatter_title, markdown_body) = split_frontmatter(&source);
+    let document_parent = path.parent().unwrap_or_else(|| Path::new("")).to_owned();
 
     for event in Parser::new_ext(markdown_body, options) {
         if code_block.is_some() {
@@ -600,6 +896,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 Event::End(TagEnd::CodeBlock) => {
                     let code = code_block.take().expect("code block is present");
                     let block = if code
+                        .info
                         .language
                         .as_deref()
                         .is_some_and(|language| language.eq_ignore_ascii_case("mermaid"))
@@ -607,8 +904,9 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                         DocumentBlock::MermaidCard { source: code.code }
                     } else {
                         DocumentBlock::CodeBlock {
-                            language: code.language,
+                            language: code.info.language,
                             code: code.code,
+                            highlights: code.info.highlights,
                         }
                     };
                     push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
@@ -634,12 +932,10 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
         if html_block.is_some() {
             match event {
                 Event::End(TagEnd::HtmlBlock) => {
-                    push_block(
-                        DocumentBlock::RawText(html_block.take().expect("HTML block is present")),
-                        &mut blocks,
-                        &mut item_stack,
-                        &mut blockquotes,
-                    );
+                    let html = html_block.take().expect("HTML block is present");
+                    for block in crate::html::html_to_blocks(&html, &document_parent) {
+                        push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
+                    }
                 }
                 Event::Html(text) | Event::InlineHtml(text) | Event::Text(text) => html_block
                     .as_mut()
@@ -659,6 +955,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
             }
             Event::End(TagEnd::Paragraph) => {
+                close_dangling_html(&mut inline_stack);
                 if let Some(mut frame) = inline_stack.pop() {
                     if let Some(image) = frame.take_standalone_image() {
                         push_block(
@@ -684,6 +981,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
             }
             Event::End(TagEnd::Heading(level)) => {
+                close_dangling_html(&mut inline_stack);
                 if let Some(frame) = inline_stack.pop() {
                     let content = frame.into_spans();
                     let level = level as u8;
@@ -695,33 +993,36 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     );
                 }
             }
-            Event::Start(Tag::BlockQuote(kind)) => blockquotes.push(match kind {
-                Some(kind) => QuoteFrame::Alert {
-                    kind: kind.into(),
+            Event::Start(Tag::BlockQuote(kind)) => {
+                // A quote opened inside a list item belongs to that item; park the item's
+                // pending inline text first so source order holds.
+                if let Some(item) = item_stack.last_mut() {
+                    flush_item_inline_frame(&mut inline_stack, item);
+                }
+                blockquotes.push(QuoteFrame {
+                    kind: kind.map(AlertKind::from),
                     children: Vec::new(),
-                },
-                None => QuoteFrame::Plain(Vec::new()),
-            }),
+                    item_depth: item_stack.len(),
+                    list_base: list_stack.len(),
+                })
+            }
             Event::End(TagEnd::BlockQuote(_)) => {
                 if let Some(frame) = blockquotes.pop() {
-                    let block = match frame {
-                        QuoteFrame::Plain(content) => DocumentBlock::Blockquote(content),
-                        QuoteFrame::Alert { kind, children } => {
-                            DocumentBlock::Alert { kind, children }
-                        }
-                    };
-                    push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
+                    push_block(
+                        frame.into_block(),
+                        &mut blocks,
+                        &mut item_stack,
+                        &mut blockquotes,
+                    );
                 }
             }
             Event::Start(Tag::CodeBlock(kind)) => {
-                let language = match kind {
-                    CodeBlockKind::Fenced(language) if !language.is_empty() => {
-                        Some(language.into_string())
-                    }
-                    _ => None,
+                let info = match kind {
+                    CodeBlockKind::Fenced(info) => parse_code_info(&info),
+                    CodeBlockKind::Indented => CodeInfo::default(),
                 };
                 code_block = Some(CodeContext {
-                    language,
+                    info,
                     code: String::new(),
                 });
             }
@@ -734,7 +1035,8 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 list_stack.pop();
             }
             Event::Start(Tag::Item) => {
-                let depth = list_stack.len().saturating_sub(1);
+                let list_base = blockquotes.last().map_or(0, |quote| quote.list_base);
+                let depth = list_stack.len().saturating_sub(1 + list_base);
                 let kind = list_stack.last_mut().map_or(ListKind::Unordered, |list| {
                     if list.ordered {
                         let number = list.next_number;
@@ -753,17 +1055,18 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 push_inline_frame(&mut inline_stack, InlineContainer::Flatten);
             }
             Event::End(TagEnd::Item) => {
+                close_dangling_html(&mut inline_stack);
                 if let (Some(frame), Some(item)) = (inline_stack.pop(), item_stack.last_mut()) {
                     item.push_content(frame.into_spans());
                 }
                 if let Some(item) = item_stack.pop() {
                     let item_block = item.into_block();
-                    if let Some(parent) = item_stack.last_mut() {
+                    if !quote_is_innermost(&item_stack, &blockquotes)
+                        && let Some(parent) = item_stack.last_mut()
+                    {
                         flush_item_inline_frame(&mut inline_stack, parent);
-                        parent.push_block(item_block);
-                    } else {
-                        push_block(item_block, &mut blocks, &mut item_stack, &mut blockquotes);
                     }
+                    push_block(item_block, &mut blocks, &mut item_stack, &mut blockquotes);
                 }
             }
             Event::Start(Tag::Table(alignments)) => table = Some(TableContext::new(alignments)),
@@ -807,6 +1110,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                 inline_stack.push(InlineFrame::new(InlineContainer::Flatten))
             }
             Event::End(TagEnd::TableCell) => {
+                close_dangling_html(&mut inline_stack);
                 if let (Some(frame), Some(table)) = (inline_stack.pop(), table.as_mut()) {
                     table.row.push(frame.into_spans());
                 }
@@ -814,30 +1118,39 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             Event::Start(Tag::Emphasis) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Emphasis)
             }
-            Event::End(TagEnd::Emphasis) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Strong) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Strong)
             }
-            Event::End(TagEnd::Strong) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Strikethrough) => {
                 push_inline_frame(&mut inline_stack, InlineContainer::Strikethrough)
             }
-            Event::Start(Tag::Superscript | Tag::Subscript) => {
-                push_inline_frame(&mut inline_stack, InlineContainer::Flatten)
+            Event::Start(Tag::Superscript) => {
+                push_inline_frame(&mut inline_stack, InlineContainer::Superscript)
             }
-            Event::End(TagEnd::Strikethrough | TagEnd::Superscript | TagEnd::Subscript) => {
+            Event::Start(Tag::Subscript) => {
+                push_inline_frame(&mut inline_stack, InlineContainer::Subscript)
+            }
+            Event::End(
+                TagEnd::Emphasis
+                | TagEnd::Strong
+                | TagEnd::Strikethrough
+                | TagEnd::Superscript
+                | TagEnd::Subscript
+                | TagEnd::Link,
+            ) => {
+                close_dangling_html(&mut inline_stack);
                 pop_inline_frame(&mut inline_stack)
             }
             Event::Start(Tag::Link { dest_url, .. }) => push_inline_frame(
                 &mut inline_stack,
                 InlineContainer::Link(dest_url.into_string()),
             ),
-            Event::End(TagEnd::Link) => pop_inline_frame(&mut inline_stack),
             Event::Start(Tag::Image { dest_url, .. }) => push_inline_frame(
                 &mut inline_stack,
                 InlineContainer::Image(dest_url.into_string()),
             ),
             Event::End(TagEnd::Image) => {
+                close_dangling_html(&mut inline_stack);
                 if let Some(image) = pop_image_frame(&mut inline_stack) {
                     push_block(image, &mut blocks, &mut item_stack, &mut blockquotes);
                 }
@@ -848,15 +1161,12 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             Event::Code(code) => {
                 push_inline_span(&mut inline_stack, InlineSpan::Code(code.into_string()))
             }
-            Event::InlineHtml(html) => {
-                push_inline_span(&mut inline_stack, InlineSpan::Text(html.into_string()))
+            Event::InlineHtml(html) => apply_inline_html(&html, &mut inline_stack),
+            Event::Html(html) => {
+                for block in crate::html::html_to_blocks(&html, &document_parent) {
+                    push_block(block, &mut blocks, &mut item_stack, &mut blockquotes);
+                }
             }
-            Event::Html(html) => push_block(
-                DocumentBlock::RawText(html.into_string()),
-                &mut blocks,
-                &mut item_stack,
-                &mut blockquotes,
-            ),
             Event::SoftBreak => push_inline_span(&mut inline_stack, InlineSpan::SoftBreak),
             Event::HardBreak => push_inline_span(&mut inline_stack, InlineSpan::HardBreak),
             Event::Rule => push_block(
@@ -884,6 +1194,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             Event::End(TagEnd::FootnoteDefinition) => {
                 if let Some((label, mut main_blocks)) = stashed_main_blocks.take() {
                     std::mem::swap(&mut blocks, &mut main_blocks);
+                    append_footnote_backref(&label, &mut main_blocks);
                     footnotes.push((label, main_blocks));
                 }
             }
@@ -896,6 +1207,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
 
     if let Some((label, mut main_blocks)) = stashed_main_blocks.take() {
         std::mem::swap(&mut blocks, &mut main_blocks);
+        append_footnote_backref(&label, &mut main_blocks);
         footnotes.push((label, main_blocks));
     }
     if !footnotes.is_empty() {
@@ -952,6 +1264,40 @@ fn parse_html_document(path: PathBuf, source: String) -> ParsedDocument {
         source,
         blocks,
         headings,
+    }
+}
+
+fn spans_reference_footnote(spans: &[InlineSpan], label: &str) -> bool {
+    spans.iter().any(|span| match span {
+        InlineSpan::FootnoteRef { label: found } => found == label,
+        InlineSpan::Emphasis(content)
+        | InlineSpan::Strong(content)
+        | InlineSpan::Strikethrough(content)
+        | InlineSpan::Superscript(content)
+        | InlineSpan::Subscript(content)
+        | InlineSpan::Mark(content)
+        | InlineSpan::Kbd(content)
+        | InlineSpan::Link { label: content, .. } => spans_reference_footnote(content, label),
+        _ => false,
+    })
+}
+
+fn block_references_footnote(block: &DocumentBlock, label: &str) -> bool {
+    match block {
+        DocumentBlock::Heading { content, .. } | DocumentBlock::Paragraph(content) => {
+            spans_reference_footnote(content, label)
+        }
+        DocumentBlock::ListItem { children, .. }
+        | DocumentBlock::TaskItem { children, .. }
+        | DocumentBlock::Blockquote(children)
+        | DocumentBlock::Alert { children, .. } => children
+            .iter()
+            .any(|child| block_references_footnote(child, label)),
+        DocumentBlock::Table(table) => std::iter::once(&table.headers)
+            .chain(table.rows.iter())
+            .flatten()
+            .any(|cell| spans_reference_footnote(cell, label)),
+        _ => false,
     }
 }
 
@@ -1044,13 +1390,10 @@ fn push_paragraph_content(
     if content.is_empty() {
         return;
     }
-    if let Some(item) = item_stack.last_mut() {
+    if !quote_is_innermost(item_stack, blockquotes)
+        && let Some(item) = item_stack.last_mut()
+    {
         item.push_content(content);
-    } else if let Some(frame) = blockquotes.last_mut() {
-        match frame {
-            QuoteFrame::Plain(spans) => append_inline_content(spans, content),
-            QuoteFrame::Alert { children, .. } => children.push(DocumentBlock::Paragraph(content)),
-        }
     } else {
         push_block(
             DocumentBlock::Paragraph(content),
@@ -1061,24 +1404,27 @@ fn push_paragraph_content(
     }
 }
 
+/// Whether the newest open quote is nested inside every open list item (so blocks go to it).
+fn quote_is_innermost(item_stack: &[ItemContext], blockquotes: &[QuoteFrame]) -> bool {
+    blockquotes
+        .last()
+        .is_some_and(|quote| quote.item_depth == item_stack.len())
+}
+
 fn push_block(
     block: DocumentBlock,
     blocks: &mut Vec<DocumentBlock>,
     item_stack: &mut [ItemContext],
     blockquotes: &mut [QuoteFrame],
 ) {
-    if let Some(item) = item_stack.last_mut() {
+    if quote_is_innermost(item_stack, blockquotes) {
+        blockquotes
+            .last_mut()
+            .expect("an innermost quote is open")
+            .children
+            .push(block);
+    } else if let Some(item) = item_stack.last_mut() {
         item.push_block(block);
-    } else if let Some(frame) = blockquotes.last_mut() {
-        match frame {
-            QuoteFrame::Plain(spans) => {
-                let text = block.plain_text();
-                if !text.is_empty() {
-                    append_inline_content(spans, vec![InlineSpan::Text(text)]);
-                }
-            }
-            QuoteFrame::Alert { children, .. } => children.push(block),
-        }
     } else {
         blocks.push(block);
     }
@@ -1091,11 +1437,82 @@ fn flush_item_inline_frame(stack: &mut [InlineFrame], item: &mut ItemContext) {
     }
 }
 
-fn append_inline_content(destination: &mut Vec<InlineSpan>, content: Vec<InlineSpan>) {
-    if !destination.is_empty() {
-        destination.push(InlineSpan::SoftBreak);
+/// Ends the footnote body with a `↩` backlink, inline in its last paragraph when it has one.
+fn append_footnote_backref(label: &str, note: &mut Vec<DocumentBlock>) {
+    let backref = InlineSpan::FootnoteBackref {
+        label: label.to_owned(),
+    };
+    if let Some(DocumentBlock::Paragraph(content)) = note.last_mut() {
+        content.push(InlineSpan::Text(" ".into()));
+        content.push(backref);
+    } else {
+        note.push(DocumentBlock::Paragraph(vec![backref]));
     }
-    destination.extend(content);
+}
+
+/// Closes inline HTML elements still open when their enclosing Markdown container ends.
+fn close_dangling_html(stack: &mut Vec<InlineFrame>) {
+    while matches!(
+        stack.last().map(|frame| &frame.container),
+        Some(InlineContainer::Html { .. })
+    ) {
+        pop_inline_frame(stack);
+    }
+}
+
+/// Applies one inline HTML token (`<kbd>`, `</kbd>`, `<br>`, a comment, ...) to the inline stack.
+/// Supported tags open styled frames, unknown tags keep only their text, comments vanish.
+fn apply_inline_html(html: &str, stack: &mut Vec<InlineFrame>) {
+    let token = html.trim();
+    if token.starts_with("<!") || token.starts_with("<?") {
+        return;
+    }
+    if let Some(close) = token.strip_prefix("</") {
+        let tag = close
+            .trim_end_matches('>')
+            .trim()
+            .trim_end_matches('/')
+            .to_ascii_lowercase();
+        let open_html = stack
+            .iter()
+            .rev()
+            .take_while(|frame| matches!(frame.container, InlineContainer::Html { .. }))
+            .position(|frame| matches!(&frame.container, InlineContainer::Html { tag: open, .. } if *open == tag));
+        if let Some(depth) = open_html {
+            for _ in 0..=depth {
+                pop_inline_frame(stack);
+            }
+        }
+        return;
+    }
+    let Some((tag, attrs, self_closing, _)) = crate::html::scan_open_tag(token) else {
+        push_inline_span(stack, InlineSpan::Text(html.to_owned()));
+        return;
+    };
+    match tag.as_str() {
+        "br" => push_inline_span(stack, InlineSpan::HardBreak),
+        "img" => {
+            let attr = |name: &str| {
+                attrs
+                    .iter()
+                    .find(|(attr_name, _)| attr_name == name)
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_default()
+            };
+            push_inline_image(
+                stack,
+                ImageData {
+                    alt: attr("alt"),
+                    source: attr("src").trim().to_owned(),
+                },
+            );
+        }
+        _ if self_closing || crate::html::is_void_element(&tag) => {}
+        _ => {
+            let kind = HtmlInline::for_tag(&tag, &attrs);
+            push_inline_frame(stack, InlineContainer::Html { tag, kind });
+        }
+    }
 }
 
 fn push_inline_frame(stack: &mut Vec<InlineFrame>, container: InlineContainer) {
@@ -1122,7 +1539,38 @@ fn pop_inline_frame(stack: &mut Vec<InlineFrame>) {
                 target,
             },
         ),
+        InlineContainer::Superscript => {
+            push_inline_span(stack, InlineSpan::Superscript(frame.into_spans()))
+        }
+        InlineContainer::Subscript => {
+            push_inline_span(stack, InlineSpan::Subscript(frame.into_spans()))
+        }
         InlineContainer::Image(_) => unreachable!("images are ended by pop_image_frame"),
+        InlineContainer::Html { kind, .. } => {
+            let spans = frame.into_spans();
+            let span = match kind {
+                HtmlInline::Strong => InlineSpan::Strong(spans),
+                HtmlInline::Emphasis => InlineSpan::Emphasis(spans),
+                HtmlInline::Strikethrough => InlineSpan::Strikethrough(spans),
+                HtmlInline::Code => InlineSpan::Code(plain_text_for_spans(&spans)),
+                HtmlInline::Kbd => InlineSpan::Kbd(spans),
+                HtmlInline::Superscript => InlineSpan::Superscript(spans),
+                HtmlInline::Subscript => InlineSpan::Subscript(spans),
+                HtmlInline::Mark => InlineSpan::Mark(spans),
+                HtmlInline::Link(target) => InlineSpan::Link {
+                    label: spans,
+                    target,
+                },
+                HtmlInline::Transparent => {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.flush_pending_image();
+                        parent.spans.extend(spans);
+                    }
+                    return;
+                }
+            };
+            push_inline_span(stack, span);
+        }
         InlineContainer::Flatten => {
             if let Some(parent) = stack.last_mut() {
                 parent.spans.extend(frame.into_spans());
@@ -1140,20 +1588,32 @@ fn pop_image_frame(stack: &mut Vec<InlineFrame>) -> Option<DocumentBlock> {
         alt: plain_text_for_spans(&frame.into_spans()),
         source,
     };
-
-    if let Some(parent) = stack.last_mut() {
-        if parent.spans.is_empty() && parent.pending_image.is_none() {
-            parent.pending_image = Some(image);
-        } else {
-            parent.flush_pending_image();
-            parent.spans.push(InlineSpan::Text(image.alt));
-        }
-        None
-    } else {
+    if stack.is_empty() {
         Some(DocumentBlock::Image {
             alt: image.alt,
             source: image.source,
         })
+    } else {
+        push_inline_image(stack, image);
+        None
+    }
+}
+
+/// An image alone in its paragraph becomes an image block; one among text keeps its alt text.
+fn push_inline_image(stack: &mut [InlineFrame], image: ImageData) {
+    let Some(parent) = stack.last_mut() else {
+        return;
+    };
+    if parent.spans.is_empty()
+        && parent.pending_image.is_none()
+        && matches!(parent.container, InlineContainer::Flatten)
+    {
+        parent.pending_image = Some(image);
+    } else {
+        parent.flush_pending_image();
+        if !image.alt.is_empty() {
+            parent.spans.push(InlineSpan::Text(image.alt));
+        }
     }
 }
 
@@ -1332,19 +1792,129 @@ mod tests {
             DocumentBlock::CodeBlock {
                 language: Some("rust".into()),
                 code: "let n = 1;\n".into(),
+                highlights: LineHighlights::default(),
             }
         );
     }
 
     #[test]
-    fn keeps_raw_html_and_mdx_inert_and_readable() {
+    fn raw_html_blocks_and_mdx_keep_only_their_text() {
         let parsed = parse_document(
             PathBuf::from("/tmp/component.mdx"),
-            "<aside>Note</aside>\n\n<Component value={1} />".into(),
+            "<aside>Note</aside>\n\n<Component value={1} />\n\n<script>alert(1)</script>\n\n<!-- hidden -->\n\nAfter"
+                .into(),
         );
-        let visible = parsed.plain_text();
-        assert!(visible.contains("<aside>Note</aside>"));
-        assert!(visible.contains("<Component value={1} />"));
+        assert_eq!(parsed.plain_text(), "Note\nAfter");
+    }
+
+    #[test]
+    fn inline_html_subset_renders_as_styled_spans() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/inline.md"),
+            "Press <kbd>Ctrl</kbd>+<kbd>C</kbd>, H<sub>2</sub>O, x<sup>2</sup>, <mark>hot</mark>, \
+             <b>bold</b> <i>it</i> <em>em</em> <strong>st</strong> <code>a&lt;b</code> \
+             <a href=\"guide.md\">go</a><br><span class=\"x\">plain</span> <blink>t</blink><!-- c -->"
+                .into(),
+        );
+        let DocumentBlock::Paragraph(spans) = &parsed.blocks[0] else {
+            panic!("paragraph");
+        };
+        let text = |value: &str| InlineSpan::Text(value.into());
+        assert_eq!(
+            spans,
+            &vec![
+                text("Press "),
+                InlineSpan::Kbd(vec![text("Ctrl")]),
+                text("+"),
+                InlineSpan::Kbd(vec![text("C")]),
+                text(", H"),
+                InlineSpan::Subscript(vec![text("2")]),
+                text("O, x"),
+                InlineSpan::Superscript(vec![text("2")]),
+                text(", "),
+                InlineSpan::Mark(vec![text("hot")]),
+                text(", "),
+                InlineSpan::Strong(vec![text("bold")]),
+                text(" "),
+                InlineSpan::Emphasis(vec![text("it")]),
+                text(" "),
+                InlineSpan::Emphasis(vec![text("em")]),
+                text(" "),
+                InlineSpan::Strong(vec![text("st")]),
+                text(" "),
+                InlineSpan::Code("a<b".into()),
+                text(" "),
+                InlineSpan::Link {
+                    label: vec![text("go")],
+                    target: "guide.md".into(),
+                },
+                InlineSpan::HardBreak,
+                text("plain"),
+                text(" "),
+                text("t"),
+            ]
+        );
+        assert_eq!(
+            parsed.plain_text(),
+            "Press Ctrl+C, H₂O, x², hot, bold it em st a<b go\nplain t"
+        );
+    }
+
+    #[test]
+    fn unclosed_inline_html_closes_with_its_paragraph() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/unclosed.md"),
+            "a <b>bold\n\nnext".into(),
+        );
+        assert_eq!(
+            parsed.blocks,
+            vec![
+                DocumentBlock::Paragraph(vec![
+                    InlineSpan::Text("a ".into()),
+                    InlineSpan::Strong(vec![InlineSpan::Text("bold".into())]),
+                ]),
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("next".into())]),
+            ]
+        );
+    }
+
+    #[test]
+    fn html_block_images_and_details_render_through_the_html_subset() {
+        let parsed = parse_document(
+            PathBuf::from("/vault/readme.md"),
+            "<p align=\"center\"><img src=\"logo.png\" alt=\"Logo\"></p>\n\n<details>\n<summary>More</summary>\n\nHidden body\n\n</details>\n"
+                .into(),
+        );
+        assert_eq!(
+            parsed.blocks,
+            vec![
+                DocumentBlock::Image {
+                    alt: "Logo".into(),
+                    source: "/vault/logo.png".into(),
+                },
+                DocumentBlock::Paragraph(vec![InlineSpan::Strong(vec![InlineSpan::Text(
+                    "More".into()
+                )])]),
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("Hidden body".into())]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_lone_inline_html_image_becomes_an_image_block() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/image.md"),
+            "Intro\n\n<img src=\"a.png\" alt=\"A\"> \n\nText <img src=\"b.png\" alt=\"B\"> more"
+                .into(),
+        );
+        assert_eq!(
+            parsed.blocks[1],
+            DocumentBlock::Image {
+                alt: "A".into(),
+                source: "/tmp/a.png".into(),
+            }
+        );
+        assert_eq!(parsed.blocks[2].plain_text(), "Text B more");
     }
 
     #[test]
@@ -1382,7 +1952,44 @@ mod tests {
         );
         assert_eq!(
             parsed.blocks[1],
-            DocumentBlock::Blockquote(vec![InlineSpan::Text("plain quote".into())]),
+            DocumentBlock::Blockquote(vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                "plain quote".into()
+            )])]),
+        );
+    }
+
+    #[test]
+    fn footnote_refs_and_backrefs_resolve_to_their_jump_targets() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/notes.md"),
+            "# Title\n\nIntro.\n\n- A list claim.[^src]\n\nTail.\n\n[^src]: Source.\n\n    ```\n    code\n    ```\n".into(),
+        );
+        let section = parsed.blocks.len() - 1;
+        assert!(matches!(
+            parsed.blocks[section],
+            DocumentBlock::FootnoteSection { .. }
+        ));
+        assert_eq!(parsed.anchor_block("fn-src"), Some(section));
+        assert_eq!(parsed.anchor_block("fnref-src"), Some(2));
+        assert_eq!(parsed.anchor_block("fn-missing"), None);
+        assert_eq!(
+            footnote_target("src"),
+            "#fn-src",
+            "reader links refs to this target"
+        );
+        assert_eq!(footnote_backref_target("src"), "#fnref-src");
+
+        // A note that does not end in a paragraph gets its own backlink paragraph.
+        let DocumentBlock::FootnoteSection { notes } = &parsed.blocks[section] else {
+            unreachable!();
+        };
+        assert_eq!(
+            notes[0].1.last(),
+            Some(&DocumentBlock::Paragraph(vec![
+                InlineSpan::FootnoteBackref {
+                    label: "src".into()
+                }
+            ]))
         );
     }
 
@@ -1409,9 +2016,11 @@ mod tests {
             DocumentBlock::FootnoteSection {
                 notes: vec![(
                     "1".into(),
-                    vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
-                        "The evidence.".into()
-                    )])],
+                    vec![DocumentBlock::Paragraph(vec![
+                        InlineSpan::Text("The evidence.".into()),
+                        InlineSpan::Text(" ".into()),
+                        InlineSpan::FootnoteBackref { label: "1".into() },
+                    ])],
                 )],
             }
         );
@@ -1643,20 +2252,125 @@ mod tests {
                 .into(),
         );
 
-        assert!(matches!(parsed.blocks[0], DocumentBlock::Blockquote(_)));
         assert!(matches!(parsed.blocks[1], DocumentBlock::Paragraph(_)));
         assert_eq!(parsed.blocks.len(), 2);
+        let DocumentBlock::Blockquote(children) = &parsed.blocks[0] else {
+            panic!("expected a structured blockquote");
+        };
+        assert_eq!(
+            children,
+            &vec![
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("Intro".into())]),
+                DocumentBlock::ListItem {
+                    kind: ListKind::Unordered,
+                    depth: 0,
+                    children: vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                        "Item".into()
+                    )])],
+                },
+                DocumentBlock::CodeBlock {
+                    language: Some("rust".into()),
+                    code: "let n = 1;\n".into(),
+                    highlights: LineHighlights::default(),
+                },
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("Raw".into())]),
+                DocumentBlock::Blockquote(vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                    "Nested".into()
+                )])]),
+            ]
+        );
+    }
 
-        let quote = parsed.blocks[0].plain_text();
-        let positions = [
-            "Intro",
-            "Item",
-            "let n = 1;",
-            "<aside>Raw</aside>",
-            "Nested",
-        ]
-        .map(|text| quote.find(text).unwrap());
-        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    #[test]
+    fn blockquotes_keep_headings_and_quotes_inside_list_items_stay_in_the_item() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/quote.md"),
+            "> ## Quoted heading\n> body\n\n- item\n\n  > inner quote\n\n  after\n".into(),
+        );
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::Blockquote(vec![
+                DocumentBlock::Heading {
+                    level: 2,
+                    content: vec![InlineSpan::Text("Quoted heading".into())],
+                },
+                DocumentBlock::Paragraph(vec![InlineSpan::Text("body".into())]),
+            ])
+        );
+        assert!(
+            parsed.headings.is_empty(),
+            "quoted headings stay out of the outline"
+        );
+        assert_eq!(
+            parsed.blocks[1],
+            DocumentBlock::ListItem {
+                kind: ListKind::Unordered,
+                depth: 0,
+                children: vec![
+                    DocumentBlock::Paragraph(vec![InlineSpan::Text("item".into())]),
+                    DocumentBlock::Blockquote(vec![DocumentBlock::Paragraph(vec![
+                        InlineSpan::Text("inner quote".into())
+                    ])]),
+                    DocumentBlock::Paragraph(vec![InlineSpan::Text("after".into())]),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn code_fence_meta_parses_like_comark() {
+        let info = parse_code_info("ts {1,3-5} [app.ts] title=x");
+        assert_eq!(info.language.as_deref(), Some("ts"));
+        assert_eq!(info.highlights, LineHighlights(vec![(1, 1), (3, 5)]));
+        assert_eq!(info.filename.as_deref(), Some("app.ts"));
+        assert_eq!(info.meta.as_deref(), Some("title=x"));
+
+        let tight = parse_code_info("typescript[file]{2}meta");
+        assert_eq!(tight.language.as_deref(), Some("typescript"));
+        assert_eq!(tight.highlights, LineHighlights(vec![(2, 2)]));
+        assert_eq!(tight.filename.as_deref(), Some("file"));
+        assert_eq!(tight.meta.as_deref(), Some("meta"));
+
+        // parseInt leniency, bad parts dropped, reversed ranges empty, `{}` stops parsing.
+        let lenient = parse_code_info("rs {2a, x, 5-3, 7 - 8}");
+        assert_eq!(lenient.highlights, LineHighlights(vec![(2, 2), (7, 8)]));
+        assert!(lenient.highlights.contains(8));
+        assert!(!lenient.highlights.contains(3));
+        assert_eq!(
+            parse_code_info("js {} rest").meta.as_deref(),
+            Some("{} rest")
+        );
+        assert_eq!(parse_code_info("").language, None);
+
+        let parsed = parse_document(
+            PathBuf::from("/tmp/code.md"),
+            "```rust {2}\nlet a = 1;\nlet b = 2;\n```\n".into(),
+        );
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::CodeBlock {
+                language: Some("rust".into()),
+                code: "let a = 1;\nlet b = 2;\n".into(),
+                highlights: LineHighlights(vec![(2, 2)]),
+            }
+        );
+    }
+
+    #[test]
+    fn script_text_uses_unicode_forms_only_when_every_character_has_one() {
+        assert_eq!(script_text("2", Script::Super), "²");
+        assert_eq!(script_text("n+1", Script::Super), "ⁿ⁺¹");
+        assert_eq!(script_text("2", Script::Sub), "₂");
+        assert_eq!(script_text("max", Script::Sub), "ₘₐₓ");
+        assert_eq!(script_text("th", Script::Super), "th");
+        assert!(!script_is_unicode("th", Script::Super));
+        assert_eq!(script_text(" ", Script::Super), " ");
+
+        let block = DocumentBlock::Paragraph(vec![
+            InlineSpan::Text("x".into()),
+            InlineSpan::Superscript(vec![InlineSpan::Text("2".into())]),
+        ]);
+        assert_eq!(block.find_text(), "x²");
     }
 
     #[test]
@@ -1693,6 +2407,7 @@ mod tests {
                     DocumentBlock::CodeBlock {
                         language: Some("rust".into()),
                         code: "let n = 1;\n".into(),
+                        highlights: LineHighlights::default(),
                     },
                     DocumentBlock::Paragraph(vec![InlineSpan::Text("after".into())]),
                 ],

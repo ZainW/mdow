@@ -203,7 +203,7 @@ impl ShellLayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorScheme {
     Light,
     Dark,
@@ -226,6 +226,14 @@ pub struct Theme {
     pub sidebar_accent: Hsla,
     pub surface_raised: Hsla,
     pub surface_well: Hsla,
+    /// Electron's `--md-alert-*` OKLCH tokens, converted to sRGB HSL.
+    pub alert_note: Hsla,
+    pub alert_tip: Hsla,
+    pub alert_important: Hsla,
+    pub alert_warning: Hsla,
+    pub alert_caution: Hsla,
+    /// Code block surface: the muted well in light mode, a slightly lifted gray in dark mode.
+    pub code_surface: Hsla,
 }
 
 impl Theme {
@@ -262,6 +270,14 @@ impl Theme {
             sidebar_accent: hsla(0.08677273, 0.21983283, 0.918_019, 1.0),
             surface_raised: hsla(0.08672199, 0.28, 0.992, 1.0),
             surface_well: hsla(0.08673897, 0.24669178, 0.93, 1.0),
+            // oklch(0.55 0.17 255), (0.55 0.14 150), (0.55 0.17 295), (0.6 0.13 75),
+            // (0.56 0.19 25)
+            alert_note: hsla(0.586_368, 0.815_088, 0.452_324, 1.0),
+            alert_tip: hsla(0.392_263, 0.652_996, 0.320_923, 1.0),
+            alert_important: hsla(0.720_128, 0.510_306, 0.562_534, 1.0),
+            alert_warning: hsla(0.110_730, 1.0, 0.338_5, 1.0),
+            alert_caution: hsla(0.996_916, 0.601_668, 0.500_13, 1.0),
+            code_surface: hsla(0.08673897, 0.24669178, 0.944_926_9, 1.0),
         }
     }
 
@@ -282,6 +298,15 @@ impl Theme {
             sidebar_accent: hsla(0.0, 0.0, 0.086_104_2, 1.0),
             surface_raised: hsla(0.0, 0.0, 0.09, 1.0),
             surface_well: hsla(0.0, 0.0, 0.06, 1.0),
+            // oklch(0.68 0.14 255), (0.68 0.13 150), (0.68 0.14 295), (0.74 0.13 75),
+            // (0.66 0.17 25)
+            alert_note: hsla(0.592_697, 0.800_9, 0.637_297, 1.0),
+            alert_tip: hsla(0.375_692, 0.355_474, 0.509_685, 1.0),
+            alert_important: hsla(0.712_244, 0.647_682, 0.709_353, 1.0),
+            alert_warning: hsla(0.101_535, 0.678_357, 0.552_497, 1.0),
+            alert_caution: hsla(0.006_023, 0.751_532, 0.632_338, 1.0),
+            // The mockup's `.dark .cb2 { background: hsl(0 0% 6.5%) }`.
+            code_surface: hsla(0.0, 0.0, 0.065, 1.0),
         }
     }
 }
