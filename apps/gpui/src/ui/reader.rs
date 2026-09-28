@@ -2897,6 +2897,28 @@ mod tests {
     }
 
     #[test]
+    fn non_web_uri_schemes_stay_inert_like_the_electron_shell() {
+        // Electron's main process only hands http(s) URLs to shell.openExternal
+        // (isAllowedExternalUrl), so other schemes are deliberately not opened.
+        let document = Path::new("/vault/guides/start.md");
+
+        for target in [
+            "mailto:hello@mdow.dev",
+            "tel:+15555550100",
+            "file:///etc/hosts",
+            "javascript:alert(1)",
+            "data:text/html,<p>hi</p>",
+            "vscode://file/tmp/a.md",
+        ] {
+            assert_eq!(
+                classify_link(document, target),
+                LinkRoute::Inert,
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
     fn image_resolution_uses_local_supported_files_and_falls_back_for_failures() {
         let directory = tempfile::tempdir().unwrap();
         let document = directory.path().join("guide.md");
