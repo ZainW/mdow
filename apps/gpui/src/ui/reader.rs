@@ -1,4 +1,5 @@
 use crate::{
+    anchor::{BlockDiff, ScrollAnchor},
     app::MdowApp,
     document::{
         AlertKind, Alignment, DocumentBlock, FOOTNOTE_BACKREF, InlineSpan, LineHighlights,
@@ -8,21 +9,24 @@ use crate::{
     },
     prefs::{READER_FONT_SIZE, READER_LINE_HEIGHT, ReaderStyle},
     syntax::{HighlightCache, HighlightLookup, HighlightedCode, PreparedDocument},
+    tabs::TabLoad,
     theme::{ColorScheme, Metrics, Theme},
     ui::primitives::icon,
 };
 use gpui::{
     AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
     InteractiveElement, InteractiveText, IntoElement, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
-    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText, TextRun,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
+    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText, Task, TextRun,
     UnderlineStyle, WeakEntity, Window, canvas, div, font, img, list, point, prelude::*, px,
     relative,
 };
 use std::{
+    cell::Cell,
     collections::HashMap,
     ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -1049,6 +1053,42 @@ fn list_marker_is_visible(blocks: &[DocumentBlock], block_index: usize) -> bool 
         .any(|block| matches!(block, DocumentBlock::TaskItem { .. }))
 }
 
+/// [`list_marker_is_visible`] for every block in one pass: an unordered item hides its marker
+/// when its run of same-depth list items holds a task item.
+pub(crate) fn list_marker_visibility(blocks: &[DocumentBlock]) -> Vec<bool> {
+    let mut visible = vec![true; blocks.len()];
+    let mut start = 0;
+    while start < blocks.len() {
+        let Some(group) = list_group(&blocks[start]) else {
+            start += 1;
+            continue;
+        };
+        let end = start
+            + blocks[start..]
+                .iter()
+                .take_while(|block| list_group(block) == Some(group))
+                .count();
+        let has_task = blocks[start..end]
+            .iter()
+            .any(|block| matches!(block, DocumentBlock::TaskItem { .. }));
+        if has_task {
+            for (index, block) in blocks.iter().enumerate().take(end).skip(start) {
+                if matches!(
+                    block,
+                    DocumentBlock::ListItem {
+                        kind: ListKind::Unordered,
+                        ..
+                    }
+                ) {
+                    visible[index] = false;
+                }
+            }
+        }
+        start = end;
+    }
+    visible
+}
+
 fn block_margins(
     block: &DocumentBlock,
     previous: Option<&DocumentBlock>,
@@ -1143,14 +1183,61 @@ fn style_reader_image(image: Img) -> Img {
 
 const READER_LIST_OVERDRAW: f32 = 720.0;
 
+/// Loading lines appear only when a parse is slow enough to notice; fast files never flash one.
+pub const LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(150);
+/// Outline and anchor jumps leave this much room between the viewport top and the heading.
+pub const HEADING_JUMP_MARGIN: f32 = 16.0;
+/// Frames a heading jump may spend correcting for blocks that measure differently than estimated.
+const HEADING_JUMP_MAX_FRAMES: u8 = 30;
+/// The "Loading the rest of the document…" row that follows a preview has its own signature so
+/// a reload diff never mistakes it for a document block.
+const LOADING_ROW_SIGNATURE: u64 = 0x6c6f_6164_696e_6721;
+
+/// Where a heading painted last frame, so a jump can land on it exactly (nested headings sit
+/// somewhere inside their list item or callout, not at the block's top).
+#[derive(Clone)]
+pub(crate) struct HeadingProbe {
+    target: Vec<usize>,
+    top: Rc<Cell<Option<Pixels>>>,
+}
+
+impl HeadingProbe {
+    fn marker(&self) -> AnyElement {
+        let top = self.top.clone();
+        canvas(
+            move |bounds, _, _| top.set(Some(bounds.top())),
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_0()
+        .into_any_element()
+    }
+}
+
+struct HeadingJump {
+    probe: HeadingProbe,
+    frames: u8,
+    stable_frames: u8,
+    last_delta: Option<f32>,
+    scrolls_at_start: usize,
+}
+
 pub(crate) struct ReaderPane {
     app: WeakEntity<MdowApp>,
     document: Arc<PreparedDocument>,
     style: ReaderStyle,
     theme: Theme,
     list_state: ListState,
-    heading_blocks: Vec<usize>,
+    load: TabLoad,
     scrollbar_drag_grab_y: Option<f32>,
+    /// A reading position to restore once the full document is in (session restore).
+    pending_anchor: Option<ScrollAnchor>,
+    jump: Option<HeadingJump>,
+    /// Counts wheel scrolls; a jump in progress yields to the reader scrolling themselves.
+    user_scrolls: Rc<Cell<usize>>,
+    _loading_timer: Option<Task<()>>,
 }
 
 impl ReaderPane {
@@ -1161,28 +1248,43 @@ impl ReaderPane {
         theme: Theme,
     ) -> Self {
         let list_state = ListState::new(
-            document.blocks.len(),
+            list_item_count(&document),
             ListAlignment::Top,
             px(READER_LIST_OVERDRAW),
         );
+        let user_scrolls = Rc::new(Cell::new(0));
+        list_state.set_scroll_handler({
+            let user_scrolls = user_scrolls.clone();
+            move |_, _, _| user_scrolls.set(user_scrolls.get() + 1)
+        });
         Self {
             app,
-            heading_blocks: document.heading_blocks(),
             document,
             style,
             theme,
             list_state,
+            load: TabLoad::Ready,
             scrollbar_drag_grab_y: None,
+            pending_anchor: None,
+            jump: None,
+            user_scrolls,
+            _loading_timer: None,
         }
     }
 
     /// The outline heading at or above the top of the viewport: the first heading in the top
-    /// block when it has any, otherwise the last heading before it.
+    /// block when it has any, otherwise the last heading before it. A block that only shows its
+    /// last few pixels above a jumped-to heading does not count as the top block.
     pub(crate) fn active_heading(&self) -> Option<usize> {
-        active_heading_for(
-            &self.heading_blocks,
-            self.list_state.logical_scroll_top().item_ix,
-        )
+        let top = self.list_state.logical_scroll_top();
+        let viewport_top = self.list_state.viewport_bounds().top();
+        let top_block = match self.list_state.bounds_for_item(top.item_ix) {
+            Some(bounds) if bounds.bottom() <= viewport_top + px(HEADING_JUMP_MARGIN + 1.0) => {
+                top.item_ix + 1
+            }
+            _ => top.item_ix,
+        };
+        active_heading_for(&self.document.layout().heading_blocks, top_block)
     }
 
     #[cfg(test)]
@@ -1194,28 +1296,63 @@ impl ReaderPane {
         Arc::ptr_eq(&self.document, document)
     }
 
+    /// The reading position to persist: the top block and how far into it the viewport sits.
+    pub(crate) fn scroll_anchor(&self) -> Option<ScrollAnchor> {
+        if let Some(pending) = self.pending_anchor {
+            return Some(pending);
+        }
+        if self.document.is_partial() || self.document.blocks.is_empty() {
+            return None;
+        }
+        let top = self.list_state.logical_scroll_top();
+        ScrollAnchor::capture(
+            top.item_ix,
+            f32::from(top.offset_in_item),
+            &self.document.layout().signatures,
+        )
+    }
+
+    /// Restores a saved reading position now, or once the full document has loaded.
+    pub(crate) fn restore_anchor(&mut self, anchor: ScrollAnchor) {
+        self.pending_anchor = Some(anchor);
+        self.apply_pending_anchor();
+    }
+
+    fn apply_pending_anchor(&mut self) {
+        if self.document.is_partial() || self.document.blocks.is_empty() {
+            return;
+        }
+        let Some(anchor) = self.pending_anchor.take() else {
+            return;
+        };
+        if let Some((block, offset)) = anchor.resolve(&self.document.layout().signatures, None) {
+            self.list_state.scroll_to(ListOffset {
+                item_ix: block,
+                offset_in_item: px(offset),
+            });
+        }
+    }
+
     pub(crate) fn sync(
         &mut self,
         document: Arc<PreparedDocument>,
+        load: TabLoad,
         style: ReaderStyle,
         theme: Theme,
         cx: &mut Context<Self>,
     ) {
         let mut notify = false;
         if !Arc::ptr_eq(&self.document, &document) {
-            let offset = self.list_state.logical_scroll_top();
-            self.document = document;
-            self.heading_blocks = self.document.heading_blocks();
-            self.list_state.reset(self.document.blocks.len());
-            if offset.item_ix < self.document.blocks.len() {
-                self.list_state.scroll_to(offset);
-            }
+            crate::perf::mark_once_after("reload_painted", "reload_start");
+            let old = self.swap_document(document);
+            // Freeing a huge document takes a while; do it off the UI thread.
+            cx.background_spawn(async move { drop(old) }).detach();
             notify = true;
         }
         if self.style != style {
             let offset = self.list_state.logical_scroll_top();
             self.style = style;
-            self.list_state.reset(self.document.blocks.len());
+            self.list_state.reset(list_item_count(&self.document));
             if offset.item_ix < self.document.blocks.len() {
                 self.list_state.scroll_to(offset);
             }
@@ -1225,12 +1362,65 @@ impl ReaderPane {
             self.theme = theme;
             notify = true;
         }
+        if self.load != load {
+            self.load = load;
+            self._loading_timer = match load {
+                TabLoad::Loading { since } => {
+                    let wait = LOADING_INDICATOR_DELAY.saturating_sub(since.elapsed());
+                    Some(cx.spawn(async move |pane, cx| {
+                        cx.background_executor().timer(wait).await;
+                        pane.update(cx, |_, cx| cx.notify()).ok();
+                    }))
+                }
+                _ => None,
+            };
+            notify = true;
+        }
         if notify {
             cx.notify();
         }
     }
 
-    pub(crate) fn scroll_to_block(&self, block: usize) {
+    /// Installs a new version of the document, keeping every block whose rendering did not
+    /// change (and its measured height) and the reader's place in the text.
+    fn swap_document(&mut self, document: Arc<PreparedDocument>) -> Arc<PreparedDocument> {
+        let old = std::mem::replace(&mut self.document, document);
+        if old.blocks.is_empty() {
+            // Nothing was measured yet (a placeholder while loading).
+            self.list_state.reset(list_item_count(&self.document));
+            self.apply_pending_anchor();
+            return old;
+        }
+        let top = self.list_state.logical_scroll_top();
+        let at_top = top.item_ix == 0 && top.offset_in_item < px(0.5);
+        let anchor = ScrollAnchor::capture(
+            top.item_ix,
+            f32::from(top.offset_in_item),
+            &old.layout().signatures,
+        )
+        .filter(|_| !at_top);
+        let diff = BlockDiff::compute(&list_signatures(&old), &list_signatures(&self.document));
+        for splice in diff.splices.iter().rev() {
+            self.list_state.splice(splice.old.clone(), splice.new_len);
+        }
+        if self.pending_anchor.is_some() {
+            self.apply_pending_anchor();
+        } else if let Some((block, offset)) = anchor
+            .and_then(|anchor| anchor.resolve(&self.document.layout().signatures, Some(&diff)))
+        {
+            self.list_state.scroll_to(ListOffset {
+                item_ix: block,
+                offset_in_item: px(offset),
+            });
+        } else if at_top {
+            // The reader was at the very top; content inserted there must not push them down.
+            self.list_state.scroll_to(ListOffset::default());
+        }
+        old
+    }
+
+    pub(crate) fn scroll_to_block(&mut self, block: usize) {
+        self.jump = None;
         if block < self.list_state.item_count() {
             self.list_state.scroll_to(ListOffset {
                 item_ix: block,
@@ -1239,19 +1429,84 @@ impl ReaderPane {
         }
     }
 
-    pub(crate) fn scroll_by_key(&self, key: &str) -> bool {
+    /// Scrolls so the heading at `path` (its block index, then child indexes inside list items
+    /// and callouts) sits [`HEADING_JUMP_MARGIN`] below the viewport top, then keeps correcting
+    /// for a few frames while nearby blocks measure, like Electron's `scrollToTarget`.
+    pub(crate) fn jump_to_heading(&mut self, path: Vec<usize>, cx: &mut Context<Self>) {
+        let Some(&block) = path.first() else {
+            return;
+        };
+        if block >= self.document.blocks.len() {
+            return;
+        }
+        // First guess: the heading at its block's top, below the block's collapsed margin.
+        let mut before = self.document.layout().spacing[block].before;
+        if block == 0 {
+            before += Metrics::READER_TOP_PADDING;
+        }
+        self.list_state.scroll_to(ListOffset {
+            item_ix: block,
+            offset_in_item: px((before - HEADING_JUMP_MARGIN).max(0.0)),
+        });
+        self.jump = Some(HeadingJump {
+            probe: HeadingProbe {
+                target: path,
+                top: Rc::new(Cell::new(None)),
+            },
+            frames: 0,
+            stable_frames: 0,
+            last_delta: None,
+            scrolls_at_start: self.user_scrolls.get(),
+        });
+        cx.notify();
+    }
+
+    /// One correction step of a heading jump, using where the heading painted last frame.
+    fn correct_heading_jump(&mut self, window: &mut Window) {
+        let Some(jump) = self.jump.as_mut() else {
+            return;
+        };
+        if self.user_scrolls.get() != jump.scrolls_at_start {
+            self.jump = None;
+            return;
+        }
+        jump.frames += 1;
+        if let Some(top) = jump.probe.top.take() {
+            let viewport_top = self.list_state.viewport_bounds().top();
+            let delta = f32::from(top - viewport_top) - HEADING_JUMP_MARGIN;
+            let stuck = jump
+                .last_delta
+                .is_some_and(|last| (last - delta).abs() < 0.5);
+            if delta.abs() <= 0.5 || stuck {
+                jump.stable_frames += 1;
+            } else {
+                jump.stable_frames = 0;
+                self.list_state.scroll_by(px(delta));
+            }
+            jump.last_delta = Some(delta);
+        }
+        if jump.stable_frames >= 2 || jump.frames >= HEADING_JUMP_MAX_FRAMES {
+            self.jump = None;
+        } else {
+            window.request_animation_frame();
+        }
+    }
+
+    pub(crate) fn scroll_by_key(&mut self, key: &str) -> bool {
         let viewport = f32::from(self.list_state.viewport_bounds().size.height);
         let max = f32::from(self.list_state.max_offset_for_scrollbar().height);
         let current = f32::from(self.list_state.scroll_px_offset_for_scrollbar().y);
         let Some(target) = reader_key_target(key, current, viewport, max) else {
             return false;
         };
+        self.jump = None;
         self.list_state
             .set_offset_from_scrollbar(point(px(0.0), px(target)));
         true
     }
 
     fn begin_scrollbar_drag(&mut self, grab_y: f32) {
+        self.jump = None;
         self.scrollbar_drag_grab_y = Some(grab_y);
         self.list_state.scrollbar_drag_started();
     }
@@ -1260,6 +1515,42 @@ impl ReaderPane {
         self.scrollbar_drag_grab_y = None;
         self.list_state.scrollbar_drag_ended();
     }
+}
+
+/// Reader list items: every block, then the loading row while a preview shows.
+fn list_item_count(document: &PreparedDocument) -> usize {
+    document.blocks.len() + usize::from(document.is_partial())
+}
+
+fn list_signatures(document: &PreparedDocument) -> Vec<u64> {
+    let mut signatures = document.layout().render_signatures.clone();
+    if document.is_partial() {
+        signatures.push(LOADING_ROW_SIGNATURE);
+    }
+    signatures
+}
+
+/// A quiet muted line in the reader column: "Loading…" while a slow file parses, and "Loading
+/// the rest of the document…" under a preview (Electron's centered `text-xs` status line).
+fn render_loading_line(label: &'static str, centered: bool, theme: Theme) -> AnyElement {
+    div()
+        .id(label)
+        .debug_selector(move || {
+            format!(
+                "reader-loading-{}",
+                if centered { "rest" } else { "document" }
+            )
+        })
+        .flex()
+        .w_full()
+        .px(px(Metrics::READER_INSET))
+        .when(centered, |line| line.justify_center().py(px(24.0)))
+        .when(!centered, |line| line.pt(px(Metrics::READER_TOP_PADDING)))
+        .font_family(Metrics::FONT_SANS)
+        .text_size(px(12.0))
+        .text_color(theme.muted_foreground)
+        .child(label)
+        .into_any_element()
 }
 
 fn active_heading_for(heading_blocks: &[usize], top_block: usize) -> Option<usize> {
@@ -1415,6 +1706,8 @@ struct ReaderView<'a> {
     find_block: Option<usize>,
     /// Body text inside blockquotes uses the muted foreground.
     muted: bool,
+    /// The heading a jump in progress is aiming at.
+    heading_probe: Option<&'a HeadingProbe>,
 }
 
 impl ReaderView<'_> {
@@ -1445,13 +1738,19 @@ fn render_reader_item(
     copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
     find_block: Option<usize>,
+    heading_probe: Option<&HeadingProbe>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let Some(block) = document.blocks.get(block_index) else {
         return div().into_any_element();
     };
-    let last = document.blocks.len().saturating_sub(1);
-    let spacing = block_sequence_spacing(&document.blocks);
+    // A preview's last block is followed by the loading line, not the document's end.
+    let last = if document.is_partial() {
+        usize::MAX
+    } else {
+        document.blocks.len().saturating_sub(1)
+    };
+    let layout = document.layout();
     let view = ReaderView {
         style,
         theme,
@@ -1459,6 +1758,7 @@ fn render_reader_item(
         link_state,
         find_block,
         muted: false,
+        heading_probe,
     };
     // List items have no flex parent, so center the column in a full-width row.
     let column = div()
@@ -1486,8 +1786,8 @@ fn render_reader_item(
             block,
             &[block_index],
             None,
-            spacing[block_index],
-            list_marker_is_visible(&document.blocks, block_index),
+            layout.spacing[block_index],
+            layout.marker_visible[block_index],
             view,
             cx,
         ));
@@ -1501,13 +1801,41 @@ fn render_reader_item(
 }
 
 impl Render for ReaderPane {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme;
+        let reader = div()
+            .id("reader-scroll")
+            .debug_selector(|| "reader-scroll".into())
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_grow()
+            .min_w_0()
+            .min_h_0()
+            .bg(theme.background);
+        if self.document.blocks.is_empty() {
+            let slow = match self.load {
+                TabLoad::Loading { since } => since.elapsed() >= LOADING_INDICATOR_DELAY,
+                _ => false,
+            };
+            if slow {
+                crate::perf::mark_once_after("loading_render", "open_start");
+            }
+            return reader.when(slow, |reader| {
+                reader.child(render_loading_line("Loading…", false, theme))
+            });
+        }
+        crate::perf::mark_once_after("content_render", "open_start");
+        self.correct_heading_jump(window);
         let app = self.app.clone();
         let document = self.document.clone();
         let style = self.style;
-        let theme = self.theme;
+        let heading_probe = self.jump.as_ref().map(|jump| jump.probe.clone());
         let list_state = self.list_state.clone();
         let viewport = list(list_state.clone(), move |block_index, _, cx| {
+            if block_index >= document.blocks.len() {
+                return render_loading_line("Loading the rest of the document…", true, theme);
+            }
             app.update(cx, |app, cx| {
                 let handles = app.ensure_block_link_focus_handles(&document, block_index, cx);
                 let paint = app.reader_paint_state(cx);
@@ -1524,6 +1852,7 @@ impl Render for ReaderPane {
                     paint.copied_code,
                     &link_state,
                     paint.find_block,
+                    heading_probe.as_ref(),
                     cx,
                 )
             })
@@ -1533,16 +1862,7 @@ impl Render for ReaderPane {
         .h_full();
         let scrollbar = render_reader_scrollbar(&self.document.path, &self.list_state, theme, cx);
 
-        div()
-            .id("reader-scroll")
-            .debug_selector(|| "reader-scroll".into())
-            .relative()
-            .flex()
-            .flex_col()
-            .flex_grow()
-            .min_w_0()
-            .min_h_0()
-            .bg(theme.background)
+        reader
             .child(viewport)
             .when_some(scrollbar, |reader, scrollbar| reader.child(scrollbar))
     }
@@ -1571,9 +1891,15 @@ fn render_block(
                 let style = BlockStyle::heading(*level);
                 let font_size = view.zoom(style.font_size);
                 let debug_selector = format!("reader-block-{block_suffix}");
+                let probe = view
+                    .heading_probe
+                    .filter(|probe| probe.target == block_path)
+                    .map(HeadingProbe::marker);
                 div()
                     .id(("reader-block", block_index))
                     .debug_selector(move || debug_selector)
+                    .relative()
+                    .children(probe)
                     .w_full()
                     .min_w_0()
                     .font_weight(FontWeight(style.font_weight as f32))
@@ -3500,6 +3826,20 @@ mod tests {
 
         assert!(list_marker_is_visible(&parent_then_nested_task, 0));
         assert!(!list_marker_is_visible(&same_depth_task, 0));
+    }
+
+    #[test]
+    fn precomputed_marker_visibility_matches_the_per_block_rule() {
+        let document = parse_document(
+            PathBuf::from("/tmp/markers.md"),
+            "- a\n- [ ] b\n  - c\n  - d\n\nText\n\n- e\n- f\n\n1. g\n- [x] h\n".into(),
+        );
+        let blocks = &document.blocks;
+        let expected = (0..blocks.len())
+            .map(|index| list_marker_is_visible(blocks, index))
+            .collect::<Vec<_>>();
+        assert_eq!(list_marker_visibility(blocks), expected);
+        assert!(expected.contains(&false));
     }
 
     #[test]

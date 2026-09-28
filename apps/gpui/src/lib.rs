@@ -6,6 +6,7 @@ pub mod document;
 pub mod html;
 pub mod menus;
 pub mod overlay;
+pub mod perf;
 pub mod persist;
 pub mod prefs;
 pub mod session;

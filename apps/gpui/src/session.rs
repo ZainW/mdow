@@ -1,5 +1,7 @@
 //! Snapshot of what was open. Produced from live state or disk, never synced field by field.
 
+use crate::anchor::ScrollAnchor;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub fn file_identity(path: &Path) -> PathBuf {
@@ -124,9 +126,16 @@ pub struct Session {
     pub last_folder: Option<PathBuf>,
     pub recents: Recents,
     pub window: Option<SavedWindowBounds>,
+    /// Each open tab's reading position, so a relaunch lands where the reader left off.
+    pub anchors: HashMap<PathBuf, ScrollAnchor>,
 }
 
 impl Session {
+    pub fn with_anchors(mut self, anchors: HashMap<PathBuf, ScrollAnchor>) -> Self {
+        self.anchors = anchors;
+        self
+    }
+
     pub fn from_parts(
         tab_paths: impl IntoIterator<Item = PathBuf>,
         active: Option<PathBuf>,
@@ -139,6 +148,7 @@ impl Session {
             last_folder,
             recents,
             window,
+            anchors: HashMap::new(),
         }
     }
 }

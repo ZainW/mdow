@@ -1,15 +1,48 @@
 use crate::{document::ParsedDocument, syntax::PreparedDocument};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
+
+/// Where a tab's document is in the off-thread open pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabLoad {
+    Ready,
+    /// A large file is being read and parsed off the UI thread; the tab shows a placeholder.
+    Loading {
+        since: Instant,
+    },
+    /// The opening of a huge document is showing while the rest parses.
+    Preview,
+}
+
+impl TabLoad {
+    pub fn is_ready(self) -> bool {
+        self == Self::Ready
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DocumentTab {
     pub document: Arc<PreparedDocument>,
     pub last_source: Arc<str>,
     pub reload_error: Option<String>,
+    pub load: TabLoad,
+    /// Bumped whenever a load or reload starts; background results for an older generation
+    /// are stale and dropped.
+    pub generation: u64,
 }
 
 impl DocumentTab {
+    pub fn ready(document: PreparedDocument) -> Self {
+        Self {
+            last_source: Arc::from(document.source.clone()),
+            document: Arc::new(document),
+            reload_error: None,
+            load: TabLoad::Ready,
+            generation: 0,
+        }
+    }
+
     pub fn path(&self) -> &Path {
         &self.document.path
     }
@@ -19,6 +52,7 @@ impl DocumentTab {
 pub struct TabSet {
     tabs: Vec<DocumentTab>,
     active_path: Option<PathBuf>,
+    generations: u64,
 }
 
 impl TabSet {
@@ -26,23 +60,89 @@ impl TabSet {
         self.open_prepared(PreparedDocument::plain(document));
     }
 
+    fn next_generation(&mut self) -> u64 {
+        self.generations += 1;
+        self.generations
+    }
+
     pub fn open_prepared(&mut self, document: PreparedDocument) {
         let document = canonical_prepared_document(document);
         let path = document.path.clone();
+        let generation = self.next_generation();
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path() == path) {
-            tab.last_source = Arc::from(document.source.clone());
-            tab.document = Arc::new(document);
-            tab.reload_error = None;
+            *tab = DocumentTab {
+                generation,
+                ..DocumentTab::ready(document)
+            };
             self.active_path = Some(path);
             return;
         }
 
         self.active_path = Some(path);
         self.tabs.push(DocumentTab {
-            last_source: Arc::from(document.source.clone()),
-            document: Arc::new(document),
-            reload_error: None,
+            generation,
+            ..DocumentTab::ready(document)
         });
+    }
+
+    /// Opens (and activates) a tab for `path` whose document is still being read and parsed.
+    /// Returns the generation its background result must carry.
+    pub fn open_loading(&mut self, path: &Path, since: Instant) -> u64 {
+        let path = path_identity(path);
+        let generation = self.next_generation();
+        let tab = DocumentTab {
+            load: TabLoad::Loading { since },
+            generation,
+            ..DocumentTab::ready(PreparedDocument::placeholder(path.clone()))
+        };
+        match self
+            .tabs
+            .iter_mut()
+            .find(|existing| existing.path() == path)
+        {
+            Some(existing) => *existing = tab,
+            None => self.tabs.push(tab),
+        }
+        self.active_path = Some(path);
+        generation
+    }
+
+    /// Starts a background reload of an open tab, which keeps showing its current document.
+    pub fn begin_reload(&mut self, path: &Path) -> Option<u64> {
+        let path = path_identity(path);
+        let generation = self.next_generation();
+        let tab = self.tabs.iter_mut().find(|tab| tab.path() == path)?;
+        tab.generation = generation;
+        Some(generation)
+    }
+
+    /// Whether `generation` is still the latest load for `path`.
+    pub fn is_current(&self, path: &Path, generation: u64) -> bool {
+        self.get(path)
+            .is_some_and(|tab| tab.generation == generation)
+    }
+
+    /// Installs a background result if it is still current. A preview keeps the tab's
+    /// generation open for the full document that follows it.
+    pub fn apply_loaded(&mut self, document: PreparedDocument, generation: u64) -> bool {
+        let document = canonical_prepared_document(document);
+        let Some(tab) = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.path() == document.path && tab.generation == generation)
+        else {
+            return false;
+        };
+        if document.is_partial() {
+            tab.load = TabLoad::Preview;
+            tab.document = Arc::new(document);
+        } else {
+            tab.load = TabLoad::Ready;
+            tab.last_source = Arc::from(document.source.clone());
+            tab.document = Arc::new(document);
+            tab.reload_error = None;
+        }
+        true
     }
 
     pub fn replace_document(&mut self, document: ParsedDocument) -> bool {
@@ -51,12 +151,15 @@ impl TabSet {
 
     pub fn replace_prepared(&mut self, document: PreparedDocument) -> bool {
         let document = canonical_prepared_document(document);
+        let generation = self.next_generation();
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.path() == document.path) else {
             return false;
         };
         tab.last_source = Arc::from(document.source.clone());
         tab.document = Arc::new(document);
         tab.reload_error = None;
+        tab.load = TabLoad::Ready;
+        tab.generation = generation;
         true
     }
 

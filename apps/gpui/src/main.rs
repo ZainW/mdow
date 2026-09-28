@@ -183,8 +183,9 @@ fn main() -> anyhow::Result<()> {
         let seed = if launch_args.smoke_test {
             WindowSeed::Smoke
         } else {
-            WindowSeed::RestoreSessionThenOpen(launch_path)
+            WindowSeed::RestoreSessionThenOpen(launch_path.clone())
         };
+        mdow_gpui::perf::start(launch_path.clone(), cx);
         let primary = open_main_window(seed, cx);
         cx.spawn(async move |cx| {
             while let Ok(urls) = open_receiver.recv().await {

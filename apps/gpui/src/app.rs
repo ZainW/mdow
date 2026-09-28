@@ -7,7 +7,12 @@ use crate::{
         ZoomIn, ZoomOut, ZoomReset,
     },
     actions::{ClearRecents, Minimize, OpenRecent, ToggleFullScreen, Zoom},
-    document::{DocumentError, ParsedDocument, load_source, parse_document},
+    anchor::ScrollAnchor,
+    document::{
+        ASYNC_PARSE_MIN_BYTES, DocumentError, LoadedSource, PREVIEW_MIN_BYTES, ParsedDocument,
+        is_supported_document, is_supported_markdown, load_source, parse_document,
+        slice_document_head,
+    },
     overlay::{
         CommandId, FindEvent, FindOverlay, OpenOverlay, OverlayHost, OverlayKind, PaletteAction,
         PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
@@ -16,8 +21,8 @@ use crate::{
     prefs::{PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
     sparkle::{self, UpdateUi},
-    syntax::prepare_document,
-    tabs::TabSet,
+    syntax::{PreparedDocument, prepare_document},
+    tabs::{TabLoad, TabSet},
     theme::{Metrics, ShellLayout, Theme},
     ui::{
         chrome::{
@@ -29,7 +34,7 @@ use crate::{
         primitives::{ContextMenu, ContextMenuEntry, ContextMenuEvent, context_menu_layer},
         reader::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
-            clear_expired_code_copy_feedback, document_link_focus_targets,
+            clear_expired_code_copy_feedback,
         },
         welcome::{DropSummary, drop_overlay, error_state, welcome},
         zoom_hud::{self, ZoomHud, ZoomHudHandlers, render_zoom_hud},
@@ -39,8 +44,8 @@ use crate::{
 };
 use gpui::{
     App, ClipboardItem, Context, DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable,
-    IntoElement, PathPromptOptions, Pixels, Point, Render, ScrollHandle, Subscription, Task, Timer,
-    Window, div, prelude::*, px,
+    IntoElement, PathPromptOptions, Pixels, Point, Render, Subscription, Task, Timer, Window, div,
+    prelude::*, px,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -100,6 +105,79 @@ impl From<WorkspaceError> for AppOpenError {
 pub enum DocumentOpened {
     ActivatedExisting,
     LoadedFromDisk,
+}
+
+/// How [`AppModel::begin_open`] went.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpenStart {
+    ActivatedExisting,
+    LoadedFromDisk,
+    /// A placeholder tab is open; run the load off the UI thread.
+    Pending(PendingLoad),
+}
+
+/// A large document to read and parse off the UI thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingLoad {
+    pub path: PathBuf,
+    pub generation: u64,
+    /// Show the opening of the document before the full parse finishes.
+    pub preview: bool,
+    /// A live reload of an open tab rather than a first open.
+    pub reload: bool,
+}
+
+/// `Some(size)` when `path` is large enough to load off the UI thread; validates the path the
+/// way [`load_source`] would so bad opens still fail synchronously.
+fn deferred_load_size(path: &Path) -> Result<Option<u64>, DocumentError> {
+    if !is_supported_document(path) {
+        return Err(DocumentError::Unsupported {
+            path: path.to_owned(),
+        });
+    }
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            DocumentError::Missing {
+                path: path.to_owned(),
+            }
+        } else {
+            DocumentError::Read {
+                path: path.to_owned(),
+                message: error.to_string(),
+            }
+        }
+    })?;
+    Ok((metadata.len() >= ASYNC_PARSE_MIN_BYTES).then_some(metadata.len()))
+}
+
+/// What the background half of a [`PendingLoad`] reports back, in order.
+enum LoadEvent {
+    Preview(PreparedDocument),
+    Full(PreparedDocument),
+    Failed(DocumentError),
+}
+
+/// Background half of a [`PendingLoad`]: read the file and, for a preview, parse its opening.
+pub fn read_for_load(
+    load: &PendingLoad,
+) -> Result<(LoadedSource, Option<PreparedDocument>), DocumentError> {
+    let loaded = load_source(&load.path)?;
+    let preview = load
+        .preview
+        .then(|| slice_document_head(&loaded.source))
+        .flatten()
+        .map(|head| {
+            PreparedDocument::preview(parse_document(
+                loaded.canonical_path.clone(),
+                head.to_owned(),
+            ))
+        });
+    Ok((loaded, preview))
+}
+
+/// Background half of a [`PendingLoad`]: parse the whole document.
+pub fn parse_for_load(loaded: LoadedSource) -> PreparedDocument {
+    prepare_document(parse_document(loaded.canonical_path, loaded.source))
 }
 
 #[derive(Debug, Default)]
@@ -170,6 +248,109 @@ impl AppModel {
         let parsed = parse_document(loaded.canonical_path, loaded.source);
         self.tabs.replace_prepared(prepare_document(parsed));
         Ok(())
+    }
+
+    /// Opens `path` without blocking on a large file: small files load synchronously (no
+    /// loading flash), larger ones get a placeholder tab at once and a [`PendingLoad`] for the
+    /// caller to run off the UI thread. `allow_preview` lets huge Markdown files show their
+    /// opening first (fresh opens only; a restored reading position needs the whole document).
+    pub fn begin_open(
+        &mut self,
+        path: &Path,
+        allow_preview: bool,
+    ) -> Result<OpenStart, AppOpenError> {
+        if self.tabs.activate(path) {
+            return Ok(OpenStart::ActivatedExisting);
+        }
+        let Some(size) = deferred_load_size(path)? else {
+            self.open_document(path)?;
+            return Ok(OpenStart::LoadedFromDisk);
+        };
+        let canonical = path.canonicalize().map_err(|error| DocumentError::Read {
+            path: path.to_owned(),
+            message: error.to_string(),
+        })?;
+        self.deleted.remove(&canonical);
+        let generation = self.tabs.open_loading(&canonical, Instant::now());
+        self.recents.note(&canonical);
+        Ok(OpenStart::Pending(PendingLoad {
+            preview: allow_preview
+                && is_supported_markdown(&canonical)
+                && size >= PREVIEW_MIN_BYTES as u64,
+            path: canonical,
+            generation,
+            reload: false,
+        }))
+    }
+
+    /// Reloads a changed tab: small files synchronously, large ones as a [`PendingLoad`] while
+    /// the tab keeps showing its current version. Read failures apply at once either way.
+    pub fn begin_reload(&mut self, path: &Path) -> Result<Option<PendingLoad>, AppOpenError> {
+        match deferred_load_size(path) {
+            Ok(Some(_)) => {
+                let tab_path = canonical_file_identity(path);
+                let Some(generation) = self.tabs.begin_reload(&tab_path) else {
+                    return Ok(None);
+                };
+                Ok(Some(PendingLoad {
+                    path: tab_path,
+                    generation,
+                    preview: false,
+                    reload: true,
+                }))
+            }
+            Ok(None) | Err(_) => self.reload_path(path).map(|()| None),
+        }
+    }
+
+    /// Applies a background read failure: an open fails its placeholder tab, a reload keeps
+    /// the last good copy with an error banner. Stale results change nothing.
+    pub fn fail_load(&mut self, load: &PendingLoad, error: DocumentError) -> Option<AppOpenError> {
+        if !self.tabs.is_current(&load.path, load.generation) {
+            return None;
+        }
+        if load.reload {
+            if matches!(error, DocumentError::Missing { .. }) {
+                self.deleted.insert(load.path.clone());
+            } else {
+                self.deleted.remove(&load.path);
+            }
+            let error = AppOpenError::from(error);
+            self.tabs
+                .set_reload_error(&load.path, error.view().body.clone());
+            Some(error)
+        } else {
+            self.tabs.close(&load.path);
+            Some(AppOpenError::from(error))
+        }
+    }
+
+    /// Installs a background parse result; returns whether it was still current.
+    pub fn finish_load(&mut self, load: &PendingLoad, document: PreparedDocument) -> bool {
+        let applied = self.tabs.apply_loaded(document, load.generation);
+        if applied && load.reload {
+            self.deleted.remove(&load.path);
+        }
+        applied
+    }
+
+    /// Installs a folder scan that ran off the UI thread.
+    pub fn apply_workspace_scan(
+        &mut self,
+        scanned: Result<WorkspaceTree, WorkspaceError>,
+    ) -> Result<(), AppOpenError> {
+        match scanned {
+            Ok(workspace) => {
+                self.workspace = Some(workspace);
+                self.workspace_error = None;
+                Ok(())
+            }
+            Err(error) => {
+                let error = AppOpenError::from(error);
+                self.workspace_error = Some(error.view().clone());
+                Err(error)
+            }
+        }
     }
 
     pub fn open_workspace(&mut self, path: &Path) -> Result<(), AppOpenError> {
@@ -446,12 +627,19 @@ pub struct MdowApp {
     file_watcher: Option<FileWatcher>,
     _watch_poll_task: Option<Task<()>>,
     workspace_refresh: Option<Task<()>>,
+    /// Off-thread document reads and parses, one per tab; replacing one cancels the old.
+    load_tasks: HashMap<PathBuf, Task<()>>,
+    /// Saved reading positions waiting for their document to finish loading.
+    restore_anchors: HashMap<PathBuf, ScrollAnchor>,
+    /// The latest reading position of each tab the reader has shown, for the session.
+    anchors: HashMap<PathBuf, ScrollAnchor>,
+    session_save: Option<Task<()>>,
     folder_filter: Entity<Field>,
     _folder_filter_events: Subscription,
     /// Folders the reader collapsed while a filter is active; reset when the query changes.
     filter_collapsed: HashSet<PathBuf>,
     context_menu: Option<OpenContextMenu>,
-    outline_scroll: ScrollHandle,
+    outline_scroll: gpui::UniformListScrollHandle,
     last_outline_active: Option<usize>,
     tab_focus: HashMap<PathBuf, TabFocus>,
     menu_recents: Option<Vec<PathBuf>>,
@@ -578,11 +766,15 @@ impl MdowApp {
             file_watcher,
             _watch_poll_task: watch_poll_task,
             workspace_refresh: None,
+            load_tasks: HashMap::new(),
+            restore_anchors: HashMap::new(),
+            anchors: HashMap::new(),
+            session_save: None,
             folder_filter,
             _folder_filter_events: folder_filter_events,
             filter_collapsed: HashSet::new(),
             context_menu: None,
-            outline_scroll: ScrollHandle::new(),
+            outline_scroll: gpui::UniformListScrollHandle::new(),
             last_outline_active: None,
             tab_focus: HashMap::new(),
             menu_recents: None,
@@ -631,7 +823,12 @@ impl MdowApp {
             match message {
                 WatchMessage::Reload(path) => {
                     if self.model.tabs.get(&path).is_some() {
-                        let _ = self.model.reload_path(&path);
+                        crate::perf::mark("reload_start");
+                        if let Ok(Some(load)) = self.model.begin_reload(&path) {
+                            self.spawn_load(load, cx);
+                        } else {
+                            crate::perf::mark("reload_applied");
+                        }
                         changed = true;
                     }
                 }
@@ -669,23 +866,128 @@ impl MdowApp {
         }));
     }
 
-    pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
-        if path.is_dir() {
-            match self.model.open_workspace(path) {
-                Ok(()) => {}
-                Err(AppOpenError::Workspace(_)) => {}
-                Err(AppOpenError::Document(_)) => unreachable!(),
+    /// Reads and parses a large document off the UI thread: a preview first when asked for,
+    /// then the whole document. Results for a tab that was closed, reopened or reloaded again
+    /// meanwhile are dropped.
+    pub(crate) fn spawn_load(&mut self, load: PendingLoad, cx: &mut Context<Self>) {
+        let path = load.path.clone();
+        // The read and parse start on a background thread right away rather than from a
+        // foreground task, which would wait for the window's first frames to finish.
+        let (sender, receiver) = async_channel::bounded(2);
+        let job = load.clone();
+        let background = cx.background_spawn(async move {
+            match read_for_load(&job) {
+                Err(error) => {
+                    sender.send(LoadEvent::Failed(error)).await.ok();
+                }
+                Ok((loaded, preview)) => {
+                    if let Some(preview) = preview
+                        && sender.send(LoadEvent::Preview(preview)).await.is_err()
+                    {
+                        return;
+                    }
+                    sender
+                        .send(LoadEvent::Full(parse_for_load(loaded)))
+                        .await
+                        .ok();
+                }
             }
-            self.sync_folder_watch();
+        });
+        let task = cx.spawn(async move |this, cx| {
+            let _background = background;
+            while let Ok(event) = receiver.recv().await {
+                let keep_going = this
+                    .update(cx, |this, cx| match event {
+                        LoadEvent::Preview(preview) => this.finish_load(&load, preview, cx),
+                        LoadEvent::Full(document) => {
+                            this.finish_load(&load, document, cx);
+                            this.load_tasks.remove(&load.path);
+                            false
+                        }
+                        LoadEvent::Failed(error) => {
+                            if let Some(error) = this.model.fail_load(&load, error)
+                                && !load.reload
+                            {
+                                this.open_error = Some(error.into_view());
+                                this.active_document_changed(cx);
+                            }
+                            this.load_tasks.remove(&load.path);
+                            cx.notify();
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+                if !keep_going {
+                    break;
+                }
+            }
+        });
+        self.load_tasks.insert(path, task);
+    }
+
+    fn finish_load(
+        &mut self,
+        load: &PendingLoad,
+        document: PreparedDocument,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let partial = document.is_partial();
+        if !self.model.finish_load(load, document) {
+            return false;
+        }
+        if !partial {
+            crate::perf::mark(if load.reload {
+                "reload_applied"
+            } else {
+                "full_ready"
+            });
+        }
+        if self
+            .model
+            .tabs
+            .active()
+            .is_some_and(|tab| tab.path() == load.path)
+        {
+            let document = self.model.tabs.active().map(|tab| tab.document.clone());
+            self.overlays.retarget_find(document, cx);
+        }
+        cx.notify();
+        true
+    }
+
+    /// Scans a folder off the UI thread, then shows it (the tree only caps its size, so a huge
+    /// folder could otherwise stall the window while it opens).
+    fn open_workspace_async(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let root = path.to_owned();
+        self.workspace_refresh = Some(cx.spawn(async move |this, cx| {
+            let scan_root = root.clone();
+            let scanned = cx
+                .background_spawn(async move { scan_workspace(&scan_root) })
+                .await;
+            this.update(cx, |this, cx| {
+                this.model.apply_workspace_scan(scanned).ok();
+                this.sync_folder_watch();
+                this.persist_session();
+                cx.notify();
+            })
+            .ok();
+        }));
+    }
+
+    pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
+        crate::perf::mark("open_start");
+        if path.is_dir() {
+            self.open_workspace_async(path, cx);
             cx.notify();
             return;
         }
-        match self.model.open_or_activate(path) {
-            Ok(DocumentOpened::ActivatedExisting) => {
+        match self.model.begin_open(path, true) {
+            Ok(OpenStart::ActivatedExisting) => {
                 self.open_error = None;
                 self.active_document_changed(cx);
             }
-            Ok(DocumentOpened::LoadedFromDisk) => {
+            Ok(OpenStart::LoadedFromDisk) => {
+                crate::perf::mark("full_ready");
                 let watch_error = self
                     .model
                     .tabs
@@ -695,6 +997,11 @@ impl MdowApp {
                 self.open_error = watch_error;
                 self.active_document_changed(cx);
             }
+            Ok(OpenStart::Pending(load)) => {
+                self.open_error = self.watch_document(&load.path).err();
+                self.spawn_load(load, cx);
+                self.active_document_changed(cx);
+            }
             Err(AppOpenError::Document(error)) => self.open_error = Some(error),
             Err(AppOpenError::Workspace(_)) => {}
         }
@@ -702,14 +1009,36 @@ impl MdowApp {
     }
 
     pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
-        let result = self.model.open_paths(paths);
-        self.sync_folder_watch();
-        let document_opened = result.document_opened();
+        let mut document_attempted = false;
+        let mut document_opened = false;
+        let mut document_error = None;
+        let mut folder = None;
+        for path in paths {
+            if path.is_dir() {
+                folder = Some(path);
+                continue;
+            }
+            document_attempted = true;
+            match self.model.begin_open(&path, true) {
+                Ok(OpenStart::Pending(load)) => {
+                    document_opened = true;
+                    self.spawn_load(load, cx);
+                }
+                Ok(_) => document_opened = true,
+                Err(AppOpenError::Document(error)) => {
+                    document_error.get_or_insert(error);
+                }
+                Err(AppOpenError::Workspace(_)) => {}
+            }
+        }
+        if let Some(folder) = folder {
+            self.open_workspace_async(&folder, cx);
+        }
         let watch_error = document_opened
             .then(|| self.watch_all_documents())
             .flatten();
-        if result.document_attempted() {
-            self.open_error = result.document_error.or(watch_error);
+        if document_attempted {
+            self.open_error = document_error.or(watch_error);
         }
         if document_opened {
             self.active_document_changed(cx);
@@ -768,10 +1097,8 @@ impl MdowApp {
     }
 
     fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
-        self.model.open_workspace(path).ok();
-        self.sync_folder_watch();
+        self.open_workspace_async(path, cx);
         self.apply_pref(PrefEdit::Sidebar(SidebarMode::Folder), cx);
-        self.prefs.save_session(&self.session_snapshot());
         cx.notify();
     }
 
@@ -911,12 +1238,30 @@ impl MdowApp {
     pub fn restore_session(&mut self, session: Session, cx: &mut Context<Self>) {
         self.model.recents = session.recents.clone();
         if let Some(folder) = session.last_folder.as_ref() {
-            self.model.open_workspace(folder).ok();
-            self.sync_folder_watch();
+            self.open_workspace_async(folder, cx);
         }
         if let Some(tabs) = session.tabs.as_ref() {
             for path in tabs.iter() {
-                let _ = self.model.open_document(path);
+                let anchor = session
+                    .anchors
+                    .get(path)
+                    .copied()
+                    .filter(|anchor| !anchor.is_top());
+                // A saved reading position needs the whole document, so only fresh tabs preview.
+                match self.model.begin_open(path, anchor.is_none()) {
+                    Ok(OpenStart::Pending(load)) => {
+                        if let Some(anchor) = anchor {
+                            self.restore_anchors.insert(load.path.clone(), anchor);
+                        }
+                        self.spawn_load(load, cx);
+                    }
+                    Ok(_) => {
+                        if let (Some(anchor), Some(tab)) = (anchor, self.model.tabs.active()) {
+                            self.restore_anchors.insert(tab.path().to_owned(), anchor);
+                        }
+                    }
+                    Err(_) => {}
+                }
             }
             self.model.tabs.activate(tabs.active());
             let _ = self.watch_all_documents();
@@ -1116,6 +1461,19 @@ impl MdowApp {
                 .map(|tree| tree.root.path.clone()),
             self.model.recents.clone(),
             self.last_window_bounds,
+        )
+        .with_anchors(
+            self.model
+                .tabs
+                .paths()
+                .filter_map(|path| {
+                    let anchor = self
+                        .anchors
+                        .get(path)
+                        .or_else(|| self.restore_anchors.get(path))?;
+                    Some((path.to_owned(), *anchor))
+                })
+                .collect(),
         )
     }
 
@@ -1345,6 +1703,50 @@ impl MdowApp {
     fn ensure_reader_pane(
         &mut self,
         document: Arc<crate::syntax::PreparedDocument>,
+        load: TabLoad,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ReaderPane> {
+        let pane = self.ensure_reader_pane_for(document.clone(), load, window, cx);
+        let path = &document.path;
+        if load.is_ready()
+            && !document.blocks.is_empty()
+            && let Some(anchor) = self.restore_anchors.remove(path)
+        {
+            pane.update(cx, |pane, cx| {
+                pane.restore_anchor(anchor);
+                cx.notify();
+            });
+        }
+        if let Some(anchor) = pane.read(cx).scroll_anchor()
+            && self.anchors.insert(path.clone(), anchor) != Some(anchor)
+        {
+            self.schedule_session_save(cx);
+        }
+        pane
+    }
+
+    /// Saves the session (with reading positions) once scrolling has settled for a moment.
+    fn schedule_session_save(&mut self, cx: &mut Context<Self>) {
+        if self.session_save.is_some() {
+            return;
+        }
+        self.session_save = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(750))
+                .await;
+            this.update(cx, |this, _| {
+                this.session_save = None;
+                this.persist_session();
+            })
+            .ok();
+        }));
+    }
+
+    fn ensure_reader_pane_for(
+        &mut self,
+        document: Arc<crate::syntax::PreparedDocument>,
+        load: TabLoad,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<ReaderPane> {
@@ -1365,12 +1767,16 @@ impl MdowApp {
             if !pane.read(cx).hosts_document(&document) {
                 self.retain_reader_link_focus_handles(&document, window);
             }
-            pane.update(cx, |pane, cx| pane.sync(document, style, theme, cx));
+            pane.update(cx, |pane, cx| pane.sync(document, load, style, theme, cx));
             pane
         } else {
             self.retain_reader_link_focus_handles(&document, window);
             let app = cx.weak_entity();
-            let pane = cx.new(|_| ReaderPane::new(app, document, style, theme));
+            let pane = cx.new(|cx| {
+                let mut pane = ReaderPane::new(app, document.clone(), style, theme);
+                pane.sync(document, load, style, theme, cx);
+                pane
+            });
             self.reader_panes.insert(path, pane.clone());
             cx.on_next_frame(window, |_, _, cx| cx.notify());
             pane
@@ -1396,11 +1802,22 @@ impl MdowApp {
         }
     }
 
-    fn retain_reader_link_focus_handles(&mut self, document: &ParsedDocument, window: &mut Window) {
-        let active_keys = document_link_focus_targets(document)
-            .into_iter()
-            .map(|target| target.key)
-            .collect::<HashSet<_>>();
+    fn retain_reader_link_focus_handles(
+        &mut self,
+        document: &PreparedDocument,
+        window: &mut Window,
+    ) {
+        // Handles are created lazily for rendered blocks; a document nobody has rendered yet
+        // (a fresh load) has none to prune. The link keys come precomputed off the UI thread.
+        if self.focused_link.is_none()
+            && !self
+                .reader_link_focus_handles
+                .keys()
+                .any(|(path, _)| path == &document.path)
+        {
+            return;
+        }
+        let active_keys = &document.layout().link_keys;
         let mut removed_focused_handle = false;
         self.reader_link_focus_handles
             .retain(|(path, key), handle| {
@@ -1540,6 +1957,9 @@ impl MdowApp {
         if self.model.close_tab(path) {
             self.tab_focus.remove(path);
             self.reader_panes.remove(path);
+            self.load_tasks.remove(path);
+            self.anchors.remove(path);
+            self.restore_anchors.remove(path);
             self.reader_link_focus_handles
                 .retain(|(document_path, _), _| document_path != path);
             self.active_document_changed(cx);
@@ -1548,14 +1968,16 @@ impl MdowApp {
     }
 
     pub(crate) fn jump_to_heading(&mut self, index: usize, cx: &mut Context<Self>) {
-        let block = self
-            .model
-            .tabs
-            .active()
-            .and_then(|tab| tab.document.heading_block(index));
-        if let Some(block) = block {
-            self.scroll_reader_to_block(block, cx);
-        }
+        let Some(tab) = self.model.tabs.active() else {
+            return;
+        };
+        let Some(heading_path) = tab.document.heading_path(index) else {
+            return;
+        };
+        let Some(pane) = self.reader_panes.get(tab.path()).cloned() else {
+            return;
+        };
+        pane.update(cx, |pane, cx| pane.jump_to_heading(heading_path, cx));
     }
 
     pub(crate) fn dismiss_reload_error(&mut self, cx: &mut Context<Self>) {
@@ -1573,6 +1995,15 @@ impl MdowApp {
         match classify_link(document_path, target) {
             LinkRoute::Markdown(path) => self.open_path(&path, cx),
             LinkRoute::Anchor(fragment) => {
+                let heading = self
+                    .model
+                    .tabs
+                    .active()
+                    .and_then(|tab| tab.document.anchor_heading(&fragment));
+                if let Some(heading) = heading {
+                    self.jump_to_heading(heading, cx);
+                    return;
+                }
                 let block = self
                     .model
                     .tabs
@@ -1910,6 +2341,7 @@ impl Focusable for MdowApp {
 
 impl Render for MdowApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::perf::mark_once_after("window_render", "open_start");
         let bounds = window.bounds();
         self.last_window_bounds = Some(SavedWindowBounds {
             x: f32::from(bounds.origin.x),
@@ -1963,7 +2395,8 @@ impl Render for MdowApp {
         let active_heading = self.active_outline_heading(cx);
         if active_heading != self.last_outline_active {
             if let Some(index) = active_heading {
-                self.outline_scroll.scroll_to_item(index);
+                self.outline_scroll
+                    .scroll_to_item(index, gpui::ScrollStrategy::Center);
             }
             self.last_outline_active = active_heading;
         }
@@ -1981,9 +2414,7 @@ impl Render for MdowApp {
                     document_title: active_document
                         .as_deref()
                         .map(|document| document.title.as_str()),
-                    headings: active_document
-                        .as_deref()
-                        .map(|document| document.headings.as_slice()),
+                    outline: active_document.clone(),
                     active_heading,
                     active_path: active_path.as_deref(),
                     filter: &self.folder_filter,
@@ -2020,8 +2451,9 @@ impl Render for MdowApp {
                 .active()
                 .expect("a non-empty tab set always has an active document");
             let breadcrumb = render_breadcrumb(theme, tab, cx);
-            let (document, path, reload_error) = (
+            let (document, load, path, reload_error) = (
                 tab.document.clone(),
+                tab.load,
                 tab.path().to_owned(),
                 tab.reload_error.clone(),
             );
@@ -2048,7 +2480,7 @@ impl Render for MdowApp {
                     cx,
                 ));
             }
-            let pane = self.ensure_reader_pane(document, window, cx);
+            let pane = self.ensure_reader_pane(document, load, window, cx);
             main = main
                 .child(tab_bar)
                 .child(breadcrumb)
@@ -3240,6 +3672,7 @@ mod tests {
         window
             .update(cx, |app, _, cx| app.open_workspace_path(&missing, cx))
             .unwrap();
+        cx.run_until_parked();
 
         window
             .update(cx, |app, _, _| {
@@ -4569,6 +5002,146 @@ mod tests {
         );
     }
 
+    /// Times the large-document pipeline on the UI thread. Run in release with a generated file:
+    /// `MDOW_PIPELINE_BENCH_DOC=/tmp/big.md cargo test --release --lib
+    /// large_document_pipeline_bench -- --ignored --nocapture` (see script/bench_gpui_reader.sh).
+    /// The test executor runs background work on this thread while parked, so `open_call_ms` and
+    /// `reload_call_ms` are the synchronous UI-thread cost and `*_ready_ms` include the parse.
+    #[gpui::test]
+    #[ignore]
+    fn large_document_pipeline_bench(cx: &mut TestAppContext) {
+        const SCROLL_FRAMES: usize = 30;
+        let Some(source_path) = std::env::var_os("MDOW_PIPELINE_BENCH_DOC").map(PathBuf::from)
+        else {
+            eprintln!("set MDOW_PIPELINE_BENCH_DOC to a markdown file");
+            return;
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("pipeline-bench.md");
+        fs::copy(&source_path, &path).unwrap();
+        let path = path.canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    // No live watcher: the copied file would otherwise trigger a reload that the
+                    // test executor runs inside a measured frame.
+                    let mut app = MdowApp::boot_with_watcher(
+                        Prefs::default(),
+                        StateStore::in_memory(),
+                        SessionRole::Owner,
+                        Err(anyhow::anyhow!("watcher disabled for the benchmark")),
+                        window,
+                        cx,
+                    );
+                    app.set_sidebar_mode(SidebarMode::Outline, cx);
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+
+        let open = Instant::now();
+        window
+            .update(&mut visual, |app, _, cx| app.open_path(&path, cx))
+            .unwrap();
+        let open_call_ms = open.elapsed().as_secs_f64() * 1000.0;
+        let first_paint = Instant::now();
+        redraw(&mut visual);
+        let first_paint_ms = first_paint.elapsed().as_secs_f64() * 1000.0;
+        visual.run_until_parked();
+        let open_ready_ms = open.elapsed().as_secs_f64() * 1000.0;
+        let full_paint = Instant::now();
+        redraw(&mut visual);
+        let full_paint_ms = full_paint.elapsed().as_secs_f64() * 1000.0;
+        let blocks = window
+            .read_with(&visual, |app, _| {
+                app.model
+                    .tabs
+                    .active()
+                    .map_or(0, |tab| tab.document.blocks.len())
+            })
+            .unwrap();
+
+        let bounds = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        // The real app loads syntax definitions on a background thread; the test executor
+        // would run that one-time load inside a measured frame, so load it up front.
+        if let crate::syntax::HighlightLookup::Claimed(key) =
+            crate::syntax::HighlightCache::global().lookup(
+                Some("rust"),
+                "fn warm() {}\n",
+                crate::theme::ColorScheme::Light,
+            )
+        {
+            crate::syntax::HighlightCache::global().highlight_claimed(
+                key,
+                "rust",
+                "fn warm() {}\n",
+            );
+        }
+        let mut worst_frame_ms = 0.0_f64;
+        let scroll = Instant::now();
+        for _ in 0..SCROLL_FRAMES {
+            let frame = Instant::now();
+            visual.simulate_event(ScrollWheelEvent {
+                position: bounds.center(),
+                delta: ScrollDelta::Pixels(point(px(0.0), px(-240.0))),
+                ..Default::default()
+            });
+            redraw(&mut visual);
+            worst_frame_ms = worst_frame_ms.max(frame.elapsed().as_secs_f64() * 1000.0);
+        }
+        let scroll_frame_ms = scroll.elapsed().as_secs_f64() * 1000.0 / SCROLL_FRAMES as f64;
+
+        let source = fs::read_to_string(&path).unwrap();
+        let cut = source[..4096.min(source.len())]
+            .rfind("\n\n")
+            .map_or(0, |index| index + 2);
+        fs::write(
+            &path,
+            format!(
+                "{}Inserted while reading.\n\n{}",
+                &source[..cut],
+                &source[cut..]
+            ),
+        )
+        .unwrap();
+        let reload = Instant::now();
+        window
+            .update(&mut visual, |app, _, cx| {
+                app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx)
+            })
+            .unwrap();
+        let reload_call_ms = reload.elapsed().as_secs_f64() * 1000.0;
+        visual.run_until_parked();
+        let reload_ready_ms = reload.elapsed().as_secs_f64() * 1000.0;
+        let reload_paint = Instant::now();
+        redraw(&mut visual);
+        let reload_paint_ms = reload_paint.elapsed().as_secs_f64() * 1000.0;
+
+        let report = serde_json::json!({
+            "document_bytes": source.len(),
+            "blocks": blocks,
+            "open_call_ms": open_call_ms,
+            "first_paint_ms": first_paint_ms,
+            "open_ready_ms": open_ready_ms,
+            "full_paint_ms": full_paint_ms,
+            "scroll_frame_ms": scroll_frame_ms,
+            "scroll_worst_frame_ms": worst_frame_ms,
+            "reload_call_ms": reload_call_ms,
+            "reload_ready_ms": reload_ready_ms,
+            "reload_paint_ms": reload_paint_ms,
+        });
+        let report_text = serde_json::to_string_pretty(&report).unwrap();
+        eprintln!("MDOW_PIPELINE_BENCH {report_text}");
+        if let Ok(out) = std::env::var("MDOW_PIPELINE_BENCH_OUT") {
+            fs::write(out, report_text).unwrap();
+        }
+    }
+
     fn folder_window(cx: &mut TestAppContext) -> (gpui::WindowHandle<MdowApp>, tempfile::TempDir) {
         let root = markdown_workspace();
         fs::write(root.path().join("guides/reading.md"), "# Reading").unwrap();
@@ -4918,8 +5491,12 @@ mod tests {
             .unwrap()
         });
         window
+            .update(cx, |app, _, cx| app.open_path(&root, cx))
+            .unwrap();
+        // The folder scans off the UI thread.
+        cx.run_until_parked();
+        window
             .update(cx, |app, _, cx| {
-                app.open_path(&root, cx);
                 app.toggle_directory(&root.join("guides"), cx);
                 app.set_folder_filter("new", cx);
             })
@@ -5065,3 +5642,7 @@ mod tests {
             .unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "pipeline_tests.rs"]
+mod pipeline_tests;

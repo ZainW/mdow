@@ -1,10 +1,10 @@
 use crate::{
     app::{MdowApp, UserFacingError},
-    document::Heading,
     overlay::OverlayKind,
     prefs::SidebarMode,
     session::Recents,
     sparkle::UpdateUi,
+    syntax::PreparedDocument,
     tabs::DocumentTab,
     theme::{Metrics, ShellLayout, Theme, TitlebarLeading},
     ui::{
@@ -21,13 +21,14 @@ use crate::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, HighlightStyle,
-    IntoElement, MouseButton, MouseDownEvent, ScrollHandle, Stateful, StatefulInteractiveElement,
-    StyledText, Transformation, Window, div, percentage, prelude::*, px,
+    IntoElement, MouseButton, MouseDownEvent, Stateful, StatefulInteractiveElement, StyledText,
+    Transformation, UniformListScrollHandle, Window, div, percentage, prelude::*, px, uniform_list,
 };
 use std::{
     collections::HashSet,
     ops::Range,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,13 +247,13 @@ pub struct SidebarProps<'a> {
     pub workspace: Option<&'a WorkspaceTree>,
     pub workspace_error: Option<&'a UserFacingError>,
     pub document_title: Option<&'a str>,
-    pub headings: Option<&'a [Heading]>,
+    pub outline: Option<Arc<PreparedDocument>>,
     pub active_heading: Option<usize>,
     pub active_path: Option<&'a Path>,
     pub filter: &'a Entity<Field>,
     pub filter_query: &'a str,
     pub filter_collapsed: &'a HashSet<PathBuf>,
-    pub outline_scroll: &'a ScrollHandle,
+    pub outline_scroll: &'a UniformListScrollHandle,
     pub width: f32,
 }
 
@@ -718,19 +719,21 @@ fn outline_section(
     props: &SidebarProps<'_>,
     cx: &Context<MdowApp>,
 ) -> (Div, AnyElement) {
-    let headings = props.headings.unwrap_or(&[]);
+    let heading_count = props
+        .outline
+        .as_ref()
+        .map_or(0, |document| document.headings.len());
     let header = match props.document_title {
         Some(title) => section_header()
             .child(section_title(title.to_owned(), theme, true))
             .child(count_label(
-                pluralize(headings.len(), "heading", "headings"),
+                pluralize(heading_count, "heading", "headings"),
                 theme,
             )),
         None => section_header().child(section_title("Outline", theme, false)),
     };
-    let mut list = scroll_list("outline-scroll").track_scroll(props.outline_scroll);
-    if headings.is_empty() {
-        list = list.child(if props.document_title.is_some() {
+    let Some(document) = props.outline.clone().filter(|_| heading_count > 0) else {
+        let empty = if props.document_title.is_some() {
             sidebar_empty(
                 theme,
                 "icons/list.svg",
@@ -744,44 +747,61 @@ fn outline_section(
                 "No document open",
                 "Open a document to see its outline.",
             )
-        });
-    } else {
-        let base_level = headings
-            .iter()
-            .map(|heading| heading.level)
-            .min()
-            .unwrap_or(1);
-        for (index, heading) in headings.iter().enumerate() {
-            let active = props.active_heading == Some(index);
-            let depth = heading.level.saturating_sub(base_level) as usize;
-            let color = if active || heading.level <= 2 {
-                theme.foreground
-            } else {
-                theme.muted_foreground
-            };
-            let mut row = sidebar_row(
-                ("outline-row", index),
-                active,
-                Metrics::OUTLINE_ROW_HEIGHT,
-                theme,
-            )
-            .pl(px(8.0))
-            .pr(px(6.0))
-            .text_color(color)
-            .on_click(cx.listener(move |this, _, _, cx| this.jump_to_heading(index, cx)));
-            for _ in 0..depth {
-                row = row.child(
-                    div()
-                        .debug_selector(move || format!("outline-guide-{index}"))
-                        .w(px(1.0))
-                        .h_full()
-                        .flex_none()
-                        .ml(px(6.0))
-                        .mr(px(5.0))
-                        .bg(theme.border_subtle),
-                );
-            }
-            list = list.child(
+        };
+        return (
+            header,
+            scroll_list("outline-scroll")
+                .child(empty)
+                .into_any_element(),
+        );
+    };
+    // Virtualized: a huge document's outline has tens of thousands of rows, and the sidebar
+    // re-renders on every scroll frame to move the active highlight.
+    let base_level = document
+        .headings
+        .iter()
+        .map(|heading| heading.level)
+        .min()
+        .unwrap_or(1);
+    let active_heading = props.active_heading;
+    let app = cx.entity().downgrade();
+    let list = uniform_list("outline-scroll", heading_count, move |range, _, _| {
+        range
+            .map(|index| {
+                let heading = &document.headings[index];
+                let active = active_heading == Some(index);
+                let depth = heading.level.saturating_sub(base_level) as usize;
+                let color = if active || heading.level <= 2 {
+                    theme.foreground
+                } else {
+                    theme.muted_foreground
+                };
+                let app = app.clone();
+                let mut row = sidebar_row(
+                    ("outline-row", index),
+                    active,
+                    Metrics::OUTLINE_ROW_HEIGHT,
+                    theme,
+                )
+                .pl(px(8.0))
+                .pr(px(6.0))
+                .text_color(color)
+                .on_click(move |_, _, cx| {
+                    app.update(cx, |this, cx| this.jump_to_heading(index, cx))
+                        .ok();
+                });
+                for _ in 0..depth {
+                    row = row.child(
+                        div()
+                            .debug_selector(move || format!("outline-guide-{index}"))
+                            .w(px(1.0))
+                            .h_full()
+                            .flex_none()
+                            .ml(px(6.0))
+                            .mr(px(5.0))
+                            .bg(theme.border_subtle),
+                    );
+                }
                 row.child(
                     div()
                         .flex()
@@ -790,10 +810,15 @@ fn outline_section(
                         .flex_grow()
                         .pl(px(4.0))
                         .child(div().min_w_0().truncate().child(heading.text.clone())),
-                ),
-            );
-        }
-    }
+                )
+            })
+            .collect::<Vec<_>>()
+    })
+    .track_scroll(props.outline_scroll.clone())
+    .debug_selector(|| "outline-scroll".into())
+    .flex_grow()
+    .min_h_0()
+    .p(px(4.0));
     (header, list.into_any_element())
 }
 
@@ -1439,16 +1464,10 @@ pub fn render_update_banner(
 mod tests {
     use super::*;
     use crate::{document::parse_document, syntax::PreparedDocument, tabs::DocumentTab};
-    use std::sync::Arc;
 
     fn document_tab(path: &str, source: &str) -> DocumentTab {
         let parsed = parse_document(PathBuf::from(path), source.to_owned());
-        let last_source = Arc::from(parsed.source.clone());
-        DocumentTab {
-            document: Arc::new(PreparedDocument::plain(parsed)),
-            last_source,
-            reload_error: None,
-        }
+        DocumentTab::ready(PreparedDocument::plain(parsed))
     }
 
     #[test]

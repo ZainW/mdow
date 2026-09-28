@@ -1,5 +1,6 @@
 //! The only module that touches disk or Electron wire strings.
 
+use crate::anchor::ScrollAnchor;
 use crate::prefs::{
     CodeFont, ColumnWidth, ContentFont, InterfaceScale, PrefEdit, Prefs, ReaderWidth, SidebarMode,
     ThemeMode, ZoomLevel,
@@ -150,6 +151,15 @@ struct WireState {
 #[derive(Serialize)]
 struct WireTab {
     path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scroll: Option<WireAnchor>,
+}
+
+#[derive(Serialize)]
+struct WireAnchor {
+    block: usize,
+    signature: String,
+    offset: f32,
 }
 
 #[derive(Serialize)]
@@ -166,6 +176,11 @@ fn encode(prefs: &Prefs, session: &Session) -> WireState {
             tabs.iter()
                 .map(|path| WireTab {
                     path: path.to_string_lossy().into_owned(),
+                    scroll: session.anchors.get(path).map(|anchor| WireAnchor {
+                        block: anchor.block,
+                        signature: format!("{:x}", anchor.signature),
+                        offset: anchor.offset,
+                    }),
                 })
                 .collect(),
             Some(tabs.active().to_string_lossy().into_owned()),
@@ -255,6 +270,17 @@ fn decode(value: &Value) -> Restored {
                 .collect()
         })
         .unwrap_or_default();
+    let anchors = array_field(object, "sessionTabs")
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let path = item.get("path").and_then(Value::as_str)?;
+                    Some((PathBuf::from(path), parse_anchor(item.get("scroll")?)?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let active = string_field(object, "sessionActiveTabPath").map(PathBuf::from);
     let window = object
         .and_then(|map| map.get("windowBounds"))
@@ -276,6 +302,7 @@ fn decode(value: &Value) -> Restored {
             last_folder,
             recents,
             window,
+            anchors,
         },
     }
 }
@@ -302,6 +329,18 @@ fn array_field<'a>(
     object
         .and_then(|map| map.get(key))
         .and_then(Value::as_array)
+}
+
+/// A tab's reading position. The signature is a hex string: JSON numbers lose u64 precision.
+fn parse_anchor(value: &Value) -> Option<ScrollAnchor> {
+    let block = usize::try_from(value.get("block")?.as_u64()?).ok()?;
+    let signature = u64::from_str_radix(value.get("signature")?.as_str()?, 16).ok()?;
+    let offset = value.get("offset")?.as_f64()? as f32;
+    offset.is_finite().then_some(ScrollAnchor {
+        block,
+        signature,
+        offset: offset.max(0.0),
+    })
 }
 
 fn parse_window_bounds(value: &Value) -> Option<SavedWindowBounds> {
@@ -467,6 +506,15 @@ mod tests {
                 height: 760.0,
             }),
         )
+        // A signature past 2^53 checks that it survives JSON without losing precision.
+        .with_anchors(std::collections::HashMap::from([(
+            PathBuf::from("/notes/b.md"),
+            ScrollAnchor {
+                block: 42,
+                signature: 0xfedc_ba98_7654_3210,
+                offset: 18.5,
+            },
+        )]))
     }
 
     #[test]

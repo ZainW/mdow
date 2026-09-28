@@ -48,6 +48,72 @@ pub struct HighlightedCode {
 #[derive(Debug, Clone)]
 pub struct PreparedDocument {
     parsed: ParsedDocument,
+    layout: Arc<BlockLayout>,
+}
+
+/// Per-block facts the reader needs on every frame, computed once off the UI thread so
+/// rendering one block never walks the whole document.
+#[derive(Debug, Default, PartialEq)]
+pub struct BlockLayout {
+    /// Content hash of each top-level block ([`crate::document::block_signature`]).
+    pub signatures: Vec<u64>,
+    /// Content plus everything that changes how the block lays out in place (collapsed margins,
+    /// list marker visibility, first/last padding). Reload diffs keep blocks whose render
+    /// signature is unchanged, so their measured heights stay valid.
+    pub render_signatures: Vec<u64>,
+    pub spacing: Vec<crate::ui::reader::BlockSpacing>,
+    pub marker_visible: Vec<bool>,
+    /// The block holding each outline heading, in outline order.
+    pub heading_blocks: Vec<usize>,
+    /// Every focusable link, so a reload can prune stale focus handles without walking the
+    /// whole document on the UI thread.
+    pub link_keys: HashSet<crate::ui::reader::LinkFocusKey>,
+    /// The opening of a huge document shown while the rest parses.
+    pub partial: bool,
+}
+
+impl BlockLayout {
+    fn compute(parsed: &ParsedDocument, partial: bool) -> Self {
+        use std::hash::DefaultHasher;
+        let blocks = &parsed.blocks;
+        let signatures = blocks
+            .iter()
+            .map(crate::document::block_signature)
+            .collect::<Vec<_>>();
+        let spacing = crate::ui::reader::block_sequence_spacing(blocks);
+        let marker_visible = crate::ui::reader::list_marker_visibility(blocks);
+        let last = blocks.len().saturating_sub(1);
+        let render_signatures = signatures
+            .iter()
+            .enumerate()
+            .map(|(index, signature)| {
+                let mut hasher = DefaultHasher::new();
+                signature.hash(&mut hasher);
+                spacing[index].before.to_bits().hash(&mut hasher);
+                spacing[index].after.to_bits().hash(&mut hasher);
+                marker_visible[index].hash(&mut hasher);
+                (index == 0).hash(&mut hasher);
+                (index == last && !partial).hash(&mut hasher);
+                hasher.finish()
+            })
+            .collect();
+        Self {
+            signatures,
+            render_signatures,
+            spacing,
+            marker_visible,
+            heading_blocks: if partial {
+                Vec::new()
+            } else {
+                parsed.heading_blocks()
+            },
+            link_keys: crate::ui::reader::document_link_focus_targets(parsed)
+                .into_iter()
+                .map(|target| target.key)
+                .collect(),
+            partial,
+        }
+    }
 }
 
 impl Deref for PreparedDocument {
@@ -60,7 +126,40 @@ impl Deref for PreparedDocument {
 
 impl PreparedDocument {
     pub fn plain(parsed: ParsedDocument) -> Self {
-        Self { parsed }
+        let layout = Arc::new(BlockLayout::compute(&parsed, false));
+        Self { parsed, layout }
+    }
+
+    /// The opening of a huge document ([`crate::document::slice_document_head`]). Its outline
+    /// stays empty until the full document lands, like Electron's partial render.
+    pub fn preview(mut parsed: ParsedDocument) -> Self {
+        parsed.headings.clear();
+        let layout = Arc::new(BlockLayout::compute(&parsed, true));
+        Self { parsed, layout }
+    }
+
+    /// An empty stand-in shown while a large file is read and parsed off the UI thread.
+    pub fn placeholder(path: std::path::PathBuf) -> Self {
+        let title = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".into());
+        Self::plain(ParsedDocument {
+            path,
+            title,
+            frontmatter_title: None,
+            source: String::new(),
+            blocks: Vec::new(),
+            headings: Vec::new(),
+        })
+    }
+
+    pub fn layout(&self) -> &BlockLayout {
+        &self.layout
+    }
+
+    pub fn is_partial(&self) -> bool {
+        self.layout.partial
     }
 
     pub(crate) fn set_path(&mut self, path: std::path::PathBuf) {
