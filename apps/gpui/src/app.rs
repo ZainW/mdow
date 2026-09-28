@@ -4342,4 +4342,472 @@ mod tests {
             "scroll frame of {BLOCKS} blocks took {scroll_frame_ms:.1}ms"
         );
     }
+
+    fn folder_window(cx: &mut TestAppContext) -> (gpui::WindowHandle<MdowApp>, tempfile::TempDir) {
+        let root = markdown_workspace();
+        fs::write(root.path().join("guides/reading.md"), "# Reading").unwrap();
+        let mut model = AppModel::default();
+        model.open_workspace(root.path()).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app.open_error = None;
+                    app.set_sidebar_mode(SidebarMode::Folder, cx);
+                    app
+                })
+            })
+            .unwrap()
+        });
+        (window, root)
+    }
+
+    fn redraw(visual: &mut VisualTestContext) {
+        visual.update(|window, cx| window.draw(cx).clear());
+    }
+
+    #[gpui::test]
+    fn folder_filter_narrows_expands_counts_and_clears(cx: &mut TestAppContext) {
+        let (window, _root) = folder_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("folder-filter").is_some());
+        assert!(visual.debug_bounds("folder-filter-count").is_none());
+        // Collapsed tree: guides, README.md.
+        assert!(visual.debug_bounds("workspace-row-1").is_some());
+        assert!(visual.debug_bounds("workspace-row-2").is_none());
+
+        window
+            .update(cx, |app, _, cx| app.set_folder_filter("READ", cx))
+            .unwrap();
+        redraw(&mut visual);
+        let rows = window
+            .update(cx, |app, _, cx| {
+                let query = app.folder_filter_query(cx);
+                app.model
+                    .workspace
+                    .as_ref()
+                    .unwrap()
+                    .filtered_rows(&query, &app.filter_collapsed)
+            })
+            .unwrap();
+        assert_eq!(rows.match_count, 2);
+        assert_eq!(
+            rows.rows
+                .iter()
+                .map(|row| row.row.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["guides", "reading.md", "README.md"]
+        );
+        assert!(visual.debug_bounds("folder-filter-count").is_some());
+        assert!(visual.debug_bounds("workspace-row-2").is_some());
+
+        // Collapsing a folder while filtering hides its matches without touching the tree.
+        click_debug(&mut visual, "workspace-disclosure-0");
+        window
+            .update(cx, |app, _, cx| {
+                let query = app.folder_filter_query(cx);
+                let filtered = app
+                    .model
+                    .workspace
+                    .as_ref()
+                    .unwrap()
+                    .filtered_rows(&query, &app.filter_collapsed);
+                assert_eq!(filtered.rows.len(), 2);
+                assert!(!app.model.workspace.as_ref().unwrap().visible_rows()[0].expanded);
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, _, cx| app.set_folder_filter("zzz", cx))
+            .unwrap();
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("folder-filter-empty").is_some());
+
+        // Escape (the field's Cancel) clears the query.
+        window
+            .update(cx, |app, window, cx| {
+                app.folder_filter.read(cx).focus(window)
+            })
+            .unwrap();
+        redraw(&mut visual);
+        visual.dispatch_action(crate::ui::field::Cancel);
+        window
+            .update(cx, |app, _, cx| assert_eq!(app.folder_filter_query(cx), ""))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn tab_context_menu_is_keyboard_navigable_and_runs_actions(cx: &mut TestAppContext) {
+        let (window, first, second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        let tab = visual.debug_bounds("document-tab-1").unwrap().center();
+        visual.simulate_mouse_down(tab, MouseButton::Right, Modifiers::none());
+        visual.simulate_mouse_up(tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("context-menu").is_some());
+        let labels = window
+            .update(cx, |app, _, cx| {
+                app.context_menu_view()
+                    .unwrap()
+                    .read(cx)
+                    .entries()
+                    .iter()
+                    .map(|entry| match entry {
+                        ContextMenuEntry::Item { label, enabled } => {
+                            format!("{label}{}", if *enabled { "" } else { " (off)" })
+                        }
+                        ContextMenuEntry::Separator => "-".into(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        assert_eq!(
+            labels,
+            vec![
+                "Close",
+                "Close Others",
+                "Close to the Right (off)",
+                "Close All",
+                "-",
+                "Copy Path",
+                "Reveal in Finder"
+            ]
+        );
+
+        visual.simulate_keystrokes("down down");
+        window
+            .update(cx, |app, _, cx| {
+                assert_eq!(
+                    app.context_menu_view().unwrap().read(cx).highlighted(),
+                    Some(1)
+                );
+            })
+            .unwrap();
+        visual.simulate_keystrokes("enter");
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.context_menu_view().is_none());
+                assert_eq!(app.model.tabs.len(), 1);
+                assert_eq!(app.model.tabs.active().unwrap().path(), second);
+                assert!(app.model.tabs.get(&first).is_none());
+            })
+            .unwrap();
+
+        // Escape dismisses without acting.
+        redraw(&mut visual);
+        let tab = visual.debug_bounds("document-tab-0").unwrap().center();
+        visual.simulate_mouse_down(tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        visual.simulate_keystrokes("escape");
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.context_menu_view().is_none());
+                assert_eq!(app.model.tabs.len(), 1);
+            })
+            .unwrap();
+
+        // Clicking an item runs it; an outside click dismisses.
+        visual.simulate_mouse_down(tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        click_debug(&mut visual, "context-menu-item-5");
+        assert_eq!(
+            visual.read_from_clipboard().and_then(|item| item.text()),
+            Some(second.to_string_lossy().into_owned())
+        );
+        visual.simulate_mouse_down(tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        let outside = visual.debug_bounds("reader-scroll").unwrap().center();
+        visual.simulate_mouse_down(outside, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(outside, MouseButton::Left, Modifiers::none());
+        window
+            .update(cx, |app, _, _| assert!(app.context_menu_view().is_none()))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn close_to_the_right_and_close_all_follow_strip_order(cx: &mut TestAppContext) {
+        let (window, paths) = three_tab_window(cx);
+        let menu = tab_context_menu(&paths[0], &paths);
+        assert!(matches!(
+            &menu[2],
+            (ContextMenuEntry::Item { enabled: true, .. }, Some(ContextAction::CloseTabsToRight(path)))
+                if *path == paths[0]
+        ));
+
+        window
+            .update(cx, |app, _, cx| {
+                app.run_context_action(ContextAction::CloseTabsToRight(paths[0].clone()), cx);
+                assert_eq!(app.tab_paths(), vec![paths[0].clone()]);
+                app.run_context_action(ContextAction::CloseAllTabs, cx);
+                assert!(app.model.tabs.is_empty());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn recents_clear_and_remove_persist(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let state_path = state.path().join("state.json");
+        let root = markdown_workspace();
+        let first = root.path().join("README.md").canonicalize().unwrap();
+        let second = root.path().join("guides/start.md").canonicalize().unwrap();
+        let store_path = state_path.clone();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::boot(
+                        Prefs::default(),
+                        StateStore::open_at(store_path),
+                        SessionRole::Owner,
+                        window,
+                        cx,
+                    );
+                    app.model.recents = Recents::from_paths(vec![first.clone(), second.clone()]);
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+
+        let menu = recent_context_menu(&first);
+        assert!(menu.iter().any(|(entry, action)| {
+            *entry == ContextMenuEntry::item("Remove from Recents")
+                && *action == Some(ContextAction::RemoveRecent(first.clone()))
+        }));
+        window
+            .update(cx, |app, _, cx| {
+                app.run_context_action(ContextAction::RemoveRecent(first.clone()), cx)
+            })
+            .unwrap();
+        let saved = StateStore::open_at(state_path.clone())
+            .load()
+            .session
+            .recents;
+        assert_eq!(saved.iter().collect::<Vec<_>>(), vec![second.as_path()]);
+
+        click_debug(&mut visual, "recents-clear");
+        window
+            .update(cx, |app, _, _| assert!(app.model.recents.is_empty()))
+            .unwrap();
+        assert!(
+            StateStore::open_at(state_path)
+                .load()
+                .session
+                .recents
+                .is_empty()
+        );
+    }
+
+    #[gpui::test]
+    fn welcome_hides_the_tab_row_and_breadcrumb(cx: &mut TestAppContext) {
+        let (window, _recent, _root) = recents_only_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+
+        assert!(visual.debug_bounds("tab-bar").is_none());
+        assert!(visual.debug_bounds("breadcrumb").is_none());
+        assert!(visual.debug_bounds("toggle-find").is_none());
+        let toolbar = visual.debug_bounds("empty-toolbar").expect("empty toolbar");
+        assert_eq!(toolbar.top(), px(0.0));
+        assert_eq!(toolbar.size.height, px(40.0));
+        assert!(visual.debug_bounds("toggle-palette").is_some());
+        assert!(visual.debug_bounds("welcome").is_some());
+        assert!(visual.debug_bounds("welcome-recent-0").is_some());
+    }
+
+    #[gpui::test]
+    fn a_deleted_open_file_keeps_its_content_behind_a_deleted_banner(cx: &mut TestAppContext) {
+        let root = markdown_workspace();
+        let path = root.path().join("README.md").canonicalize().unwrap();
+        let mut model = AppModel::default();
+        model.open_document(&path).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("deleted-banner").is_none());
+
+        fs::remove_file(&path).unwrap();
+        window
+            .update(cx, |app, _, cx| {
+                app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx)
+            })
+            .unwrap();
+        redraw(&mut visual);
+        window
+            .update(cx, |app, _, _| assert!(app.model.is_deleted(&path)))
+            .unwrap();
+        assert!(visual.debug_bounds("deleted-banner").is_some());
+        assert!(visual.debug_bounds("reload-error-banner").is_none());
+        assert!(visual.debug_bounds("reader-block-0").is_some());
+
+        // The file coming back clears the state.
+        fs::write(&path, "# Back").unwrap();
+        window
+            .update(cx, |app, _, cx| {
+                app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx);
+                assert!(!app.model.is_deleted(&path));
+            })
+            .unwrap();
+
+        fs::remove_file(&path).unwrap();
+        window
+            .update(cx, |app, _, cx| {
+                app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx)
+            })
+            .unwrap();
+        redraw(&mut visual);
+        click_debug(&mut visual, "deleted-close-tab");
+        window
+            .update(cx, |app, _, _| {
+                assert!(app.model.tabs.is_empty());
+                assert!(app.model.deleted.is_empty());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn the_open_folder_follows_files_created_on_disk(cx: &mut TestAppContext) {
+        let dir = watcher_workspace();
+        fs::create_dir(dir.path().join("guides")).unwrap();
+        fs::write(dir.path().join("guides/start.md"), "# Start").unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        window
+            .update(cx, |app, _, cx| {
+                app.open_path(&root, cx);
+                app.toggle_directory(&root.join("guides"), cx);
+                app.set_folder_filter("new", cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(300));
+        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.run_until_parked();
+
+        fs::write(root.join("guides/new.md"), "# New").unwrap();
+        let mut found = false;
+        for _ in 0..30 {
+            std::thread::sleep(Duration::from_millis(100));
+            cx.executor().advance_clock(Duration::from_millis(100));
+            cx.run_until_parked();
+            found = window
+                .update(cx, |app, _, _| {
+                    app.model
+                        .workspace
+                        .as_ref()
+                        .unwrap()
+                        .files()
+                        .iter()
+                        .any(|path| path.ends_with("guides/new.md"))
+                })
+                .unwrap();
+            if found {
+                break;
+            }
+        }
+        assert!(found, "new file should appear in the folder tree");
+        window
+            .update(cx, |app, _, cx| {
+                let tree = app.model.workspace.as_ref().unwrap();
+                assert!(
+                    tree.visible_rows()[0].expanded,
+                    "expansion survives the rescan"
+                );
+                assert_eq!(
+                    app.folder_filter_query(cx),
+                    "new",
+                    "filter survives the rescan"
+                );
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn dragging_external_paths_shows_the_drop_target(cx: &mut TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("drop-overlay").is_none());
+
+        window
+            .update(cx, |app, window, cx| {
+                app.drag_moved(
+                    DropSummary {
+                        markdown: 3,
+                        html: 0,
+                        folders: 1,
+                    },
+                    window,
+                    cx,
+                );
+                assert_eq!(
+                    app.drop_state.summary().label(),
+                    "3 Markdown files · 1 folder"
+                );
+            })
+            .unwrap();
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("drop-overlay").is_some());
+        assert!(visual.debug_bounds("drop-overlay-summary").is_some());
+    }
+
+    #[gpui::test]
+    fn outline_uses_indent_guides_and_follows_the_active_heading(cx: &mut TestAppContext) {
+        let filler = "A paragraph with enough content to scroll.\n\n".repeat(4);
+        let mut source = String::from("# Top\n\n");
+        for index in 0..80 {
+            source.push_str(&format!(
+                "## Section {index}\n\n### Detail {index}\n\n{filler}"
+            ));
+        }
+        let window = document_window(cx, &source);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        click_debug(&mut visual, "Outline");
+        redraw(&mut visual);
+        assert!(visual.debug_bounds("outline-guide-1").is_some());
+        assert!(visual.debug_bounds("outline-guide-0").is_none());
+
+        let target = 150;
+        window
+            .update(cx, |app, _, cx| app.jump_to_heading(target, cx))
+            .unwrap();
+        for _ in 0..3 {
+            redraw(&mut visual);
+        }
+        let active = window
+            .update(cx, |app, _, cx| app.active_outline_heading(cx))
+            .unwrap();
+        assert_eq!(active, Some(target));
+        let list = visual.debug_bounds("outline-scroll").expect("outline list");
+        let selector: &'static str = Box::leak(format!("outline-row-{target}").into_boxed_str());
+        let row = visual.debug_bounds(selector).expect("active outline row");
+        assert!(
+            row.top() >= list.top() && row.bottom() <= list.bottom(),
+            "row {row:?} should be scrolled into {list:?}"
+        );
+    }
 }
