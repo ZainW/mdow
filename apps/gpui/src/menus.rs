@@ -131,6 +131,7 @@ pub fn app_menus(recents: &[PathBuf]) -> Vec<Menu> {
                 MenuItem::action("Actual Size", ZoomReset),
                 MenuItem::separator(),
                 MenuItem::action("Command Palette", TogglePalette),
+                MenuItem::action("AI Companion", crate::companion::ToggleCompanion),
                 MenuItem::action("Keyboard Shortcuts", ToggleShortcuts),
                 MenuItem::separator(),
                 MenuItem::action("Toggle Full Screen", ToggleFullScreen),

@@ -8,6 +8,10 @@ use crate::{
     },
     actions::{ClearRecents, Minimize, OpenRecent, ToggleFullScreen, Zoom},
     anchor::ScrollAnchor,
+    companion::{
+        ToggleCompanion,
+        ui::{CompanionHost, DocumentContext},
+    },
     document::{
         ASYNC_PARSE_MIN_BYTES, DocumentError, LoadedSource, PREVIEW_MIN_BYTES, ParsedDocument,
         is_supported_document, is_supported_markdown, load_source, parse_document,
@@ -672,6 +676,8 @@ pub struct MdowApp {
     _activation_subscription: Subscription,
     theme: Theme,
     window_title: Option<String>,
+    /// The AI companion panel (see `companion::ui`).
+    pub(crate) companion: CompanionHost,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
 }
@@ -817,6 +823,7 @@ impl MdowApp {
             _activation_subscription: activation_subscription,
             theme: Theme::for_appearance(window.appearance()),
             window_title: None,
+            companion: CompanionHost::default(),
             focus_handle,
             _appearance_subscription: appearance_subscription,
         }
@@ -1390,6 +1397,20 @@ impl MdowApp {
         cx.notify();
     }
 
+    // --- Companion hooks (the panel itself lives in `companion::ui`) ---
+    pub(crate) fn companion_prefs(&self) -> crate::prefs::CompanionPrefs {
+        self.prefs.get().companion
+    }
+
+    pub(crate) fn companion_state_path(&self) -> PathBuf {
+        self.prefs.state_path().to_owned()
+    }
+
+    pub(crate) fn companion_pref(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
+        self.apply_pref(edit, cx);
+    }
+    // --- end Companion hooks ---
+
     fn apply_pref(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
         let session = self.session_snapshot();
         let auto_update = self.prefs.get().auto_update;
@@ -1502,8 +1523,12 @@ impl MdowApp {
                 let view = cx.new(|cx| {
                     SettingsPanel::new(*self.prefs.get(), self.update.clone(), window, cx)
                 });
-                let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
-                    this.on_settings_event(event, cx);
+                let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
+                    if matches!(event, SettingsEvent::ChooseCompanionExecutable) {
+                        this.choose_companion_executable(window, cx);
+                    } else {
+                        this.on_settings_event(event, cx);
+                    }
                 });
                 OpenOverlay::settings(view, events)
             }
@@ -1566,6 +1591,7 @@ impl MdowApp {
             CommandId::OpenSettings => self.toggle_overlay(OverlayKind::Settings, window, cx),
             CommandId::OpenShortcuts => self.toggle_overlay(OverlayKind::Shortcuts, window, cx),
             CommandId::CheckForUpdates => self.check_for_updates(cx),
+            CommandId::ToggleCompanion => self.toggle_companion(window, cx),
         }
     }
 
@@ -1667,6 +1693,7 @@ impl MdowApp {
                 let _ = open::that(sparkle::RELEASES_URL);
             }
             SettingsEvent::InstallUpdate => self.install_update(cx),
+            SettingsEvent::ChooseCompanionExecutable => {}
             SettingsEvent::Dismissed => {
                 self.overlays.close(None);
                 cx.notify();
@@ -2679,8 +2706,12 @@ impl Render for MdowApp {
         self.folder_filter
             .update(cx, |field, _| field.apply_theme(theme));
         self.sync_recent_menu(cx);
+        let window_width = f32::from(window.viewport_size().width);
+        // The companion panel takes its width from the right edge before the shell lays out.
+        self.companion.set_prefs(self.prefs.get().companion);
+        let companion_width = self.companion.reserved_width(window_width, cx);
         let layout = ShellLayout::for_width_scaled(
-            f32::from(window.viewport_size().width),
+            window_width - companion_width,
             self.sidebar_open,
             self.wide_mode,
             theme.ui,
@@ -2762,12 +2793,13 @@ impl Render for MdowApp {
             .min_h_0()
             .flex_grow();
         if self.model.tabs.is_empty() {
-            main = main.child(render_empty_toolbar(theme, &layout, cx)).child(
-                match self.open_error.as_ref() {
+            let companion_button = self.companion.toggle_button(theme, cx);
+            main = main
+                .child(render_empty_toolbar(theme, &layout, companion_button, cx))
+                .child(match self.open_error.as_ref() {
                     Some(error) => error_state(theme, error, cx),
                     None => welcome(theme, &self.model.recents, cx),
-                },
-            );
+                });
         } else {
             let tab_focus = self.sync_tab_focus(cx);
             let tab_bar = render_tab_bar(theme, self, &layout, &tab_focus, window, cx);
@@ -2832,6 +2864,23 @@ impl Render for MdowApp {
             .context_menu
             .as_ref()
             .map(|menu| context_menu_layer(menu.view.clone(), menu.position));
+        let companion_context = DocumentContext {
+            active_path: active_path.clone(),
+            workspace_root: self
+                .model
+                .workspace
+                .as_ref()
+                .map(|tree| tree.root.path.clone()),
+        };
+        let companion_panel = self.companion.render(
+            self.prefs.get().companion,
+            theme,
+            companion_context,
+            window_width,
+            &self.focus_handle,
+            window,
+            cx,
+        );
 
         div()
             .id("mdow-root")
@@ -2910,6 +2959,9 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::on_select_last_tab))
             .on_action(cx.listener(Self::on_open_recent))
             .on_action(cx.listener(Self::on_clear_recents))
+            .on_action(cx.listener(|this, _: &ToggleCompanion, window, cx| {
+                this.toggle_companion(window, cx)
+            }))
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
@@ -2937,7 +2989,8 @@ impl Render for MdowApp {
                     .flex_grow()
                     .min_h_0()
                     .children(sidebar)
-                    .child(main),
+                    .child(main)
+                    .children(companion_panel),
             )
             .children(
                 (!self.update_dismissed)
