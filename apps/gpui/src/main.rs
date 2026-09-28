@@ -1,20 +1,20 @@
 use anyhow::Context;
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType,
-    TitlebarOptions, WindowBounds, WindowHandle, WindowOptions, point, px, size,
+    App, AppContext, Application, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowHandle,
+    WindowOptions, point, px, size,
 };
-#[cfg(target_os = "macos")]
-use mdow_gpui::actions::CheckForUpdates;
 use mdow_gpui::{
     actions::{
-        CloseTab, Dismiss, FindNext, FindPrevious, NewWindow, NextTab, OpenFile, OpenFolder,
-        PreviousTab, Quit, SelectLastTab, SelectTab1, SelectTab2, SelectTab3, SelectTab4,
-        SelectTab5, SelectTab6, SelectTab7, SelectTab8, SidebarFolder, SidebarOutline,
-        SidebarRecents, ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar,
+        About, BringAllToFront, CloseTab, Dismiss, FindNext, FindPrevious, Hide, HideOthers,
+        Minimize, NewWindow, NextTab, OpenFile, OpenFolder, OpenWebsite, PreviousTab, Quit,
+        SelectLastTab, SelectTab1, SelectTab2, SelectTab3, SelectTab4, SelectTab5, SelectTab6,
+        SelectTab7, SelectTab8, ShowAll, SidebarFolder, SidebarOutline, SidebarRecents, ToggleFind,
+        ToggleFullScreen, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar,
         ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
     },
     app::MdowApp,
     assets::{BUNDLED_FONTS, MdowAssets, discover_asset_root, validate_required_assets},
+    menus::{WEBSITE_URL, app_menus},
     overlay,
     persist::{Restored, SessionRole, StateStore},
     theme::TrafficLights,
@@ -64,64 +64,6 @@ fn default_window_title() -> &'static str {
     mdow_gpui::app::DEFAULT_WINDOW_TITLE
 }
 
-fn app_menus() -> Vec<Menu> {
-    let mut app_items = vec![
-        MenuItem::os_submenu("Services", SystemMenuType::Services),
-        MenuItem::separator(),
-    ];
-    #[cfg(target_os = "macos")]
-    {
-        app_items.push(MenuItem::action("Check for Updates…", CheckForUpdates));
-        app_items.push(MenuItem::separator());
-    }
-    app_items.push(MenuItem::action("Quit Mdow Native", Quit));
-    vec![
-        Menu {
-            name: "Mdow Native".into(),
-            items: app_items,
-        },
-        Menu {
-            name: "File".into(),
-            items: vec![
-                MenuItem::action("New Window", NewWindow),
-                MenuItem::action("Open File…", OpenFile),
-                MenuItem::action("Open Folder…", OpenFolder),
-                MenuItem::separator(),
-                MenuItem::action("Close Tab", CloseTab),
-            ],
-        },
-        Menu {
-            name: "Edit".into(),
-            items: vec![
-                MenuItem::action("Find…", ToggleFind),
-                MenuItem::action("Find Next", FindNext),
-                MenuItem::action("Find Previous", FindPrevious),
-            ],
-        },
-        Menu {
-            name: "View".into(),
-            items: vec![
-                MenuItem::action("Toggle Sidebar", ToggleSidebar),
-                MenuItem::action("Recents", SidebarRecents),
-                MenuItem::action("Folder", SidebarFolder),
-                MenuItem::action("Outline", SidebarOutline),
-                MenuItem::separator(),
-                MenuItem::action("Next Tab", NextTab),
-                MenuItem::action("Previous Tab", PreviousTab),
-                MenuItem::separator(),
-                MenuItem::action("Toggle Wide Mode", ToggleWideMode),
-                MenuItem::action("Zoom In", ZoomIn),
-                MenuItem::action("Zoom Out", ZoomOut),
-                MenuItem::action("Actual Size", ZoomReset),
-                MenuItem::separator(),
-                MenuItem::action("Command Palette", TogglePalette),
-                MenuItem::action("Settings…", ToggleSettings),
-                MenuItem::action("Keyboard Shortcuts", ToggleShortcuts),
-            ],
-        },
-    ]
-}
-
 fn key_bindings() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new("cmd-n", NewWindow, None),
@@ -158,6 +100,10 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-7", SelectTab7, None),
         KeyBinding::new("cmd-8", SelectTab8, None),
         KeyBinding::new("cmd-9", SelectLastTab, None),
+        KeyBinding::new("cmd-h", Hide, None),
+        KeyBinding::new("alt-cmd-h", HideOthers, None),
+        KeyBinding::new("cmd-m", Minimize, None),
+        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
         KeyBinding::new("left", field::MoveLeft, Some("Field")),
         KeyBinding::new("right", field::MoveRight, Some("Field")),
         KeyBinding::new("shift-left", field::SelectLeft, Some("Field")),
@@ -221,7 +167,18 @@ fn main() -> anyhow::Result<()> {
         cx.on_action(|_: &NewWindow, cx| {
             open_main_window(WindowSeed::Blank, cx);
         });
-        cx.set_menus(app_menus());
+        cx.on_action(|_: &Hide, cx| cx.hide());
+        cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
+        cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+        cx.on_action(|_: &About, _| native::show_about_panel());
+        cx.on_action(|_: &BringAllToFront, cx| {
+            native::arrange_in_front();
+            cx.activate(true);
+        });
+        cx.on_action(|_: &OpenWebsite, _| {
+            let _ = open::that(WEBSITE_URL);
+        });
+        cx.set_menus(app_menus(&[]));
 
         let seed = if launch_args.smoke_test {
             WindowSeed::Smoke
@@ -249,6 +206,28 @@ fn main() -> anyhow::Result<()> {
         cx.activate(true);
     });
     Ok(())
+}
+
+mod native {
+    #[cfg(target_os = "macos")]
+    unsafe extern "C" {
+        fn mdow_show_about_panel();
+        fn mdow_arrange_in_front();
+    }
+
+    pub fn show_about_panel() {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            mdow_show_about_panel()
+        };
+    }
+
+    pub fn arrange_in_front() {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            mdow_arrange_in_front()
+        };
+    }
 }
 
 fn local_file_paths(urls: Vec<String>) -> Vec<PathBuf> {
@@ -331,7 +310,7 @@ fn open_main_window(seed: WindowSeed, cx: &mut App) -> WindowHandle<MdowApp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{Keystroke, OwnedMenuItem};
+    use gpui::Keystroke;
     use std::ffi::OsString;
 
     #[test]
@@ -375,73 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn native_menus_keep_quit_once_and_file_actions_in_a_distinct_file_menu() {
-        let menus = app_menus().into_iter().map(Menu::owned).collect::<Vec<_>>();
-        let names = menus
-            .iter()
-            .map(|menu| menu.name.as_ref())
-            .collect::<Vec<_>>();
-
-        assert_eq!(names, vec!["Mdow Native", "File", "Edit", "View"]);
-        assert!(matches!(
-            &menus[0].items[0],
-            OwnedMenuItem::SystemMenu(menu) if menu.name.as_ref() == "Services"
-        ));
-        assert!(matches!(menus[0].items[1], OwnedMenuItem::Separator));
-        #[cfg(target_os = "macos")]
-        {
-            assert!(matches!(
-                &menus[0].items[2],
-                OwnedMenuItem::Action { name, action, .. }
-                    if name == "Check for Updates…" && action.as_any().is::<CheckForUpdates>()
-            ));
-            assert!(matches!(menus[0].items[3], OwnedMenuItem::Separator));
-            assert!(matches!(
-                &menus[0].items[4],
-                OwnedMenuItem::Action { name, action, .. }
-                    if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
-            ));
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            assert!(matches!(
-                &menus[0].items[2],
-                OwnedMenuItem::Action { name, action, .. }
-                    if name == "Quit Mdow Native" && action.as_any().is::<Quit>()
-            ));
-        }
-
-        let file_actions = menus[1]
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                OwnedMenuItem::Action { name, action, .. } => {
-                    Some((name.as_str(), action.as_ref()))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(file_actions.len(), 4);
-        assert_eq!(file_actions[0].0, "New Window");
-        assert!(file_actions[0].1.as_any().is::<NewWindow>());
-        assert_eq!(file_actions[1].0, "Open File…");
-        assert!(file_actions[1].1.as_any().is::<OpenFile>());
-        assert_eq!(file_actions[2].0, "Open Folder…");
-        assert!(file_actions[2].1.as_any().is::<OpenFolder>());
-        assert_eq!(file_actions[3].0, "Close Tab");
-        assert!(file_actions[3].1.as_any().is::<CloseTab>());
-
-        let quit_count = menus
-            .iter()
-            .flat_map(|menu| &menu.items)
-            .filter(|item| {
-                matches!(
-                    item,
-                    OwnedMenuItem::Action { action, .. } if action.as_any().is::<Quit>()
-                )
-            })
-            .count();
-        assert_eq!(quit_count, 1);
+    fn default_window_title_names_the_native_app() {
         assert_eq!(default_window_title(), "Mdow Native");
     }
 
@@ -469,5 +382,9 @@ mod tests {
         assert!(action_for("cmd-1").is::<SelectTab1>());
         assert!(action_for("cmd-8").is::<SelectTab8>());
         assert!(action_for("cmd-9").is::<SelectLastTab>());
+        assert!(action_for("cmd-h").is::<Hide>());
+        assert!(action_for("alt-cmd-h").is::<HideOthers>());
+        assert!(action_for("cmd-m").is::<Minimize>());
+        assert!(action_for("ctrl-cmd-f").is::<ToggleFullScreen>());
     }
 }

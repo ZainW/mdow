@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useAppStore, type SidebarMode } from '../store/app-store'
+import { useAppStore, selectActiveTab, type SidebarMode } from '../store/app-store'
 import { RecentsList } from './RecentsList'
 import { Button } from './ui/button'
 import {
@@ -13,21 +13,37 @@ import {
 } from './ui/sidebar'
 import { Clock, Folder, FolderOpen, List, Settings } from 'lucide-react'
 import type { DocHeading } from '../lib/markdown'
+import type { TreeNode } from '../../../shared/types'
 import { EmptyState } from './EmptyState'
+import { SegmentedControl, type SegmentedOption } from './SegmentedControl'
 import { findMarkdownScroller, scrollToTarget } from '../lib/scroll-to'
-import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
-import { isMac } from '../lib/utils'
+import { basename } from '../lib/path-utils'
+import { cn, formatShortcut, isMac } from '../lib/utils'
+import { useClearRecents, useRecents } from '../hooks/useRecents'
+import { useOpenFolderDialog } from '../hooks/useOpenFolderDialog'
 
-const MODES: SidebarMode[] = ['recents', 'folder', 'outline']
-const MODE_CONFIG: Record<SidebarMode, { label: string; Icon: typeof Clock }> = {
-  recents: { label: 'Recents', Icon: Clock },
-  folder: { label: 'Folder', Icon: Folder },
-  outline: { label: 'Outline', Icon: List },
-}
+const MODE_OPTIONS: readonly SegmentedOption<SidebarMode>[] = [
+  { value: 'recents', label: 'Recents', Icon: Clock },
+  { value: 'folder', label: 'Folder', Icon: Folder },
+  { value: 'outline', label: 'Outline', Icon: List },
+]
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 const FolderTree = lazy(() => import('./FolderTree').then((mod) => ({ default: mod.FolderTree })))
 const OUTLINE_ROW_ESTIMATE = 26
-type SidebarModeRoving = ReturnType<typeof useRovingFocus<HTMLDivElement>>
+// Width of one outline indent column (each holds a guide line), in px.
+const OUTLINE_INDENT = 12
+
+export function countTreeFiles(nodes: readonly TreeNode[]): number {
+  let count = 0
+  for (const node of nodes) {
+    count += node.isDirectory ? countTreeFiles(node.children ?? []) : 1
+  }
+  return count
+}
+
+function formatCount(count: number, noun: string, { atLeast = false } = {}): string {
+  return `${count.toLocaleString()}${atLeast ? '+' : ''} ${noun}${count === 1 ? '' : 's'}`
+}
 
 export function Sidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -38,7 +54,6 @@ export function Sidebar() {
   const mode = useAppStore((s) => s.sidebarMode)
   const setSidebarMode = useAppStore((s) => s.setSidebarMode)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
-  const modeRoving = useRovingFocus({ orientation: 'horizontal' })
 
   return (
     <aside
@@ -55,9 +70,17 @@ export function Sidebar() {
         className="h-full border-none"
         style={{ width: 'var(--sidebar-drawer-width)' }}
       >
-        <SidebarHeader className="sidebar-drawer-header border-b border-border-subtle">
-          <SidebarModeTabs mode={mode} onModeChange={setSidebarMode} roving={modeRoving} />
+        <SidebarHeader className="sidebar-drawer-header gap-0">
+          <SegmentedControl
+            label="Sidebar mode"
+            value={mode}
+            options={MODE_OPTIONS}
+            onChange={setSidebarMode}
+            // Three modes share ~220px: tighter than the Settings segments so labels never clip.
+            segmentClassName="gap-1 px-1 text-[11.5px] [&_svg]:size-[13px]"
+          />
         </SidebarHeader>
+        <SidebarSectionHeader mode={mode} />
         <SidebarContent key={mode}>
           {mode === 'recents' && <RecentsList />}
           {mode === 'folder' && openFolderPath && (
@@ -87,12 +110,16 @@ export function Sidebar() {
             variant="ghost"
             size="sm"
             aria-label="Settings"
+            aria-keyshortcuts={isMac ? 'Meta+,' : 'Control+,'}
             title="Settings"
             className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
             onClick={() => setSettingsOpen(true)}
           >
             <Settings className="size-3.5 shrink-0" aria-hidden />
-            <span>Settings</span>
+            <span className="flex-1 text-left">Settings</span>
+            <kbd className="sidebar-kbd" aria-hidden>
+              {formatShortcut(',')}
+            </kbd>
           </Button>
         </SidebarFooter>
       </ShadcnSidebar>
@@ -100,70 +127,115 @@ export function Sidebar() {
   )
 }
 
-function SidebarModeTabs({
-  mode,
-  onModeChange,
-  roving,
-}: {
-  mode: SidebarMode
-  onModeChange: (mode: SidebarMode) => void
-  roving: SidebarModeRoving
-}) {
+/**
+ * A fixed-height row under the mode switcher that every mode fills (name, count,
+ * action), so the list below starts at the same y whichever mode is showing.
+ */
+function SidebarSectionHeader({ mode }: { mode: SidebarMode }) {
   return (
-    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
     <div
-      ref={roving.containerRef}
-      role="radiogroup"
-      aria-label="Sidebar mode"
-      className="flex gap-0.5"
+      data-testid="sidebar-section-header"
+      className="flex h-[30px] shrink-0 items-center gap-1.5 pr-2 pl-3.5"
     >
-      {MODES.map((item) => (
-        <SidebarModeTab
-          key={item}
-          mode={item}
-          checked={mode === item}
-          onSelect={() => onModeChange(item)}
-          onKeyDown={roving.onKeyDown}
-        />
-      ))}
+      {mode === 'recents' && <RecentsHeader />}
+      {mode === 'folder' && <FolderHeader />}
+      {mode === 'outline' && <OutlineHeader />}
     </div>
   )
 }
 
-function SidebarModeTab({
-  mode,
-  checked,
-  onSelect,
-  onKeyDown,
-}: {
-  mode: SidebarMode
-  checked: boolean
-  onSelect: () => void
-  onKeyDown: React.KeyboardEventHandler<HTMLElement>
-}) {
-  const { label, Icon } = MODE_CONFIG[mode]
+function SectionTitle({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <h2
+      className={
+        muted
+          ? 'min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground'
+          : 'min-w-0 flex-1 truncate text-xs font-semibold text-foreground'
+      }
+    >
+      {children}
+    </h2>
+  )
+}
+
+function SectionCount({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="shrink-0 text-[10.5px] font-medium text-muted-foreground tabular-nums">
+      {children}
+    </span>
+  )
+}
+
+function RecentsHeader() {
+  const { data: recents = [] } = useRecents()
+  const clearRecents = useClearRecents()
+  return (
+    <>
+      <SectionTitle>Recent files</SectionTitle>
+      {recents.length > 0 && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="h-6 px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
+          onClick={() => void clearRecents()}
+          aria-label="Clear recent files"
+          title="Clear recent files"
+        >
+          Clear
+        </Button>
+      )}
+    </>
+  )
+}
+
+function FolderHeader() {
+  const openFolderPath = useAppStore((s) => s.openFolderPath)
+  const folderTree = useAppStore((s) => s.folderTree)
+  const truncated = useAppStore((s) => s.folderTreeTruncated)
+  const openFolderDialog = useOpenFolderDialog()
+  const fileCount = useMemo(() => countTreeFiles(folderTree), [folderTree])
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom radio buttons preserve the compact tab layout while exposing radiogroup semantics
-      role="radio"
-      tabIndex={rovingTabIndex(checked)}
-      aria-checked={checked}
-      aria-label={label}
-      title={label}
-      className={`h-7 min-w-0 flex-auto justify-center gap-1 px-1 text-[length:var(--sidebar-title-size)] ${
-        checked
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
-      }`}
-      onClick={onSelect}
-      onKeyDown={onKeyDown}
-    >
-      <Icon className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate">{label}</span>
-    </Button>
+    <>
+      {openFolderPath ? (
+        <>
+          <SectionTitle>
+            <span title={openFolderPath}>{basename(openFolderPath)}</span>
+          </SectionTitle>
+          <SectionCount>{formatCount(fileCount, 'file', { atLeast: truncated })}</SectionCount>
+        </>
+      ) : (
+        <SectionTitle muted>No folder</SectionTitle>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="size-6 text-muted-foreground hover:text-foreground"
+        aria-label="Open folder"
+        title={`Open folder (${formatShortcut('O', { shift: true })})`}
+        onClick={() => void openFolderDialog()}
+      >
+        <FolderOpen className="size-3.5" aria-hidden />
+      </Button>
+    </>
+  )
+}
+
+function OutlineHeader() {
+  const docHeadings = useAppStore((s) => s.docHeadings)
+  const activeTab = useAppStore(selectActiveTab)
+  if (!activeTab) return <SectionTitle muted>No document</SectionTitle>
+  const title =
+    docHeadings.find((h) => h.level === 1)?.text ?? docHeadings[0]?.text ?? basename(activeTab.path)
+  return (
+    <>
+      <SectionTitle>
+        <span title={title}>{title}</span>
+      </SectionTitle>
+      <SectionCount>{formatCount(docHeadings.length, 'heading')}</SectionCount>
+    </>
   )
 }
 
@@ -200,6 +272,9 @@ function OutlineList({
     () => (activeId ? headings.findIndex((h) => h.id === activeId) : -1),
     [headings, activeId],
   )
+  // Indent relative to the shallowest heading, so a document without an h1
+  // doesn't start every row one level in.
+  const minLevel = useMemo(() => headings.reduce((min, h) => Math.min(min, h.level), 6), [headings])
 
   // Keep the reader's current heading in view as they scroll the document.
   useEffect(() => {
@@ -230,12 +305,13 @@ function OutlineList({
   }
   return (
     <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-      <SidebarGroup>
+      <SidebarGroup className="pt-0">
         <SidebarGroupContent>
           <ul className="relative px-1.5 py-1" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((row) => {
               const h = headings[row.index]
               const isActive = row.index === activeIndex
+              const depth = Math.max(0, h.level - minLevel)
               return (
                 <li
                   key={h.id}
@@ -248,11 +324,23 @@ function OutlineList({
                     href={`#${h.id}`}
                     data-active={isActive}
                     onClick={(e) => handleClick(e, h.id)}
-                    className="outline-link block truncate rounded text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
-                    style={{ paddingLeft: 6 + (h.level - 1) * 10 }}
+                    className={cn(
+                      'outline-link flex items-stretch rounded hover:bg-sidebar-accent/60 hover:text-foreground',
+                      depth <= 1 ? 'text-sidebar-foreground/90' : 'text-muted-foreground',
+                    )}
                     title={h.text}
                   >
-                    {h.text}
+                    {Array.from({ length: depth }, (_, i) => (
+                      <span
+                        // oxlint-disable-next-line react/no-array-index-key -- guides are positional
+                        key={i}
+                        aria-hidden
+                        data-outline-guide=""
+                        className="outline-guide shrink-0"
+                        style={{ width: OUTLINE_INDENT }}
+                      />
+                    ))}
+                    <span className="min-w-0 truncate">{h.text}</span>
                   </a>
                 </li>
               )

@@ -28,6 +28,39 @@ pub struct WorkspaceRow {
     pub has_children: bool,
 }
 
+/// A row in the filtered folder view, with the byte range of the file name that matched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilteredRow {
+    pub row: WorkspaceRow,
+    pub name_match: Option<std::ops::Range<usize>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FilteredTree {
+    pub rows: Vec<FilteredRow>,
+    /// Number of files that matched the query.
+    pub match_count: usize,
+}
+
+/// Electron's folder filter: trimmed, case-insensitive substring over the root-relative path
+/// or the file name. Returns `None` when the query is blank (no filtering).
+pub fn normalize_filter_query(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_lowercase())
+}
+
+/// Byte range of `query` (already lowercased) inside `name`, when case folding keeps byte
+/// offsets stable enough to map the match back onto the original text.
+pub fn name_match_range(name: &str, query: &str) -> Option<std::ops::Range<usize>> {
+    let lower = name.to_lowercase();
+    if lower.len() != name.len() {
+        return None;
+    }
+    let start = lower.find(query)?;
+    let end = start + query.len();
+    (name.is_char_boundary(start) && name.is_char_boundary(end)).then_some(start..end)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceTree {
     pub root: WorkspaceEntry,
@@ -91,6 +124,144 @@ impl WorkspaceTree {
         collect_files(&self.root, &mut files);
         files
     }
+
+    pub fn file_count(&self) -> usize {
+        count_files(&self.root)
+    }
+
+    /// Directories the reader has expanded, so a rescan can keep them open.
+    pub fn expanded_directories(&self) -> HashSet<PathBuf> {
+        let mut expanded = HashSet::new();
+        collect_expanded(&self.root, &mut expanded);
+        expanded
+    }
+
+    pub fn restore_expansion(&mut self, expanded: &HashSet<PathBuf>) {
+        for child in &mut self.root.children {
+            apply_expansion(child, expanded);
+        }
+    }
+
+    /// True when both trees list the same entries in the same shape (expansion ignored).
+    pub fn same_entries(&self, other: &WorkspaceTree) -> bool {
+        self.truncated == other.truncated && same_shape(&self.root, &other.root)
+    }
+
+    /// Rows for a filter query: every matching file plus its ancestor folders, which are
+    /// shown expanded unless the reader collapsed them while filtering.
+    pub fn filtered_rows(&self, query: &str, collapsed: &HashSet<PathBuf>) -> FilteredTree {
+        let mut out = FilteredTree::default();
+        let Some(query) = normalize_filter_query(query) else {
+            return out;
+        };
+        collect_filtered(&self.root, &self.root.path, &query, 0, collapsed, &mut out);
+        out
+    }
+}
+
+fn count_files(entry: &WorkspaceEntry) -> usize {
+    entry
+        .children
+        .iter()
+        .map(|child| match child.kind {
+            WorkspaceEntryKind::File => 1,
+            WorkspaceEntryKind::Directory => count_files(child),
+        })
+        .sum()
+}
+
+fn collect_expanded(entry: &WorkspaceEntry, expanded: &mut HashSet<PathBuf>) {
+    for child in &entry.children {
+        if child.kind == WorkspaceEntryKind::Directory {
+            if child.expanded {
+                expanded.insert(child.path.clone());
+            }
+            collect_expanded(child, expanded);
+        }
+    }
+}
+
+fn apply_expansion(entry: &mut WorkspaceEntry, expanded: &HashSet<PathBuf>) {
+    if entry.kind == WorkspaceEntryKind::Directory {
+        entry.expanded = expanded.contains(&entry.path);
+        for child in &mut entry.children {
+            apply_expansion(child, expanded);
+        }
+    }
+}
+
+fn same_shape(left: &WorkspaceEntry, right: &WorkspaceEntry) -> bool {
+    left.path == right.path
+        && left.kind == right.kind
+        && left.children.len() == right.children.len()
+        && left
+            .children
+            .iter()
+            .zip(&right.children)
+            .all(|(left, right)| same_shape(left, right))
+}
+
+fn file_matches(path: &Path, root: &Path, name: &str, query: &str) -> bool {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    relative.to_string_lossy().to_lowercase().contains(query) || name.to_lowercase().contains(query)
+}
+
+/// Returns true when `entry` (a directory) contained any matching file.
+fn collect_filtered(
+    entry: &WorkspaceEntry,
+    root: &Path,
+    query: &str,
+    depth: usize,
+    collapsed: &HashSet<PathBuf>,
+    out: &mut FilteredTree,
+) -> bool {
+    let mut any = false;
+    for child in &entry.children {
+        match child.kind {
+            WorkspaceEntryKind::File => {
+                if file_matches(&child.path, root, &child.name, query) {
+                    out.match_count += 1;
+                    out.rows.push(FilteredRow {
+                        row: WorkspaceRow {
+                            path: child.path.clone(),
+                            name: child.name.clone(),
+                            kind: child.kind,
+                            depth,
+                            expanded: false,
+                            has_children: false,
+                        },
+                        name_match: name_match_range(&child.name, query),
+                    });
+                    any = true;
+                }
+            }
+            WorkspaceEntryKind::Directory => {
+                let expanded = !collapsed.contains(&child.path);
+                let header_index = out.rows.len();
+                out.rows.push(FilteredRow {
+                    row: WorkspaceRow {
+                        path: child.path.clone(),
+                        name: child.name.clone(),
+                        kind: child.kind,
+                        depth,
+                        expanded,
+                        has_children: true,
+                    },
+                    name_match: None,
+                });
+                if !collect_filtered(child, root, query, depth + 1, collapsed, out) {
+                    out.rows.truncate(header_index);
+                    continue;
+                }
+                any = true;
+                if !expanded {
+                    // Collapsed while filtering: keep the match count, hide the descendants.
+                    out.rows.truncate(header_index + 1);
+                }
+            }
+        }
+    }
+    any
 }
 
 /// Mirrors the Electron folder scan caps so huge trees stay responsive.
@@ -240,7 +411,7 @@ fn entry_order(
         .then_with(|| left_name.cmp(right_name))
 }
 
-fn is_ignored_name(name: &str) -> bool {
+pub(crate) fn is_ignored_name(name: &str) -> bool {
     name.starts_with('.') || matches!(name, ".git" | "node_modules" | "target" | "dist" | "build")
 }
 
@@ -522,6 +693,139 @@ mod tests {
         assert!(tree.truncated);
         assert_eq!(tree.files().len(), MAX_WORKSPACE_FILES);
         assert_eq!(tree.root.children[0].name, "f00000.md");
+    }
+
+    fn filter_fixture() -> (tempfile::TempDir, WorkspaceTree) {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("guides")).unwrap();
+        fs::create_dir_all(root.join("specs/deep")).unwrap();
+        fs::create_dir_all(root.join("notes")).unwrap();
+        fs::write(root.join("guides/Reading-Guide.md"), "").unwrap();
+        fs::write(root.join("guides/shortcuts.md"), "").unwrap();
+        fs::write(root.join("specs/reader-redesign.md"), "").unwrap();
+        fs::write(root.join("specs/deep/reading-width.md"), "").unwrap();
+        fs::write(root.join("notes/todo.md"), "").unwrap();
+        fs::write(root.join("README.md"), "").unwrap();
+        let tree = scan_workspace(root).unwrap();
+        (temp, tree)
+    }
+
+    fn row_names(filtered: &FilteredTree) -> Vec<(usize, &str)> {
+        filtered
+            .rows
+            .iter()
+            .map(|row| (row.row.depth, row.row.name.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn filter_is_a_trimmed_case_insensitive_substring_that_expands_ancestors() {
+        let (_temp, tree) = filter_fixture();
+
+        let filtered = tree.filtered_rows("  READ ", &HashSet::new());
+
+        assert_eq!(filtered.match_count, 4);
+        assert_eq!(
+            row_names(&filtered),
+            vec![
+                (0, "guides"),
+                (1, "Reading-Guide.md"),
+                (0, "specs"),
+                (1, "deep"),
+                (2, "reading-width.md"),
+                (1, "reader-redesign.md"),
+                (0, "README.md"),
+            ]
+        );
+        assert!(
+            filtered
+                .rows
+                .iter()
+                .filter(|row| row.row.kind == WorkspaceEntryKind::Directory)
+                .all(|row| row.row.expanded)
+        );
+        assert_eq!(filtered.rows[1].name_match, Some(0..4));
+        assert_eq!(filtered.rows[5].name_match, Some(0..4));
+    }
+
+    #[test]
+    fn filter_matches_the_relative_path_like_electron() {
+        let (_temp, tree) = filter_fixture();
+
+        let filtered = tree.filtered_rows("notes/", &HashSet::new());
+
+        assert_eq!(row_names(&filtered), vec![(0, "notes"), (1, "todo.md")]);
+        assert_eq!(filtered.match_count, 1);
+        assert_eq!(filtered.rows[1].name_match, None);
+    }
+
+    #[test]
+    fn filter_blank_and_missing_queries() {
+        let (_temp, tree) = filter_fixture();
+
+        assert_eq!(tree.filtered_rows("   ", &HashSet::new()).match_count, 0);
+        let none = tree.filtered_rows("zzz", &HashSet::new());
+        assert!(none.rows.is_empty());
+        assert_eq!(none.match_count, 0);
+        assert_eq!(normalize_filter_query("  "), None);
+        assert_eq!(normalize_filter_query(" Ab "), Some("ab".into()));
+    }
+
+    #[test]
+    fn filter_respects_folders_collapsed_while_filtering() {
+        let (_temp, tree) = filter_fixture();
+        let specs = tree
+            .visible_rows()
+            .into_iter()
+            .find(|row| row.name == "specs")
+            .unwrap()
+            .path;
+
+        let filtered = tree.filtered_rows("read", &HashSet::from([specs]));
+
+        assert_eq!(filtered.match_count, 4);
+        assert_eq!(
+            row_names(&filtered),
+            vec![
+                (0, "guides"),
+                (1, "Reading-Guide.md"),
+                (0, "specs"),
+                (0, "README.md"),
+            ]
+        );
+        assert!(!filtered.rows[2].row.expanded);
+    }
+
+    #[test]
+    fn name_match_range_skips_case_folds_that_change_byte_lengths() {
+        assert_eq!(name_match_range("Guide.md", "guide"), Some(0..5));
+        assert_eq!(name_match_range("\u{130}stanbul.md", "stan"), None);
+    }
+
+    #[test]
+    fn rescans_keep_expansion_and_detect_shape_changes() {
+        let (temp, mut tree) = filter_fixture();
+        let guides = temp.path().join("guides");
+        tree.toggle_directory(&guides);
+        let expanded = tree.expanded_directories();
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(tree.file_count(), 6);
+
+        let same = scan_workspace(temp.path()).unwrap();
+        assert!(tree.same_entries(&same));
+
+        fs::write(temp.path().join("guides/new.md"), "").unwrap();
+        let mut rescanned = scan_workspace(temp.path()).unwrap();
+        assert!(!tree.same_entries(&rescanned));
+        rescanned.restore_expansion(&expanded);
+        assert!(
+            rescanned
+                .visible_rows()
+                .iter()
+                .any(|row| row.name == "new.md" && row.depth == 1)
+        );
+        assert_eq!(rescanned.file_count(), 7);
     }
 
     #[test]

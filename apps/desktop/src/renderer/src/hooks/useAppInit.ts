@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { AppState } from '../../../shared/types'
 import { getReadErrorType } from '../lib/error-utils'
 import { useAppStore } from '../store/app-store'
+import { isReadingWidth } from '../../../shared/reading-width'
 
 export function useAppInit(): void {
   const openTab = useAppStore((s) => s.openTab)
@@ -15,7 +16,6 @@ export function useAppInit(): void {
     void window.api.getAppState().then(async (state: AppState) => {
       const patch: Record<string, unknown> = {}
 
-      if (typeof state.wideMode === 'boolean') patch.wideMode = state.wideMode
       if (
         state.sidebarMode === 'recents' ||
         state.sidebarMode === 'folder' ||
@@ -37,12 +37,9 @@ export function useAppInit(): void {
       ) {
         patch.interfaceScale = state.interfaceScale
       }
-      if (
-        state.readingWidth === 'standard' ||
-        state.readingWidth === 'comfortable' ||
-        state.readingWidth === 'wide'
-      ) {
+      if (isReadingWidth(state.readingWidth)) {
         patch.readingWidth = state.readingWidth
+        if (state.readingWidth !== 'full') patch.lastConstrainedWidth = state.readingWidth
       }
 
       if (Object.keys(patch).length > 0) {

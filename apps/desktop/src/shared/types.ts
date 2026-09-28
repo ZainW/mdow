@@ -1,3 +1,5 @@
+import type { ReadingWidth } from './reading-width'
+
 export interface TreeNode {
   name: string
   path: string
@@ -24,7 +26,7 @@ export interface FileError {
 
 export type SidebarMode = 'recents' | 'folder' | 'outline'
 export type InterfaceScale = 'compact' | 'comfortable' | 'large'
-export type ReadingWidth = 'standard' | 'comfortable' | 'wide'
+export type { ReadingWidth }
 export type PaneId = 'primary' | 'secondary'
 
 export type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
@@ -190,7 +192,6 @@ export interface AppState {
   codeFont: string
   theme: string
   autoUpdateEnabled: boolean
-  wideMode: boolean
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
@@ -268,6 +269,7 @@ export const IPC = {
   MENU_SETTINGS: 'menu:settings',
   MENU_CLOSE_TAB: 'menu:close-tab',
   MENU_CHECK_FOR_UPDATES: 'menu:check-for-updates',
+  APP_GET_VERSION: 'app:get-version',
   UPDATER_CHECK: 'updater:check',
   UPDATER_SET_SCHEDULING: 'updater:set-scheduling',
   UPDATER_DOWNLOAD: 'updater:download',

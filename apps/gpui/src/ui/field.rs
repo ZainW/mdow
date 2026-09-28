@@ -115,6 +115,11 @@ impl Field {
         cx.notify();
     }
 
+    /// Lets Tab reach this field; overlay fields are focused directly instead.
+    pub fn set_tab_stop(&mut self) {
+        self.focus_handle = self.focus_handle.clone().tab_index(0).tab_stop(true);
+    }
+
     pub fn focus(&self, window: &mut Window) {
         self.focus_handle.focus(window);
     }

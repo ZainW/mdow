@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
+import { chmod, mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { scanFolder, insertFileNode, removeFileNode } from './folder-service'
 import type { TreeNode } from '../shared/types'
@@ -173,6 +173,40 @@ describe('scanFolder', () => {
     const result = await scanFolder(tempDir)
     // No markdown is reachable within the depth cap, so the chain is pruned out.
     expect(result.tree).toEqual([])
+  })
+
+  // chmod has no effect on Windows and root can read anything.
+  const canRevokeRead = process.platform !== 'win32' && process.getuid?.() !== 0
+
+  it.runIf(canRevokeRead)('skips unreadable subdirectories instead of failing', async () => {
+    await writeFile(join(tempDir, 'visible.md'), 'visible')
+    await mkdir(join(tempDir, 'locked'))
+    await writeFile(join(tempDir, 'locked', 'secret.md'), 'secret')
+    await mkdir(join(tempDir, 'open'))
+    await writeFile(join(tempDir, 'open', 'notes.md'), 'notes')
+    await chmod(join(tempDir, 'locked'), 0o000)
+
+    try {
+      const result = await scanFolder(tempDir)
+      expect(result.tree.map((n) => n.name)).toEqual(['open', 'visible.md'])
+    } finally {
+      await chmod(join(tempDir, 'locked'), 0o755)
+    }
+  })
+
+  it.runIf(canRevokeRead)('still rejects when the root folder is unreadable', async () => {
+    await writeFile(join(tempDir, 'visible.md'), 'visible')
+    await chmod(tempDir, 0o000)
+
+    try {
+      await expect(scanFolder(tempDir)).rejects.toThrow()
+    } finally {
+      await chmod(tempDir, 0o755)
+    }
+  })
+
+  it('rejects when the root folder does not exist', async () => {
+    await expect(scanFolder(join(tempDir, 'missing'))).rejects.toThrow()
   })
 
   it('marks the result as truncated and stops once the file cap is hit', async () => {

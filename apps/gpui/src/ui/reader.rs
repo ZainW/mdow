@@ -1,15 +1,17 @@
 use crate::{
     app::MdowApp,
     document::{
-        AlertKind, Alignment, DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock,
-        footnote_ref_display, is_supported_document, resolve_local_target,
+        AlertKind, Alignment, DocumentBlock, FOOTNOTE_BACKREF, InlineSpan, LineHighlights,
+        ListKind, ParsedDocument, Script, TableBlock, footnote_backref_target,
+        footnote_ref_display, footnote_target, is_supported_document, resolve_local_target,
+        script_text,
     },
     graphics::{
         DiagramPalette, GraphicCache, GraphicKey, GraphicState, MATH_SCALE, math_width_em,
         render_mermaid,
     },
-    prefs::{READER_FONT_SIZE, ReaderStyle},
-    syntax::{HighlightedCode, PreparedDocument},
+    prefs::{READER_FONT_SIZE, READER_LINE_HEIGHT, ReaderStyle},
+    syntax::{HighlightCache, HighlightLookup, HighlightedCode, PreparedDocument},
     theme::{ColorScheme, Metrics, Theme},
     ui::{
         graphic::{
@@ -35,6 +37,9 @@ use std::{
 };
 
 pub const CODE_COPY_FEEDBACK_DURATION: Duration = Duration::from_secs(2);
+pub const CODE_HEADER_HEIGHT: f32 = 32.0;
+pub const CODE_COPY_BUTTON_HEIGHT: f32 = 24.0;
+pub const CODE_PADDING_BOTTOM: f32 = 14.0;
 
 const READER_SCROLLBAR_TRACK_INSET: f32 = 4.0;
 const READER_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 28.0;
@@ -121,18 +126,20 @@ impl BlockStyle {
         }
     }
 
+    /// Electron's markdown.css heading scale (em of the 15.5px body).
     pub fn heading(level: u8) -> Self {
         let (scale, font_weight, line_height, letter_spacing_em, margin_top_em, margin_bottom_em) =
             match level {
-                1 => (1.75, 600, 1.25, -0.025, 1.5, 0.5),
-                2 => (1.375, 600, 1.3, -0.02, 1.5, 0.5),
-                3 => (1.125, 600, 1.4, -0.01, 1.5, 0.4),
-                4 => (1.0, 500, 1.4, 0.0, 1.3, 0.3),
-                5 => (0.9375, 500, 1.4, 0.0, 1.2, 0.25),
-                _ => (0.875, 500, 1.4, 0.0, 1.0, 0.2),
+                1 => (1.875, 700, 1.2, -0.025, 2.0, 0.6),
+                2 => (1.5, 650, 1.25, -0.02, 1.8, 0.5),
+                3 => (1.15, 600, 1.3, -0.01, 1.5, 0.4),
+                4 => (1.0, 600, 1.4, 0.0, 1.3, 0.3),
+                5 => (0.95, 600, 1.4, 0.0, 1.2, 0.25),
+                _ => (0.875, 600, 1.4, 0.03, 1.0, 0.2),
             };
-        let muted = level >= 4;
-        let uppercase = false;
+        // Only h6 is muted (and uppercase), as in Electron since v1.10.
+        let muted = level >= 6;
+        let uppercase = level >= 6;
         Self {
             font_size: READER_FONT_SIZE * scale,
             font_weight,
@@ -146,10 +153,12 @@ impl BlockStyle {
         }
     }
 
+    /// The redesigned code surface: 8px radius; the code sits below a 32px header with
+    /// 12px 16px 14px padding (top/x here, bottom is [`CODE_PADDING_BOTTOM`]).
     pub fn code_block() -> Self {
         Self {
-            radius: 10.0,
-            padding: [14.0, 18.0],
+            radius: 8.0,
+            padding: [12.0, 16.0],
             line_height: 1.6,
             ..Self::body()
         }
@@ -162,9 +171,10 @@ impl BlockStyle {
         }
     }
 
+    /// `padding: 0.4em 1em`.
     pub fn blockquote() -> Self {
         Self {
-            padding: [6.2, 16.0],
+            padding: [READER_FONT_SIZE * 0.4, READER_FONT_SIZE],
             ..Self::body()
         }
     }
@@ -173,7 +183,7 @@ impl BlockStyle {
         Self {
             font_size: READER_FONT_SIZE,
             font_weight: 400,
-            line_height: 1.75,
+            line_height: READER_LINE_HEIGHT,
             letter_spacing_em: 0.0,
             margin_top_em: 0.0,
             margin_bottom_em: 1.0,
@@ -203,7 +213,7 @@ pub struct InlineMath {
     pub display: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InlineStyleRange {
     pub range: Range<usize>,
     pub emphasis: bool,
@@ -211,6 +221,9 @@ pub struct InlineStyleRange {
     pub code: bool,
     pub strikethrough: bool,
     pub footnote: bool,
+    pub script: Option<Script>,
+    pub mark: bool,
+    pub kbd: bool,
     pub link_target: Option<String>,
     pub link_node_id: Option<usize>,
     /// Placeholder characters reserving room for a typeset formula; painted transparent.
@@ -218,26 +231,19 @@ pub struct InlineStyleRange {
 }
 
 impl InlineStyleRange {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        range: Range<usize>,
-        emphasis: bool,
-        strong: bool,
-        code: bool,
-        strikethrough: bool,
-        footnote: bool,
-        link_target: Option<String>,
-        link_node_id: Option<usize>,
-    ) -> Self {
+    fn new(range: Range<usize>, style: InlineStyleContext<'_>) -> Self {
         Self {
             range,
-            emphasis,
-            strong,
-            code,
-            strikethrough,
-            footnote,
-            link_target,
-            link_node_id,
+            emphasis: style.emphasis,
+            strong: style.strong,
+            code: style.code,
+            strikethrough: style.strikethrough,
+            footnote: style.footnote,
+            script: style.script,
+            mark: style.mark,
+            kbd: style.kbd,
+            link_target: style.link_target.map(str::to_owned),
+            link_node_id: style.link_node_id,
             math: false,
         }
     }
@@ -246,36 +252,45 @@ impl InlineStyleRange {
 #[cfg(test)]
 impl InlineStyleRange {
     fn emphasis(range: Range<usize>) -> Self {
-        Self::new(range, true, false, false, false, false, None, None)
+        Self {
+            range,
+            emphasis: true,
+            ..Self::default()
+        }
     }
 
     fn emphasis_strong(range: Range<usize>) -> Self {
-        Self::new(range, true, true, false, false, false, None, None)
+        Self {
+            range,
+            emphasis: true,
+            strong: true,
+            ..Self::default()
+        }
     }
 
     fn code(range: Range<usize>) -> Self {
-        Self::new(range, false, false, true, false, false, None, None)
+        Self {
+            range,
+            code: true,
+            ..Self::default()
+        }
     }
 
     fn link(range: Range<usize>, target: &str) -> Self {
-        Self::new(
+        Self {
             range,
-            false,
-            false,
-            false,
-            false,
-            false,
-            Some(target.to_owned()),
-            Some(0),
-        )
+            link_target: Some(target.to_owned()),
+            link_node_id: Some(0),
+            ..Self::default()
+        }
     }
 
     fn strikethrough(range: Range<usize>) -> Self {
-        Self::new(range, false, false, false, true, false, None, None)
-    }
-
-    fn footnote(range: Range<usize>) -> Self {
-        Self::new(range, false, false, false, false, true, None, None)
+        Self {
+            range,
+            strikethrough: true,
+            ..Self::default()
+        }
     }
 }
 
@@ -420,8 +435,25 @@ struct InlineStyleContext<'a> {
     code: bool,
     strikethrough: bool,
     footnote: bool,
+    script: Option<Script>,
+    mark: bool,
+    kbd: bool,
     link_target: Option<&'a str>,
     link_node_id: Option<usize>,
+}
+
+impl InlineStyleContext<'_> {
+    fn is_plain(&self) -> bool {
+        !(self.emphasis
+            || self.strong
+            || self.code
+            || self.strikethrough
+            || self.footnote
+            || self.mark
+            || self.kbd
+            || self.script.is_some()
+            || self.link_target.is_some())
+    }
 }
 
 pub fn inline_layout(spans: &[InlineSpan]) -> InlineLayout {
@@ -473,9 +505,7 @@ fn collect_current_block_link_targets(
 ) {
     let block_index = block_path_render_index(parent_path);
     match block {
-        DocumentBlock::Heading { content, .. }
-        | DocumentBlock::Paragraph(content)
-        | DocumentBlock::Blockquote(content) => {
+        DocumentBlock::Heading { content, .. } | DocumentBlock::Paragraph(content) => {
             append_link_focus_targets(
                 content,
                 LinkSurfaceKey::block(block_index),
@@ -505,6 +535,7 @@ fn collect_current_block_link_targets(
         }
         DocumentBlock::ListItem { children, .. }
         | DocumentBlock::TaskItem { children, .. }
+        | DocumentBlock::Blockquote(children)
         | DocumentBlock::Alert { children, .. } => {
             collect_link_focus_targets(children, parent_path, document_path, targets);
         }
@@ -593,7 +624,62 @@ fn append_inline_spans<'a>(
 ) {
     for span in spans {
         match span {
-            InlineSpan::Text(text) => append_inline_text(text, style, uppercase, layout),
+            InlineSpan::Text(text) => match style.script {
+                // Keep painted bytes identical to `InlineSpan::find_text`.
+                Some(script) => {
+                    append_inline_text(&script_text(text, script), style, false, layout)
+                }
+                None => append_inline_text(text, style, uppercase, layout),
+            },
+            InlineSpan::Superscript(content) | InlineSpan::Subscript(content) => {
+                append_inline_spans(
+                    content,
+                    InlineStyleContext {
+                        script: Some(if matches!(span, InlineSpan::Superscript(_)) {
+                            Script::Super
+                        } else {
+                            Script::Sub
+                        }),
+                        ..style
+                    },
+                    uppercase,
+                    next_link_node_id,
+                    layout,
+                )
+            }
+            InlineSpan::Mark(content) => append_inline_spans(
+                content,
+                InlineStyleContext {
+                    mark: true,
+                    ..style
+                },
+                uppercase,
+                next_link_node_id,
+                layout,
+            ),
+            InlineSpan::Kbd(content) => append_inline_spans(
+                content,
+                InlineStyleContext { kbd: true, ..style },
+                uppercase,
+                next_link_node_id,
+                layout,
+            ),
+            InlineSpan::FootnoteBackref { label } => {
+                let target = footnote_backref_target(label);
+                let link_node_id = *next_link_node_id;
+                *next_link_node_id += 1;
+                append_inline_text(
+                    FOOTNOTE_BACKREF,
+                    InlineStyleContext {
+                        footnote: true,
+                        link_target: Some(&target),
+                        link_node_id: Some(link_node_id),
+                        ..style
+                    },
+                    false,
+                    layout,
+                );
+            }
             InlineSpan::Emphasis(content) => append_inline_spans(
                 content,
                 InlineStyleContext {
@@ -633,15 +719,23 @@ fn append_inline_spans<'a>(
                 uppercase,
                 layout,
             ),
-            InlineSpan::FootnoteRef { label } => append_inline_text(
-                &footnote_ref_display(label),
-                InlineStyleContext {
-                    footnote: true,
-                    ..style
-                },
-                false,
-                layout,
-            ),
+            // Footnote references are links to their note (`#fn-label`).
+            InlineSpan::FootnoteRef { label } => {
+                let target = footnote_target(label);
+                let link_node_id = *next_link_node_id;
+                *next_link_node_id += 1;
+                append_inline_text(
+                    &footnote_ref_display(label),
+                    InlineStyleContext {
+                        footnote: true,
+                        link_target: Some(&target),
+                        link_node_id: Some(link_node_id),
+                        ..style
+                    },
+                    false,
+                    layout,
+                );
+            }
             InlineSpan::Link { label, target } => {
                 let link_node_id = *next_link_node_id;
                 *next_link_node_id += 1;
@@ -777,23 +871,10 @@ fn append_inline_text(
         layout.text.push_str(text);
     }
     let range = start..layout.text.len();
-    if style.emphasis
-        || style.strong
-        || style.code
-        || style.strikethrough
-        || style.footnote
-        || style.link_target.is_some()
-    {
-        layout.styles.push(InlineStyleRange::new(
-            range.clone(),
-            style.emphasis,
-            style.strong,
-            style.code,
-            style.strikethrough,
-            style.footnote,
-            style.link_target.map(str::to_owned),
-            style.link_node_id,
-        ));
+    if !style.is_plain() {
+        layout
+            .styles
+            .push(InlineStyleRange::new(range.clone(), style));
     }
     if let Some(target) = style.link_target {
         if let Some(link) = layout.links.last_mut()
@@ -838,6 +919,126 @@ pub fn classify_link(document_path: &Path, target: &str) -> LinkRoute {
     } else {
         LinkRoute::Local(path)
     }
+}
+
+/// Where an image's pixels come from. Electron's CSP (`img-src 'self' mdow-local: data: blob:`)
+/// renders local files and `data:` URIs but blocks every remote http(s) image, so Native shows
+/// the alt-text placeholder for remote images instead of fetching them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImageTarget {
+    Local(PathBuf),
+    Data(gpui::ImageFormat, Vec<u8>),
+    /// http(s): blocked, like Electron.
+    Remote,
+    Unavailable,
+}
+
+/// Decoded `data:` images larger than this show the placeholder.
+pub const MAX_DATA_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+
+pub fn classify_image(document_path: &Path, source: &str) -> ImageTarget {
+    let source = source.trim();
+    let lower = source.get(..8).unwrap_or(source).to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || source.starts_with("//") {
+        return ImageTarget::Remote;
+    }
+    if lower.starts_with("data:") {
+        return decode_data_image(source).map_or(ImageTarget::Unavailable, |(format, bytes)| {
+            ImageTarget::Data(format, bytes)
+        });
+    }
+    resolve_image_target(document_path, source).map_or(ImageTarget::Unavailable, ImageTarget::Local)
+}
+
+fn decode_data_image(source: &str) -> Option<(gpui::ImageFormat, Vec<u8>)> {
+    let (header, payload) = source.get(5..)?.split_once(',')?;
+    let mut parts = header.split(';');
+    let mime = parts.next()?.trim().to_ascii_lowercase();
+    let base64 = parts.any(|part| part.trim().eq_ignore_ascii_case("base64"));
+    let format = gpui::ImageFormat::from_mime_type(&mime)?;
+    // Base64 inflates by 4/3; reject oversized payloads before decoding them.
+    if payload.len() / 4 * 3 > MAX_DATA_IMAGE_BYTES {
+        return None;
+    }
+    let bytes = if base64 {
+        decode_base64(payload)?
+    } else {
+        percent_decode_bytes(payload)?
+    };
+    (!bytes.is_empty() && bytes.len() <= MAX_DATA_IMAGE_BYTES).then_some((format, bytes))
+}
+
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    fn value(byte: u8) -> Option<u32> {
+        match byte {
+            b'A'..=b'Z' => Some(u32::from(byte - b'A')),
+            b'a'..=b'z' => Some(u32::from(byte - b'a') + 26),
+            b'0'..=b'9' => Some(u32::from(byte - b'0') + 52),
+            b'+' | b'-' => Some(62),
+            b'/' | b'_' => Some(63),
+            _ => None,
+        }
+    }
+    let mut output = Vec::with_capacity(input.len() / 4 * 3);
+    let mut buffer = 0_u32;
+    let mut bits = 0;
+    for byte in input.bytes() {
+        if byte.is_ascii_whitespace() || byte == b'%' {
+            continue;
+        }
+        if byte == b'=' {
+            break;
+        }
+        buffer = (buffer << 6) | value(byte)?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    Some(output)
+}
+
+fn percent_decode_bytes(input: &str) -> Option<Vec<u8>> {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = input.get(index + 1..index + 3)?;
+            output.push(u8::from_str_radix(hex, 16).ok()?);
+            index += 3;
+        } else {
+            output.push(bytes[index]);
+            index += 1;
+        }
+    }
+    Some(output)
+}
+
+/// Decoded `data:` images, keyed by their source, so repaints do not decode base64 again.
+fn data_image(source: &str) -> Option<Arc<gpui::Image>> {
+    use std::hash::{Hash, Hasher};
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, Arc<gpui::Image>>>> =
+        std::sync::OnceLock::new();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut hasher);
+    let key = hasher.finish();
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(image) = cache.get(&key) {
+        return Some(image.clone());
+    }
+    let (format, bytes) = decode_data_image(source.trim())?;
+    if cache.len() >= 64 {
+        cache.clear();
+    }
+    let image = Arc::new(gpui::Image::from_bytes(format, bytes));
+    cache.insert(key, image.clone());
+    Some(image)
 }
 
 pub fn resolve_image_target(document_path: &Path, source: &str) -> Option<PathBuf> {
@@ -975,17 +1176,19 @@ fn block_margins(
     previous: Option<&DocumentBlock>,
     next: Option<&DocumentBlock>,
 ) -> BlockMargins {
+    // Electron's markdown.css margins, in em of the 15.5px body.
+    const EM: f32 = READER_FONT_SIZE;
     if let Some(group) = list_group(block) {
         return BlockMargins {
             top: if previous.and_then(list_group) == Some(group) {
-                16.0 * 0.35
+                EM * 0.35
             } else {
-                16.0
+                EM
             },
             bottom: if next.and_then(list_group) == Some(group) {
-                4.0
+                EM * 0.25
             } else {
-                16.0
+                EM
             },
         };
     }
@@ -1002,29 +1205,29 @@ fn block_margins(
         | DocumentBlock::Table(_)
         | DocumentBlock::Alert { .. }
         | DocumentBlock::FootnoteSection { .. } => BlockMargins {
-            top: 20.0,
-            bottom: 20.0,
+            top: EM * 1.25,
+            bottom: EM * 1.25,
         },
         // The Electron reader gives diagrams a 1.5em margin.
         DocumentBlock::MermaidCard { .. } => BlockMargins {
-            top: 24.0,
-            bottom: 24.0,
+            top: EM * 1.5,
+            bottom: EM * 1.5,
         },
         DocumentBlock::ThematicBreak => BlockMargins {
-            top: 32.0,
-            bottom: 32.0,
+            top: EM * 2.0,
+            bottom: EM * 2.0,
         },
         // KaTeX display math keeps a 1em margin above and below.
         DocumentBlock::Math { .. } => BlockMargins {
-            top: 16.0,
-            bottom: 16.0,
+            top: EM,
+            bottom: EM,
         },
         DocumentBlock::Paragraph(_)
         | DocumentBlock::Blockquote(_)
         | DocumentBlock::Image { .. }
         | DocumentBlock::RawText(_) => BlockMargins {
             top: 0.0,
-            bottom: 16.0,
+            bottom: EM,
         },
         DocumentBlock::ListItem { .. } | DocumentBlock::TaskItem { .. } => unreachable!(),
     }
@@ -1341,12 +1544,27 @@ struct ReaderView<'a> {
     copied_code: Option<(usize, Instant)>,
     link_state: &'a ReaderLinkState<'a>,
     find_block: Option<usize>,
+    /// Body text inside blockquotes uses the muted foreground.
+    muted: bool,
 }
 
 impl ReaderView<'_> {
     fn zoom(self, base: f32) -> f32 {
         base * (self.style.font_size / READER_FONT_SIZE)
     }
+
+    fn text_color(self) -> gpui::Hsla {
+        if self.muted {
+            self.theme.muted_foreground
+        } else {
+            self.theme.foreground
+        }
+    }
+}
+
+/// `color-mix(in oklch, var(--muted-foreground) 45%, transparent)`.
+fn blockquote_border(theme: Theme) -> gpui::Hsla {
+    theme.muted_foreground.opacity(0.45)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1371,8 +1589,10 @@ fn render_reader_item(
         copied_code,
         link_state,
         find_block,
+        muted: false,
     };
-    div()
+    // List items have no flex parent, so center the column in a full-width row.
+    let column = div()
         .id(("reader-column", block_index))
         .debug_selector(|| "reader-column".into())
         .flex()
@@ -1391,9 +1611,7 @@ fn render_reader_item(
         .text_size(px(style.font_size))
         .line_height(px(style.font_size * style.line_height))
         .text_color(theme.foreground)
-        .when_some(style.max_width, |item, width| {
-            item.max_w(px(width)).mx_auto()
-        })
+        .when_some(style.max_width, |item, width| item.max_w(px(width)))
         .child(render_block(
             document,
             block,
@@ -1403,7 +1621,13 @@ fn render_reader_item(
             list_marker_is_visible(&document.blocks, block_index),
             view,
             cx,
-        ))
+        ));
+    div()
+        .flex()
+        .justify_center()
+        .w_full()
+        .min_w_0()
+        .child(column)
         .into_any_element()
 }
 
@@ -1472,165 +1696,171 @@ fn render_block(
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let document_path = document.path.as_path();
-    let content = match block {
-        DocumentBlock::Heading { level, content } => {
-            let style = BlockStyle::heading(*level);
-            let font_size = view.zoom(style.font_size);
-            let debug_selector = format!("reader-block-{block_suffix}");
-            div()
-                .id(("reader-block", block_index))
-                .debug_selector(move || debug_selector)
-                .w_full()
-                .min_w_0()
-                .font_weight(FontWeight(style.font_weight as f32))
-                .text_size(px(font_size))
-                .line_height(px(font_size * style.line_height))
-                .text_color(if style.muted {
-                    theme.muted_foreground
-                } else {
-                    theme.foreground
-                })
-                .child(render_inline_layout(
-                    inline_layout_with_transform(content, style.uppercase),
-                    document_path,
-                    LinkSurfaceKey::block(block_index),
-                    style.font_weight,
-                    if style.muted {
+    let content =
+        match block {
+            DocumentBlock::Heading { level, content } => {
+                let style = BlockStyle::heading(*level);
+                let font_size = view.zoom(style.font_size);
+                let debug_selector = format!("reader-block-{block_suffix}");
+                div()
+                    .id(("reader-block", block_index))
+                    .debug_selector(move || debug_selector)
+                    .w_full()
+                    .min_w_0()
+                    .font_weight(FontWeight(style.font_weight as f32))
+                    .text_size(px(font_size))
+                    .line_height(px(font_size * style.line_height))
+                    .text_color(if style.muted {
                         theme.muted_foreground
                     } else {
                         theme.foreground
-                    },
-                    theme,
-                    view.style,
-                    false,
-                    link_state,
-                    cx,
-                ))
-                .into_any_element()
-        }
-        DocumentBlock::Paragraph(content) => {
-            let debug_selector = format!("reader-block-{block_suffix}");
-            div()
-                .id(("reader-block", block_index))
-                .debug_selector(move || debug_selector)
-                .w_full()
-                .min_w_0()
-                .child(render_inline(
-                    content,
-                    document_path,
-                    LinkSurfaceKey::block(block_index),
-                    400,
-                    theme.foreground,
-                    theme,
-                    view.style,
-                    link_state,
-                    cx,
-                ))
-                .into_any_element()
-        }
-        DocumentBlock::ListItem {
-            kind,
-            depth,
-            children,
-        } => render_list_item(
-            kind,
-            *depth,
-            children,
-            list_marker_visible,
-            block_path,
-            parent_list_depth,
-            document,
-            view,
-            cx,
-        ),
-        DocumentBlock::TaskItem {
-            checked,
-            depth,
-            children,
-        } => render_task_item(
-            *checked,
-            *depth,
-            children,
-            block_path,
-            parent_list_depth,
-            document,
-            view,
-            cx,
-        ),
-        DocumentBlock::Blockquote(content) => {
-            let debug_selector = format!("reader-block-{block_suffix}");
-            div()
-                .id(("reader-block", block_index))
-                .debug_selector(move || debug_selector)
-                .flex()
-                .w_full()
-                .min_w_0()
-                .border_l(px(3.0))
-                .border_color(theme.border)
-                .py(px(6.2))
-                .text_color(theme.muted_foreground)
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_grow()
-                        .px(px(BlockStyle::blockquote().padding[1]))
-                        .child(render_inline(
-                            content,
-                            document_path,
-                            LinkSurfaceKey::block(block_index),
-                            400,
-                            theme.muted_foreground,
-                            theme,
-                            view.style,
-                            link_state,
+                    })
+                    .child(render_inline_layout(
+                        inline_layout_with_transform(content, style.uppercase),
+                        document_path,
+                        LinkSurfaceKey::block(block_index),
+                        style.font_weight,
+                        if style.muted {
+                            theme.muted_foreground
+                        } else {
+                            theme.foreground
+                        },
+                        theme,
+                        view.style,
+                        false,
+                        link_state,
+                        cx,
+                    ))
+                    .into_any_element()
+            }
+            DocumentBlock::Paragraph(content) => {
+                let debug_selector = format!("reader-block-{block_suffix}");
+                div()
+                    .id(("reader-block", block_index))
+                    .debug_selector(move || debug_selector)
+                    .w_full()
+                    .min_w_0()
+                    .child(render_inline(
+                        content,
+                        document_path,
+                        LinkSurfaceKey::block(block_index),
+                        400,
+                        view.text_color(),
+                        theme,
+                        view.style,
+                        link_state,
+                        cx,
+                    ))
+                    .into_any_element()
+            }
+            DocumentBlock::ListItem {
+                kind,
+                depth,
+                children,
+            } => render_list_item(
+                kind,
+                *depth,
+                children,
+                list_marker_visible,
+                block_path,
+                parent_list_depth,
+                document,
+                view,
+                cx,
+            ),
+            DocumentBlock::TaskItem {
+                checked,
+                depth,
+                children,
+            } => render_task_item(
+                *checked,
+                *depth,
+                children,
+                block_path,
+                parent_list_depth,
+                document,
+                view,
+                cx,
+            ),
+            DocumentBlock::Blockquote(children) => {
+                let debug_selector = format!("reader-block-{block_suffix}");
+                let padding = BlockStyle::blockquote().padding;
+                div()
+                    .id(("reader-block", block_index))
+                    .debug_selector(move || debug_selector)
+                    .flex()
+                    .w_full()
+                    .min_w_0()
+                    .border_l(px(3.0))
+                    .border_color(blockquote_border(theme))
+                    .py(px(padding[0]))
+                    .text_color(theme.muted_foreground)
+                    .child(div().min_w_0().flex_grow().px(px(padding[1])).child(
+                        render_list_children(
+                            children,
+                            0,
+                            block_path,
+                            document,
+                            ReaderView {
+                                find_block: None,
+                                muted: true,
+                                ..view
+                            },
                             cx,
-                        )),
-                )
-                .into_any_element()
-        }
-        DocumentBlock::ThematicBreak => {
-            let debug_selector = format!("reader-block-{block_suffix}");
-            div()
-                .id(("reader-block", block_index))
-                .debug_selector(move || debug_selector)
-                .w_full()
-                .child(div().h(px(1.0)).w_full().bg(theme.border))
-                .into_any_element()
-        }
-        DocumentBlock::CodeBlock { language, code } => render_code_block(
-            language.as_deref(),
-            code,
-            document.code_block_at(block_path),
-            block_path,
-            document_path,
-            view,
-            cx,
-        ),
-        DocumentBlock::Table(table) => render_table(table, block_index, document_path, view, cx),
-        DocumentBlock::Image { alt, source } => {
-            render_image(alt, source, block_index, document_path, theme)
-        }
-        DocumentBlock::Alert { kind, children } => {
-            render_alert(*kind, children, block_path, document, view, cx)
-        }
-        DocumentBlock::MermaidCard { source } => {
-            render_mermaid_block(source, block_path, document_path, view, cx)
-        }
-        DocumentBlock::Math { tex } => render_math_block(tex, block_path, document_path, view),
-        DocumentBlock::FootnoteSection { notes } => {
-            render_footnote_section(notes, block_path, document, view, cx)
-        }
-        DocumentBlock::RawText(text) => {
-            let debug_selector = format!("reader-block-{block_suffix}");
-            div()
-                .id(("reader-block", block_index))
-                .debug_selector(move || debug_selector)
-                .w_full()
-                .min_w_0()
-                .child(StyledText::new(text.clone()))
-                .into_any_element()
-        }
-    };
+                        ),
+                    ))
+                    .into_any_element()
+            }
+            DocumentBlock::ThematicBreak => {
+                let debug_selector = format!("reader-block-{block_suffix}");
+                div()
+                    .id(("reader-block", block_index))
+                    .debug_selector(move || debug_selector)
+                    .w_full()
+                    .child(div().h(px(1.0)).w_full().bg(theme.border))
+                    .into_any_element()
+            }
+            DocumentBlock::CodeBlock {
+                language,
+                code,
+                highlights,
+            } => render_code_block(
+                language.as_deref(),
+                code,
+                highlights,
+                true,
+                block_path,
+                document_path,
+                view,
+                cx,
+            ),
+            DocumentBlock::Table(table) => {
+                render_table(table, block_index, document_path, view, cx)
+            }
+            DocumentBlock::Image { alt, source } => {
+                render_image(alt, source, block_index, document_path, theme)
+            }
+            DocumentBlock::Alert { kind, children } => {
+                render_alert(*kind, children, block_path, document, view, cx)
+            }
+            DocumentBlock::MermaidCard { source } => {
+                render_mermaid_block(source, block_path, document_path, view, cx)
+            }
+            DocumentBlock::Math { tex } => render_math_block(tex, block_path, document_path, view),
+            DocumentBlock::FootnoteSection { notes } => {
+                render_footnote_section(notes, block_path, document, view, cx)
+            }
+            DocumentBlock::RawText(text) => {
+                let debug_selector = format!("reader-block-{block_suffix}");
+                div()
+                    .id(("reader-block", block_index))
+                    .debug_selector(move || debug_selector)
+                    .w_full()
+                    .min_w_0()
+                    .child(StyledText::new(text.clone()))
+                    .into_any_element()
+            }
+        };
 
     let find_hit = block_path.len() == 1 && find_block == Some(block_path[0]);
     div()
@@ -1694,9 +1924,10 @@ fn render_math_block(
         .into_any_element()
 }
 
-/// Mermaid diagram, rendered off the UI thread the first time it scrolls near the viewport and
-/// shrunk to the column like the Electron reader's `max-width: 100%`. Diagrams that fail to parse
-/// show why above their source.
+/// Mermaid diagram in a code-block card (same radius, border, surface and 32px header with the
+/// label left and Copy right), rendered off the UI thread the first time it scrolls near the
+/// viewport and shrunk to the card like the Electron reader's `max-width: 100%`. Diagrams that
+/// fail to parse show why above their source.
 fn render_mermaid_block(
     source: &str,
     block_path: &[usize],
@@ -1708,55 +1939,73 @@ fn render_mermaid_block(
     let block_index = block_path_render_index(block_path);
     let debug_selector = format!("reader-block-{}", block_path_suffix(block_path));
     let scale = view.zoom(1.0);
+    // Edge labels sit on the card surface, so their backing matches it.
     let palette = DiagramPalette::new(
         theme.color_scheme == ColorScheme::Dark,
-        hex_color(theme.background),
+        hex_color(theme.code_surface),
     );
-    match diagram_state(source, palette, scale, cx) {
+    let body = match diagram_state(source, palette, scale, cx) {
         GraphicState::Ready(graphic) => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || debug_selector)
             .flex()
             .justify_center()
             .w_full()
+            .p(px(DIAGRAM_CARD_PADDING))
             .child(GraphicElement::new(
                 graphic.image,
                 graphic.width * scale,
                 graphic.height * scale,
                 true,
-            ))
-            .into_any_element(),
-        GraphicState::Pending => div()
-            .id(("reader-block", block_index))
-            .debug_selector(move || debug_selector)
-            .w_full()
-            .h(px(view.zoom(DIAGRAM_PENDING_HEIGHT)))
-            .into_any_element(),
-        GraphicState::Failed(error) => div()
-            .flex()
-            .flex_col()
-            .gap(px(6.0))
-            .w_full()
-            .min_w_0()
-            .child(
-                div()
-                    .font_family(Metrics::FONT_SANS)
-                    .text_size(px(view.zoom(13.0)))
-                    .text_color(theme.muted_foreground)
-                    .child(format!("This diagram could not be drawn: {error}")),
-            )
-            .child(render_code_block(
-                Some("mermaid"),
-                source,
-                None,
-                block_path,
-                document_path,
-                view,
-                cx,
-            ))
-            .into_any_element(),
-    }
+            )),
+        GraphicState::Pending => div().w_full().h(px(view.zoom(DIAGRAM_PENDING_HEIGHT))),
+        GraphicState::Failed(error) => {
+            return div()
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .w_full()
+                .min_w_0()
+                .child(
+                    div()
+                        .font_family(Metrics::FONT_SANS)
+                        .text_size(px(view.zoom(13.0)))
+                        .text_color(theme.muted_foreground)
+                        .child(format!("This diagram could not be drawn: {error}")),
+                )
+                .child(render_code_block(
+                    Some("mermaid"),
+                    source,
+                    &LineHighlights::default(),
+                    false,
+                    block_path,
+                    document_path,
+                    view,
+                    cx,
+                ))
+                .into_any_element();
+        }
+    };
+    let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
+    div()
+        .id(("reader-block", block_index))
+        .debug_selector(move || debug_selector)
+        .w_full()
+        .min_w_0()
+        .rounded(px(BlockStyle::code_block().radius))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.code_surface)
+        .overflow_hidden()
+        .child(code_card_header(
+            Some("mermaid".into()),
+            code_copy_button(source.to_owned(), block_path, copied, theme, cx),
+            theme,
+        ))
+        .child(body)
+        .into_any_element()
 }
+
+/// Inner padding between a diagram and its card border.
+const DIAGRAM_CARD_PADDING: f32 = 16.0;
 
 /// Space a diagram holds while it renders, so the column does not jump twice.
 const DIAGRAM_PENDING_HEIGHT: f32 = 160.0;
@@ -2072,6 +2321,9 @@ fn text_runs(
             theme,
             reader,
         ));
+        if let Some(run) = runs.last_mut() {
+            apply_inline_extras(run, style, theme, reader);
+        }
         cursor = style.range.end;
     }
     if cursor < layout.text.len() {
@@ -2089,6 +2341,39 @@ fn text_runs(
         ));
     }
     runs
+}
+
+/// Styles the inline HTML subset and super/subscripts on top of a base run.
+fn apply_inline_extras(
+    run: &mut TextRun,
+    style: &InlineStyleRange,
+    theme: Theme,
+    reader: ReaderStyle,
+) {
+    if let Some(script) = style.script {
+        // Unicode script characters are already raised/lowered; the OpenType feature covers
+        // the rest in fonts that have it (see `document::Script`).
+        let tag = match script {
+            Script::Super => "sups",
+            Script::Sub => "subs",
+        };
+        let mut features = run.font.features.tag_value_list().to_vec();
+        features.push((tag.into(), 1));
+        run.font.features = FontFeatures(Arc::new(features));
+    }
+    if style.mark {
+        run.background_color = Some(theme.alert_warning.opacity(match theme.color_scheme {
+            ColorScheme::Light => 0.22,
+            ColorScheme::Dark => 0.30,
+        }));
+    }
+    if style.kbd {
+        // A keycap: the code face at medium weight on the border tone, a step darker than the
+        // inline-code well so keys and code read differently.
+        run.font.family = reader.code_family.into();
+        run.font.weight = FontWeight::MEDIUM;
+        run.background_color = Some(theme.border_subtle);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2281,13 +2566,32 @@ fn render_list_children(
     column.into_any_element()
 }
 
-fn alert_accent(kind: AlertKind, theme: Theme) -> gpui::Hsla {
+/// Electron's five `--md-alert-*` colors.
+pub fn alert_accent(kind: AlertKind, theme: Theme) -> gpui::Hsla {
     match kind {
-        AlertKind::Note | AlertKind::Tip => theme.primary,
-        AlertKind::Important | AlertKind::Warning => theme.accent,
-        AlertKind::Caution => theme.destructive,
+        AlertKind::Note => theme.alert_note,
+        AlertKind::Tip => theme.alert_tip,
+        AlertKind::Important => theme.alert_important,
+        AlertKind::Warning => theme.alert_warning,
+        AlertKind::Caution => theme.alert_caution,
     }
 }
+
+/// Lucide icons: info, lightbulb, message-square-warning, triangle-alert, octagon-alert.
+pub fn alert_icon(kind: AlertKind) -> &'static str {
+    match kind {
+        AlertKind::Note => "icons/info.svg",
+        AlertKind::Tip => "icons/lightbulb.svg",
+        AlertKind::Important => "icons/message-square-warning.svg",
+        AlertKind::Warning => "icons/triangle-alert.svg",
+        AlertKind::Caution => "icons/octagon-alert.svg",
+    }
+}
+
+const ALERT_ICON_SIZE: f32 = 15.0;
+const ALERT_ICON_GAP: f32 = 7.0;
+const ALERT_BORDER_ALPHA: f32 = 0.30;
+const ALERT_FILL_ALPHA: f32 = 0.07;
 
 #[allow(clippy::too_many_arguments)]
 fn render_alert(
@@ -2310,31 +2614,43 @@ fn render_alert(
         .flex_col()
         .w_full()
         .min_w_0()
-        .border_l(px(3.0))
-        .border_color(accent)
-        .bg(accent.opacity(0.08))
-        .rounded(px(6.0))
+        .border_1()
+        .border_color(accent.opacity(ALERT_BORDER_ALPHA))
+        .bg(accent.opacity(ALERT_FILL_ALPHA))
+        .rounded(px(8.0))
         .px(px(14.0))
         .py(px(10.0))
-        .gap(px(6.0))
+        .gap(px(2.0))
         .child(
             div()
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(px(12.0))
+                .flex()
+                .items_center()
+                .gap(px(ALERT_ICON_GAP))
+                .font_family(Metrics::FONT_SANS)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(13.0))
+                .line_height(px(20.0))
                 .text_color(accent)
+                .child(icon(alert_icon(kind), accent, ALERT_ICON_SIZE))
                 .child(kind.label().to_owned()),
         )
-        .child(render_list_children(
-            children,
-            0,
-            block_path,
-            document,
-            ReaderView {
-                find_block: None,
-                ..view
-            },
-            cx,
-        ))
+        .child(
+            // The body is reader-sized and aligns with the title text, not the icon.
+            div()
+                .pl(px(ALERT_ICON_SIZE + ALERT_ICON_GAP))
+                .min_w_0()
+                .child(render_list_children(
+                    children,
+                    0,
+                    block_path,
+                    document,
+                    ReaderView {
+                        find_block: None,
+                        ..view
+                    },
+                    cx,
+                )),
+        )
         .into_any_element()
 }
 
@@ -2350,10 +2666,24 @@ fn render_footnote_section(
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let debug_selector = format!("reader-block-{block_suffix}");
-    let mut list = div().flex().flex_col().gap(px(10.0)).w_full().min_w_0();
+    // Notes read one step quieter than the body: 0.9em, muted, numbered like an ordered list.
+    let note_size = view.zoom(READER_FONT_SIZE * 0.9);
+    let mut list = div()
+        .flex()
+        .flex_col()
+        .gap(px(6.0))
+        .w_full()
+        .min_w_0()
+        .text_size(px(note_size))
+        .line_height(px(note_size * READER_LINE_HEIGHT));
     for (note_index, (label, children)) in notes.iter().enumerate() {
         let mut note_path = block_path.to_vec();
         note_path.push(note_index);
+        let marker = if label.bytes().all(|byte| byte.is_ascii_digit()) {
+            format!("{label}.")
+        } else {
+            label.clone()
+        };
         list = list.child(
             div()
                 .flex()
@@ -2364,8 +2694,10 @@ fn render_footnote_section(
                 .child(
                     div()
                         .flex_none()
+                        .min_w(px(18.0))
+                        .text_right()
                         .text_color(theme.muted_foreground)
-                        .child(footnote_ref_display(label)),
+                        .child(marker),
                 )
                 .child(render_list_children(
                     children,
@@ -2374,6 +2706,7 @@ fn render_footnote_section(
                     document,
                     ReaderView {
                         find_block: None,
+                        muted: true,
                         ..view
                     },
                     cx,
@@ -2389,14 +2722,15 @@ fn render_footnote_section(
         .min_w_0()
         .pt(px(16.0))
         .border_t_1()
-        .border_color(theme.border_subtle)
+        .border_color(theme.border)
         .gap(px(8.0))
         .child(
             div()
-                .text_size(px(12.0))
-                .font_weight(FontWeight::MEDIUM)
+                .font_family(Metrics::FONT_SANS)
+                .text_size(px(13.0))
+                .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.muted_foreground)
-                .child("Notes"),
+                .child("Footnotes"),
         )
         .child(list)
         .into_any_element()
@@ -2456,86 +2790,153 @@ fn to_lower_roman(mut number: u64) -> String {
     output
 }
 
+/// The code a block paints: the fence body without its final newline, which would otherwise
+/// lay out as an empty last line below the code.
+pub fn code_display_text(code: &str) -> &str {
+    code.strip_suffix('\n')
+        .map(|code| code.strip_suffix('\r').unwrap_or(code))
+        .unwrap_or(code)
+}
+
+fn syntax_hsla(color: crate::syntax::SyntaxColor) -> gpui::Hsla {
+    gpui::Hsla::from(gpui::rgb(
+        (u32::from(color.red) << 16) | (u32::from(color.green) << 8) | u32::from(color.blue),
+    ))
+}
+
+fn code_font(family: &'static str, italic: bool) -> Font {
+    let mut run_font = font(family);
+    run_font.weight = FontWeight::NORMAL;
+    run_font.style = if italic {
+        FontStyle::Italic
+    } else {
+        FontStyle::Normal
+    };
+    run_font
+}
+
+/// Highlighted runs clipped to `display_len` bytes (the painted text drops the final newline).
 fn highlighted_text_runs(
     highlighted: &HighlightedCode,
-    dark: bool,
+    display_len: usize,
     family: &'static str,
 ) -> Vec<TextRun> {
-    let source = if dark {
-        &highlighted.dark_runs
-    } else {
-        &highlighted.light_runs
-    };
-    source
-        .iter()
-        .map(|run| {
-            let hex = ((run.color.red as u32) << 16)
-                | ((run.color.green as u32) << 8)
-                | run.color.blue as u32;
-            let mut run_font = font(family);
-            run_font.weight = FontWeight::NORMAL;
-            run_font.style = if run.italic {
-                FontStyle::Italic
-            } else {
-                FontStyle::Normal
-            };
-            TextRun {
-                len: run.len,
-                font: run_font,
-                color: gpui::Hsla::from(gpui::rgb(hex)),
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }
+    let mut remaining = display_len;
+    let mut runs = Vec::new();
+    for run in &highlighted.runs {
+        if remaining == 0 {
+            break;
+        }
+        let len = run.len.min(remaining);
+        remaining -= len;
+        runs.push(TextRun {
+            len,
+            font: code_font(family, run.italic),
+            color: syntax_hsla(run.color),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        });
+    }
+    runs
+}
+
+/// Plain code before (or without) highlighting: the same face, weight, and default syntax color
+/// the highlighter uses, so swapping in highlighted runs does not shift or flash the text.
+fn plain_code_runs(display_len: usize, scheme: ColorScheme, family: &'static str) -> Vec<TextRun> {
+    (display_len > 0)
+        .then(|| TextRun {
+            len: display_len,
+            font: code_font(family, false),
+            color: syntax_hsla(crate::syntax::default_code_color(scheme)),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
         })
+        .into_iter()
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_code_block(
+/// Asks the shared cache for this block's tokens. On the first miss the block is highlighted on a
+/// background thread and the reader repaints when it lands; until then it paints plain text.
+fn lazy_highlight(
     language: Option<&str>,
     code: &str,
-    highlighted: Option<&HighlightedCode>,
+    scheme: ColorScheme,
+    cx: &Context<MdowApp>,
+) -> Option<Arc<HighlightedCode>> {
+    match HighlightCache::global().lookup(language, code, scheme) {
+        HighlightLookup::Ready(highlighted) => Some(highlighted),
+        HighlightLookup::Claimed(key) => {
+            let language = language.unwrap_or_default().to_owned();
+            let code = code.to_owned();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .spawn(async move {
+                        HighlightCache::global().highlight_claimed(key, &language, &code);
+                    })
+                    .await;
+                this.update(cx, |_, cx| cx.notify()).ok();
+            })
+            .detach();
+            None
+        }
+        HighlightLookup::Pending | HighlightLookup::Unsupported => None,
+    }
+}
+
+/// The subtle full-width band behind a highlighted line.
+fn code_line_band(theme: Theme) -> gpui::Hsla {
+    theme.foreground.opacity(match theme.color_scheme {
+        ColorScheme::Light => 0.06,
+        ColorScheme::Dark => 0.07,
+    })
+}
+
+/// The Copy button in a code card header; `copied` shows the confirmation state.
+fn code_copy_button(
+    code_to_copy: String,
     block_path: &[usize],
-    document_path: &Path,
-    view: ReaderView<'_>,
+    copied: bool,
+    theme: Theme,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
-    let theme = view.theme;
-    let copied_code = view.copied_code;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
-    let copied = code_copy_feedback_is_active(copied_code, block_index, Instant::now());
-    let code_to_copy = code.to_owned();
-    let display_language = highlighted
-        .map(|value| value.normalized_language.as_deref())
-        .unwrap_or(language);
-    let highlighted_text = highlighted
-        .map(|value| {
-            StyledText::new(value.text.clone()).with_runs(highlighted_text_runs(
-                value,
-                theme.color_scheme == ColorScheme::Dark,
-                view.style.code_family,
-            ))
-        })
-        .unwrap_or_else(|| StyledText::new(code.to_owned()));
     let copy_debug_selector = format!("copy-code-{block_suffix}");
-    let copy_button = div()
+    let copied_debug_selector = format!("copied-code-{block_suffix}");
+    let copy_color = if copied {
+        theme.alert_tip
+    } else {
+        theme.muted_foreground
+    };
+    div()
         .id(("copy-code", block_index))
         .debug_selector(move || copy_debug_selector)
         .tab_index(0)
         .focusable()
         .flex()
+        .flex_none()
         .items_center()
-        .justify_center()
-        .size(px(28.0))
-        .rounded(px(6.0))
-        .bg(theme.muted.opacity(0.92))
-        .text_color(theme.muted_foreground)
+        .gap(px(6.0))
+        .h(px(CODE_COPY_BUTTON_HEIGHT))
+        .px(px(8.0))
+        .rounded(px(5.0))
+        .border_1()
+        .border_color(gpui::transparent_black())
+        .font_family(Metrics::FONT_SANS)
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(px(11.0))
+        .line_height(px(16.0))
+        .text_color(copy_color)
         .cursor_pointer()
-        .hover(move |style| style.bg(theme.card).text_color(theme.foreground))
+        .hover(move |style| {
+            style
+                .bg(theme.foreground.opacity(0.06))
+                .text_color(if copied { copy_color } else { theme.foreground })
+        })
         .active(|style| style.opacity(0.78))
-        .focus(move |style| style.border_1().border_color(theme.primary))
+        .focus(move |style| style.border_color(theme.primary))
         .on_click(cx.listener(move |this, _, _, cx| {
             this.copy_code(block_index, code_to_copy.clone(), cx);
         }))
@@ -2545,60 +2946,114 @@ fn render_code_block(
             } else {
                 "icons/copy.svg"
             },
-            if copied {
-                theme.primary
-            } else {
-                theme.muted_foreground
-            },
-            14.0,
-        ));
+            copy_color,
+            13.0,
+        ))
+        .child(if copied {
+            div()
+                .id(("copied-code", block_index))
+                .debug_selector(move || copied_debug_selector)
+                .child("Copied")
+                .into_any_element()
+        } else {
+            div().child("Copy").into_any_element()
+        })
+        .into_any_element()
+}
+
+/// The 32px header shared by code blocks and diagrams: a mono label left, actions right.
+fn code_card_header(label: Option<String>, action: AnyElement, theme: Theme) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .h(px(CODE_HEADER_HEIGHT))
+        .pl(px(14.0))
+        .pr(px(6.0))
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .child(
+            div()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .font_family(Metrics::FONT_MONO)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(11.0))
+                .line_height(px(16.0))
+                .text_color(theme.muted_foreground)
+                .children(label),
+        )
+        .child(action)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_code_block(
+    language: Option<&str>,
+    code: &str,
+    highlights: &LineHighlights,
+    highlight: bool,
+    block_path: &[usize],
+    document_path: &Path,
+    view: ReaderView<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
+    let code_to_copy = code.to_owned();
+    let display = code_display_text(code);
+    let family = view.style.code_family;
+    let highlighted = highlight
+        .then(|| lazy_highlight(language, code, theme.color_scheme, cx))
+        .flatten();
+    let runs = match &highlighted {
+        Some(highlighted) => highlighted_text_runs(highlighted, display.len(), family),
+        None => plain_code_runs(display.len(), theme.color_scheme, family),
+    };
+    let code_text = StyledText::new(display.to_owned()).with_runs(runs);
+    let code_size = view.zoom(READER_FONT_SIZE * 0.875);
+    let code_line_height = code_size * BlockStyle::code_block().line_height;
+    let [padding_top, padding_x] = BlockStyle::code_block().padding;
+
+    // Blocks without a fence language keep the header (with only the Copy button) so every code
+    // block shares one geometry and the button never moves; a made-up "text" label would claim
+    // a language the author never wrote.
+    let header = code_card_header(
+        language.map(str::to_lowercase),
+        code_copy_button(code_to_copy, block_path, copied, theme, cx),
+        theme,
+    );
+
+    let band = code_line_band(theme);
+    let line_count = display.split('\n').count();
+    let bands = (1..=line_count)
+        .filter(|line| highlights.contains(*line))
+        .map(|line| {
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(px(padding_top + (line - 1) as f32 * code_line_height))
+                .h(px(code_line_height))
+                .bg(band)
+        })
+        .collect::<Vec<_>>();
+
     let block_debug_selector = format!("reader-block-{block_suffix}");
-    let copied_debug_selector = format!("copied-code-{block_suffix}");
     let code_debug_selector = format!("reader-code-{block_suffix}");
     div()
         .id(("reader-block", block_index))
         .debug_selector(move || block_debug_selector)
-        .relative()
         .w_full()
-        .rounded(px(10.0))
+        .min_w_0()
+        .rounded(px(BlockStyle::code_block().radius))
         .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
-        .shadow_sm()
+        .border_color(theme.border_subtle)
+        .bg(theme.code_surface)
         .overflow_hidden()
-        .child(
-            div()
-                .absolute()
-                .top(px(7.0))
-                .right(px(8.0))
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .when_some(display_language.map(str::to_owned), |row, language| {
-                    row.child(
-                        div()
-                            .font_family(Metrics::FONT_MONO)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(px(11.0))
-                            .line_height(px(16.0))
-                            .text_color(theme.muted_foreground)
-                            .child(language.to_lowercase()),
-                    )
-                })
-                .when(copied, |row| {
-                    row.child(
-                        div()
-                            .id(("copied-code", block_index))
-                            .debug_selector(move || copied_debug_selector)
-                            .font_family(Metrics::FONT_SANS)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(px(11.0))
-                            .text_color(theme.primary)
-                            .child("Copied"),
-                    )
-                })
-                .child(copy_button),
-        )
+        .child(header)
         .child(
             restrict_scroll_to_axis(div())
                 .id((
@@ -2606,17 +3061,28 @@ fn render_code_block(
                     document_scoped_element_id(document_path, "code-scroll", block_index),
                 ))
                 .debug_selector(move || code_debug_selector)
+                .flex()
                 .w_full()
                 .overflow_x_scroll()
                 .scrollbar_width(px(6.0))
-                .px(px(18.0))
-                .py(px(14.0))
-                .font_family(view.style.code_family)
-                .font_weight(FontWeight::NORMAL)
-                .text_size(px(view.zoom(16.0 * 0.875)))
-                .line_height(px(view.zoom(16.0 * 0.875) * 1.6))
-                .whitespace_nowrap()
-                .child(highlighted_text),
+                .child(
+                    // At least as wide as the block and as wide as the longest line, so
+                    // highlight bands span the whole scrollable width.
+                    div()
+                        .relative()
+                        .flex_none()
+                        .min_w_full()
+                        .pt(px(padding_top))
+                        .pb(px(CODE_PADDING_BOTTOM))
+                        .px(px(padding_x))
+                        .font_family(family)
+                        .font_weight(FontWeight::NORMAL)
+                        .text_size(px(code_size))
+                        .line_height(px(code_line_height))
+                        .whitespace_nowrap()
+                        .children(bands)
+                        .child(code_text),
+                ),
         )
         .into_any_element()
 }
@@ -2742,12 +3208,25 @@ fn render_image(
 ) -> AnyElement {
     let alt_owned = alt.to_owned();
     let fallback = move || image_fallback(alt_owned.clone(), theme, block_index);
-    let content = if let Some(path) = resolve_image_target(document_path, source) {
-        style_reader_image(img(Arc::<Path>::from(path)))
-            .with_fallback(fallback)
-            .into_any_element()
+    let is_data = source
+        .trim_start()
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("data:"));
+    let image = if is_data {
+        data_image(source).map(|image| img(image))
     } else {
-        fallback()
+        resolve_image_target(document_path, source).map(|path| img(Arc::<Path>::from(path)))
+    };
+    let content = match image {
+        Some(image) => style_reader_image(image)
+            .with_loading({
+                let fallback = fallback.clone();
+                move || fallback()
+            })
+            .with_fallback(fallback)
+            .into_any_element(),
+        // Remote images are blocked like Electron's CSP; unresolvable ones say so.
+        None => fallback(),
     };
     div()
         .id(("reader-block", block_index))
@@ -2803,14 +3282,102 @@ mod tests {
 
     #[test]
     fn reader_surface_metrics_match_markdown_css() {
-        assert_eq!(BlockStyle::body().font_size, 16.0);
-        assert_eq!(BlockStyle::body().line_height, 1.75);
-        assert_eq!(BlockStyle::heading(1).font_size, 16.0 * 1.75);
-        assert_eq!(BlockStyle::heading(2).margin_top_em, 1.5);
-        assert_eq!(BlockStyle::blockquote().padding, [6.2, 16.0]);
-        assert_eq!(BlockStyle::code_block().radius, 10.0);
-        assert_eq!(BlockStyle::code_block().padding, [14.0, 18.0]);
+        // Electron typography.ts: MARKDOWN_FONT_SIZE 15.5, MARKDOWN_LINE_HEIGHT 1.65.
+        assert_eq!(BlockStyle::body().font_size, 15.5);
+        assert_eq!(BlockStyle::body().line_height, 1.65);
+        assert_eq!(BlockStyle::heading(1).font_size, 15.5 * 1.875);
+        assert_eq!(BlockStyle::heading(2).margin_top_em, 1.8);
+        assert_eq!(BlockStyle::blockquote().padding, [15.5 * 0.4, 15.5]);
+        assert_eq!(BlockStyle::code_block().radius, 8.0);
+        assert_eq!(BlockStyle::code_block().padding, [12.0, 16.0]);
+        assert_eq!(CODE_PADDING_BOTTOM, 14.0);
+        assert_eq!(CODE_HEADER_HEIGHT, 32.0);
+        assert_eq!(CODE_COPY_BUTTON_HEIGHT, 24.0);
         assert_eq!(BlockStyle::table_cell().padding, [10.0, 14.0]);
+    }
+
+    #[test]
+    fn code_blocks_paint_without_a_trailing_empty_line() {
+        assert_eq!(code_display_text("let a = 1;\n"), "let a = 1;");
+        assert_eq!(code_display_text("let a = 1;\r\n"), "let a = 1;");
+        assert_eq!(code_display_text("a\n\n"), "a\n");
+        assert_eq!(code_display_text("no newline"), "no newline");
+
+        let highlighted = highlight_code(Some("rust"), "fn main() {}\n", ColorScheme::Dark);
+        let display = code_display_text(&highlighted.text);
+        let runs = highlighted_text_runs(&highlighted, display.len(), Metrics::FONT_MONO);
+        assert_eq!(runs.iter().map(|run| run.len).sum::<usize>(), display.len());
+    }
+
+    #[test]
+    fn plain_code_matches_highlighted_metrics_to_avoid_a_flash() {
+        let plain = plain_code_runs(5, ColorScheme::Light, Metrics::FONT_MONO);
+        let highlighted = highlight_code(Some("rust"), "let a", ColorScheme::Light);
+        let runs = highlighted_text_runs(&highlighted, 5, Metrics::FONT_MONO);
+        assert_eq!(plain[0].font.family, runs[0].font.family);
+        assert_eq!(plain[0].font.weight, runs[0].font.weight);
+        assert_eq!(
+            plain_code_runs(0, ColorScheme::Light, Metrics::FONT_MONO).len(),
+            0
+        );
+    }
+
+    #[test]
+    fn alerts_use_five_distinct_electron_colors_and_lucide_icons() {
+        for theme in [
+            Theme::for_appearance(gpui::WindowAppearance::Light),
+            Theme::for_appearance(gpui::WindowAppearance::Dark),
+        ] {
+            let kinds = [
+                AlertKind::Note,
+                AlertKind::Tip,
+                AlertKind::Important,
+                AlertKind::Warning,
+                AlertKind::Caution,
+            ];
+            let colors = kinds.map(|kind| alert_accent(kind, theme));
+            for (index, color) in colors.iter().enumerate() {
+                assert!(
+                    colors[index + 1..].iter().all(|other| other != color),
+                    "alert colors must be distinct"
+                );
+            }
+            let icons = kinds.map(alert_icon);
+            assert_eq!(
+                icons,
+                [
+                    "icons/info.svg",
+                    "icons/lightbulb.svg",
+                    "icons/message-square-warning.svg",
+                    "icons/triangle-alert.svg",
+                    "icons/octagon-alert.svg",
+                ]
+            );
+            for icon in icons {
+                assert!(
+                    crate::assets::required_assets().any(|asset| asset == icon),
+                    "{icon} must be a required asset"
+                );
+            }
+        }
+        let light = Theme::for_appearance(gpui::WindowAppearance::Light);
+        let dark = Theme::for_appearance(gpui::WindowAppearance::Dark);
+        // oklch(0.55 0.17 255) = #1570d1; oklch(0.68 0.14 255) = #589aed.
+        let hex = |color: gpui::Hsla| {
+            let rgba = gpui::Rgba::from(color);
+            let byte = |channel: f32| (channel * 255.0).round() as u8;
+            format!(
+                "#{:02x}{:02x}{:02x}",
+                byte(rgba.r),
+                byte(rgba.g),
+                byte(rgba.b)
+            )
+        };
+        assert_eq!(hex(light.alert_note), "#1570d1");
+        assert_eq!(hex(dark.alert_note), "#589aed");
+        assert_eq!(hex(light.alert_caution), "#cc3336");
+        assert_eq!(hex(dark.alert_tip), "#56ae6c");
+        assert_eq!(hex(light.alert_warning), "#ad7300");
     }
 
     #[test]
@@ -2843,18 +3410,14 @@ mod tests {
 
     #[test]
     fn highlighted_runs_keep_lengths_fonts_and_theme_colors() {
-        let highlighted = highlight_code(Some("rust"), "fn main() {}\n");
-        let light = highlighted_text_runs(&highlighted, false, Metrics::FONT_MONO);
-        let dark = highlighted_text_runs(&highlighted, true, Metrics::FONT_MONO);
+        let code = "fn main() {}\n";
+        let light_code = highlight_code(Some("rust"), code, ColorScheme::Light);
+        let dark_code = highlight_code(Some("rust"), code, ColorScheme::Dark);
+        let light = highlighted_text_runs(&light_code, code.len(), Metrics::FONT_MONO);
+        let dark = highlighted_text_runs(&dark_code, code.len(), Metrics::FONT_MONO);
 
-        assert_eq!(
-            light.iter().map(|run| run.len).sum::<usize>(),
-            highlighted.text.len()
-        );
-        assert_eq!(
-            dark.iter().map(|run| run.len).sum::<usize>(),
-            highlighted.text.len()
-        );
+        assert_eq!(light.iter().map(|run| run.len).sum::<usize>(), code.len());
+        assert_eq!(dark.iter().map(|run| run.len).sum::<usize>(), code.len());
         assert!(
             light
                 .iter()
@@ -2865,13 +3428,14 @@ mod tests {
 
     #[test]
     fn heading_styles_preserve_the_complete_six_level_hierarchy() {
+        // Electron markdown.css: h4/h5 use the foreground; only h6 is muted and uppercase.
         let expected = [
-            (28.0, 600, 1.25, -0.025, 1.5, 0.5, false, false),
-            (22.0, 600, 1.3, -0.02, 1.5, 0.5, false, false),
-            (18.0, 600, 1.4, -0.01, 1.5, 0.4, false, false),
-            (16.0, 500, 1.4, 0.0, 1.3, 0.3, true, false),
-            (15.0, 500, 1.4, 0.0, 1.2, 0.25, true, false),
-            (14.0, 500, 1.4, 0.0, 1.0, 0.2, true, false),
+            (15.5 * 1.875, 700, 1.2, -0.025, 2.0, 0.6, false, false),
+            (15.5 * 1.5, 650, 1.25, -0.02, 1.8, 0.5, false, false),
+            (15.5 * 1.15, 600, 1.3, -0.01, 1.5, 0.4, false, false),
+            (15.5, 600, 1.4, 0.0, 1.3, 0.3, false, false),
+            (15.5 * 0.95, 600, 1.4, 0.0, 1.2, 0.25, false, false),
+            (15.5 * 0.875, 600, 1.4, 0.03, 1.0, 0.2, true, true),
         ];
 
         for (level, expected) in (1_u8..=6).zip(expected) {
@@ -3038,13 +3602,28 @@ mod tests {
             layout.styles,
             vec![
                 InlineStyleRange::strikethrough(0..4),
-                InlineStyleRange::footnote(5..7),
+                InlineStyleRange {
+                    range: 5..7,
+                    footnote: true,
+                    link_target: Some("#fn-1".into()),
+                    link_node_id: Some(0),
+                    ..InlineStyleRange::default()
+                },
             ],
+        );
+        assert_eq!(
+            layout.links,
+            vec![InlineLink {
+                range: 5..7,
+                target: "#fn-1".into(),
+                node_id: 0,
+            }],
+            "footnote refs are clickable links to their note"
         );
 
         let runs = text_runs(
             &layout,
-            &[],
+            &layout.links,
             None,
             None,
             400,
@@ -3055,7 +3634,71 @@ mod tests {
         );
         assert!(runs[0].strikethrough.is_some());
         assert!(runs[1].strikethrough.is_none());
-        assert_eq!(runs[2].color, theme.muted_foreground);
+        assert_eq!(runs[2].color, theme.primary);
+    }
+
+    #[test]
+    fn footnote_links_route_to_anchor_jumps_in_both_directions() {
+        let document = parse_document(
+            PathBuf::from("/tmp/notes.md"),
+            "Claim.[^a]\n\n[^a]: Note.\n".into(),
+        );
+        let targets = document_link_focus_targets(&document)
+            .into_iter()
+            .map(|target| target.target)
+            .collect::<Vec<_>>();
+        assert_eq!(targets, vec!["#fn-a", "#fnref-a"]);
+        for target in &targets {
+            let LinkRoute::Anchor(fragment) = classify_link(&document.path, target) else {
+                panic!("{target} should be an in-document anchor");
+            };
+            assert!(document.anchor_block(&fragment).is_some(), "{target}");
+        }
+        assert_eq!(document.anchor_block("fn-a"), Some(1));
+        assert_eq!(document.anchor_block("fnref-a"), Some(0));
+    }
+
+    #[test]
+    fn inline_html_subset_styles_runs_and_keeps_find_text_aligned() {
+        let theme = Theme::for_appearance(gpui::WindowAppearance::Light);
+        let spans = vec![
+            InlineSpan::Kbd(vec![InlineSpan::Text("K".into())]),
+            InlineSpan::Text(" x".into()),
+            InlineSpan::Superscript(vec![InlineSpan::Text("2".into())]),
+            InlineSpan::Text(" ".into()),
+            InlineSpan::Superscript(vec![InlineSpan::Text("th".into())]),
+            InlineSpan::Text(" ".into()),
+            InlineSpan::Mark(vec![InlineSpan::Text("hot".into())]),
+        ];
+        let layout = inline_layout(&spans);
+        assert_eq!(layout.text, "K x² th hot");
+        assert_eq!(layout.text, DocumentBlock::Paragraph(spans).find_text());
+
+        let reader = Prefs::default().reader_style();
+        let runs = text_runs(
+            &layout,
+            &[],
+            None,
+            None,
+            400,
+            theme.foreground,
+            theme,
+            reader,
+            false,
+        );
+        let kbd = &runs[0];
+        assert_eq!(kbd.font.family.as_ref(), reader.code_family);
+        assert_eq!(kbd.background_color, Some(theme.border_subtle));
+        let superscript = &runs[2];
+        assert!(
+            superscript
+                .font
+                .features
+                .tag_value_list()
+                .contains(&("sups".to_owned(), 1))
+        );
+        let mark = runs.last().unwrap();
+        assert!(mark.background_color.is_some());
     }
 
     #[test]
@@ -3150,6 +3793,7 @@ mod tests {
             DocumentBlock::CodeBlock {
                 language: None,
                 code: "one".into(),
+                highlights: LineHighlights::default(),
             },
             DocumentBlock::Table(TableBlock {
                 headers: vec![],
@@ -3174,19 +3818,20 @@ mod tests {
             spacing[0].before, 0.0,
             "a leading heading has no redundant top margin"
         );
-        assert_eq!(spacing[1].before, 20.0);
+        assert_eq!(spacing[1].before, READER_FONT_SIZE * 1.25);
         assert_eq!(
-            spacing[2].before, 20.0,
+            spacing[2].before,
+            READER_FONT_SIZE * 1.25,
             "code/table margins collapse to max"
         );
-        assert_eq!(spacing[3].before, 20.0);
+        assert_eq!(spacing[3].before, READER_FONT_SIZE * 1.25);
         assert_eq!(
             spacing[4].before,
-            16.0 * 0.35,
+            READER_FONT_SIZE * 0.35,
             "adjacent items use the CSS li + li margin"
         );
         assert_eq!(
-            spacing[4].after, 16.0,
+            spacing[4].after, READER_FONT_SIZE,
             "the list group retains a 1em outer margin"
         );
 
@@ -3214,7 +3859,7 @@ mod tests {
 
         let spacing = block_sequence_spacing(&blocks);
 
-        assert_eq!(spacing[1].before, 16.0);
+        assert_eq!(spacing[1].before, READER_FONT_SIZE);
     }
 
     #[test]
@@ -3232,7 +3877,10 @@ mod tests {
             },
         ];
 
-        assert_eq!(block_sequence_spacing(&blocks)[1].before, 16.0 * 0.35);
+        assert_eq!(
+            block_sequence_spacing(&blocks)[1].before,
+            READER_FONT_SIZE * 0.35
+        );
     }
 
     #[test]
@@ -3323,14 +3971,12 @@ mod tests {
         ];
 
         let nested_spacing = block_sequence_spacing(&nested_boundaries);
-        assert_eq!(nested_spacing[1].before, 16.0);
-        assert_eq!(nested_spacing[2].before, 16.0);
-        assert_eq!(block_sequence_spacing(&same_depth)[1].before, 16.0 * 0.35);
-    }
-
-    #[test]
-    fn blockquote_style_has_equal_sixteen_pixel_inline_insets() {
-        assert_eq!(BlockStyle::blockquote().padding, [6.2, 16.0]);
+        assert_eq!(nested_spacing[1].before, READER_FONT_SIZE);
+        assert_eq!(nested_spacing[2].before, READER_FONT_SIZE);
+        assert_eq!(
+            block_sequence_spacing(&same_depth)[1].before,
+            READER_FONT_SIZE * 0.35
+        );
     }
 
     #[test]
@@ -3394,6 +4040,79 @@ mod tests {
                 "{target}"
             );
         }
+    }
+
+    #[test]
+    fn image_sources_classify_like_electrons_csp() {
+        let directory = tempfile::tempdir().unwrap();
+        let document = directory.path().join("guide.md");
+        let image = directory.path().join("hero.png");
+        fs::write(&image, b"png bytes").unwrap();
+
+        assert_eq!(
+            classify_image(&document, "hero.png"),
+            ImageTarget::Local(image)
+        );
+        for remote in [
+            "https://mdow.dev/hero.png",
+            "HTTP://mdow.dev/hero.png",
+            "//cdn.example/x.png",
+        ] {
+            assert_eq!(
+                classify_image(&document, remote),
+                ImageTarget::Remote,
+                "{remote}"
+            );
+        }
+        assert_eq!(
+            classify_image(&document, "data:image/png;base64,aGVsbG8="),
+            ImageTarget::Data(gpui::ImageFormat::Png, b"hello".to_vec())
+        );
+        assert_eq!(
+            classify_image(&document, "data:image/svg+xml,%3Csvg%2F%3E"),
+            ImageTarget::Data(gpui::ImageFormat::Svg, b"<svg/>".to_vec())
+        );
+        assert_eq!(
+            classify_image(&document, "data:text/html;base64,aGVsbG8="),
+            ImageTarget::Unavailable,
+            "non-image data URIs never render"
+        );
+        assert_eq!(
+            classify_image(&document, "data:image/png;base64,!!!"),
+            ImageTarget::Unavailable
+        );
+        assert_eq!(
+            classify_image(&document, "missing.png"),
+            ImageTarget::Unavailable
+        );
+        assert!(data_image("data:image/png;base64,aGVsbG8=").is_some());
+        assert!(
+            decode_data_image(&format!(
+                "data:image/png;base64,{}",
+                "A".repeat(MAX_DATA_IMAGE_BYTES / 3 * 4 + 8)
+            ))
+            .is_none(),
+            "oversized data URIs are rejected"
+        );
+    }
+
+    #[test]
+    fn highlighted_code_lines_follow_the_fence_meta() {
+        let highlights = LineHighlights(vec![(1, 1), (3, 4)]);
+        let lines = (1..=5)
+            .filter(|line| highlights.contains(*line))
+            .collect::<Vec<_>>();
+        assert_eq!(lines, vec![1, 3, 4]);
+        let light = Theme::for_appearance(gpui::WindowAppearance::Light);
+        assert!(code_line_band(light).a > 0.0 && code_line_band(light).a < 0.1);
+    }
+
+    #[test]
+    fn blockquote_border_mixes_the_muted_foreground_like_electron() {
+        let theme = Theme::for_appearance(gpui::WindowAppearance::Light);
+        let border = blockquote_border(theme);
+        assert_eq!(border.h, theme.muted_foreground.h);
+        assert!((border.a - 0.45).abs() < f32::EPSILON);
     }
 
     #[test]

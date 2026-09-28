@@ -1,5 +1,10 @@
 import { existsSync } from 'fs'
 import { JsonStore } from './json-store'
+import {
+  DEFAULT_READING_WIDTH,
+  migrateReadingWidth,
+  type ReadingWidth,
+} from '../shared/reading-width'
 
 interface SessionTab {
   path: string
@@ -15,7 +20,6 @@ interface WindowBounds {
 
 type SidebarMode = 'recents' | 'folder' | 'outline'
 type InterfaceScale = 'compact' | 'comfortable' | 'large'
-type ReadingWidth = 'standard' | 'comfortable' | 'wide'
 type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
 
 interface StoreSchema {
@@ -29,9 +33,11 @@ interface StoreSchema {
   codeFont: string
   theme: string
   autoUpdateEnabled: boolean
+  /** Legacy (pre Line width) full-width toggle; migrated into `readingWidth: 'full'`. */
   wideMode: boolean
   interfaceScale: InterfaceScale
-  readingWidth: ReadingWidth
+  /** Persisted files may still hold a legacy value; read it through `getReadingWidth`. */
+  readingWidth: ReadingWidth | 'standard' | 'comfortable'
   sidebarMode: SidebarMode
   companionPreferredProvider: CompanionProviderId | null
   companionCustomCommand: string
@@ -51,7 +57,7 @@ const storeDefaults: StoreSchema = {
   autoUpdateEnabled: true,
   wideMode: false,
   interfaceScale: 'compact',
-  readingWidth: 'standard',
+  readingWidth: DEFAULT_READING_WIDTH,
   sidebarMode: 'recents',
   companionPreferredProvider: null,
   companionCustomCommand: '',
@@ -92,6 +98,20 @@ export function addRecent(filePath: string): void {
   getStore().set('recents', recents.slice(0, MAX_RECENTS))
 }
 
+/**
+ * The Line width setting, migrating legacy values (three width presets plus a separate
+ * wide-mode flag) the first time they are read.
+ */
+function getReadingWidth(): ReadingWidth {
+  const appStore = getStore()
+  const stored = appStore.get('readingWidth')
+  const legacyWideMode = appStore.get('wideMode')
+  const width = migrateReadingWidth(stored, legacyWideMode)
+  if (width !== stored) appStore.set('readingWidth', width)
+  if (legacyWideMode) appStore.set('wideMode', false)
+  return width
+}
+
 export function getAppState() {
   const appStore = getStore()
   return {
@@ -104,9 +124,8 @@ export function getAppState() {
     codeFont: appStore.get('codeFont'),
     theme: appStore.get('theme'),
     autoUpdateEnabled: appStore.get('autoUpdateEnabled'),
-    wideMode: appStore.get('wideMode'),
     interfaceScale: appStore.get('interfaceScale'),
-    readingWidth: appStore.get('readingWidth'),
+    readingWidth: getReadingWidth(),
     sidebarMode: appStore.get('sidebarMode'),
     companionPreferredProvider: appStore.get('companionPreferredProvider'),
     companionCustomCommand: appStore.get('companionCustomCommand'),
@@ -128,7 +147,6 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.theme !== undefined) appStore.set('theme', state.theme)
   if (state.autoUpdateEnabled !== undefined)
     appStore.set('autoUpdateEnabled', state.autoUpdateEnabled)
-  if (state.wideMode !== undefined) appStore.set('wideMode', state.wideMode)
   if (state.interfaceScale !== undefined) appStore.set('interfaceScale', state.interfaceScale)
   if (state.readingWidth !== undefined) appStore.set('readingWidth', state.readingWidth)
   if (state.sidebarMode !== undefined) appStore.set('sidebarMode', state.sidebarMode)

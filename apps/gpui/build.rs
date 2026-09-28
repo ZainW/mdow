@@ -30,10 +30,12 @@ mod macos {
 
         println!("cargo:rerun-if-changed=native/sparkle_bridge.m");
         println!("cargo:rerun-if-changed=native/sparkle_bridge.h");
+        println!("cargo:rerun-if-changed=native/app_bridge.m");
         println!("cargo:rerun-if-changed=../../script/fetch_sparkle.sh");
 
         cc::Build::new()
             .file("native/sparkle_bridge.m")
+            .file("native/app_bridge.m")
             .flag("-fobjc-arc")
             .flag("-fmodules")
             .flag(format!("-F{}", vendor.display()))

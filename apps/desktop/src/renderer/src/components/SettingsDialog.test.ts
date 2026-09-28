@@ -16,6 +16,13 @@ describe('SettingsDialog', () => {
       saveAppState: vi.fn().mockResolvedValue(undefined),
       setTheme: vi.fn().mockResolvedValue(undefined),
       setAutoUpdateScheduling: vi.fn().mockResolvedValue(undefined),
+      getAppVersion: vi.fn().mockResolvedValue('1.10.0'),
+      checkForUpdates: vi.fn().mockResolvedValue(undefined),
+      onUpdateUpToDate: () => () => {},
+      onUpdateAvailable: () => () => {},
+      onUpdateDownloadProgress: () => () => {},
+      onUpdateDownloaded: () => () => {},
+      onUpdateError: () => () => {},
     }
 
     const { SettingsDialog } = await import('./SettingsDialog')

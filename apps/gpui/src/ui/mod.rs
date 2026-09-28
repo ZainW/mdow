@@ -4,3 +4,4 @@ pub mod graphic;
 pub mod primitives;
 pub mod reader;
 pub mod welcome;
+pub mod zoom_hud;

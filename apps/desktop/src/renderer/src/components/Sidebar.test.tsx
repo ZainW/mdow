@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Sidebar } from './Sidebar'
 import { SidebarProvider } from './ui/sidebar'
 import { useAppStore } from '../store/app-store'
+import { stubWindowApi } from '../test/stubWindowApi'
 
 const recentsMock = vi.hoisted(() => ({ value: [] as string[] }))
 const folderTreeMock = vi.hoisted(() => ({
@@ -11,7 +12,8 @@ const folderTreeMock = vi.hoisted(() => ({
   rendered: vi.fn(),
 }))
 
-vi.mock('../hooks/useRecents', () => ({
+vi.mock('../hooks/useRecents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks/useRecents')>()),
   useRecents: () => ({ data: recentsMock.value }),
 }))
 
@@ -123,6 +125,88 @@ describe('Sidebar', () => {
     recents.focus()
     fireEvent.keyDown(recents, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(folder)
+  })
+
+  it('keeps a section header row in every mode so the list never jumps', () => {
+    renderSidebar()
+    expect(screen.getByTestId('sidebar-section-header')).toHaveTextContent('Recent files')
+    fireEvent.click(screen.getByRole('radio', { name: 'Folder' }))
+    expect(screen.getByTestId('sidebar-section-header')).toHaveTextContent('No folder')
+    expect(screen.getByRole('button', { name: 'Open folder' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Outline' }))
+    expect(screen.getByTestId('sidebar-section-header')).toHaveTextContent('No document')
+  })
+
+  it('shows the folder name and file count in Folder mode', () => {
+    useAppStore.setState({
+      sidebarMode: 'folder',
+      openFolderPath: '/Users/zain/docs',
+      folderTreeTruncated: false,
+      folderTree: [
+        {
+          name: 'guides',
+          path: '/Users/zain/docs/guides',
+          isDirectory: true,
+          children: [
+            { name: 'a.md', path: '/Users/zain/docs/guides/a.md', isDirectory: false },
+            { name: 'b.md', path: '/Users/zain/docs/guides/b.md', isDirectory: false },
+          ],
+        },
+        { name: 'README.md', path: '/Users/zain/docs/README.md', isDirectory: false },
+      ],
+    })
+    renderSidebar()
+    const header = screen.getByTestId('sidebar-section-header')
+    expect(header).toHaveTextContent('docs')
+    expect(header).toHaveTextContent('3 files')
+  })
+
+  it('shows the document title and heading count in Outline mode', () => {
+    useAppStore.setState({
+      sidebarMode: 'outline',
+      tabs: [{ id: 't1', path: '/a/guide.md', content: '', scrollPosition: 0 }],
+      activeTabId: 't1',
+      docHeadings: [
+        { level: 1, text: 'Reading guide', id: 'reading-guide' },
+        { level: 2, text: 'Opening', id: 'opening' },
+      ],
+    })
+    renderSidebar()
+    const header = screen.getByTestId('sidebar-section-header')
+    expect(header).toHaveTextContent('Reading guide')
+    expect(header).toHaveTextContent('2 headings')
+  })
+
+  it('shows the Settings shortcut hint in the footer', () => {
+    renderSidebar()
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveTextContent('Ctrl+,')
+  })
+
+  describe('recents', () => {
+    const saveAppState = vi.fn().mockResolvedValue(undefined)
+    stubWindowApi(() => ({ saveAppState, getRecents: vi.fn().mockResolvedValue([]) }))
+    beforeEach(() => saveAppState.mockClear())
+
+    it('renders single-line rows with the parent folder', () => {
+      recentsMock.value = ['/Users/zain/mdow/README.md', '/Users/zain/flagship/README.md']
+      renderSidebar()
+      const rows = screen.getAllByTitle(/README\.md$/)
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toHaveTextContent('README.mdmdow')
+      expect(rows[1]).toHaveTextContent('README.mdflagship')
+    })
+
+    it('clears recents from the section header', () => {
+      recentsMock.value = ['/Users/zain/mdow/README.md']
+      renderSidebar()
+      fireEvent.click(screen.getByRole('button', { name: 'Clear recent files' }))
+      expect(saveAppState).toHaveBeenCalledWith({ recents: [] })
+    })
+
+    it('hides Clear when there is nothing to clear', () => {
+      renderSidebar()
+      expect(screen.queryByRole('button', { name: 'Clear recent files' })).not.toBeInTheDocument()
+    })
   })
 
   it('marks only the active sidebar mode as tabIndex=0', () => {

@@ -64,7 +64,21 @@ impl Metrics {
     pub const SIDEBAR_WIDTH: f32 = 244.0;
     pub const MIN_MAIN_WIDTH_WITH_SIDEBAR: f32 = 320.0;
     pub const TITLEBAR_BUTTON: f32 = 28.0;
-    pub const TAB_BAR_HEIGHT: f32 = 36.0;
+    /// The tab bar doubles as the titlebar row, so it shares the traffic-light row height.
+    pub const TAB_BAR_HEIGHT: f32 = TrafficLights::titlebar_height();
+    /// The sidebar column runs to the top of the window; its header is the titlebar row.
+    pub const SIDEBAR_HEADER_HEIGHT: f32 = TrafficLights::titlebar_height();
+    pub const SIDEBAR_HEADER_END_INSET: f32 = 6.0;
+    pub const SEGMENTED_HEIGHT: f32 = 28.0;
+    pub const SEGMENTED_INSET: f32 = 10.0;
+    pub const SEGMENTED_GAP_BELOW: f32 = 8.0;
+    pub const SECTION_HEADER_HEIGHT: f32 = 30.0;
+    pub const TREE_ROW_HEIGHT: f32 = 24.0;
+    pub const OUTLINE_ROW_HEIGHT: f32 = 26.0;
+    pub const RECENT_ROW_HEIGHT: f32 = 34.0;
+    pub const MENU_ROW_HEIGHT: f32 = 28.0;
+    pub const MENU_ROW_RADIUS: f32 = 6.0;
+    pub const MENU_MIN_WIDTH: f32 = 200.0;
     pub const TAB_HEIGHT: f32 = 28.0;
     pub const TAB_MAX_WIDTH: f32 = 200.0;
     pub const TAB_LIST_INSET: f32 = 6.0;
@@ -94,9 +108,30 @@ pub struct Region {
     pub width: f32,
 }
 
+/// What sits at the leading edge of the titlebar row (the tab bar or the empty-state toolbar).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TitlebarLeading {
+    /// Space kept clear for the traffic lights; zero when the sidebar header already holds them.
+    pub clearance: f32,
+    /// Whether the sidebar toggle lives in this row (it moves to the sidebar header otherwise).
+    pub sidebar_toggle: bool,
+}
+
+impl TitlebarLeading {
+    pub fn width(self) -> f32 {
+        self.clearance
+            + if self.sidebar_toggle {
+                Metrics::TITLEBAR_BUTTON
+            } else {
+                0.0
+            }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShellLayout {
     pub titlebar: TitlebarLayout,
+    pub titlebar_leading: TitlebarLeading,
     pub sidebar: Region,
     pub main: Region,
     pub reader: Region,
@@ -127,8 +162,21 @@ impl ShellLayout {
             ((main_width - reader_width) / 2.0).max(0.0)
         };
 
+        let titlebar = TitlebarLayout::standard();
+        let titlebar_leading = if sidebar_width > 0.0 {
+            TitlebarLeading {
+                clearance: 0.0,
+                sidebar_toggle: false,
+            }
+        } else {
+            TitlebarLeading {
+                clearance: titlebar.clearance.width(),
+                sidebar_toggle: true,
+            }
+        };
         Self {
-            titlebar: TitlebarLayout::standard(),
+            titlebar,
+            titlebar_leading,
             sidebar: Region {
                 x: 0.0,
                 width: sidebar_width,
@@ -148,7 +196,14 @@ impl ShellLayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl ShellLayout {
+    /// Chrome stacked above the reader when a document is open: tab row plus breadcrumb.
+    pub fn chrome_height(&self) -> f32 {
+        self.tab_bar_height + self.breadcrumb_height
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorScheme {
     Light,
     Dark,
@@ -171,6 +226,14 @@ pub struct Theme {
     pub sidebar_accent: Hsla,
     pub surface_raised: Hsla,
     pub surface_well: Hsla,
+    /// Electron's `--md-alert-*` OKLCH tokens, converted to sRGB HSL.
+    pub alert_note: Hsla,
+    pub alert_tip: Hsla,
+    pub alert_important: Hsla,
+    pub alert_warning: Hsla,
+    pub alert_caution: Hsla,
+    /// Code block surface: the muted well in light mode, a slightly lifted gray in dark mode.
+    pub code_surface: Hsla,
 }
 
 impl Theme {
@@ -207,6 +270,14 @@ impl Theme {
             sidebar_accent: hsla(0.08677273, 0.21983283, 0.918_019, 1.0),
             surface_raised: hsla(0.08672199, 0.28, 0.992, 1.0),
             surface_well: hsla(0.08673897, 0.24669178, 0.93, 1.0),
+            // oklch(0.55 0.17 255), (0.55 0.14 150), (0.55 0.17 295), (0.6 0.13 75),
+            // (0.56 0.19 25)
+            alert_note: hsla(0.586_368, 0.815_088, 0.452_324, 1.0),
+            alert_tip: hsla(0.392_263, 0.652_996, 0.320_923, 1.0),
+            alert_important: hsla(0.720_128, 0.510_306, 0.562_534, 1.0),
+            alert_warning: hsla(0.110_730, 1.0, 0.338_5, 1.0),
+            alert_caution: hsla(0.996_916, 0.601_668, 0.500_13, 1.0),
+            code_surface: hsla(0.08673897, 0.24669178, 0.944_926_9, 1.0),
         }
     }
 
@@ -227,6 +298,15 @@ impl Theme {
             sidebar_accent: hsla(0.0, 0.0, 0.086_104_2, 1.0),
             surface_raised: hsla(0.0, 0.0, 0.09, 1.0),
             surface_well: hsla(0.0, 0.0, 0.06, 1.0),
+            // oklch(0.68 0.14 255), (0.68 0.13 150), (0.68 0.14 295), (0.74 0.13 75),
+            // (0.66 0.17 25)
+            alert_note: hsla(0.592_697, 0.800_9, 0.637_297, 1.0),
+            alert_tip: hsla(0.375_692, 0.355_474, 0.509_685, 1.0),
+            alert_important: hsla(0.712_244, 0.647_682, 0.709_353, 1.0),
+            alert_warning: hsla(0.101_535, 0.678_357, 0.552_497, 1.0),
+            alert_caution: hsla(0.006_023, 0.751_532, 0.632_338, 1.0),
+            // The mockup's `.dark .cb2 { background: hsl(0 0% 6.5%) }`.
+            code_surface: hsla(0.0, 0.0, 0.065, 1.0),
         }
     }
 }
@@ -272,9 +352,20 @@ mod tests {
                 width: 876.0,
             }
         );
-        assert_eq!(layout.tab_bar_height, 36.0);
+        assert_eq!(layout.tab_bar_height, 40.0);
+        assert_eq!(layout.tab_bar_height, TrafficLights::titlebar_height());
+        assert_eq!(Metrics::SIDEBAR_HEADER_HEIGHT, layout.tab_bar_height);
         assert_eq!(layout.tab_height, 28.0);
-        assert_eq!((Metrics::TAB_BAR_HEIGHT - Metrics::TAB_HEIGHT) / 2.0, 4.0);
+        assert_eq!((Metrics::TAB_BAR_HEIGHT - Metrics::TAB_HEIGHT) / 2.0, 6.0);
+        assert_eq!(layout.chrome_height(), 68.0);
+        assert_eq!(
+            layout.titlebar_leading,
+            TitlebarLeading {
+                clearance: 0.0,
+                sidebar_toggle: false,
+            }
+        );
+        assert_eq!(layout.titlebar_leading.width(), 0.0);
         assert_eq!(Metrics::TAB_RADIUS, 6.0);
         assert_eq!(layout.breadcrumb_height, 28.0);
         assert_eq!(Metrics::READER_TOP_PADDING, 32.0);
@@ -312,6 +403,15 @@ mod tests {
                 width: 1120.0,
             }
         );
+        assert_eq!(
+            layout.titlebar_leading,
+            TitlebarLeading {
+                clearance: TrafficLightClearance::reserved().width(),
+                sidebar_toggle: true,
+            }
+        );
+        assert_eq!(layout.titlebar_leading.width(), 80.0 + 28.0);
+        assert_eq!(layout.chrome_height(), 68.0);
         assert_eq!(
             layout.reader,
             Region {

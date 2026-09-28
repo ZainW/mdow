@@ -130,6 +130,27 @@ describe('TabBar', () => {
     expect(useAppStore.getState().secondaryPaneTabId).toBe('tab-1')
   })
 
+  it('always shows the close button on the active tab and reveals it on others', () => {
+    seedTabs(['/a/one.md', '/a/two.md'])
+    render(<TabBar />)
+    const activeClose = screen.getByRole('button', { name: 'Close one.md' })
+    const inactiveClose = screen.getByRole('button', { name: 'Close two.md' })
+    expect(activeClose).toHaveAttribute('data-visible', 'always')
+    expect(activeClose.className).not.toContain('opacity-0')
+    expect(inactiveClose).toHaveAttribute('data-visible', 'on-reveal')
+    // Hidden with opacity (not display/visibility) so the reserved space never changes width,
+    // and revealed by hover or keyboard focus on the tab.
+    expect(inactiveClose.className).toContain('opacity-0')
+    expect(inactiveClose.className).toContain('group-hover/tab:opacity-70')
+    expect(inactiveClose.className).toContain('group-has-[:focus-visible]/tab:opacity-70')
+  })
+
+  it('does not render a Settings button in the tab bar', () => {
+    seedTabs(['/a/one.md'])
+    render(<TabBar />)
+    expect(screen.queryByRole('button', { name: /settings/i })).not.toBeInTheDocument()
+  })
+
   it('navigates menu items with ArrowDown/ArrowUp', () => {
     seedTabs(['/a/one.md', '/a/two.md'])
     render(<TabBar />)

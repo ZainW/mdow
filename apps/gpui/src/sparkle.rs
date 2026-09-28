@@ -274,6 +274,26 @@ pub fn dismiss_choice() {
     macos::dismiss_choice();
 }
 
+/// The bundle's marketing version (`CFBundleShortVersionString`), or `None` for a dev binary.
+pub fn app_version() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::app_version()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// Electron's `autoUpdateEnabled`. Safe to call before [`start`]: the launch check honors it.
+pub fn set_automatic_checks(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    macos::set_automatic_checks(enabled);
+    #[cfg(not(target_os = "macos"))]
+    let _ = enabled;
+}
+
 pub fn current_ui() -> UpdateUi {
     #[cfg(target_os = "macos")]
     {
@@ -303,6 +323,19 @@ mod macos {
         fn mdow_sparkle_install();
         fn mdow_sparkle_dismiss_choice();
         fn mdow_sparkle_is_enabled() -> i32;
+        fn mdow_sparkle_set_automatic_checks(enabled: i32);
+        fn mdow_app_version() -> *const c_char;
+    }
+
+    pub fn app_version() -> Option<String> {
+        let version = unsafe { mdow_app_version() };
+        if version.is_null() {
+            return None;
+        }
+        unsafe { CStr::from_ptr(version) }
+            .to_str()
+            .ok()
+            .map(str::to_owned)
     }
 
     static STARTED: AtomicBool = AtomicBool::new(false);
@@ -357,6 +390,10 @@ mod macos {
 
     pub fn dismiss_choice() {
         unsafe { mdow_sparkle_dismiss_choice() }
+    }
+
+    pub fn set_automatic_checks(enabled: bool) {
+        unsafe { mdow_sparkle_set_automatic_checks(i32::from(enabled)) }
     }
 
     pub fn snapshot() -> UpdateUi {

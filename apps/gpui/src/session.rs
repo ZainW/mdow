@@ -79,6 +79,25 @@ impl Recents {
         self.0.iter().map(PathBuf::as_path)
     }
 
+    /// Drops one entry; returns whether anything was removed.
+    pub fn remove(&mut self, path: &Path) -> bool {
+        let path = file_identity(path);
+        let before = self.0.len();
+        self.0.retain(|existing| existing != &path);
+        self.0.len() != before
+    }
+
+    /// Forgets every entry; returns whether the list had anything to clear.
+    pub fn clear(&mut self) -> bool {
+        let had_entries = !self.0.is_empty();
+        self.0.clear();
+        had_entries
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -195,6 +214,27 @@ mod tests {
         let capped = Recents::from_paths(overflow);
         assert_eq!(capped.iter().count(), Recents::CAP);
         assert_eq!(capped.iter().next(), Some(Path::new("/0.md")));
+    }
+
+    #[test]
+    fn recents_remove_one_entry_and_clear_all() {
+        let mut recents = Recents::from_paths(vec![
+            PathBuf::from("/a.md"),
+            PathBuf::from("/b.md"),
+            PathBuf::from("/c.md"),
+        ]);
+
+        assert!(recents.remove(Path::new("/b.md")));
+        assert!(!recents.remove(Path::new("/b.md")));
+        assert_eq!(
+            recents.iter().collect::<Vec<_>>(),
+            vec![Path::new("/a.md"), Path::new("/c.md")]
+        );
+        assert_eq!(recents.len(), 2);
+
+        assert!(recents.clear());
+        assert!(recents.is_empty());
+        assert!(!recents.clear());
     }
 
     #[test]
