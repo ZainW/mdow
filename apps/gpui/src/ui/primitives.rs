@@ -166,12 +166,12 @@ pub fn key_hint(keys: &'static str, theme: Theme) -> Div {
         .child(keys)
 }
 
-
 /// Digits keep a fixed advance so live counts never nudge their neighbours.
 pub fn tabular_nums<E: Styled>(mut element: E) -> E {
-    element.text_style().get_or_insert_with(Default::default).font_features = Some(
-        FontFeatures(Arc::new(vec![("tnum".into(), 1)])),
-    );
+    element
+        .text_style()
+        .get_or_insert_with(Default::default)
+        .font_features = Some(FontFeatures(Arc::new(vec![("tnum".into(), 1)])));
     element
 }
 
@@ -291,9 +291,10 @@ pub fn segment(
             } else {
                 raised.opacity(0.0)
             })
-            .when(selected && theme.color_scheme == ColorScheme::Light, |segment| {
-                segment.shadow_sm()
-            })
+            .when(
+                selected && theme.color_scheme == ColorScheme::Light,
+                |segment| segment.shadow_sm(),
+            )
             .when(!selected, |segment| {
                 segment.hover(move |style| style.text_color(theme.foreground))
             })
@@ -321,7 +322,11 @@ pub fn action_button(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let (bg, fg, border) = if primary {
-        (theme.foreground, theme.background, theme.foreground.opacity(0.0))
+        (
+            theme.foreground,
+            theme.background,
+            theme.foreground.opacity(0.0),
+        )
     } else {
         let bg = match theme.color_scheme {
             ColorScheme::Dark => theme.muted,
@@ -498,7 +503,10 @@ impl ContextMenu {
 
     pub fn confirm(&mut self, cx: &mut Context<Self>) {
         if let Some(index) = self.highlighted
-            && self.entries.get(index).is_some_and(ContextMenuEntry::is_enabled_item)
+            && self
+                .entries
+                .get(index)
+                .is_some_and(ContextMenuEntry::is_enabled_item)
         {
             cx.emit(ContextMenuEvent::Confirmed(index));
         }

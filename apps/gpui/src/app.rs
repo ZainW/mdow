@@ -6,6 +6,7 @@ use crate::{
         ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar, ToggleWideMode,
         ZoomIn, ZoomOut, ZoomReset,
     },
+    actions::{ClearRecents, Minimize, OpenRecent, ToggleFullScreen, Zoom},
     document::{DocumentError, ParsedDocument, load_source, parse_document},
     overlay::{
         CommandId, FindEvent, FindOverlay, OpenOverlay, OverlayHost, OverlayKind, PaletteAction,
@@ -20,21 +21,25 @@ use crate::{
     theme::{Metrics, ShellLayout, Theme},
     ui::{
         chrome::{
-            render_breadcrumb, render_error_banner, render_error_state, render_reload_error_banner,
-            render_sidebar, render_tab_bar, render_titlebar, render_update_banner,
+            SidebarProps, TabFocus, render_breadcrumb, render_deleted_banner, render_empty_toolbar,
+            render_error_banner, render_reload_error_banner, render_sidebar, render_tab_bar,
+            render_update_banner,
         },
+        field::{Field, FieldEvent},
+        primitives::{ContextMenu, ContextMenuEntry, ContextMenuEvent, context_menu_layer},
         reader::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
             clear_expired_code_copy_feedback, document_link_focus_targets,
         },
-        welcome::welcome,
+        welcome::{DropSummary, drop_overlay, error_state, welcome},
     },
     watcher::{FileWatcher, WatchMessage},
-    workspace::{WorkspaceError, WorkspaceTree, scan_workspace},
+    workspace::{WorkspaceEntryKind, WorkspaceError, WorkspaceTree, scan_workspace},
 };
 use gpui::{
-    App, ClipboardItem, Context, Entity, ExternalPaths, FocusHandle, Focusable, IntoElement,
-    PathPromptOptions, Render, Subscription, Task, Timer, Window, div, prelude::*, px,
+    App, ClipboardItem, Context, DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable,
+    IntoElement, PathPromptOptions, Pixels, Point, Render, ScrollHandle, Subscription, Task, Timer,
+    Window, div, prelude::*, px,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -102,6 +107,8 @@ pub struct AppModel {
     pub workspace: Option<WorkspaceTree>,
     pub workspace_error: Option<UserFacingError>,
     pub recents: Recents,
+    /// Open tabs whose file disappeared from disk; their last content stays readable.
+    pub deleted: HashSet<PathBuf>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -125,6 +132,7 @@ impl BatchOpenResult {
 impl AppModel {
     pub fn open_document(&mut self, path: &Path) -> Result<(), AppOpenError> {
         let loaded = load_source(path)?;
+        self.deleted.remove(&loaded.canonical_path);
         let parsed = parse_document(loaded.canonical_path, loaded.source);
         self.tabs.open_prepared(prepare_document(parsed));
         if let Some(tab) = self.tabs.active() {
@@ -146,12 +154,18 @@ impl AppModel {
         let loaded = match load_source(path) {
             Ok(loaded) => loaded,
             Err(error) => {
+                if matches!(error, DocumentError::Missing { .. }) {
+                    self.deleted.insert(tab_path.clone());
+                } else {
+                    self.deleted.remove(&tab_path);
+                }
                 let error = AppOpenError::from(error);
                 self.tabs
                     .set_reload_error(&tab_path, error.view().body.clone());
                 return Err(error);
             }
         };
+        self.deleted.remove(&tab_path);
         let parsed = parse_document(loaded.canonical_path, loaded.source);
         self.tabs.replace_prepared(prepare_document(parsed));
         Ok(())
@@ -178,7 +192,11 @@ impl AppModel {
         root: &Path,
         scanned: Result<WorkspaceTree, WorkspaceError>,
     ) -> bool {
-        let Some(current) = self.workspace.as_ref().filter(|tree| tree.root.path == root) else {
+        let Some(current) = self
+            .workspace
+            .as_ref()
+            .filter(|tree| tree.root.path == root)
+        else {
             return false;
         };
         let Ok(mut scanned) = scanned else {
@@ -235,6 +253,18 @@ impl AppModel {
         result
     }
 
+    pub fn close_tab(&mut self, path: &Path) -> bool {
+        let closed = self.tabs.close(path);
+        if let Some(tab) = closed.as_ref() {
+            self.deleted.remove(tab.path());
+        }
+        closed.is_some()
+    }
+
+    pub fn is_deleted(&self, path: &Path) -> bool {
+        self.deleted.contains(path)
+    }
+
     pub fn dismiss_active_reload_error(&mut self) -> bool {
         let Some(tab) = self.tabs.active().filter(|tab| tab.reload_error.is_some()) else {
             return false;
@@ -260,11 +290,22 @@ fn canonical_file_identity(path: &Path) -> PathBuf {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DropState {
     active: bool,
+    summary: DropSummary,
 }
 
 impl DropState {
     pub fn is_active(self) -> bool {
         self.active
+    }
+
+    pub fn summary(self) -> DropSummary {
+        self.summary
+    }
+
+    /// Starts a drag, remembering what it carries; returns whether the drag just began.
+    pub fn enter_with(&mut self, summary: DropSummary) -> bool {
+        self.summary = summary;
+        self.enter()
     }
 
     pub fn enter(&mut self) -> bool {
@@ -286,6 +327,106 @@ impl DropState {
     }
 }
 
+/// What a context-menu entry does once confirmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContextAction {
+    Open(PathBuf),
+    CloseTab(PathBuf),
+    CloseOtherTabs(PathBuf),
+    CloseTabsToRight(PathBuf),
+    CloseAllTabs,
+    CopyPath(PathBuf),
+    Reveal(PathBuf),
+    RemoveRecent(PathBuf),
+}
+
+/// Menu entries paired with the action each confirms (`None` for separators).
+pub type ContextMenuSpec = Vec<(ContextMenuEntry, Option<ContextAction>)>;
+
+fn menu_item(
+    label: &'static str,
+    action: ContextAction,
+) -> (ContextMenuEntry, Option<ContextAction>) {
+    (ContextMenuEntry::item(label), Some(action))
+}
+
+fn menu_item_if(
+    enabled: bool,
+    label: &'static str,
+    action: ContextAction,
+) -> (ContextMenuEntry, Option<ContextAction>) {
+    if enabled {
+        menu_item(label, action)
+    } else {
+        (ContextMenuEntry::disabled(label), None)
+    }
+}
+
+fn menu_separator() -> (ContextMenuEntry, Option<ContextAction>) {
+    (ContextMenuEntry::Separator, None)
+}
+
+pub fn tab_context_menu(path: &Path, tab_paths: &[PathBuf]) -> ContextMenuSpec {
+    let index = tab_paths.iter().position(|tab| tab == path);
+    let has_others = tab_paths.len() > 1;
+    let has_right = index.is_some_and(|index| index + 1 < tab_paths.len());
+    vec![
+        menu_item("Close", ContextAction::CloseTab(path.to_owned())),
+        menu_item_if(
+            has_others,
+            "Close Others",
+            ContextAction::CloseOtherTabs(path.to_owned()),
+        ),
+        menu_item_if(
+            has_right,
+            "Close to the Right",
+            ContextAction::CloseTabsToRight(path.to_owned()),
+        ),
+        menu_item("Close All", ContextAction::CloseAllTabs),
+        menu_separator(),
+        menu_item("Copy Path", ContextAction::CopyPath(path.to_owned())),
+        menu_item("Reveal in Finder", ContextAction::Reveal(path.to_owned())),
+    ]
+}
+
+pub fn tree_context_menu(path: &Path, directory: bool) -> ContextMenuSpec {
+    let mut menu = Vec::new();
+    if !directory {
+        menu.push(menu_item("Open", ContextAction::Open(path.to_owned())));
+        menu.push(menu_separator());
+    }
+    menu.push(menu_item(
+        "Copy Path",
+        ContextAction::CopyPath(path.to_owned()),
+    ));
+    menu.push(menu_item(
+        "Reveal in Finder",
+        ContextAction::Reveal(path.to_owned()),
+    ));
+    menu
+}
+
+pub fn recent_context_menu(path: &Path) -> ContextMenuSpec {
+    vec![
+        menu_item("Open", ContextAction::Open(path.to_owned())),
+        menu_separator(),
+        menu_item("Copy Path", ContextAction::CopyPath(path.to_owned())),
+        menu_item("Reveal in Finder", ContextAction::Reveal(path.to_owned())),
+        menu_separator(),
+        menu_item(
+            "Remove from Recents",
+            ContextAction::RemoveRecent(path.to_owned()),
+        ),
+    ]
+}
+
+struct OpenContextMenu {
+    view: Entity<ContextMenu>,
+    actions: Vec<Option<ContextAction>>,
+    position: Point<Pixels>,
+    _events: Subscription,
+}
+
 pub struct MdowApp {
     pub model: AppModel,
     pub sidebar_open: bool,
@@ -304,6 +445,15 @@ pub struct MdowApp {
     file_watcher: Option<FileWatcher>,
     _watch_poll_task: Option<Task<()>>,
     workspace_refresh: Option<Task<()>>,
+    folder_filter: Entity<Field>,
+    _folder_filter_events: Subscription,
+    /// Folders the reader collapsed while a filter is active; reset when the query changes.
+    filter_collapsed: HashSet<PathBuf>,
+    context_menu: Option<OpenContextMenu>,
+    outline_scroll: ScrollHandle,
+    last_outline_active: Option<usize>,
+    tab_focus: HashMap<PathBuf, TabFocus>,
+    menu_recents: Option<Vec<PathBuf>>,
     update: UpdateUi,
     update_dismissed: bool,
     _update_poll_task: Task<()>,
@@ -372,6 +522,12 @@ impl MdowApp {
         cx: &mut Context<Self>,
     ) -> Self {
         let focus_handle = cx.focus_handle();
+        let folder_filter = cx.new(|cx| {
+            let mut field = Field::search("Filter files", window, cx);
+            field.set_tab_stop();
+            field
+        });
+        let folder_filter_events = cx.subscribe_in(&folder_filter, window, Self::on_filter_event);
         focus_handle.focus(window);
         let appearance_subscription = cx.observe_window_appearance(window, |this, window, cx| {
             this.theme = Theme::resolve(this.prefs.get().theme_mode, window.appearance());
@@ -419,6 +575,14 @@ impl MdowApp {
             file_watcher,
             _watch_poll_task: watch_poll_task,
             workspace_refresh: None,
+            folder_filter,
+            _folder_filter_events: folder_filter_events,
+            filter_collapsed: HashSet::new(),
+            context_menu: None,
+            outline_scroll: ScrollHandle::new(),
+            last_outline_active: None,
+            tab_focus: HashMap::new(),
+            menu_recents: None,
             update: UpdateUi::default(),
             update_dismissed: false,
             _update_poll_task: update_poll_task,
@@ -607,8 +771,8 @@ impl MdowApp {
         cx.notify();
     }
 
-    fn drag_moved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.drop_state.enter() {
+    fn drag_moved(&mut self, summary: DropSummary, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.drop_state.enter_with(summary) {
             return;
         }
         cx.notify();
@@ -884,6 +1048,9 @@ impl MdowApp {
     }
 
     fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close_context_menu(window, cx) {
+            return;
+        }
         if self.overlays.close(Some(window)) {
             cx.notify();
             return;
@@ -1229,12 +1396,7 @@ impl MdowApp {
 
     pub fn close_active_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) {
-            self.model.tabs.close(&path);
-            self.reader_panes.remove(&path);
-            self.reader_link_focus_handles
-                .retain(|(document_path, _), _| document_path != &path);
-            self.active_document_changed(cx);
-            cx.notify();
+            self.close_tab(&path, cx);
         }
     }
 
@@ -1286,6 +1448,9 @@ impl MdowApp {
     /// Reader scrolling must not steal keys from text fields, modal overlays, or a focused
     /// control that Space activates.
     fn reader_may_take_key(&self, key: &str, window: &Window, cx: &App) -> bool {
+        if self.context_menu.is_some() {
+            return false;
+        }
         if window
             .context_stack()
             .iter()
@@ -1319,7 +1484,8 @@ impl MdowApp {
     }
 
     pub(crate) fn close_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
-        if self.model.tabs.close(path).is_some() {
+        if self.model.close_tab(path) {
+            self.tab_focus.remove(path);
             self.reader_panes.remove(path);
             self.reader_link_focus_handles
                 .retain(|(document_path, _), _| document_path != path);
@@ -1417,6 +1583,265 @@ impl MdowApp {
     }
 }
 
+impl MdowApp {
+    pub(crate) fn folder_filter_query(&self, cx: &App) -> String {
+        self.folder_filter.read(cx).text().to_owned()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_folder_filter(&mut self, query: &str, cx: &mut Context<Self>) {
+        self.folder_filter
+            .update(cx, |field, cx| field.set_text(query.to_owned(), cx));
+    }
+
+    fn on_filter_event(
+        &mut self,
+        field: &Entity<Field>,
+        event: &FieldEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            FieldEvent::Edited => {
+                self.filter_collapsed.clear();
+                cx.notify();
+            }
+            FieldEvent::Cancelled => {
+                if field.read(cx).text().is_empty() {
+                    self.focus_handle.focus(window);
+                } else {
+                    field.update(cx, |field, cx| field.set_text("", cx));
+                }
+                cx.notify();
+            }
+            FieldEvent::Submitted { .. } => {
+                let query = field.read(cx).text().to_owned();
+                let first = self.model.workspace.as_ref().and_then(|tree| {
+                    tree.filtered_rows(&query, &self.filter_collapsed)
+                        .rows
+                        .into_iter()
+                        .find(|row| row.row.kind == WorkspaceEntryKind::File)
+                        .map(|row| row.row.path)
+                });
+                if let Some(path) = first {
+                    self.open_path(&path, cx);
+                }
+            }
+        }
+    }
+
+    /// Folder rows toggle the tree's own expansion, or the filter-only collapse set while
+    /// a filter is active (filtered views always start with every match's ancestors open).
+    pub(crate) fn toggle_tree_directory(
+        &mut self,
+        path: &Path,
+        filtering: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if filtering {
+            if !self.filter_collapsed.remove(path) {
+                self.filter_collapsed.insert(path.to_owned());
+            }
+            cx.notify();
+        } else {
+            self.toggle_directory(path, cx);
+        }
+    }
+
+    fn persist_session(&mut self) {
+        self.prefs.save_session(&self.session_snapshot());
+    }
+
+    pub(crate) fn clear_recents(&mut self, cx: &mut Context<Self>) {
+        if self.model.recents.clear() {
+            self.persist_session();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn remove_recent(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if self.model.recents.remove(path) {
+            self.persist_session();
+            cx.notify();
+        }
+    }
+
+    fn close_tabs(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        for path in paths {
+            self.close_tab(&path, cx);
+        }
+    }
+
+    fn tab_paths(&self) -> Vec<PathBuf> {
+        self.model.tabs.paths().map(Path::to_owned).collect()
+    }
+
+    pub(crate) fn run_context_action(&mut self, action: ContextAction, cx: &mut Context<Self>) {
+        match action {
+            ContextAction::Open(path) => self.open_path(&path, cx),
+            ContextAction::CloseTab(path) => self.close_tab(&path, cx),
+            ContextAction::CloseOtherTabs(path) => {
+                let others = self
+                    .tab_paths()
+                    .into_iter()
+                    .filter(|tab| tab != &path)
+                    .collect();
+                self.activate_tab(&path, cx);
+                self.close_tabs(others, cx);
+            }
+            ContextAction::CloseTabsToRight(path) => {
+                let tabs = self.tab_paths();
+                let right = tabs
+                    .iter()
+                    .position(|tab| tab == &path)
+                    .map(|index| tabs[index + 1..].to_vec())
+                    .unwrap_or_default();
+                self.close_tabs(right, cx);
+            }
+            ContextAction::CloseAllTabs => {
+                let tabs = self.tab_paths();
+                self.close_tabs(tabs, cx);
+            }
+            ContextAction::CopyPath(path) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(
+                    path.to_string_lossy().into_owned(),
+                ));
+            }
+            ContextAction::Reveal(path) => self.reveal_path(&path),
+            ContextAction::RemoveRecent(path) => self.remove_recent(&path, cx),
+        }
+    }
+
+    pub(crate) fn open_context_menu(
+        &mut self,
+        spec: ContextMenuSpec,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (entries, actions): (Vec<_>, Vec<_>) = spec.into_iter().unzip();
+        let theme = self.theme;
+        let view = cx.new(|cx| ContextMenu::new(entries, theme, window, cx));
+        let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
+            this.on_context_menu_event(*event, window, cx);
+        });
+        self.context_menu = Some(OpenContextMenu {
+            view,
+            actions,
+            position,
+            _events: events,
+        });
+        cx.notify();
+    }
+
+    fn close_context_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.context_menu.take().is_none() {
+            return false;
+        }
+        self.focus_handle.focus(window);
+        cx.notify();
+        true
+    }
+
+    fn on_context_menu_event(
+        &mut self,
+        event: ContextMenuEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let action = match event {
+            ContextMenuEvent::Confirmed(index) => self
+                .context_menu
+                .as_ref()
+                .and_then(|menu| menu.actions.get(index).cloned().flatten()),
+            ContextMenuEvent::Dismissed => None,
+        };
+        self.close_context_menu(window, cx);
+        if let Some(action) = action {
+            self.run_context_action(action, cx);
+        }
+    }
+
+    pub(crate) fn open_tab_context_menu(
+        &mut self,
+        path: &Path,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let spec = tab_context_menu(path, &self.tab_paths());
+        self.open_context_menu(spec, position, window, cx);
+    }
+
+    pub(crate) fn open_tree_context_menu(
+        &mut self,
+        path: &Path,
+        directory: bool,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_context_menu(tree_context_menu(path, directory), position, window, cx);
+    }
+
+    pub(crate) fn open_recent_context_menu(
+        &mut self,
+        path: &Path,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_context_menu(recent_context_menu(path), position, window, cx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn context_menu_view(&self) -> Option<Entity<ContextMenu>> {
+        self.context_menu.as_ref().map(|menu| menu.view.clone())
+    }
+
+    /// Focus handles for each tab and its close control, kept stable per path.
+    fn sync_tab_focus(&mut self, cx: &mut Context<Self>) -> Vec<TabFocus> {
+        let paths = self.tab_paths();
+        self.tab_focus.retain(|path, _| paths.contains(path));
+        paths
+            .into_iter()
+            .map(|path| {
+                let focus = self.tab_focus.entry(path).or_insert_with(|| TabFocus {
+                    tab: cx.focus_handle().tab_index(0).tab_stop(true),
+                    close: cx.focus_handle().tab_index(0).tab_stop(true),
+                });
+                TabFocus {
+                    tab: focus.tab.clone(),
+                    close: focus.close.clone(),
+                }
+            })
+            .collect()
+    }
+
+    /// Keeps the File > Open Recent submenu in step with this window's recents.
+    fn sync_recent_menu(&mut self, cx: &mut Context<Self>) {
+        let recents = self
+            .model
+            .recents
+            .iter()
+            .map(Path::to_owned)
+            .collect::<Vec<_>>();
+        if self.menu_recents.as_ref() == Some(&recents) {
+            return;
+        }
+        cx.set_menus(crate::menus::app_menus(&recents));
+        self.menu_recents = Some(recents);
+    }
+
+    fn on_open_recent(&mut self, action: &OpenRecent, _: &mut Window, cx: &mut Context<Self>) {
+        self.open_path(&action.path, cx);
+    }
+
+    fn on_clear_recents(&mut self, _: &ClearRecents, _: &mut Window, cx: &mut Context<Self>) {
+        self.clear_recents(cx);
+    }
+}
+
 impl Focusable for MdowApp {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
         self.focus_handle.clone()
@@ -1433,6 +1858,10 @@ impl Render for MdowApp {
             height: f32::from(bounds.size.height),
         });
         self.theme = Theme::resolve(self.prefs.get().theme_mode, window.appearance());
+        let theme = self.theme;
+        self.folder_filter
+            .update(cx, |field, _| field.apply_theme(theme));
+        self.sync_recent_menu(cx);
         let layout = ShellLayout::for_width(
             f32::from(window.viewport_size().width),
             self.sidebar_open,
@@ -1444,59 +1873,86 @@ impl Render for MdowApp {
             window.set_window_title(&title);
             self.window_title = Some(title);
         }
-        let headings = self
-            .model
-            .tabs
-            .active()
-            .map(|tab| tab.document.headings.as_slice());
-        let sidebar = render_sidebar(
-            self.theme,
-            self.prefs.get().sidebar_mode,
-            &self.model.recents,
-            self.model.workspace.as_ref(),
-            self.model.workspace_error.as_ref(),
-            headings,
-            self.active_outline_heading(cx),
-            active_path.as_deref(),
-            layout.sidebar.width,
-            cx,
-        );
-        let tab_bar = render_tab_bar(self.theme, self, cx);
-        let breadcrumb = render_breadcrumb(self.theme, self, cx);
-        let active_tab = self.model.tabs.active().map(|tab| {
-            (
+
+        let active_heading = self.active_outline_heading(cx);
+        if active_heading != self.last_outline_active {
+            if let Some(index) = active_heading {
+                self.outline_scroll.scroll_to_item(index);
+            }
+            self.last_outline_active = active_heading;
+        }
+
+        let sidebar = (layout.sidebar.width > 0.0).then(|| {
+            let active_document = self.model.tabs.active().map(|tab| tab.document.clone());
+            let filter_query = self.folder_filter_query(cx);
+            render_sidebar(
+                theme,
+                SidebarProps {
+                    mode: self.prefs.get().sidebar_mode,
+                    recents: &self.model.recents,
+                    workspace: self.model.workspace.as_ref(),
+                    workspace_error: self.model.workspace_error.as_ref(),
+                    document_title: active_document
+                        .as_deref()
+                        .map(|document| document.title.as_str()),
+                    headings: active_document
+                        .as_deref()
+                        .map(|document| document.headings.as_slice()),
+                    active_heading,
+                    active_path: active_path.as_deref(),
+                    filter: &self.folder_filter,
+                    filter_query: &filter_query,
+                    filter_collapsed: &self.filter_collapsed,
+                    outline_scroll: &self.outline_scroll,
+                    width: layout.sidebar.width,
+                },
+                cx,
+            )
+        });
+
+        let mut main = div()
+            .debug_selector(|| "main-column".into())
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .min_h_0()
+            .flex_grow();
+        if self.model.tabs.is_empty() {
+            main = main.child(render_empty_toolbar(theme, &layout, cx)).child(
+                match self.open_error.as_ref() {
+                    Some(error) => error_state(theme, error, cx),
+                    None => welcome(theme, &self.model.recents, cx),
+                },
+            );
+        } else {
+            let tab_focus = self.sync_tab_focus(cx);
+            let tab_bar = render_tab_bar(theme, self, &layout, &tab_focus, window, cx);
+            let tab = self
+                .model
+                .tabs
+                .active()
+                .expect("a non-empty tab set always has an active document");
+            let breadcrumb = render_breadcrumb(theme, tab, cx);
+            let (document, path, reload_error) = (
                 tab.document.clone(),
                 tab.path().to_owned(),
                 tab.reload_error.clone(),
-            )
-        });
-        let content = if self.model.tabs.is_empty() {
-            if let Some(error) = self.open_error.as_ref() {
-                render_error_state(self.theme, error, self.drop_state.is_active(), cx)
-            } else {
-                welcome(
-                    self.theme,
-                    &self.model.recents,
-                    self.drop_state.is_active(),
-                    cx,
-                )
-            }
-        } else {
+            );
             let mut surface = div()
                 .flex()
                 .flex_col()
                 .flex_grow()
                 .min_w_0()
                 .min_h_0()
-                .bg(self.theme.background);
+                .bg(theme.background);
             if let Some(error) = self.open_error.as_ref() {
-                surface = surface.child(render_error_banner(self.theme, error));
+                surface = surface.child(render_error_banner(theme, error));
             }
-            let (document, path, reload_error) =
-                active_tab.expect("a non-empty tab set always has an active document");
-            if let Some(body) = reload_error {
+            if self.model.is_deleted(&path) {
+                surface = surface.child(render_deleted_banner(theme, &path, cx));
+            } else if let Some(body) = reload_error {
                 surface = surface.child(render_reload_error_banner(
-                    self.theme,
+                    theme,
                     &UserFacingError {
                         title: "Couldn't reload this file".into(),
                         body,
@@ -1506,9 +1962,20 @@ impl Render for MdowApp {
                 ));
             }
             let pane = self.ensure_reader_pane(document, window, cx);
-            surface.child(pane).into_any_element()
-        };
-        let drop_theme = self.theme;
+            main = main
+                .child(tab_bar)
+                .child(breadcrumb)
+                .child(surface.child(pane));
+        }
+
+        let drop_overlay_layer = self
+            .drop_state
+            .is_active()
+            .then(|| drop_overlay(theme, self.drop_state.summary()));
+        let context_menu_layer = self
+            .context_menu
+            .as_ref()
+            .map(|menu| context_menu_layer(menu.view.clone(), menu.position));
 
         div()
             .id("mdow-root")
@@ -1574,15 +2041,17 @@ impl Render for MdowApp {
             .on_action(cx.listener(|this, _: &SelectTab7, _, cx| this.select_tab_index(6, cx)))
             .on_action(cx.listener(|this, _: &SelectTab8, _, cx| this.select_tab_index(7, cx)))
             .on_action(cx.listener(Self::on_select_last_tab))
-            .on_drag_move::<ExternalPaths>(cx.listener(|this, _, window, cx| {
-                this.drag_moved(window, cx);
-            }))
-            .drag_over::<ExternalPaths>(move |style, _, _, _| {
-                style
-                    .bg(drop_theme.primary.opacity(0.06))
-                    .border_1()
-                    .border_color(drop_theme.primary.opacity(0.46))
-            })
+            .on_action(cx.listener(Self::on_open_recent))
+            .on_action(cx.listener(Self::on_clear_recents))
+            .on_action(|_: &Minimize, window, _| window.minimize_window())
+            .on_action(|_: &Zoom, window, _| window.zoom_window())
+            .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
+            .on_drag_move::<ExternalPaths>(cx.listener(
+                |this, event: &DragMoveEvent<ExternalPaths>, window, cx| {
+                    let summary = DropSummary::from_paths(event.drag(cx).paths());
+                    this.drag_moved(summary, window, cx);
+                },
+            ))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                 this.open_paths(paths.paths().to_vec(), cx);
             }))
@@ -1591,40 +2060,26 @@ impl Render for MdowApp {
             .flex_col()
             .size_full()
             .overflow_hidden()
-            .bg(self.theme.background)
+            .bg(theme.background)
             .font_family(Metrics::FONT_SANS)
             .text_size(px(self.prefs.get().interface_scale.tokens().control_font))
-            .text_color(self.theme.foreground)
-            .child(render_titlebar(
-                self.theme,
-                &layout.titlebar,
-                self.sidebar_open,
-                cx,
-            ))
+            .text_color(theme.foreground)
             .child(
                 div()
                     .flex()
                     .flex_grow()
                     .min_h_0()
-                    .when(layout.sidebar.width > 0.0, |shell| shell.child(sidebar))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .min_w_0()
-                            .min_h_0()
-                            .flex_grow()
-                            .child(tab_bar)
-                            .child(breadcrumb)
-                            .child(content),
-                    ),
+                    .children(sidebar)
+                    .child(main),
             )
             .children(
                 (!self.update_dismissed)
-                    .then(|| render_update_banner(self.theme, &self.update, cx))
+                    .then(|| render_update_banner(theme, &self.update, cx))
                     .flatten(),
             )
-            .children(self.overlays.render_layer(self.theme))
+            .children(self.overlays.render_layer(theme))
+            .children(drop_overlay_layer)
+            .children(context_menu_layer)
     }
 }
 
@@ -2446,8 +2901,8 @@ mod tests {
         let (window, recent, _root) = recents_only_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, Recents, Folder, Outline, then the first recent row.
-        focus_next(&mut visual, 5);
+        // Sidebar toggle, Recents, Folder, Outline, Clear, then the first recent row.
+        focus_next(&mut visual, 6);
         activate_focused(&mut visual, "enter");
 
         window
@@ -2462,7 +2917,7 @@ mod tests {
         let (window, recent, _root) = recents_only_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, sidebar modes, sidebar recent, find, palette, settings, Open File,
+        // Sidebar toggle, sidebar modes, Clear, sidebar recent, Settings, palette, Open File,
         // Open Folder, then the first welcome recent.
         focus_next(&mut visual, 11);
         activate_focused(&mut visual, "space");
@@ -2479,9 +2934,9 @@ mod tests {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, Recents, Folder, Outline, both recent rows, both tabs, find, palette,
-        // settings, wide-mode, then the first tab's nested close target.
-        focus_next(&mut visual, 13);
+        // Sidebar toggle, Recents, Folder, Outline, Clear, both recent rows, Settings, both tabs,
+        // find, palette, wide-mode, then the first tab's nested close target.
+        focus_next(&mut visual, 14);
         activate_focused(&mut visual, "space");
 
         window
@@ -2497,8 +2952,9 @@ mod tests {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, Recents, Folder, Outline, both recent rows, first tab, then second tab.
-        focus_next(&mut visual, 8);
+        // Sidebar toggle, Recents, Folder, Outline, Clear, both recent rows, Settings, first tab,
+        // then second tab.
+        focus_next(&mut visual, 10);
         activate_focused(&mut visual, "enter");
 
         window
@@ -2510,7 +2966,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn titlebar_keeps_the_toggle_clear_of_the_traffic_lights(cx: &mut TestAppContext) {
+    fn shell_folds_the_titlebar_into_the_sidebar_header_and_tab_row(cx: &mut TestAppContext) {
         let document = parse_document(
             PathBuf::from("/tmp/measured-tab.md"),
             "# Measured tab\n".into(),
@@ -2539,24 +2995,64 @@ mod tests {
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.update(|window, cx| window.draw(cx).clear());
 
-        let titlebar = visual.debug_bounds("titlebar").expect("titlebar row");
+        // Sidebar open: the sidebar runs to the top and its header holds the toggle.
+        assert!(visual.debug_bounds("titlebar").is_none());
+        let sidebar = visual.debug_bounds("sidebar").expect("sidebar");
+        let header = visual
+            .debug_bounds("sidebar-header")
+            .expect("sidebar header");
         let toggle = visual
-            .debug_bounds("titlebar-sidebar-toggle")
-            .expect("titlebar sidebar toggle");
+            .debug_bounds("toggle-sidebar")
+            .expect("sidebar toggle");
         let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
         let tabs = visual.debug_bounds("tabs-scroll").expect("tab list");
         let tab = visual
             .debug_bounds("document-tab-0")
             .expect("first document tab");
+        let breadcrumb = visual.debug_bounds("breadcrumb").expect("breadcrumb");
+        let reader = visual.debug_bounds("reader-scroll").expect("reader");
+        assert_eq!(sidebar.top(), px(0.0));
+        assert_eq!(header.size.height, px(TrafficLights::titlebar_height()));
+        assert!(visual.debug_bounds("titlebar-sidebar-toggle").is_none());
+        assert_eq!(
+            toggle.right(),
+            sidebar.right() - px(1.0) - px(Metrics::SIDEBAR_HEADER_END_INSET)
+        );
+        assert!(toggle.left() > px(TrafficLightClearance::reserved().width()));
+        assert_eq!(tab_bar.top(), px(0.0));
+        assert_eq!(tab_bar.size.height, px(TrafficLights::titlebar_height()));
+        assert_eq!(tab_bar.left(), sidebar.right());
+        assert_eq!(tabs.origin.x, tab_bar.origin.x);
+        assert_eq!(tab.origin.x, tabs.origin.x + px(Metrics::TAB_LIST_INSET));
+        assert_eq!(tab.size.height, px(28.0));
+        assert_eq!(tab.top() - tab_bar.top(), px(6.0));
+        assert_eq!(breadcrumb.top(), px(40.0));
+        assert_eq!(reader.top(), px(68.0));
+        assert!(visual.debug_bounds("toggle-settings").is_none());
+        assert!(visual.debug_bounds("toggle-find").is_some());
+        assert!(visual.debug_bounds("toggle-palette").is_some());
 
-        assert_eq!(titlebar.size.height, px(TrafficLights::titlebar_height()));
+        // Sidebar hidden: the tab row reserves the traffic lights, then the toggle.
+        window
+            .update(cx, |app, _, cx| app.click_toggle_sidebar(cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        let toggle = visual
+            .debug_bounds("titlebar-sidebar-toggle")
+            .expect("tab-row sidebar toggle");
+        let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
+        let tabs = visual.debug_bounds("tabs-scroll").expect("tab list");
+        assert_eq!(tab_bar.left(), px(0.0));
         assert_eq!(
             toggle.origin.x,
             px(TrafficLightClearance::reserved().width())
         );
-        assert_eq!(tabs.origin.x, tab_bar.origin.x);
-        assert_eq!(tab.origin.x, tabs.origin.x + px(Metrics::TAB_LIST_INSET));
-        assert_eq!(tab.size.height, px(28.0));
+        assert_eq!(
+            tabs.origin.x,
+            px(TrafficLightClearance::reserved().width() + Metrics::TITLEBAR_BUTTON)
+        );
+        let reader = visual.debug_bounds("reader-scroll").expect("reader");
+        assert_eq!(reader.top(), px(68.0));
     }
 
     #[gpui::test]
@@ -2908,7 +3404,7 @@ mod tests {
         assert_eq!(first_block.top() - scroll.top(), px(32.0));
         assert_eq!(
             tab.top() - tab_bar.top(),
-            px(4.0),
+            px(6.0),
             "tab bar {tab_bar:?}, tab {tab:?}",
         );
 
@@ -3701,7 +4197,7 @@ mod tests {
         visual.update(|window, cx| window.draw(cx).clear());
         assert!(visual.debug_bounds("outline-row-0").is_some());
 
-        click_debug(&mut visual, "toggle-settings");
+        click_debug(&mut visual, "sidebar-settings");
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.overlay_kind(), Some(OverlayKind::Settings))

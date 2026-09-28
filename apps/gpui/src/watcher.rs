@@ -419,10 +419,15 @@ mod tests {
         assert!(affects_folder_tree(root, Path::new("/w/notes")));
         assert!(!affects_folder_tree(root, Path::new("/w/notes/image.png")));
         assert!(!affects_folder_tree(root, Path::new("/w/.git/HEAD")));
-        assert!(!affects_folder_tree(root, Path::new("/w/node_modules/a.md")));
+        assert!(!affects_folder_tree(
+            root,
+            Path::new("/w/node_modules/a.md")
+        ));
         assert!(!affects_folder_tree(root, Path::new("/w")));
         assert!(!affects_folder_tree(root, Path::new("/elsewhere/a.md")));
-        assert!(is_structural(&EventKind::Create(notify::event::CreateKind::File)));
+        assert!(is_structural(&EventKind::Create(
+            notify::event::CreateKind::File
+        )));
         assert!(!is_structural(&EventKind::Modify(ModifyKind::Data(
             notify::event::DataChange::Content
         ))));
@@ -448,7 +453,8 @@ mod tests {
                 .lock()
                 .unwrap()
                 .recv_timeout(Duration::from_millis(200));
-            saw_folder = matches!(message, Ok(WatchMessage::FolderChanged(ref path)) if *path == root);
+            saw_folder =
+                matches!(message, Ok(WatchMessage::FolderChanged(ref path)) if *path == root);
         }
         assert!(saw_folder);
     }

@@ -203,8 +203,7 @@ fn same_shape(left: &WorkspaceEntry, right: &WorkspaceEntry) -> bool {
 
 fn file_matches(path: &Path, root: &Path, name: &str, query: &str) -> bool {
     let relative = path.strip_prefix(root).unwrap_or(path);
-    relative.to_string_lossy().to_lowercase().contains(query)
-        || name.to_lowercase().contains(query)
+    relative.to_string_lossy().to_lowercase().contains(query) || name.to_lowercase().contains(query)
 }
 
 /// Returns true when `entry` (a directory) contained any matching file.
