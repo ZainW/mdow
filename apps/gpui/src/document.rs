@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
 pub use pulldown_cmark::Alignment;
@@ -266,6 +267,11 @@ pub enum InlineSpan {
     FootnoteRef {
         label: String,
     },
+    /// TeX math: `$...$` (`display: false`) or `$$...$$` (`display: true`).
+    Math {
+        tex: String,
+        display: bool,
+    },
     /// The `↩` link at the end of a footnote that jumps back to its first reference.
     FootnoteBackref {
         label: String,
@@ -395,6 +401,7 @@ impl InlineSpan {
             Self::Subscript(content) => children(content, Some(Script::Sub)),
             Self::Link { label, .. } => children(label, script),
             Self::FootnoteRef { label } => footnote_ref_display(label),
+            Self::Math { tex, .. } => tex.clone(),
             Self::FootnoteBackref { .. } => FOOTNOTE_BACKREF.into(),
             Self::SoftBreak => soft_break.into(),
             Self::HardBreak => "\n".into(),
@@ -452,6 +459,10 @@ pub enum DocumentBlock {
     MermaidCard {
         source: String,
     },
+    /// A paragraph that holds only `$$...$$` display math.
+    Math {
+        tex: String,
+    },
     Table(TableBlock),
     Image {
         alt: String,
@@ -478,7 +489,7 @@ impl DocumentBlock {
                 .join("\n"),
             Self::ThematicBreak => String::new(),
             Self::CodeBlock { code, .. } => code.clone(),
-            Self::MermaidCard { source } => source.clone(),
+            Self::MermaidCard { source } | Self::Math { tex: source } => source.clone(),
             Self::Table(table) => table.plain_text(),
             Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
         }
@@ -503,7 +514,7 @@ impl DocumentBlock {
                 .join("\n"),
             Self::ThematicBreak => String::new(),
             Self::CodeBlock { code, .. } => code.clone(),
-            Self::MermaidCard { source } => source.clone(),
+            Self::MermaidCard { source } | Self::Math { tex: source } => source.clone(),
             Self::Table(table) => table.find_text(),
             Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
         }
@@ -853,9 +864,7 @@ struct ItemContext {
 
 impl ItemContext {
     fn push_content(&mut self, content: Vec<InlineSpan>) {
-        if !content.is_empty() {
-            self.children.push(DocumentBlock::Paragraph(content));
-        }
+        self.children.extend(paragraph_blocks(content));
     }
 
     fn push_block(&mut self, block: DocumentBlock) {
@@ -1038,7 +1047,8 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
             | Options::ENABLE_TASKLISTS
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_FOOTNOTES
-            | Options::ENABLE_GFM,
+            | Options::ENABLE_GFM
+            | Options::ENABLE_MATH,
     );
 
     let mut blocks = Vec::new();
@@ -1055,9 +1065,10 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
     // document blocks wait here, so nested pushes need no special routing.
     let mut stashed_main_blocks = None::<(String, Vec<DocumentBlock>)>;
     let (frontmatter_title, markdown_body) = split_frontmatter(&source);
+    let markdown_body = escape_non_math_dollars(markdown_body, options);
     let document_parent = path.parent().unwrap_or_else(|| Path::new("")).to_owned();
 
-    for event in Parser::new_ext(markdown_body, options) {
+    for event in Parser::new_ext(&markdown_body, options) {
         if code_block.is_some() {
             match event {
                 Event::End(TagEnd::CodeBlock) => {
@@ -1365,9 +1376,20 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     footnotes.push((label, main_blocks));
                 }
             }
-            Event::InlineMath(math) | Event::DisplayMath(math) => {
-                push_inline_span(&mut inline_stack, InlineSpan::Text(math.into_string()))
-            }
+            Event::InlineMath(math) => push_inline_span(
+                &mut inline_stack,
+                InlineSpan::Math {
+                    tex: math.into_string(),
+                    display: false,
+                },
+            ),
+            Event::DisplayMath(math) => push_inline_span(
+                &mut inline_stack,
+                InlineSpan::Math {
+                    tex: math.into_string(),
+                    display: true,
+                },
+            ),
             Event::Start(_) | Event::End(_) => {}
         }
     }
@@ -1548,6 +1570,46 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
+/// Whether an inline `$...$` span pulldown-cmark accepted is not math under the Electron reader's
+/// rules: it must close on the same line and must not start with a digit (`$5 or $10` is prices).
+fn is_rejected_inline_math(tex: &str) -> bool {
+    tex.starts_with(|character: char| character.is_ascii_digit()) || tex.contains('\n')
+}
+
+/// Escapes the opening `$` of every inline math span the Electron reader would not treat as math,
+/// so the real parse reads those dollars as literal text instead of swallowing the rest of the
+/// paragraph (including code spans) into a bogus formula. Escaping one opener can expose another
+/// candidate later in the paragraph, so this repeats until the parse is stable.
+fn escape_non_math_dollars(markdown: &str, options: Options) -> Cow<'_, str> {
+    let mut markdown = Cow::Borrowed(markdown);
+    if !markdown.contains('$') {
+        return markdown;
+    }
+    for _ in 0..64 {
+        let openers = Parser::new_ext(&markdown, options)
+            .into_offset_iter()
+            .filter_map(|(event, range)| match event {
+                Event::InlineMath(tex) if is_rejected_inline_math(&tex) => Some(range.start),
+                _ => None,
+            })
+            .filter(|&start| markdown.as_bytes().get(start) == Some(&b'$'))
+            .collect::<Vec<_>>();
+        if openers.is_empty() {
+            break;
+        }
+        let mut escaped = String::with_capacity(markdown.len() + openers.len());
+        let mut copied = 0;
+        for start in openers {
+            escaped.push_str(&markdown[copied..start]);
+            escaped.push('\\');
+            copied = start;
+        }
+        escaped.push_str(&markdown[copied..]);
+        markdown = Cow::Owned(escaped);
+    }
+    markdown
+}
+
 fn push_paragraph_content(
     content: Vec<InlineSpan>,
     blocks: &mut Vec<DocumentBlock>,
@@ -1562,12 +1624,36 @@ fn push_paragraph_content(
     {
         item.push_content(content);
     } else {
-        push_block(
-            DocumentBlock::Paragraph(content),
-            blocks,
-            item_stack,
-            blockquotes,
-        );
+        for block in paragraph_blocks(content) {
+            push_block(block, blocks, item_stack, blockquotes);
+        }
+    }
+}
+
+/// A paragraph made only of `$$...$$` spans becomes standalone display math blocks, matching
+/// how KaTeX lays out display math on its own line; anything else stays one paragraph.
+fn paragraph_blocks(content: Vec<InlineSpan>) -> Vec<DocumentBlock> {
+    let only_display_math = content
+        .iter()
+        .any(|span| matches!(span, InlineSpan::Math { display: true, .. }))
+        && content.iter().all(|span| match span {
+            InlineSpan::Math { display, .. } => *display,
+            InlineSpan::Text(text) => text.trim().is_empty(),
+            InlineSpan::SoftBreak | InlineSpan::HardBreak => true,
+            _ => false,
+        });
+    if only_display_math {
+        content
+            .into_iter()
+            .filter_map(|span| match span {
+                InlineSpan::Math { tex, .. } => Some(DocumentBlock::Math { tex }),
+                _ => None,
+            })
+            .collect()
+    } else if content.is_empty() {
+        Vec::new()
+    } else {
+        vec![DocumentBlock::Paragraph(content)]
     }
 }
 
@@ -2192,6 +2278,114 @@ mod tests {
             }
         );
         assert_eq!(parsed.blocks.len(), 3, "footnote body must not leak");
+    }
+
+    #[test]
+    fn dollar_math_parses_to_math_spans_without_eating_prices() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/math.md"),
+            "Energy $E = mc^2$ costs $5 or $10.\nAn escaped \\$ stays, and `$code$` too.\n".into(),
+        );
+
+        let DocumentBlock::Paragraph(spans) = &parsed.blocks[0] else {
+            panic!("expected a paragraph, got {:?}", parsed.blocks[0]);
+        };
+        assert!(spans.contains(&InlineSpan::Math {
+            tex: "E = mc^2".into(),
+            display: false,
+        }));
+        assert!(
+            spans.contains(&InlineSpan::Code("$code$".into())),
+            "{spans:?}"
+        );
+        let math_count = spans
+            .iter()
+            .filter(|span| matches!(span, InlineSpan::Math { .. }))
+            .count();
+        assert_eq!(math_count, 1, "prices must stay text: {spans:?}");
+        assert!(parsed.blocks[0].plain_text().contains("costs $5 or $10."));
+        assert!(parsed.blocks[0].plain_text().contains("escaped $ stays"));
+    }
+
+    #[test]
+    fn display_math_paragraphs_become_math_blocks_and_inline_display_math_stays_inline() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/math.md"),
+            "$$\n\\int_0^1 x\\,dx\n$$\n\nInline $$a^2$$ display.\n\n- item\n\n  $$b^2$$\n".into(),
+        );
+
+        assert_eq!(
+            parsed.blocks[0],
+            DocumentBlock::Math {
+                tex: "\n\\int_0^1 x\\,dx\n".into(),
+            }
+        );
+        assert_eq!(
+            parsed.blocks[1],
+            DocumentBlock::Paragraph(vec![
+                InlineSpan::Text("Inline ".into()),
+                InlineSpan::Math {
+                    tex: "a^2".into(),
+                    display: true,
+                },
+                InlineSpan::Text(" display.".into()),
+            ])
+        );
+        let DocumentBlock::ListItem { children, .. } = &parsed.blocks[2] else {
+            panic!("expected a list item, got {:?}", parsed.blocks[2]);
+        };
+        assert!(children.contains(&DocumentBlock::Math { tex: "b^2".into() }));
+        assert_eq!(parsed.blocks[0].find_text(), "\n\\int_0^1 x\\,dx\n");
+    }
+
+    #[test]
+    fn diagrams_fixture_parses_every_diagram_and_display_equation() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/diagrams.md");
+        let parsed = parse_document(fixture.clone(), fs::read_to_string(&fixture).unwrap());
+
+        let mermaid = parsed
+            .blocks
+            .iter()
+            .filter(|block| matches!(block, DocumentBlock::MermaidCard { .. }))
+            .count();
+        let display_math = parsed
+            .blocks
+            .iter()
+            .filter(|block| matches!(block, DocumentBlock::Math { .. }))
+            .count();
+        let inline_math = parsed
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                DocumentBlock::Paragraph(spans) => Some(spans),
+                _ => None,
+            })
+            .flat_map(|spans| spans.iter())
+            .filter(|span| matches!(span, InlineSpan::Math { .. }))
+            .count();
+
+        let prices = parsed
+            .blocks
+            .iter()
+            .find(|block| block.plain_text().contains("the book costs"))
+            .expect("prices paragraph");
+        let DocumentBlock::Paragraph(price_spans) = prices else {
+            panic!("expected a paragraph, got {prices:?}");
+        };
+        assert!(
+            prices
+                .plain_text()
+                .contains("costs $5 and the course costs $10, and an escaped $ sign"),
+            "{price_spans:?}"
+        );
+        assert!(price_spans.contains(&InlineSpan::Math {
+            tex: "a^2 + b^2 = c^2".into(),
+            display: true,
+        }));
+
+        assert_eq!(mermaid, 13);
+        assert_eq!(display_math, 5);
+        assert!(inline_math >= 8, "found {inline_math} inline math spans");
     }
 
     #[test]

@@ -7,11 +7,20 @@ use crate::{
         footnote_ref_display, footnote_target, is_supported_document, resolve_local_target,
         script_text,
     },
+    graphics::{
+        DiagramPalette, GraphicCache, GraphicKey, GraphicState, MATH_SCALE, math_width_em,
+        render_mermaid,
+    },
     prefs::{READER_FONT_SIZE, READER_LINE_HEIGHT, ReaderStyle},
     syntax::{HighlightCache, HighlightLookup, HighlightedCode, PreparedDocument},
     tabs::TabLoad,
     theme::{ColorScheme, Metrics, Theme},
-    ui::primitives::icon,
+    ui::{
+        graphic::{
+            GraphicElement, InlineMathSlot, InlineMathText, MATH_PLACEHOLDER, hex_color, math_state,
+        },
+        primitives::icon,
+    },
 };
 use gpui::{
     AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
@@ -195,6 +204,17 @@ pub struct InlineLayout {
     pub text: String,
     pub styles: Vec<InlineStyleRange>,
     pub links: Vec<InlineLink>,
+    /// Formulas, in text order. Each range first holds the `$...$` source (styled as code, the
+    /// fallback when the formula cannot be typeset) until [`reserve_inline_math`] swaps it for
+    /// placeholder characters as wide as the typeset formula.
+    pub math: Vec<InlineMath>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineMath {
+    pub range: Range<usize>,
+    pub tex: String,
+    pub display: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -210,6 +230,8 @@ pub struct InlineStyleRange {
     pub kbd: bool,
     pub link_target: Option<String>,
     pub link_node_id: Option<usize>,
+    /// Placeholder characters reserving room for a typeset formula; painted transparent.
+    pub math: bool,
 }
 
 impl InlineStyleRange {
@@ -226,6 +248,7 @@ impl InlineStyleRange {
             kbd: style.kbd,
             link_target: style.link_target.map(str::to_owned),
             link_node_id: style.link_node_id,
+            math: false,
         }
     }
 }
@@ -529,6 +552,7 @@ fn collect_current_block_link_targets(
         }
         DocumentBlock::CodeBlock { .. }
         | DocumentBlock::MermaidCard { .. }
+        | DocumentBlock::Math { .. }
         | DocumentBlock::Image { .. }
         | DocumentBlock::ThematicBreak
         | DocumentBlock::RawText(_) => {}
@@ -582,6 +606,7 @@ fn inline_layout_with_transform(spans: &[InlineSpan], uppercase: bool) -> Inline
         text: String::new(),
         styles: Vec::new(),
         links: Vec::new(),
+        math: Vec::new(),
     };
     let mut next_link_node_id = 0;
     append_inline_spans(
@@ -730,10 +755,107 @@ fn append_inline_spans<'a>(
                     layout,
                 )
             }
+            InlineSpan::Math { tex, display } => {
+                let start = layout.text.len();
+                append_inline_text(
+                    &math_source(tex, *display),
+                    InlineStyleContext {
+                        code: true,
+                        ..style
+                    },
+                    false,
+                    layout,
+                );
+                layout.math.push(InlineMath {
+                    range: start..layout.text.len(),
+                    tex: tex.clone(),
+                    display: *display,
+                });
+            }
             // Electron renders soft breaks outside code as <br> (breaksOutsideCode).
             InlineSpan::SoftBreak => append_inline_text("\n", style, false, layout),
             InlineSpan::HardBreak => append_inline_text("\n", style, false, layout),
         }
+    }
+}
+
+/// Swaps each formula's source text for [`MATH_PLACEHOLDER`] characters at least as wide as the
+/// typeset formula, so native text layout (and wrapping) leaves room to paint it. `width_em`
+/// returns a formula's width in ems of the text, or `None` when it does not typeset (its source
+/// then stays as code-styled fallback text). `placeholder_em` is one placeholder's advance in ems.
+/// Returns the formulas that received placeholders, with their new ranges.
+fn reserve_inline_math(
+    layout: &mut InlineLayout,
+    placeholder_em: f32,
+    width_em: impl Fn(&str, bool) -> Option<f32>,
+) -> Vec<InlineMath> {
+    if layout.math.is_empty() || placeholder_em <= 0.0 {
+        return Vec::new();
+    }
+    let mut edits = Vec::<(Range<usize>, usize)>::new();
+    let mut reserved = Vec::new();
+    let mut text = String::with_capacity(layout.text.len());
+    let mut copied = 0;
+    for math in &layout.math {
+        let Some(width) = width_em(&math.tex, math.display) else {
+            continue;
+        };
+        let count = ((width / placeholder_em).ceil() as usize).max(1);
+        text.push_str(&layout.text[copied..math.range.start]);
+        let start = text.len();
+        text.extend(std::iter::repeat_n(MATH_PLACEHOLDER, count));
+        edits.push((math.range.clone(), text.len() - start));
+        reserved.push(InlineMath {
+            range: start..text.len(),
+            tex: math.tex.clone(),
+            display: math.display,
+        });
+        copied = math.range.end;
+    }
+    if edits.is_empty() {
+        return Vec::new();
+    }
+    text.push_str(&layout.text[copied..]);
+
+    let shift = |index: usize| {
+        edits
+            .iter()
+            .filter(|(old, _)| old.end <= index)
+            .fold(index, |index, (old, new_len)| index - old.len() + new_len)
+    };
+    for style in &mut layout.styles {
+        if edits.iter().any(|(old, _)| *old == style.range) {
+            style.code = false;
+            style.math = true;
+        }
+        style.range = shift(style.range.start)..shift(style.range.end);
+    }
+    for link in &mut layout.links {
+        link.range = shift(link.range.start)..shift(link.range.end);
+    }
+    layout.text = text;
+    layout.math = reserved.clone();
+    reserved
+}
+
+/// The font inline math placeholders are laid out in. Ligatures and kerning are off so every
+/// placeholder advances by exactly the measured width.
+fn math_placeholder_font(reader: ReaderStyle) -> Font {
+    let mut placeholder = font(reader.content_family);
+    placeholder.features = FontFeatures(Arc::new(vec![
+        ("liga".into(), 0),
+        ("calt".into(), 0),
+        ("kern".into(), 0),
+    ]));
+    placeholder
+}
+
+/// The TeX source with its delimiters, shown when math cannot be typeset.
+fn math_source(tex: &str, display: bool) -> String {
+    if display {
+        format!("$${tex}$$")
+    } else {
+        format!("${tex}$")
     }
 }
 
@@ -1120,16 +1242,25 @@ fn block_margins(
             }
         }
         DocumentBlock::CodeBlock { .. }
-        | DocumentBlock::MermaidCard { .. }
         | DocumentBlock::Table(_)
         | DocumentBlock::Alert { .. }
         | DocumentBlock::FootnoteSection { .. } => BlockMargins {
             top: EM * 1.25,
             bottom: EM * 1.25,
         },
+        // The Electron reader gives diagrams a 1.5em margin.
+        DocumentBlock::MermaidCard { .. } => BlockMargins {
+            top: EM * 1.5,
+            bottom: EM * 1.5,
+        },
         DocumentBlock::ThematicBreak => BlockMargins {
             top: EM * 2.0,
             bottom: EM * 2.0,
+        },
+        // KaTeX display math keeps a 1em margin above and below.
+        DocumentBlock::Math { .. } => BlockMargins {
+            top: EM,
+            bottom: EM,
         },
         DocumentBlock::Paragraph(_)
         | DocumentBlock::Blockquote(_)
@@ -2038,16 +2169,10 @@ fn render_block(
             DocumentBlock::Alert { kind, children } => {
                 render_alert(*kind, children, block_path, document, view, cx)
             }
-            DocumentBlock::MermaidCard { source } => render_code_block(
-                Some("mermaid"),
-                source,
-                &LineHighlights::default(),
-                false,
-                block_path,
-                document_path,
-                view,
-                cx,
-            ),
+            DocumentBlock::MermaidCard { source } => {
+                render_mermaid_block(source, block_path, document_path, view, cx)
+            }
+            DocumentBlock::Math { tex } => render_math_block(tex, block_path, document_path, view),
             DocumentBlock::FootnoteSection { notes } => {
                 render_footnote_section(notes, block_path, document, view, cx)
             }
@@ -2074,6 +2199,174 @@ fn render_block(
         })
         .child(content)
         .into_any_element()
+}
+
+/// Display math, centered, scrolling sideways when wider than the column. TeX that does not
+/// typeset shows its source in the destructive color, as KaTeX does with `throwOnError: false`.
+fn render_math_block(
+    tex: &str,
+    block_path: &[usize],
+    document_path: &Path,
+    view: ReaderView<'_>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let debug_selector = format!("reader-block-{}", block_path_suffix(block_path));
+    let content = match math_state(tex, true, theme.foreground, view.style.font_size) {
+        GraphicState::Ready(graphic) => div()
+            .flex()
+            .w_full()
+            .child(
+                div()
+                    .flex_none()
+                    .mx_auto()
+                    .py(px(4.0))
+                    .child(GraphicElement::new(
+                        graphic.image,
+                        graphic.width,
+                        graphic.height,
+                        false,
+                    )),
+            )
+            .into_any_element(),
+        GraphicState::Pending | GraphicState::Failed(_) => div()
+            .font_family(view.style.code_family)
+            .text_size(px(view.zoom(14.0)))
+            .text_color(theme.destructive)
+            .whitespace_nowrap()
+            .child(math_source(tex.trim(), true))
+            .into_any_element(),
+    };
+    div()
+        .id((
+            "reader-math",
+            document_scoped_element_id(document_path, "reader-math", block_index),
+        ))
+        .debug_selector(move || debug_selector)
+        .w_full()
+        .overflow_x_scroll()
+        .map(restrict_scroll_to_axis)
+        .child(content)
+        .into_any_element()
+}
+
+/// Mermaid diagram in a code-block card (same radius, border, surface and 32px header with the
+/// label left and Copy right), rendered off the UI thread the first time it scrolls near the
+/// viewport and shrunk to the card like the Electron reader's `max-width: 100%`. Diagrams that
+/// fail to parse show why above their source.
+fn render_mermaid_block(
+    source: &str,
+    block_path: &[usize],
+    document_path: &Path,
+    view: ReaderView<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let debug_selector = format!("reader-block-{}", block_path_suffix(block_path));
+    let scale = view.zoom(1.0);
+    // Edge labels sit on the card surface, so their backing matches it.
+    let palette = DiagramPalette::new(
+        theme.color_scheme == ColorScheme::Dark,
+        hex_color(theme.code_surface),
+    );
+    let body = match diagram_state(source, palette, scale, cx) {
+        GraphicState::Ready(graphic) => div()
+            .flex()
+            .justify_center()
+            .w_full()
+            .p(px(DIAGRAM_CARD_PADDING))
+            .child(GraphicElement::new(
+                graphic.image,
+                graphic.width * scale,
+                graphic.height * scale,
+                true,
+            )),
+        GraphicState::Pending => div().w_full().h(px(view.zoom(DIAGRAM_PENDING_HEIGHT))),
+        GraphicState::Failed(error) => {
+            return div()
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .w_full()
+                .min_w_0()
+                .child(
+                    div()
+                        .font_family(Metrics::FONT_SANS)
+                        .text_size(px(view.zoom(13.0)))
+                        .text_color(theme.muted_foreground)
+                        .child(format!("This diagram could not be drawn: {error}")),
+                )
+                .child(render_code_block(
+                    Some("mermaid"),
+                    source,
+                    &LineHighlights::default(),
+                    false,
+                    block_path,
+                    document_path,
+                    view,
+                    cx,
+                ))
+                .into_any_element();
+        }
+    };
+    let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
+    div()
+        .id(("reader-block", block_index))
+        .debug_selector(move || debug_selector)
+        .w_full()
+        .min_w_0()
+        .rounded(px(BlockStyle::code_block().radius))
+        .border_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.code_surface)
+        .overflow_hidden()
+        .child(code_card_header(
+            Some("mermaid".into()),
+            code_copy_button(source.to_owned(), block_path, copied, theme, cx),
+            theme,
+        ))
+        .child(body)
+        .into_any_element()
+}
+
+/// Inner padding between a diagram and its card border.
+const DIAGRAM_CARD_PADDING: f32 = 16.0;
+
+/// Space a diagram holds while it renders, so the column does not jump twice.
+const DIAGRAM_PENDING_HEIGHT: f32 = 160.0;
+
+/// The cached diagram for `source`, starting a background render on the first request. The app
+/// re-renders when the diagram is ready.
+fn diagram_state(
+    source: &str,
+    palette: DiagramPalette,
+    scale: f32,
+    cx: &Context<MdowApp>,
+) -> GraphicState {
+    let key = GraphicKey::Diagram {
+        source: source.to_owned(),
+        dark: palette.dark,
+        scale: (scale * 100.0).round() as u32,
+    };
+    if let Some(state) = GraphicCache::global().get_or_begin(&key) {
+        return state;
+    }
+    let source = source.to_owned();
+    cx.spawn(async move |app, cx| {
+        let rendered = cx
+            .background_executor()
+            .spawn(async move { render_mermaid(&source, &palette, scale) })
+            .await;
+        let state = match rendered {
+            Ok(graphic) => GraphicState::Ready(graphic),
+            Err(error) => GraphicState::Failed(error.into()),
+        };
+        GraphicCache::global().insert(key, state);
+        app.update(cx, |_, cx| cx.notify()).ok();
+    })
+    .detach();
+    GraphicState::Pending
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2115,6 +2408,23 @@ fn render_inline_layout(
     link_state: &ReaderLinkState<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
+    let mut layout = layout;
+    let placeholder_font = math_placeholder_font(style);
+    let reserved_math = if layout.math.is_empty() {
+        Vec::new()
+    } else {
+        let text_system = cx.text_system();
+        let placeholder_em = text_system
+            .advance(
+                text_system.resolve_font(&placeholder_font),
+                px(16.0),
+                MATH_PLACEHOLDER,
+            )
+            .map_or(0.0, |advance| f32::from(advance.width) / 16.0);
+        reserve_inline_math(&mut layout, placeholder_em, |tex, display| {
+            math_width_em(tex, display).map(|width| width * MATH_SCALE)
+        })
+    };
     let active_links = layout
         .links
         .iter()
@@ -2141,6 +2451,23 @@ fn render_inline_layout(
         tabular_numbers,
     );
     let styled_text = StyledText::new(layout.text.clone()).with_runs(runs);
+    let text_layout = styled_text.layout().clone();
+    let math_slots = reserved_math
+        .into_iter()
+        .map(|math| InlineMathSlot {
+            color: if active_links
+                .iter()
+                .any(|link| link.range.contains(&math.range.start))
+            {
+                theme.primary
+            } else {
+                base_color
+            },
+            range: math.range,
+            tex: math.tex,
+            display: math.display,
+        })
+        .collect::<Vec<_>>();
     let document_path = document_path.to_owned();
     let click_links = active_links.clone();
     let text: AnyElement = if click_links.is_empty() {
@@ -2185,6 +2512,11 @@ fn render_inline_layout(
                 .ok();
         })
         .into_any_element()
+    };
+    let text = if math_slots.is_empty() {
+        text
+    } else {
+        InlineMathText::new(text, text_layout, math_slots, placeholder_font).into_any_element()
     };
 
     let keyboard_links = active_links
@@ -2277,6 +2609,18 @@ fn text_runs(
                 theme,
                 reader,
             ));
+        }
+        if style.math {
+            runs.push(TextRun {
+                len: style.range.len(),
+                font: math_placeholder_font(reader),
+                color: gpui::transparent_black(),
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            });
+            cursor = style.range.end;
+            continue;
         }
         let link_index = style.link_target.as_ref().and_then(|_| {
             active_links
@@ -2875,36 +3219,16 @@ fn code_line_band(theme: Theme) -> gpui::Hsla {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_code_block(
-    language: Option<&str>,
-    code: &str,
-    highlights: &LineHighlights,
-    highlight: bool,
+/// The Copy button in a code card header; `copied` shows the confirmation state.
+fn code_copy_button(
+    code_to_copy: String,
     block_path: &[usize],
-    document_path: &Path,
-    view: ReaderView<'_>,
+    copied: bool,
+    theme: Theme,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
-    let theme = view.theme;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
-    let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
-    let code_to_copy = code.to_owned();
-    let display = code_display_text(code);
-    let family = view.style.code_family;
-    let highlighted = highlight
-        .then(|| lazy_highlight(language, code, theme.color_scheme, cx))
-        .flatten();
-    let runs = match &highlighted {
-        Some(highlighted) => highlighted_text_runs(highlighted, display.len(), family),
-        None => plain_code_runs(display.len(), theme.color_scheme, family),
-    };
-    let code_text = StyledText::new(display.to_owned()).with_runs(runs);
-    let code_size = view.zoom(READER_FONT_SIZE * 0.875);
-    let code_line_height = code_size * BlockStyle::code_block().line_height;
-    let [padding_top, padding_x] = BlockStyle::code_block().padding;
-
     let copy_debug_selector = format!("copy-code-{block_suffix}");
     let copied_debug_selector = format!("copied-code-{block_suffix}");
     let copy_color = if copied {
@@ -2912,7 +3236,7 @@ fn render_code_block(
     } else {
         theme.muted_foreground
     };
-    let copy_button = div()
+    div()
         .id(("copy-code", block_index))
         .debug_selector(move || copy_debug_selector)
         .tab_index(0)
@@ -2959,12 +3283,13 @@ fn render_code_block(
                 .into_any_element()
         } else {
             div().child("Copy").into_any_element()
-        });
+        })
+        .into_any_element()
+}
 
-    // Blocks without a fence language keep the header (with only the Copy button) so every code
-    // block shares one geometry and the button never moves; a made-up "text" label would claim
-    // a language the author never wrote.
-    let header = div()
+/// The 32px header shared by code blocks and diagrams: a mono label left, actions right.
+fn code_card_header(label: Option<String>, action: AnyElement, theme: Theme) -> gpui::Div {
+    div()
         .flex()
         .items_center()
         .justify_between()
@@ -2983,9 +3308,49 @@ fn render_code_block(
                 .text_size(px(11.0))
                 .line_height(px(16.0))
                 .text_color(theme.muted_foreground)
-                .children(language.map(str::to_lowercase)),
+                .children(label),
         )
-        .child(copy_button);
+        .child(action)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_code_block(
+    language: Option<&str>,
+    code: &str,
+    highlights: &LineHighlights,
+    highlight: bool,
+    block_path: &[usize],
+    document_path: &Path,
+    view: ReaderView<'_>,
+    cx: &Context<MdowApp>,
+) -> AnyElement {
+    let theme = view.theme;
+    let block_index = block_path_render_index(block_path);
+    let block_suffix = block_path_suffix(block_path);
+    let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
+    let code_to_copy = code.to_owned();
+    let display = code_display_text(code);
+    let family = view.style.code_family;
+    let highlighted = highlight
+        .then(|| lazy_highlight(language, code, theme.color_scheme, cx))
+        .flatten();
+    let runs = match &highlighted {
+        Some(highlighted) => highlighted_text_runs(highlighted, display.len(), family),
+        None => plain_code_runs(display.len(), theme.color_scheme, family),
+    };
+    let code_text = StyledText::new(display.to_owned()).with_runs(runs);
+    let code_size = view.zoom(READER_FONT_SIZE * 0.875);
+    let code_line_height = code_size * BlockStyle::code_block().line_height;
+    let [padding_top, padding_x] = BlockStyle::code_block().padding;
+
+    // Blocks without a fence language keep the header (with only the Copy button) so every code
+    // block shares one geometry and the button never moves; a made-up "text" label would claim
+    // a language the author never wrote.
+    let header = code_card_header(
+        language.map(str::to_lowercase),
+        code_copy_button(code_to_copy, block_path, copied, theme, cx),
+        theme,
+    );
 
     let band = code_line_band(theme);
     let line_count = display.split('\n').count();
@@ -3459,6 +3824,77 @@ mod tests {
                 node_id: 0,
             }],
         );
+    }
+
+    #[test]
+    fn inline_math_reserves_placeholders_and_shifts_later_ranges() {
+        let spans = vec![
+            InlineSpan::Text("a ".into()),
+            InlineSpan::Math {
+                tex: "x".into(),
+                display: false,
+            },
+            InlineSpan::Text(" ".into()),
+            InlineSpan::Link {
+                label: vec![InlineSpan::Text("b".into())],
+                target: "guide.md".into(),
+            },
+            InlineSpan::Text(" ".into()),
+            InlineSpan::Math {
+                tex: "bad".into(),
+                display: false,
+            },
+        ];
+        let mut layout = inline_layout(&spans);
+        assert_eq!(layout.text, "a $x$ b $bad$");
+        assert_eq!(layout.math.len(), 2);
+
+        let reserved = reserve_inline_math(&mut layout, 0.25, |tex, _| (tex == "x").then_some(0.9));
+
+        assert_eq!(layout.text, "a .... b $bad$");
+        assert_eq!(
+            reserved,
+            vec![InlineMath {
+                range: 2..6,
+                tex: "x".into(),
+                display: false,
+            }]
+        );
+        assert_eq!(layout.links[0].range, 7..8);
+        let placeholder = layout
+            .styles
+            .iter()
+            .find(|style| style.range == (2..6))
+            .unwrap();
+        assert!(placeholder.math && !placeholder.code);
+        let fallback = layout
+            .styles
+            .iter()
+            .find(|style| style.range == (9..14))
+            .unwrap();
+        assert!(
+            fallback.code && !fallback.math,
+            "untypeset math stays code text"
+        );
+    }
+
+    #[test]
+    fn inline_math_inside_a_link_extends_the_link_range() {
+        let mut layout = inline_layout(&[InlineSpan::Link {
+            label: vec![
+                InlineSpan::Text("see ".into()),
+                InlineSpan::Math {
+                    tex: r"\lambda".into(),
+                    display: false,
+                },
+            ],
+            target: "#display-math".into(),
+        }]);
+
+        reserve_inline_math(&mut layout, 0.5, |_, _| Some(1.0));
+
+        assert_eq!(layout.text, "see ..");
+        assert_eq!(layout.links[0].range, 0..6);
     }
 
     #[test]
