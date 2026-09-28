@@ -200,8 +200,8 @@ assert(
   'verify must verify or install the Metal toolchain',
 )
 
-rust = steps.find { |step| step['uses'] == 'dtolnay/rust-toolchain@1.93.0' }
-assert(!rust.nil?, 'verify must install Rust 1.93.0')
+rust = steps.find { |step| step['uses'] == 'dtolnay/rust-toolchain@1.98.1' }
+assert(!rust.nil?, 'verify must install Rust 1.98.1')
 components = rust.dig('with', 'components').to_s.split(/[\s,]+/)
 %w[rustfmt clippy].each do |component|
   assert(components.include?(component), "Rust setup must install #{component}")
@@ -353,8 +353,8 @@ assert(
   'gpui-mac-beta must verify or install the Metal toolchain',
 )
 
-gpui_rust = gpui_steps.find { |step| step['uses'] == 'dtolnay/rust-toolchain@1.93.0' }
-assert(!gpui_rust.nil?, 'gpui-mac-beta must install Rust 1.93.0')
+gpui_rust = gpui_steps.find { |step| step['uses'] == 'dtolnay/rust-toolchain@1.98.1' }
+assert(!gpui_rust.nil?, 'gpui-mac-beta must install Rust 1.98.1')
 gpui_components = gpui_rust.dig('with', 'components').to_s.split(/[\s,]+/)
 %w[rustfmt clippy].each do |component|
   assert(gpui_components.include?(component), "release Rust setup must install #{component}")

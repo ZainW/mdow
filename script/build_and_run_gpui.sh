@@ -310,7 +310,7 @@ if (( $# == 1 )); then
 fi
 
 command -v cargo >/dev/null 2>&1 \
-  || die 'cargo is unavailable. Install Rust 1.93 or newer before building Mdow GPUI.'
+  || die 'cargo is unavailable. Install Rust 1.95 or newer before building Mdow GPUI.'
 command -v lsof >/dev/null 2>&1 \
   || die 'lsof is unavailable; exact executable-path process matching cannot be performed.'
 command -v pgrep >/dev/null 2>&1 \
