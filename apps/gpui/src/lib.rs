@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod anchor;
 pub mod app;
 pub mod assets;
 pub mod document;

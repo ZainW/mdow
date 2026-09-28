@@ -132,21 +132,60 @@ impl ParsedDocument {
             .collect()
     }
 
-    pub fn anchor_block(&self, fragment: &str) -> Option<usize> {
+    /// Where outline heading `heading_index` renders: its reader block, then the child indexes
+    /// leading to it inside list items and callouts (the reader's block paths).
+    pub fn heading_path(&self, heading_index: usize) -> Option<Vec<usize>> {
+        fn find(blocks: &[DocumentBlock], remaining: &mut usize, path: &mut Vec<usize>) -> bool {
+            for (index, block) in blocks.iter().enumerate() {
+                path.push(index);
+                match block {
+                    DocumentBlock::Heading { .. } => {
+                        if *remaining == 0 {
+                            return true;
+                        }
+                        *remaining -= 1;
+                    }
+                    DocumentBlock::ListItem { children, .. }
+                    | DocumentBlock::TaskItem { children, .. }
+                    | DocumentBlock::Alert { children, .. }
+                        if find(children, remaining, path) =>
+                    {
+                        return true;
+                    }
+                    _ => {}
+                }
+                path.pop();
+            }
+            false
+        }
+        let block = self.heading_block(heading_index)?;
+        let earlier = self.blocks[..block]
+            .iter()
+            .map(heading_count)
+            .sum::<usize>();
+        let mut remaining = heading_index - earlier;
+        let mut path = Vec::new();
+        find(
+            std::slice::from_ref(&self.blocks[block]),
+            &mut remaining,
+            &mut path,
+        )
+        .then(|| {
+            path[0] = block;
+            path
+        })
+    }
+
+    /// The outline heading a `#fragment` link names (GitHub-style slugs, `-1` for repeats).
+    pub fn anchor_heading(&self, fragment: &str) -> Option<usize> {
         let fragment = percent_decode_url_path(fragment)?;
-        if fragment.is_empty() {
-            return (!self.blocks.is_empty()).then_some(0);
+        if fragment.is_empty() || fragment.starts_with("fn-") || fragment.starts_with("fnref-") {
+            return None;
         }
-        if let Some(label) = fragment.strip_prefix("fn-")
-            && let Some(block) = self.footnote_block(label)
-        {
-            return Some(block);
-        }
-        if let Some(label) = fragment.strip_prefix("fnref-")
-            && let Some(block) = self.footnote_ref_block(label)
-        {
-            return Some(block);
-        }
+        self.heading_for_slug(&fragment)
+    }
+
+    fn heading_for_slug(&self, fragment: &str) -> Option<usize> {
         let mut used = std::collections::HashSet::new();
         for (index, heading) in self.headings.iter().enumerate() {
             let base: String = heading
@@ -163,10 +202,29 @@ impl ParsedDocument {
                 slug = format!("{base}-{suffix}");
             }
             if slug == fragment {
-                return self.heading_block(index);
+                return Some(index);
             }
         }
         None
+    }
+
+    pub fn anchor_block(&self, fragment: &str) -> Option<usize> {
+        let fragment = percent_decode_url_path(fragment)?;
+        if fragment.is_empty() {
+            return (!self.blocks.is_empty()).then_some(0);
+        }
+        if let Some(label) = fragment.strip_prefix("fn-")
+            && let Some(block) = self.footnote_block(label)
+        {
+            return Some(block);
+        }
+        if let Some(label) = fragment.strip_prefix("fnref-")
+            && let Some(block) = self.footnote_ref_block(label)
+        {
+            return Some(block);
+        }
+        self.heading_for_slug(&fragment)
+            .and_then(|index| self.heading_block(index))
     }
 
     /// The reader block holding the footnote section entry for `label`.
@@ -194,7 +252,7 @@ impl ParsedDocument {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum InlineSpan {
     Text(String),
     Emphasis(Vec<InlineSpan>),
@@ -358,7 +416,7 @@ pub fn footnote_ref_display(label: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum DocumentBlock {
     Heading {
         level: u8,
@@ -453,7 +511,7 @@ impl DocumentBlock {
 }
 
 /// Highlighted code lines as inclusive 1-based ranges.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct LineHighlights(pub Vec<(usize, usize)>);
 
 impl LineHighlights {
@@ -555,7 +613,7 @@ pub fn parse_code_info(info: &str) -> CodeInfo {
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlertKind {
     Note,
     Tip,
@@ -588,7 +646,7 @@ impl From<BlockQuoteKind> for AlertKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum ListKind {
     Unordered,
     Ordered { number: u64 },
@@ -600,6 +658,21 @@ pub struct TableBlock {
     pub rows: Vec<Vec<Vec<InlineSpan>>>,
     /// GFM column alignment from the delimiter row; missing columns are unaligned.
     pub alignments: Vec<Alignment>,
+}
+
+impl std::hash::Hash for TableBlock {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.headers.hash(state);
+        self.rows.hash(state);
+        for alignment in &self.alignments {
+            state.write_u8(match alignment {
+                Alignment::None => 0,
+                Alignment::Left => 1,
+                Alignment::Center => 2,
+                Alignment::Right => 3,
+            });
+        }
+    }
 }
 
 impl TableBlock {
@@ -857,6 +930,100 @@ fn split_frontmatter(source: &str) -> (Option<String>, &str) {
         }
     }
     (None, source)
+}
+
+/// A stable hash of one block's content. Reloads keep blocks whose signature did not change
+/// (their measured heights survive), and scroll anchors use it to recognise the block they
+/// were anchored to after edits shift its index (Electron's per-section signatures).
+pub fn block_signature(block: &DocumentBlock) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    block.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Files at least this large are read and parsed off the UI thread (Electron's worker
+/// threshold); smaller ones parse in a few milliseconds and open synchronously without a flash.
+pub const ASYNC_PARSE_MIN_BYTES: u64 = 256 * 1024;
+/// Documents at least this long show a preview of their opening while the full parse runs.
+pub const PREVIEW_MIN_BYTES: usize = 1024 * 1024;
+/// The preview covers at least this much of the document, ending on a block boundary.
+const PREVIEW_TARGET_BYTES: usize = 64 * 1024;
+/// Give up looking for a heading to cut at past this point; fall back to a blank line.
+const PREVIEW_MAX_BYTES: usize = 256 * 1024;
+
+/// Byte offset just past a leading `---` frontmatter block (the whole text when unclosed).
+fn frontmatter_end(text: &str) -> usize {
+    if !text.starts_with("---\n") && !text.starts_with("---\r\n") {
+        return 0;
+    }
+    text[3..]
+        .find("\n---")
+        .map_or(text.len(), |close| (close + 3 + 4).min(text.len()))
+}
+
+/// An opening code fence (` ``` ` or `~~~`, up to three spaces of indent): its marker run.
+fn fence_marker(line: &str) -> Option<&str> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return None;
+    }
+    let rest = &line[indent..];
+    let marker = rest.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let run = rest.len() - rest.trim_start_matches(marker).len();
+    (run >= 3).then(|| &rest[..run])
+}
+
+fn is_atx_heading(line: &str) -> bool {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return false;
+    }
+    let rest = &line[indent..];
+    let hashes = rest.len() - rest.trim_start_matches('#').len();
+    (1..=6).contains(&hashes)
+        && rest[hashes..]
+            .chars()
+            .next()
+            .is_none_or(|character| character.is_whitespace())
+}
+
+/// Port of Electron's `sliceDocumentHead`: the opening of `text`, cut just before a heading
+/// (or, failing that, a blank line) outside any code fence and after any frontmatter, or `None`
+/// when the document is too short to need a preview. Cutting on those boundaries keeps every
+/// block in the preview identical to its place in the full render. Lengths are in bytes.
+pub fn slice_document_head(text: &str) -> Option<&str> {
+    if text.len() < PREVIEW_MIN_BYTES {
+        return None;
+    }
+    let mut fence: Option<(char, usize)> = None;
+    let mut blank_cut = None;
+    let mut position = frontmatter_end(text);
+    while position < text.len() && position < PREVIEW_MAX_BYTES {
+        let end = text[position..]
+            .find('\n')
+            .map_or(text.len(), |offset| position + offset);
+        let line = text[position..end].trim_end_matches('\r');
+        let marker = fence_marker(line);
+        if let Some((fence_char, fence_len)) = fence {
+            if marker
+                .is_some_and(|marker| marker.starts_with(fence_char) && marker.len() >= fence_len)
+            {
+                fence = None;
+            }
+        } else if let Some(marker) = marker {
+            fence = marker.chars().next().map(|first| (first, marker.len()));
+        } else if position >= PREVIEW_TARGET_BYTES {
+            if is_atx_heading(line) {
+                return Some(&text[..position]);
+            }
+            if blank_cut.is_none() && line.trim().is_empty() {
+                blank_cut = Some(position);
+            }
+        }
+        position = end + 1;
+    }
+    blank_cut.map(|cut| &text[..cut])
 }
 
 /// Parses Markdown (or an HTML document) into the model consumed by the native reader.
@@ -2422,5 +2589,96 @@ mod tests {
             1,
         );
         assert_eq!(parsed.plain_text(), "before\nlet n = 1;\n\nafter");
+    }
+
+    const PREVIEW_PARAGRAPH: &str =
+        "Plain prose that fills out the document without any structure of its own.\n\n";
+
+    fn repeat_to(bytes: usize, chunk: &str) -> String {
+        chunk.repeat(bytes.div_ceil(chunk.len()))
+    }
+
+    #[test]
+    fn preview_skips_documents_that_parse_quickly_anyway() {
+        assert_eq!(slice_document_head("# Small\n\nText"), None);
+    }
+
+    #[test]
+    fn preview_cuts_just_before_a_heading_past_the_target_length() {
+        let text = repeat_to(
+            PREVIEW_MIN_BYTES,
+            &format!("## Section\n\n{PREVIEW_PARAGRAPH}"),
+        );
+        let head = slice_document_head(&text).unwrap();
+
+        assert!(head.len() >= 64 * 1024);
+        assert!(head.len() < text.len());
+        assert!(text[head.len()..].starts_with("## Section"));
+    }
+
+    #[test]
+    fn preview_never_cuts_inside_a_code_fence() {
+        let fenced = format!(
+            "```md\n{}```\n\n",
+            repeat_to(80 * 1024, "# not a heading\n")
+        );
+        let text = fenced.clone()
+            + &repeat_to(PREVIEW_MIN_BYTES, &format!("# Real\n\n{PREVIEW_PARAGRAPH}"));
+        let head = slice_document_head(&text).unwrap();
+
+        assert!(head.len() >= fenced.len());
+        assert!(text[head.len()..].starts_with("# Real"));
+    }
+
+    #[test]
+    fn preview_falls_back_to_a_blank_line_when_there_are_no_headings() {
+        let text = repeat_to(PREVIEW_MIN_BYTES, PREVIEW_PARAGRAPH);
+        let head = slice_document_head(&text).unwrap();
+
+        assert!(head.len() >= 64 * 1024);
+        assert!(head.len() < 300 * 1024);
+        assert!(text[head.len()..].starts_with('\n'));
+    }
+
+    #[test]
+    fn preview_keeps_frontmatter_whole() {
+        let frontmatter = format!("---\n{}---\n", repeat_to(70 * 1024, "key: value\n"));
+        let text = frontmatter.clone()
+            + &repeat_to(
+                PREVIEW_MIN_BYTES,
+                &format!("# Heading\n\n{PREVIEW_PARAGRAPH}"),
+            );
+        let head = slice_document_head(&text).unwrap();
+
+        assert!(head.starts_with(&frontmatter));
+    }
+
+    #[test]
+    fn preview_blocks_match_the_start_of_the_full_parse() {
+        let text = repeat_to(
+            PREVIEW_MIN_BYTES,
+            &format!("## Section\n\n{PREVIEW_PARAGRAPH}- a\n- b\n\n```rust\nlet n = 1;\n```\n\n"),
+        );
+        let head = slice_document_head(&text).unwrap();
+        let preview = parse_document(PathBuf::from("big.md"), head.to_owned());
+        let full = parse_document(PathBuf::from("big.md"), text.clone());
+
+        assert!(!preview.blocks.is_empty());
+        assert_eq!(preview.blocks[..], full.blocks[..preview.blocks.len()]);
+    }
+
+    #[test]
+    fn block_signatures_follow_content_not_position() {
+        let first = parse_document(PathBuf::from("a.md"), "# One\n\nSame text\n".into());
+        let second = parse_document(PathBuf::from("a.md"), "Same text\n\n# Two\n".into());
+
+        assert_eq!(
+            block_signature(&first.blocks[1]),
+            block_signature(&second.blocks[0])
+        );
+        assert_ne!(
+            block_signature(&first.blocks[0]),
+            block_signature(&second.blocks[1])
+        );
     }
 }
