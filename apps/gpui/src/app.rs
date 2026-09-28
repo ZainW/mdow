@@ -1722,8 +1722,15 @@ impl MdowApp {
         let (entries, actions): (Vec<_>, Vec<_>) = spec.into_iter().unzip();
         let theme = self.theme;
         let view = cx.new(|cx| ContextMenu::new(entries, theme, window, cx));
-        let events = cx.subscribe_in(&view, window, |this, _, event, window, cx| {
-            this.on_context_menu_event(*event, window, cx);
+        let events = cx.subscribe_in(&view, window, |this, menu, event, window, cx| {
+            // A late event from a menu that was already replaced must not close its successor.
+            if this
+                .context_menu
+                .as_ref()
+                .is_some_and(|open| open.view == *menu)
+            {
+                this.on_context_menu_event(*event, window, cx);
+            }
         });
         self.context_menu = Some(OpenContextMenu {
             view,
@@ -4809,5 +4816,33 @@ mod tests {
             row.top() >= list.top() && row.bottom() <= list.bottom(),
             "row {row:?} should be scrolled into {list:?}"
         );
+    }
+
+    #[gpui::test]
+    fn right_clicking_another_tab_replaces_the_open_menu(cx: &mut TestAppContext) {
+        let (window, _first, _second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        let first_tab = visual.debug_bounds("document-tab-0").unwrap().center();
+        let second_tab = visual.debug_bounds("document-tab-1").unwrap().center();
+        // Open on the right-hand tab first so the menu does not cover the left one.
+        visual.simulate_mouse_down(second_tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        let first_menu = window
+            .update(cx, |app, _, _| app.context_menu_view().unwrap())
+            .unwrap();
+        visual.simulate_mouse_down(first_tab, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        window
+            .update(cx, |app, _, cx| {
+                let menu = app.context_menu_view().expect("a menu stays open");
+                assert_ne!(menu, first_menu);
+                // The first tab has a neighbour to its right.
+                assert_eq!(
+                    menu.read(cx).entries()[2],
+                    ContextMenuEntry::item("Close to the Right")
+                );
+            })
+            .unwrap();
     }
 }
