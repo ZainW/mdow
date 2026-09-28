@@ -3,7 +3,11 @@
 use super::{Graphic, guarded, rasterize_svg};
 use ratex_layout::{LayoutOptions, layout, to_display_list};
 use ratex_svg::{SvgOptions, render_to_svg};
-use ratex_types::{color::Color, math_style::MathStyle};
+use ratex_types::{color::Color, display_item::DisplayList, math_style::MathStyle};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+};
 
 /// KaTeX sets math at 1.21em of the surrounding text so its x-height matches body fonts.
 pub const MATH_SCALE: f32 = 1.21;
@@ -20,22 +24,7 @@ pub fn render_math(
     font_size: f32,
 ) -> Result<Graphic, String> {
     guarded(|| {
-        let nodes = ratex_parser::parse(tex).map_err(|error| error.message)?;
-        let options = LayoutOptions {
-            style: if display {
-                MathStyle::Display
-            } else {
-                MathStyle::Text
-            },
-            color: Color::new(
-                f32::from(color[0]) / 255.0,
-                f32::from(color[1]) / 255.0,
-                f32::from(color[2]) / 255.0,
-                f32::from(color[3]) / 255.0,
-            ),
-            ..LayoutOptions::default()
-        };
-        let display_list = to_display_list(&layout(&nodes, &options));
+        let display_list = layout_math(tex, display, color)?;
         let em = f64::from(font_size);
         let width = (display_list.width * em) as f32;
         let height = ((display_list.height + display_list.depth) * em) as f32;
@@ -52,6 +41,54 @@ pub fn render_math(
         graphic.depth = (display_list.depth * em) as f32;
         Ok(graphic)
     })
+}
+
+/// The typeset width of `tex` in ems of the math font, or `None` when it does not typeset.
+///
+/// The reader reserves inline space for a formula before it knows the paragraph's font size;
+/// widths scale linearly with size, so one em measurement serves every zoom level.
+pub fn math_width_em(tex: &str, display: bool) -> Option<f32> {
+    type Widths = HashMap<(String, bool), Option<f32>>;
+    static WIDTHS: LazyLock<Mutex<Widths>> = LazyLock::new(Mutex::default);
+    let key = (tex.to_owned(), display);
+    if let Some(width) = WIDTHS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&key)
+    {
+        return *width;
+    }
+    let width = guarded(|| layout_math(tex, display, [0, 0, 0, 255]))
+        .ok()
+        .map(|display_list| display_list.width as f32)
+        .filter(|width| width.is_finite() && *width > 0.0);
+    let mut widths = WIDTHS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if widths.len() >= 8192 {
+        widths.clear();
+    }
+    widths.insert(key, width);
+    width
+}
+
+fn layout_math(tex: &str, display: bool, color: [u8; 4]) -> Result<DisplayList, String> {
+    let nodes = ratex_parser::parse(tex).map_err(|error| error.message)?;
+    let options = LayoutOptions {
+        style: if display {
+            MathStyle::Display
+        } else {
+            MathStyle::Text
+        },
+        color: Color::new(
+            f32::from(color[0]) / 255.0,
+            f32::from(color[1]) / 255.0,
+            f32::from(color[2]) / 255.0,
+            f32::from(color[3]) / 255.0,
+        ),
+        ..LayoutOptions::default()
+    };
+    Ok(to_display_list(&layout(&nodes, &options)))
 }
 
 #[cfg(test)]
@@ -90,6 +127,16 @@ mod tests {
         ] {
             assert!(render_math(tex, true, INK, 16.0).is_ok(), "{tex}");
         }
+    }
+
+    #[test]
+    fn width_in_ems_matches_the_rendered_width_at_any_size() {
+        let em = math_width_em(r"x_i^2 + y_i^2", false).unwrap();
+        for size in [12.0, 16.0, 24.0] {
+            let graphic = render_math(r"x_i^2 + y_i^2", false, INK, size).unwrap();
+            assert!((graphic.width - em * size).abs() < 0.01, "{size}");
+        }
+        assert_eq!(math_width_em(r"\frac{1}{", false), None);
     }
 
     #[test]

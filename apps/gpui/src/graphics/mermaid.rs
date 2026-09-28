@@ -128,6 +128,16 @@ impl DiagramPalette {
             "pieLegendTextColor": ink,
             "errorBkgColor": paper_warm,
             "errorTextColor": ink,
+            "taskBkgColor": paper_warm,
+            "taskBorderColor": line,
+            "taskTextColor": ink,
+            "taskTextDarkColor": ink,
+            "taskTextLightColor": ink,
+            "taskTextOutsideColor": ink,
+            "activeTaskBkgColor": paper,
+            "activeTaskBorderColor": muted,
+            "doneTaskBkgColor": line,
+            "doneTaskBorderColor": line,
         });
         let object = variables
             .as_object_mut()
@@ -137,9 +147,29 @@ impl DiagramPalette {
                 .expect("theme variables are an object")
                 .clone(),
         );
-        for index in 0..3 {
+        for index in 0..12 {
             object.insert(format!("cScale{index}"), json!(paper_warm));
+            object.insert(format!("cScaleLabel{index}"), json!(ink));
         }
+        // Git graphs derive branch colors from the primary color, which is near the page
+        // color in both palettes; draw branches in the muted line color instead.
+        for index in 0..8 {
+            object.insert(format!("git{index}"), json!(muted));
+            object.insert(format!("gitInv{index}"), json!(paper));
+            object.insert(format!("gitBranchLabel{index}"), json!(paper));
+        }
+        // Journey sections and faces default to pastels that lose light text in dark mode.
+        for index in 0..8 {
+            object.insert(format!("fillType{index}"), json!(paper_warm));
+        }
+        object.insert("faceColor".into(), json!(paper_warm));
+        object.insert("quadrantPointFill".into(), json!(ink));
+        object.insert("quadrantPointTextFill".into(), json!(ink));
+        object.insert("commitLabelColor".into(), json!(ink));
+        object.insert("commitLabelBackground".into(), json!(paper_warm));
+        object.insert("tagLabelColor".into(), json!(ink));
+        object.insert("tagLabelBackground".into(), json!(paper_warm));
+        object.insert("tagLabelBorder".into(), json!(line));
         for index in 1..=12 {
             object.insert(format!("pie{index}"), json!(paper_warm));
         }
@@ -173,6 +203,11 @@ impl DiagramPalette {
             line,
             ..
         } = self;
+        // Mindmap edges take their section's fill color, which is the node paper here.
+        let mindmap_edges = (-1..12)
+            .map(|index| format!(".section-edge-{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
             "svg {{ background: transparent !important; }}
             .node rect, .node polygon, .node circle, .node ellipse, .node path,
@@ -198,7 +233,8 @@ impl DiagramPalette {
               fill: {ink} !important; color: {ink} !important;
             }}
             .edgeLabel rect, .labelBkg {{ fill: {paper} !important; stroke: none !important; }}
-            .cluster rect {{ fill: transparent !important; stroke: {line} !important; }}"
+            .cluster rect {{ fill: transparent !important; stroke: {line} !important; }}
+            {mindmap_edges} {{ stroke: {line} !important; }}"
         )
     }
 }
@@ -220,11 +256,33 @@ pub fn render_mermaid_svg(source: &str, palette: &DiagramPalette) -> Result<Stri
             .environment
             .with_text_measurement_policy(MEASUREMENT.clone());
         match renderer.render(RenderRequest::svg(source, OperationControl::new(), request)) {
-            Ok(RenderOutput::Svg(Some(svg))) => Ok(svg.svg().to_owned()),
+            Ok(RenderOutput::Svg(Some(svg))) => Ok(transparent_root(svg.svg())),
             Ok(_) => Err("the diagram produced no output".into()),
             Err(error) => Err(error.to_string()),
         }
     })
+}
+
+/// Drops the `background-color` merman puts on the root `<svg>` (white, whatever the theme):
+/// resvg paints it, but the reader wants diagrams to sit on the page like the Electron reader's
+/// `svg { background: transparent }`.
+fn transparent_root(svg: &str) -> String {
+    let Some(tag_end) = svg.find('>') else {
+        return svg.to_owned();
+    };
+    let (root, rest) = svg.split_at(tag_end);
+    let Some(start) = root.find("background-color:") else {
+        return svg.to_owned();
+    };
+    let end = root[start..]
+        .find([';', '"'])
+        .map_or(root.len(), |offset| start + offset);
+    let end = if root[end..].starts_with(';') {
+        end + 1
+    } else {
+        end
+    };
+    format!("{}{}{rest}", &root[..start], &root[end..])
 }
 
 /// Renders Mermaid `source` to a raster at `scale` times its natural size.
@@ -267,6 +325,19 @@ mod tests {
             assert!(svg.contains("<svg"), "{source}");
         }
         assert!(render_mermaid_svg(invalid, &light()).is_err());
+    }
+
+    #[test]
+    fn root_background_is_removed_so_diagrams_sit_on_the_page() {
+        assert_eq!(
+            transparent_root(
+                r#"<svg style="max-width:9px;background-color:white" a="b"><g style="background-color:red"/></svg>"#
+            ),
+            r#"<svg style="max-width:9px;" a="b"><g style="background-color:red"/></svg>"#
+        );
+        let svg = render_mermaid_svg("pie\n  \"A\" : 1\n", &light()).unwrap();
+        let root = &svg[..svg.find('>').unwrap()];
+        assert!(!root.contains("background-color"), "{root}");
     }
 
     #[test]

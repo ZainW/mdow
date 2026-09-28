@@ -10,7 +10,7 @@ mod measure;
 mod mermaid;
 
 pub use cache::{GraphicCache, GraphicKey, GraphicState};
-pub use math::{MATH_SCALE, render_math};
+pub use math::{MATH_SCALE, math_width_em, render_math};
 pub use mermaid::{DiagramPalette, render_mermaid};
 
 use gpui::RenderImage;
