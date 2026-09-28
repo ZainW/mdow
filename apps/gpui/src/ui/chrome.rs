@@ -562,6 +562,8 @@ fn render_recents_list(
                 div()
                     .id(("recent-row", index))
                     .debug_selector(move || format!("recent-row-{index}"))
+                    .tab_index(0)
+                    .focusable()
                     .flex()
                     .flex_col()
                     .justify_center()
@@ -577,6 +579,9 @@ fn render_recents_list(
                     })
                     .font_family(Metrics::FONT_SANS)
                     .cursor_pointer()
+                    .hover(move |style| style.bg(theme.sidebar_accent))
+                    .active(|style| style.opacity(0.82))
+                    .focus(move |style| style.border_1().border_color(theme.primary))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.open_path(&path_buf, cx);
                     }))

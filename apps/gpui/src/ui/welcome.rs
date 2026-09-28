@@ -217,6 +217,8 @@ fn welcome_recents(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> An
             div()
                 .id(("welcome-recent", index))
                 .debug_selector(move || format!("welcome-recent-{index}"))
+                .tab_index(0)
+                .focusable()
                 .flex()
                 .items_center()
                 .gap(px(8.0))
@@ -225,6 +227,8 @@ fn welcome_recents(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> An
                 .rounded(px(6.0))
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.muted))
+                .active(|style| style.opacity(0.82))
+                .focus(move |style| style.border_1().border_color(theme.primary))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.open_path(&path_buf, cx);
                 }))

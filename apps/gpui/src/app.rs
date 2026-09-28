@@ -1492,6 +1492,7 @@ impl Render for MdowApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::Recents;
     use crate::theme::{TrafficLightClearance, TrafficLights};
     use crate::ui::reader::reader_key_target;
     use gpui::{
@@ -2161,14 +2162,66 @@ mod tests {
             .unwrap();
     }
 
+    fn recents_only_window(
+        cx: &mut TestAppContext,
+    ) -> (gpui::WindowHandle<MdowApp>, PathBuf, tempfile::TempDir) {
+        let root = markdown_workspace();
+        let recent = root.path().join("README.md").canonicalize().unwrap();
+        let recents = Recents::from_paths(vec![recent.clone()]);
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model.recents = recents;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        (window, recent, root)
+    }
+
+    #[gpui::test]
+    fn sidebar_recent_row_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+        let (window, recent, _root) = recents_only_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+
+        // Titlebar toggle, Recents, Folder, Outline, then the first recent row.
+        focus_next(&mut visual, 5);
+        activate_focused(&mut visual, "enter");
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.active().unwrap().path(), recent);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn welcome_recent_row_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+        let (window, recent, _root) = recents_only_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+
+        // Titlebar toggle, sidebar modes, sidebar recent, find, palette, settings, Open File,
+        // Open Folder, then the first welcome recent.
+        focus_next(&mut visual, 11);
+        activate_focused(&mut visual, "space");
+
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.model.tabs.active().unwrap().path(), recent);
+            })
+            .unwrap();
+    }
+
     #[gpui::test]
     fn tab_close_target_is_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, Recents, Folder, Outline, both tabs, find, palette, settings,
-        // wide-mode, then the first tab's nested close target.
-        focus_next(&mut visual, 11);
+        // Titlebar toggle, Recents, Folder, Outline, both recent rows, both tabs, find, palette,
+        // settings, wide-mode, then the first tab's nested close target.
+        focus_next(&mut visual, 13);
         activate_focused(&mut visual, "space");
 
         window
@@ -2184,8 +2237,8 @@ mod tests {
         let (window, _first, second, _root) = two_tab_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
 
-        // Titlebar toggle, Recents, Folder, Outline, first tab, then second tab.
-        focus_next(&mut visual, 6);
+        // Titlebar toggle, Recents, Folder, Outline, both recent rows, first tab, then second tab.
+        focus_next(&mut visual, 8);
         activate_focused(&mut visual, "enter");
 
         window
