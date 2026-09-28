@@ -31,6 +31,8 @@ pub struct WorkspaceRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceTree {
     pub root: WorkspaceEntry,
+    /// True when the scan stopped at `MAX_WORKSPACE_FILES`.
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +93,16 @@ impl WorkspaceTree {
     }
 }
 
+/// Mirrors the Electron folder scan caps so huge trees stay responsive.
+pub const MAX_WORKSPACE_FILES: usize = 5000;
+pub const MAX_WORKSPACE_DEPTH: usize = 8;
+
+struct ScanState {
+    visited: HashSet<PathBuf>,
+    file_count: usize,
+    truncated: bool,
+}
+
 pub fn scan_workspace(root: &Path) -> Result<WorkspaceTree, WorkspaceError> {
     let canonical_root = canonicalize_root(root)?;
     let metadata = fs::metadata(&canonical_root).map_err(|error| WorkspaceError::Read {
@@ -103,9 +115,12 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceTree, WorkspaceError> {
         });
     }
 
-    let mut visited = HashSet::new();
-    visited.insert(canonical_root.clone());
-    let children = scan_directory(&canonical_root, &canonical_root, &mut visited)?;
+    let mut state = ScanState {
+        visited: HashSet::from([canonical_root.clone()]),
+        file_count: 0,
+        truncated: false,
+    };
+    let children = scan_directory(&canonical_root, &canonical_root, 0, &mut state)?;
     Ok(WorkspaceTree {
         root: WorkspaceEntry {
             name: display_name(&canonical_root),
@@ -114,6 +129,7 @@ pub fn scan_workspace(root: &Path) -> Result<WorkspaceTree, WorkspaceError> {
             children,
             expanded: true,
         },
+        truncated: state.truncated,
     })
 }
 
@@ -132,92 +148,96 @@ fn canonicalize_root(root: &Path) -> Result<PathBuf, WorkspaceError> {
     })
 }
 
+/// Only a failure to list `directory` itself is an error; unreadable entries and nested
+/// directories are skipped so one locked folder cannot hide the rest of the workspace.
 fn scan_directory(
     workspace_root: &Path,
     directory: &Path,
-    visited: &mut HashSet<PathBuf>,
+    depth: usize,
+    state: &mut ScanState,
 ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
     let read_dir = fs::read_dir(directory).map_err(|error| WorkspaceError::Read {
         path: directory.to_owned(),
         message: error.to_string(),
     })?;
-    let mut children = Vec::new();
+    let mut candidates = Vec::new();
 
-    for entry in read_dir {
-        let entry = entry.map_err(|error| WorkspaceError::Read {
-            path: directory.to_owned(),
-            message: error.to_string(),
-        })?;
+    for entry in read_dir.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if is_ignored_name(&name) {
             continue;
         }
-
         let path = entry.path();
-        let file_type = entry.file_type().map_err(|error| WorkspaceError::Read {
-            path: path.clone(),
-            message: error.to_string(),
-        })?;
-        let canonical_path = match path.canonicalize() {
-            Ok(canonical_path) => canonical_path,
-            Err(error)
-                if file_type.is_symlink() && error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                continue;
-            }
-            Err(error) => {
-                return Err(WorkspaceError::Read {
-                    path,
-                    message: error.to_string(),
-                });
-            }
+        let Ok(canonical_path) = path.canonicalize() else {
+            continue;
         };
         if !canonical_path.starts_with(workspace_root) {
             continue;
         }
-        let metadata = match fs::metadata(&canonical_path) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                return Err(WorkspaceError::Read {
-                    path: canonical_path,
-                    message: error.to_string(),
-                });
-            }
+        let Ok(metadata) = fs::metadata(&canonical_path) else {
+            continue;
         };
-
         if metadata.is_dir() {
-            if !visited.insert(canonical_path.clone()) {
-                continue;
-            }
-            let descendants = scan_directory(workspace_root, &canonical_path, visited)?;
-            if descendants.is_empty() {
-                continue;
-            }
-            children.push(WorkspaceEntry {
-                path: canonical_path,
-                name,
-                kind: WorkspaceEntryKind::Directory,
-                children: descendants,
-                expanded: false,
-            });
+            candidates.push((WorkspaceEntryKind::Directory, name, canonical_path));
         } else if metadata.is_file() && is_supported_document(&path) {
-            children.push(WorkspaceEntry {
-                path: canonical_path,
-                name,
-                kind: WorkspaceEntryKind::File,
-                children: Vec::new(),
-                expanded: false,
-            });
+            candidates.push((WorkspaceEntryKind::File, name, canonical_path));
         }
     }
+    // Visit in display order so the file cap keeps the entries a reader sees first.
+    candidates.sort_by(|left, right| entry_order((left.0, &left.1), (right.0, &right.1)));
 
-    children.sort_by(|left, right| {
-        entry_kind_rank(left.kind)
-            .cmp(&entry_kind_rank(right.kind))
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    let mut children = Vec::new();
+    for (kind, name, path) in candidates {
+        if state.truncated {
+            break;
+        }
+        match kind {
+            WorkspaceEntryKind::Directory => {
+                if depth >= MAX_WORKSPACE_DEPTH || !state.visited.insert(path.clone()) {
+                    continue;
+                }
+                let Ok(descendants) = scan_directory(workspace_root, &path, depth + 1, state)
+                else {
+                    continue;
+                };
+                if descendants.is_empty() {
+                    continue;
+                }
+                children.push(WorkspaceEntry {
+                    path,
+                    name,
+                    kind,
+                    children: descendants,
+                    expanded: false,
+                });
+            }
+            WorkspaceEntryKind::File => {
+                if state.file_count >= MAX_WORKSPACE_FILES {
+                    state.truncated = true;
+                    break;
+                }
+                state.file_count += 1;
+                children.push(WorkspaceEntry {
+                    path,
+                    name,
+                    kind,
+                    children: Vec::new(),
+                    expanded: false,
+                });
+            }
+        }
+    }
     Ok(children)
+}
+
+fn entry_order(
+    (left_kind, left_name): (WorkspaceEntryKind, &str),
+    (right_kind, right_name): (WorkspaceEntryKind, &str),
+) -> std::cmp::Ordering {
+    entry_kind_rank(left_kind)
+        .cmp(&entry_kind_rank(right_kind))
+        .then_with(|| left_name.to_lowercase().cmp(&right_name.to_lowercase()))
+        .then_with(|| left_name.cmp(right_name))
 }
 
 fn is_ignored_name(name: &str) -> bool {
@@ -441,22 +461,67 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn reports_the_failing_nested_directory_instead_of_returning_a_partial_tree() {
+    fn skips_unreadable_nested_directories_and_keeps_the_rest_of_the_tree() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         let denied = root.join("denied");
         fs::create_dir(&denied).unwrap();
         fs::write(denied.join("hidden.md"), "# Hidden").unwrap();
         fs::write(root.join("visible.md"), "# Visible").unwrap();
-        let canonical_denied = denied.canonicalize().unwrap();
         let _restore = PermissionRestore::deny(&denied);
 
-        let error = scan_workspace(root).unwrap_err();
+        let tree = scan_workspace(root).unwrap();
+
+        assert_eq!(names(&tree.root.children), vec!["visible.md"]);
+        assert!(!tree.truncated);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_root_is_still_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let canonical_root = root.canonicalize().unwrap();
+        let _restore = PermissionRestore::deny(&root);
 
         assert!(matches!(
-            error,
-            WorkspaceError::Read { path, .. } if path == canonical_denied
+            scan_workspace(&root),
+            Err(WorkspaceError::Read { path, .. }) if path == canonical_root
         ));
+    }
+
+    #[test]
+    fn stops_descending_past_the_depth_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut deepest_kept = temp.path().to_owned();
+        for level in 0..MAX_WORKSPACE_DEPTH {
+            deepest_kept.push(format!("level{level}"));
+        }
+        let too_deep = deepest_kept.join("one-more");
+        fs::create_dir_all(&too_deep).unwrap();
+        fs::write(deepest_kept.join("kept.md"), "# Kept").unwrap();
+        fs::write(too_deep.join("pruned.md"), "# Pruned").unwrap();
+
+        let tree = scan_workspace(temp.path()).unwrap();
+        let files = tree.files();
+
+        assert!(files.iter().any(|path| path.ends_with("kept.md")));
+        assert!(!files.iter().any(|path| path.ends_with("pruned.md")));
+    }
+
+    #[test]
+    fn marks_the_tree_truncated_once_the_file_cap_is_hit() {
+        let temp = tempfile::tempdir().unwrap();
+        for index in 0..MAX_WORKSPACE_FILES + 5 {
+            fs::write(temp.path().join(format!("f{index:05}.md")), "").unwrap();
+        }
+
+        let tree = scan_workspace(temp.path()).unwrap();
+
+        assert!(tree.truncated);
+        assert_eq!(tree.files().len(), MAX_WORKSPACE_FILES);
+        assert_eq!(tree.root.children[0].name, "f00000.md");
     }
 
     #[test]

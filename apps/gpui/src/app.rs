@@ -1821,28 +1821,29 @@ mod tests {
     }
 
     #[test]
-    fn nested_workspace_read_failure_preserves_workspace_and_tabs_with_sidebar_error() {
+    fn nested_unreadable_directory_is_skipped_without_a_sidebar_error() {
         let root = markdown_workspace();
         let file = root.path().join("README.md");
-        let failing = tempfile::tempdir().unwrap();
-        let denied = failing.path().join("denied");
+        let partial = tempfile::tempdir().unwrap();
+        let denied = partial.path().join("denied");
         fs::create_dir(&denied).unwrap();
         fs::write(denied.join("hidden.md"), "# Hidden").unwrap();
-        let canonical_denied = denied.canonicalize().unwrap();
+        fs::write(partial.path().join("visible.md"), "# Visible").unwrap();
         let _restore = PermissionRestore::deny(&denied);
         let mut model = AppModel::default();
         model.open_workspace(root.path()).unwrap();
         model.open_document(&file).unwrap();
-        let workspace_path = model.workspace.as_ref().unwrap().root.path.clone();
 
-        let error = model.open_workspace(failing.path()).unwrap_err();
+        model.open_workspace(partial.path()).unwrap();
 
-        assert_eq!(error.view().title, "Couldn't read folder");
-        assert_eq!(error.view().path, canonical_denied);
-        assert_eq!(model.workspace.as_ref().unwrap().root.path, workspace_path);
+        let workspace = model.workspace.as_ref().unwrap();
+        assert_eq!(workspace.root.path, partial.path().canonicalize().unwrap());
+        assert_eq!(
+            workspace.files(),
+            vec![partial.path().join("visible.md").canonicalize().unwrap()]
+        );
+        assert!(model.workspace_error.is_none());
         assert_eq!(model.tabs.len(), 1);
-        assert_eq!(model.tabs.active().unwrap().document.title, "Home");
-        assert_eq!(model.workspace_error.as_ref(), Some(error.view()));
     }
 
     #[test]
