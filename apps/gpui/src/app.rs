@@ -2589,6 +2589,55 @@ mod tests {
     }
 
     #[gpui::test]
+    fn reader_column_is_centered_in_a_wide_viewport(cx: &mut TestAppContext) {
+        let document = parse_document(
+            PathBuf::from("/tmp/reader-centered.md"),
+            "# Centered\n\nA short paragraph.".into(),
+        );
+        let window = cx.update(|cx| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds::new(
+                        point(px(0.0), px(0.0)),
+                        gpui::size(px(1600.0), px(900.0)),
+                    ))),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = MdowApp::new(window, cx);
+                        app.model.tabs.open(document);
+                        app.open_error = None;
+                        app
+                    })
+                },
+            )
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        let viewport = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        let column = visual.debug_bounds("reader-column").expect("reader column");
+        let left_gap = column.origin.x - viewport.origin.x;
+        let right_gap =
+            (viewport.origin.x + viewport.size.width) - (column.origin.x + column.size.width);
+
+        assert!(
+            column.size.width < viewport.size.width - px(200.0),
+            "column {:?} should be narrower than viewport {:?}",
+            column.size.width,
+            viewport.size.width,
+        );
+        assert!(
+            (f32::from(left_gap) - f32::from(right_gap)).abs() <= 16.0,
+            "column should be centered: left gap {left_gap:?}, right gap {right_gap:?}",
+        );
+    }
+
+    #[gpui::test]
     fn active_document_renders_one_scroll_surface_with_wrapping_inline_text(
         cx: &mut TestAppContext,
     ) {

@@ -1241,7 +1241,8 @@ fn render_reader_item(
         link_state,
         find_block,
     };
-    div()
+    // List items have no flex parent, so center the column in a full-width row.
+    let column = div()
         .id(("reader-column", block_index))
         .debug_selector(|| "reader-column".into())
         .flex()
@@ -1260,9 +1261,7 @@ fn render_reader_item(
         .text_size(px(style.font_size))
         .line_height(px(style.font_size * style.line_height))
         .text_color(theme.foreground)
-        .when_some(style.max_width, |item, width| {
-            item.max_w(px(width)).mx_auto()
-        })
+        .when_some(style.max_width, |item, width| item.max_w(px(width)))
         .child(render_block(
             document,
             block,
@@ -1272,7 +1271,13 @@ fn render_reader_item(
             list_marker_is_visible(&document.blocks, block_index),
             view,
             cx,
-        ))
+        ));
+    div()
+        .flex()
+        .justify_center()
+        .w_full()
+        .min_w_0()
+        .child(column)
         .into_any_element()
 }
 
