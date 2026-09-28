@@ -1,6 +1,7 @@
 //! Snapshot of what was open. Produced from live state or disk, never synced field by field.
 
 use crate::anchor::ScrollAnchor;
+use crate::split::SessionSplit;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -128,11 +129,18 @@ pub struct Session {
     pub window: Option<SavedWindowBounds>,
     /// Each open tab's reading position, so a relaunch lands where the reader left off.
     pub anchors: HashMap<PathBuf, ScrollAnchor>,
+    /// Side-by-side panes, when split view was open.
+    pub split: Option<SessionSplit>,
 }
 
 impl Session {
     pub fn with_anchors(mut self, anchors: HashMap<PathBuf, ScrollAnchor>) -> Self {
         self.anchors = anchors;
+        self
+    }
+
+    pub fn with_split(mut self, split: Option<SessionSplit>) -> Self {
+        self.split = split;
         self
     }
 
@@ -149,6 +157,7 @@ impl Session {
             recents,
             window,
             anchors: HashMap::new(),
+            split: None,
         }
     }
 }

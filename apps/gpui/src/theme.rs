@@ -1,5 +1,5 @@
-use crate::prefs::ThemeMode;
-use gpui::{Hsla, Pixels, Point, WindowAppearance, hsla, point, px};
+use crate::prefs::{InterfaceScale, ThemeMode};
+use gpui::{App, Global, Hsla, Pixels, Point, WindowAppearance, hsla, point, px};
 
 pub struct TrafficLights;
 
@@ -97,6 +97,154 @@ impl Metrics {
     pub const RADIUS: f32 = 8.0;
 }
 
+/// Chrome sizes for one interface scale, mirroring Electron's `[data-ui-scale]` token tables
+/// (`--control-font-size`, `--button-*`, `--tabbar-height`, `--breadcrumb-*`, `--sidebar-*`).
+/// Compact matches the fixed [`Metrics`]; the other scales grow controls, type and spacing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiMetrics {
+    pub scale: InterfaceScale,
+    pub control_font: f32,
+    pub control_xs_font: f32,
+    /// Icon buttons and default controls (`--button-height`).
+    pub button: f32,
+    pub button_sm: f32,
+    pub button_xs: f32,
+    pub button_lg: f32,
+    /// Icon glyph sizes: default (in a `button`), small, extra small and 2xs.
+    pub icon: f32,
+    pub icon_sm: f32,
+    pub icon_xs: f32,
+    pub icon_2xs: f32,
+    pub sidebar_width: f32,
+    pub sidebar_font: f32,
+    pub sidebar_title_font: f32,
+    /// The titlebar row that also holds the tabs and the sidebar header. The traffic lights
+    /// are fixed by macOS, so it never drops below their 40px row.
+    pub titlebar_height: f32,
+    pub tab_height: f32,
+    pub tab_max_width: f32,
+    pub tab_icon: f32,
+    pub tab_close: f32,
+    pub breadcrumb_height: f32,
+    pub breadcrumb_font: f32,
+    pub breadcrumb_secondary_font: f32,
+    /// Dimension factor relative to compact (`button / 28`).
+    space_factor: f32,
+    /// Type factor relative to compact (`control_font / 12`).
+    text_factor: f32,
+}
+
+impl UiMetrics {
+    pub const fn for_scale(scale: InterfaceScale) -> Self {
+        // (control, control_xs, button, sm, xs, lg, sidebar, tab bar, tab, tab max, tab icon,
+        //  close, breadcrumb, breadcrumb font, breadcrumb secondary)
+        let (c, cxs, b, bsm, bxs, blg, sw, bar, tab, tmax, ticon, close, bc, bcf, bcs) = match scale
+        {
+            InterfaceScale::Compact => (
+                12.0, 10.0, 28.0, 24.0, 20.0, 32.0, 244.0, 36.0, 28.0, 200.0, 14.0, 24.0, 28.0,
+                11.0, 10.0,
+            ),
+            InterfaceScale::Comfortable => (
+                13.0, 11.0, 32.0, 28.0, 24.0, 36.0, 264.0, 40.0, 32.0, 224.0, 16.0, 28.0, 32.0,
+                12.0, 11.0,
+            ),
+            InterfaceScale::Large => (
+                14.0, 12.0, 36.0, 32.0, 28.0, 40.0, 280.0, 44.0, 36.0, 248.0, 17.0, 32.0, 36.0,
+                13.0, 12.0,
+            ),
+        };
+        let step = (b - 28.0) / 2.0;
+        Self {
+            scale,
+            control_font: c,
+            control_xs_font: cxs,
+            button: b,
+            button_sm: bsm,
+            button_xs: bxs,
+            button_lg: blg,
+            icon: 16.0 + step,
+            icon_sm: 14.0 + step,
+            icon_xs: 12.0 + step,
+            icon_2xs: 10.0 + step,
+            sidebar_width: sw,
+            sidebar_font: c,
+            sidebar_title_font: c - 1.0,
+            titlebar_height: if bar > TrafficLights::titlebar_height() {
+                bar
+            } else {
+                TrafficLights::titlebar_height()
+            },
+            tab_height: tab,
+            tab_max_width: tmax,
+            tab_icon: ticon,
+            tab_close: close,
+            breadcrumb_height: bc,
+            breadcrumb_font: bcf,
+            breadcrumb_secondary_font: bcs,
+            space_factor: b / 28.0,
+            text_factor: c / 12.0,
+        }
+    }
+
+    /// Scales a compact dimension (padding, gap, row height), rounded to whole pixels.
+    pub fn space(&self, compact: f32) -> f32 {
+        (compact * self.space_factor).round()
+    }
+
+    /// Scales a compact font size, rounded to half pixels.
+    pub fn text(&self, compact: f32) -> f32 {
+        (compact * self.text_factor * 2.0).round() / 2.0
+    }
+
+    pub fn tree_row_height(&self) -> f32 {
+        self.space(Metrics::TREE_ROW_HEIGHT)
+    }
+
+    pub fn outline_row_height(&self) -> f32 {
+        self.space(Metrics::OUTLINE_ROW_HEIGHT)
+    }
+
+    pub fn recent_row_height(&self) -> f32 {
+        self.space(Metrics::RECENT_ROW_HEIGHT)
+    }
+
+    pub fn menu_row_height(&self) -> f32 {
+        self.button
+    }
+
+    pub fn segmented_height(&self) -> f32 {
+        self.button
+    }
+
+    pub fn section_header_height(&self) -> f32 {
+        self.space(Metrics::SECTION_HEADER_HEIGHT)
+    }
+
+    /// Top padding that vertically centres a tab inside the titlebar row.
+    pub fn tab_inset_top(&self) -> f32 {
+        (self.titlebar_height - self.tab_height) / 2.0
+    }
+}
+
+impl Default for UiMetrics {
+    fn default() -> Self {
+        Self::for_scale(InterfaceScale::Compact)
+    }
+}
+
+/// The interface scale the focused window renders with, for views that only know their theme
+/// mode (palette, find, shortcuts). Set by the app shell whenever the preference changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ActiveUiScale(pub InterfaceScale);
+
+impl Global for ActiveUiScale {}
+
+pub fn active_ui_scale(cx: &App) -> InterfaceScale {
+    cx.try_global::<ActiveUiScale>()
+        .map(|scale| scale.0)
+        .unwrap_or_default()
+}
+
 const _: () = assert!(
     TrafficLights::titlebar_height()
         <= 2.0 * TrafficLights::NATIVE_TITLEBAR - TrafficLights::BUTTON_DIAMETER
@@ -115,13 +263,15 @@ pub struct TitlebarLeading {
     pub clearance: f32,
     /// Whether the sidebar toggle lives in this row (it moves to the sidebar header otherwise).
     pub sidebar_toggle: bool,
+    /// Size of the sidebar toggle's slot at the current interface scale.
+    pub button: f32,
 }
 
 impl TitlebarLeading {
     pub fn width(self) -> f32 {
         self.clearance
             + if self.sidebar_toggle {
-                Metrics::TITLEBAR_BUTTON
+                self.button
             } else {
                 0.0
             }
@@ -142,11 +292,20 @@ pub struct ShellLayout {
 
 impl ShellLayout {
     pub fn for_width(window_width: f32, sidebar_open: bool, wide_mode: bool) -> Self {
+        Self::for_width_scaled(window_width, sidebar_open, wide_mode, UiMetrics::default())
+    }
+
+    pub fn for_width_scaled(
+        window_width: f32,
+        sidebar_open: bool,
+        wide_mode: bool,
+        ui: UiMetrics,
+    ) -> Self {
         let window_width = window_width.max(0.0);
         let sidebar_width = if sidebar_open
-            && window_width >= Metrics::SIDEBAR_WIDTH + Metrics::MIN_MAIN_WIDTH_WITH_SIDEBAR
+            && window_width >= ui.sidebar_width + Metrics::MIN_MAIN_WIDTH_WITH_SIDEBAR
         {
-            Metrics::SIDEBAR_WIDTH
+            ui.sidebar_width
         } else {
             0.0
         };
@@ -167,11 +326,13 @@ impl ShellLayout {
             TitlebarLeading {
                 clearance: 0.0,
                 sidebar_toggle: false,
+                button: ui.button,
             }
         } else {
             TitlebarLeading {
                 clearance: titlebar.clearance.width(),
                 sidebar_toggle: true,
+                button: ui.button,
             }
         };
         Self {
@@ -189,9 +350,9 @@ impl ShellLayout {
                 x: sidebar_width + reader_inset,
                 width: reader_width,
             },
-            tab_bar_height: Metrics::TAB_BAR_HEIGHT,
-            tab_height: Metrics::TAB_HEIGHT,
-            breadcrumb_height: Metrics::BREADCRUMB_HEIGHT,
+            tab_bar_height: ui.titlebar_height,
+            tab_height: ui.tab_height,
+            breadcrumb_height: ui.breadcrumb_height,
         }
     }
 }
@@ -234,6 +395,8 @@ pub struct Theme {
     pub alert_caution: Hsla,
     /// Code block surface: the muted well in light mode, a slightly lifted gray in dark mode.
     pub code_surface: Hsla,
+    /// Chrome sizes for the interface scale.
+    pub ui: UiMetrics,
 }
 
 impl Theme {
@@ -251,6 +414,12 @@ impl Theme {
         } else {
             Self::light()
         }
+    }
+
+    /// The same palette with chrome sized for `scale`.
+    pub fn scaled(mut self, scale: InterfaceScale) -> Self {
+        self.ui = UiMetrics::for_scale(scale);
+        self
     }
 
     fn light() -> Self {
@@ -278,6 +447,7 @@ impl Theme {
             alert_warning: hsla(0.110_730, 1.0, 0.338_5, 1.0),
             alert_caution: hsla(0.996_916, 0.601_668, 0.500_13, 1.0),
             code_surface: hsla(0.08673897, 0.24669178, 0.944_926_9, 1.0),
+            ui: UiMetrics::for_scale(InterfaceScale::Compact),
         }
     }
 
@@ -307,6 +477,7 @@ impl Theme {
             alert_caution: hsla(0.006_023, 0.751_532, 0.632_338, 1.0),
             // The mockup's `.dark .cb2 { background: hsl(0 0% 6.5%) }`.
             code_surface: hsla(0.0, 0.0, 0.065, 1.0),
+            ui: UiMetrics::for_scale(InterfaceScale::Compact),
         }
     }
 }
@@ -363,6 +534,7 @@ mod tests {
             TitlebarLeading {
                 clearance: 0.0,
                 sidebar_toggle: false,
+                button: 28.0,
             }
         );
         assert_eq!(layout.titlebar_leading.width(), 0.0);
@@ -408,6 +580,7 @@ mod tests {
             TitlebarLeading {
                 clearance: TrafficLightClearance::reserved().width(),
                 sidebar_toggle: true,
+                button: 28.0,
             }
         );
         assert_eq!(layout.titlebar_leading.width(), 80.0 + 28.0);
@@ -439,6 +612,100 @@ mod tests {
                 x: 0.0,
                 width: 180.0
             }
+        );
+    }
+
+    #[test]
+    fn compact_ui_metrics_match_the_fixed_metrics() {
+        let ui = UiMetrics::default();
+        assert_eq!(ui.scale, InterfaceScale::Compact);
+        assert_eq!(ui.control_font, Metrics::CONTROL_FONT_SIZE);
+        assert_eq!(ui.button, Metrics::TITLEBAR_BUTTON);
+        assert_eq!(ui.icon, Metrics::ICON_SIZE);
+        assert_eq!(ui.sidebar_width, Metrics::SIDEBAR_WIDTH);
+        assert_eq!(ui.titlebar_height, Metrics::TAB_BAR_HEIGHT);
+        assert_eq!(ui.tab_height, Metrics::TAB_HEIGHT);
+        assert_eq!(ui.tab_max_width, Metrics::TAB_MAX_WIDTH);
+        assert_eq!(ui.tab_icon, Metrics::TAB_ICON_SIZE);
+        assert_eq!(ui.tab_close, Metrics::TAB_CLOSE_SIZE);
+        assert_eq!(ui.breadcrumb_height, Metrics::BREADCRUMB_HEIGHT);
+        assert_eq!(ui.tree_row_height(), Metrics::TREE_ROW_HEIGHT);
+        assert_eq!(ui.menu_row_height(), Metrics::MENU_ROW_HEIGHT);
+        assert_eq!(ui.segmented_height(), Metrics::SEGMENTED_HEIGHT);
+        assert_eq!(ui.space(7.0), 7.0);
+        assert_eq!(ui.text(10.5), 10.5);
+    }
+
+    #[test]
+    fn larger_scales_follow_electrons_token_tables() {
+        let comfortable = UiMetrics::for_scale(InterfaceScale::Comfortable);
+        let large = UiMetrics::for_scale(InterfaceScale::Large);
+
+        // --control-font-size, --button-height, --tab-height, --breadcrumb-height, sidebar.
+        assert_eq!((comfortable.control_font, large.control_font), (13.0, 14.0));
+        assert_eq!((comfortable.button, large.button), (32.0, 36.0));
+        assert_eq!((comfortable.tab_height, large.tab_height), (32.0, 36.0));
+        assert_eq!((comfortable.tab_close, large.tab_close), (28.0, 32.0));
+        assert_eq!(
+            (comfortable.breadcrumb_height, large.breadcrumb_height),
+            (32.0, 36.0)
+        );
+        assert_eq!(
+            (comfortable.breadcrumb_font, large.breadcrumb_font),
+            (12.0, 13.0)
+        );
+        assert_eq!(
+            (comfortable.sidebar_width, large.sidebar_width),
+            (264.0, 280.0)
+        );
+        assert_eq!((comfortable.icon, large.icon), (18.0, 20.0));
+        assert_eq!(comfortable.space(28.0), 32.0);
+        assert_eq!(large.space(28.0), 36.0);
+        assert_eq!(large.text(12.0), 14.0);
+    }
+
+    #[test]
+    fn the_titlebar_row_never_drops_below_the_traffic_light_row() {
+        for scale in [
+            InterfaceScale::Compact,
+            InterfaceScale::Comfortable,
+            InterfaceScale::Large,
+        ] {
+            let ui = UiMetrics::for_scale(scale);
+            assert!(ui.titlebar_height >= TrafficLights::titlebar_height());
+            assert!(ui.tab_height < ui.titlebar_height);
+            // Tabs sit in the vertical centre of the row.
+            assert_eq!(ui.tab_inset_top() * 2.0 + ui.tab_height, ui.titlebar_height);
+        }
+        assert_eq!(
+            UiMetrics::for_scale(InterfaceScale::Comfortable).titlebar_height,
+            40.0
+        );
+        assert_eq!(
+            UiMetrics::for_scale(InterfaceScale::Large).titlebar_height,
+            44.0
+        );
+    }
+
+    #[test]
+    fn scaled_shell_layout_grows_the_sidebar_and_chrome_but_keeps_the_clearance() {
+        let ui = UiMetrics::for_scale(InterfaceScale::Large);
+        let layout = ShellLayout::for_width_scaled(1120.0, true, false, ui);
+        assert_eq!(layout.sidebar.width, 280.0);
+        assert_eq!(layout.main.x, 280.0);
+        assert_eq!(layout.tab_bar_height, 44.0);
+        assert_eq!(layout.tab_height, 36.0);
+        assert_eq!(layout.breadcrumb_height, 36.0);
+        assert_eq!(layout.chrome_height(), 80.0);
+
+        let hidden = ShellLayout::for_width_scaled(1120.0, false, false, ui);
+        assert_eq!(hidden.titlebar_leading.clearance, 80.0);
+        assert_eq!(hidden.titlebar_leading.width(), 80.0 + 36.0);
+        assert_eq!(
+            Theme::for_appearance(WindowAppearance::Dark)
+                .scaled(InterfaceScale::Large)
+                .ui,
+            ui
         );
     }
 

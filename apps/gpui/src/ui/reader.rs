@@ -11,6 +11,7 @@ use crate::{
         DiagramPalette, GraphicCache, GraphicKey, GraphicState, MATH_SCALE, math_width_em,
         render_mermaid,
     },
+    overlay::FindHit,
     prefs::{READER_FONT_SIZE, READER_LINE_HEIGHT, ReaderStyle},
     syntax::{HighlightCache, HighlightLookup, HighlightedCode, PreparedDocument},
     tabs::TabLoad,
@@ -20,18 +21,24 @@ use crate::{
             GraphicElement, InlineMathSlot, InlineMathText, MATH_PLACEHOLDER, hex_color, math_state,
         },
         primitives::icon,
+        text_surface::{
+            OffsetMap, PaintedSurface, SurfaceId, SurfaceKind, SurfaceSeparator, SurfaceText,
+            TextPoint, TextSelection, block_unit_range, hit_test, restyle_runs, selected_range,
+            selection_text, word_range,
+        },
     },
 };
 use gpui::{
-    AnyElement, Context, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, Img,
-    InteractiveElement, InteractiveText, IntoElement, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
-    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText, Task, TextRun,
-    UnderlineStyle, WeakEntity, Window, canvas, div, font, img, list, point, prelude::*, px,
-    relative,
+    AnyElement, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, FocusHandle, Font,
+    FontFeatures, FontStyle, FontWeight, HitboxBehavior, Hsla, Img, InteractiveElement,
+    InteractiveText, IntoElement, ListAlignment, ListOffset, ListState, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    SharedString, StatefulInteractiveElement, StrikethroughStyle, Styled, StyledImage, StyledText,
+    Task, TextLayout, TextRun, UnderlineStyle, WeakEntity, Window, canvas, div, fill, font, img,
+    list, point, prelude::*, px, relative, size,
 };
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     collections::HashMap,
     ops::Range,
     path::{Path, PathBuf},
@@ -779,6 +786,154 @@ fn append_inline_spans<'a>(
     }
 }
 
+/// The text surfaces a top-level block paints, in the exact order `render_block` claims them
+/// (see [`ReaderView::claim_surface`]). Find and copy read these; they never need a layout.
+pub fn block_surfaces(block: &DocumentBlock) -> Vec<SurfaceText> {
+    let mut surfaces = Vec::new();
+    collect_block_surfaces(block, &mut String::new(), &mut surfaces);
+    surfaces
+}
+
+fn push_surface(
+    surfaces: &mut Vec<SurfaceText>,
+    text: String,
+    kind: SurfaceKind,
+    separator: SurfaceSeparator,
+    prefix: &mut String,
+) {
+    surfaces.push(SurfaceText {
+        text,
+        kind,
+        separator,
+        prefix: std::mem::take(prefix),
+    });
+}
+
+fn collect_block_surfaces(
+    block: &DocumentBlock,
+    prefix: &mut String,
+    surfaces: &mut Vec<SurfaceText>,
+) {
+    let newline = SurfaceSeparator::Newline;
+    match block {
+        DocumentBlock::Heading { level, content } => push_surface(
+            surfaces,
+            inline_layout_with_transform(content, BlockStyle::heading(*level).uppercase).text,
+            SurfaceKind::Inline,
+            newline,
+            prefix,
+        ),
+        DocumentBlock::Paragraph(content) => push_surface(
+            surfaces,
+            inline_layout(content).text,
+            SurfaceKind::Inline,
+            newline,
+            prefix,
+        ),
+        DocumentBlock::ListItem {
+            kind,
+            depth,
+            children,
+        } => {
+            prefix.push_str(&"  ".repeat(*depth));
+            prefix.push_str(&match kind {
+                ListKind::Unordered => unordered_marker(*depth).to_owned(),
+                ListKind::Ordered { number } => format_ordered_marker(*number, *depth),
+            });
+            prefix.push(' ');
+            for child in children {
+                collect_block_surfaces(child, prefix, surfaces);
+            }
+        }
+        DocumentBlock::TaskItem {
+            checked,
+            depth,
+            children,
+        } => {
+            prefix.push_str(&"  ".repeat(*depth));
+            prefix.push_str(if *checked { "[x] " } else { "[ ] " });
+            for child in children {
+                collect_block_surfaces(child, prefix, surfaces);
+            }
+        }
+        DocumentBlock::Blockquote(children) | DocumentBlock::Alert { children, .. } => {
+            for child in children {
+                collect_block_surfaces(child, prefix, surfaces);
+            }
+        }
+        DocumentBlock::FootnoteSection { notes } => {
+            for (label, children) in notes {
+                prefix.push_str(&footnote_marker(label));
+                prefix.push(' ');
+                for child in children {
+                    collect_block_surfaces(child, prefix, surfaces);
+                }
+                prefix.clear();
+            }
+        }
+        DocumentBlock::CodeBlock { code, .. } => push_surface(
+            surfaces,
+            code_display_text(code).to_owned(),
+            SurfaceKind::Code,
+            newline,
+            prefix,
+        ),
+        // Graphics copy as their source; they paint no text, so find skips them.
+        DocumentBlock::MermaidCard { source } => push_surface(
+            surfaces,
+            code_display_text(source).to_owned(),
+            SurfaceKind::Graphic,
+            newline,
+            prefix,
+        ),
+        DocumentBlock::Math { tex } => push_surface(
+            surfaces,
+            math_source(tex.trim(), true),
+            SurfaceKind::Graphic,
+            newline,
+            prefix,
+        ),
+        DocumentBlock::Table(table) => {
+            let column_count = table_column_count(table);
+            let rows = std::iter::once(&table.headers).chain(table.rows.iter());
+            for row in rows {
+                for column_index in 0..column_count {
+                    let text = row
+                        .get(column_index)
+                        .map(|content| inline_layout(content).text)
+                        .unwrap_or_default();
+                    let separator = if column_index == 0 {
+                        newline
+                    } else {
+                        SurfaceSeparator::Tab
+                    };
+                    push_surface(surfaces, text, SurfaceKind::Inline, separator, prefix);
+                }
+            }
+        }
+        DocumentBlock::RawText(text) => {
+            push_surface(surfaces, text.clone(), SurfaceKind::Inline, newline, prefix)
+        }
+        DocumentBlock::Image { .. } | DocumentBlock::ThematicBreak => {}
+    }
+}
+
+fn footnote_marker(label: &str) -> String {
+    if label.bytes().all(|byte| byte.is_ascii_digit()) {
+        format!("{label}.")
+    } else {
+        label.to_owned()
+    }
+}
+
+fn table_column_count(table: &TableBlock) -> usize {
+    table
+        .headers
+        .len()
+        .max(table.rows.iter().map(Vec::len).max().unwrap_or(0))
+        .max(1)
+}
+
 /// Swaps each formula's source text for [`MATH_PLACEHOLDER`] characters at least as wide as the
 /// typeset formula, so native text layout (and wrapping) leaves room to paint it. `width_em`
 /// returns a formula's width in ems of the text, or `None` when it does not typeset (its source
@@ -836,6 +991,22 @@ fn reserve_inline_math(
     layout.text = text;
     layout.math = reserved.clone();
     reserved
+}
+
+/// Pairs each typeset formula's source range (`logical`, before [`reserve_inline_math`]) with
+/// its placeholder range (`reserved`). Formulas that did not typeset keep their source and are
+/// skipped; typesetting depends only on the TeX, so the in-order pairing is exact.
+fn math_offset_map(logical: &[InlineMath], reserved: &[InlineMath]) -> OffsetMap {
+    let mut reserved = reserved.iter().peekable();
+    let spans = logical
+        .iter()
+        .filter_map(|math| {
+            let next =
+                reserved.next_if(|next| next.tex == math.tex && next.display == math.display)?;
+            Some((math.range.clone(), next.range.clone()))
+        })
+        .collect();
+    OffsetMap::new(spans)
 }
 
 /// The font inline math placeholders are laid out in. Ligatures and kerning are off so every
@@ -1355,6 +1526,90 @@ struct HeadingJump {
     scrolls_at_start: usize,
 }
 
+/// Keep the active find match clear of the floating find bar (10px inset + 38px bar + margin).
+const FIND_REVEAL_TOP: f32 = 64.0;
+const FIND_REVEAL_BOTTOM: f32 = 32.0;
+/// Dragging a selection this close to (or past) the viewport's edge scrolls the reader.
+const AUTOSCROLL_TOP_ZONE: f32 = 8.0;
+const AUTOSCROLL_BOTTOM_ZONE: f32 = 16.0;
+const AUTOSCROLL_TICK: Duration = Duration::from_millis(16);
+
+/// State shared between a pane and the elements it paints: the surfaces painted in the last frame
+/// (for hit testing between frames) and a pending request to bring a find match into view.
+pub(crate) struct ReaderShared {
+    surfaces: RefCell<Vec<PaintedSurface>>,
+    reveal: Cell<Option<FindHit>>,
+    list_state: ListState,
+}
+
+impl ReaderShared {
+    fn new(list_state: ListState) -> Self {
+        Self {
+            surfaces: RefCell::default(),
+            reveal: Cell::new(None),
+            list_state,
+        }
+    }
+
+    fn sorted_surfaces(&self) -> Vec<PaintedSurface> {
+        let mut surfaces = self.surfaces.borrow().clone();
+        surfaces.sort_by_key(|surface| surface.id);
+        surfaces
+    }
+
+    fn painted(&self, id: SurfaceId) -> Option<PaintedSurface> {
+        self.surfaces
+            .borrow()
+            .iter()
+            .find(|surface| surface.id == id)
+            .cloned()
+    }
+
+    /// Scrolls so `rect` (the active match) sits clear of the find bar, centered when it has to
+    /// move; a match that is already comfortably visible does not scroll.
+    fn reveal_rect(&self, rect: Bounds<Pixels>, window: &mut Window) {
+        self.reveal.set(None);
+        let viewport = self.list_state.viewport_bounds();
+        if viewport.size.height <= px(0.0) {
+            return;
+        }
+        let top = viewport.top() + px(FIND_REVEAL_TOP);
+        let bottom = viewport.bottom() - px(FIND_REVEAL_BOTTOM);
+        if rect.top() >= top && rect.bottom() <= bottom {
+            return;
+        }
+        let target = viewport.top()
+            + ((viewport.size.height - rect.size.height) / 2.0).max(px(FIND_REVEAL_TOP));
+        scroll_list_by(&self.list_state, rect.top() - target);
+        window.refresh();
+    }
+}
+
+/// Scrolls by `delta` (positive = down), clamped to the measured content.
+fn scroll_list_by(list_state: &ListState, delta: Pixels) {
+    let max = list_state.max_offset_for_scrollbar().height;
+    let current = list_state.scroll_px_offset_for_scrollbar().y;
+    let target = (current - delta).clamp(-max, px(0.0));
+    if target != current {
+        list_state.set_offset_from_scrollbar(point(px(0.0), target));
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Granularity {
+    Character,
+    Word,
+    Block,
+}
+
+struct DragGesture {
+    granularity: Granularity,
+    /// The unit (caret, word, or block) the gesture started on.
+    origin: (TextPoint, TextPoint),
+    last_position: Point<Pixels>,
+    autoscroll: Option<Task<()>>,
+}
+
 pub(crate) struct ReaderPane {
     app: WeakEntity<MdowApp>,
     document: Arc<PreparedDocument>,
@@ -1369,6 +1624,9 @@ pub(crate) struct ReaderPane {
     /// Counts wheel scrolls; a jump in progress yields to the reader scrolling themselves.
     user_scrolls: Rc<Cell<usize>>,
     _loading_timer: Option<Task<()>>,
+    shared: Rc<ReaderShared>,
+    selection: Option<TextSelection>,
+    drag: Option<DragGesture>,
 }
 
 impl ReaderPane {
@@ -1393,6 +1651,7 @@ impl ReaderPane {
             document,
             style,
             theme,
+            shared: Rc::new(ReaderShared::new(list_state.clone())),
             list_state,
             load: TabLoad::Ready,
             scrollbar_drag_grab_y: None,
@@ -1400,6 +1659,8 @@ impl ReaderPane {
             jump: None,
             user_scrolls,
             _loading_timer: None,
+            selection: None,
+            drag: None,
         }
     }
 
@@ -1475,6 +1736,8 @@ impl ReaderPane {
         let mut notify = false;
         if !Arc::ptr_eq(&self.document, &document) {
             crate::perf::mark_once_after("reload_painted", "reload_start");
+            self.drag = None;
+            self.shared.reveal.set(None);
             let old = self.swap_document(document);
             // Freeing a huge document takes a while; do it off the UI thread.
             cx.background_spawn(async move { drop(old) }).detach();
@@ -1519,6 +1782,7 @@ impl ReaderPane {
         if old.blocks.is_empty() {
             // Nothing was measured yet (a placeholder while loading).
             self.list_state.reset(list_item_count(&self.document));
+            self.selection = None;
             self.apply_pending_anchor();
             return old;
         }
@@ -1534,6 +1798,14 @@ impl ReaderPane {
         for splice in diff.splices.iter().rev() {
             self.list_state.splice(splice.old.clone(), splice.new_len);
         }
+        self.selection = self.selection.and_then(|selection| {
+            remap_selection(
+                selection,
+                &diff,
+                old.blocks.len(),
+                self.document.blocks.len(),
+            )
+        });
         if self.pending_anchor.is_some() {
             self.apply_pending_anchor();
         } else if let Some((block, offset)) = anchor
@@ -1631,6 +1903,7 @@ impl ReaderPane {
             return false;
         };
         self.jump = None;
+        self.shared.reveal.set(None);
         self.list_state
             .set_offset_from_scrollbar(point(px(0.0), px(target)));
         true
@@ -1646,6 +1919,305 @@ impl ReaderPane {
         self.scrollbar_drag_grab_y = None;
         self.list_state.scrollbar_drag_ended();
     }
+
+    /// Where the caret at `point` was painted in the last frame.
+    #[cfg(test)]
+    pub(crate) fn painted_caret(&self, point: TextPoint) -> Option<Point<Pixels>> {
+        let surface = self.shared.painted(point.id())?;
+        let offset = surface.map.to_painted(point.offset..point.offset).start;
+        surface.geometry().caret_position(offset)
+    }
+
+    /// The painted rects of `range` on surface `id` in the last frame.
+    #[cfg(test)]
+    pub(crate) fn painted_rects(&self, id: SurfaceId, range: Range<usize>) -> Vec<Bounds<Pixels>> {
+        self.shared
+            .painted(id)
+            .map(|surface| surface.geometry().rects(surface.map.to_painted(range)))
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn painted_text(&self, id: SurfaceId) -> Option<SharedString> {
+        self.shared.painted(id).map(|surface| surface.text)
+    }
+
+    /// The current non-empty selection.
+    #[cfg(test)]
+    pub(crate) fn set_selection(&mut self, selection: Option<TextSelection>) {
+        self.selection = selection;
+    }
+
+    pub(crate) fn selection(&self) -> Option<TextSelection> {
+        self.selection.filter(|selection| !selection.is_empty())
+    }
+
+    pub(crate) fn has_selection(&self) -> bool {
+        self.selection().is_some()
+    }
+
+    pub(crate) fn select_all(&mut self, cx: &mut Context<Self>) {
+        self.drag = None;
+        self.selection = Some(TextSelection {
+            anchor: TextPoint::default(),
+            head: TextPoint::document_end(self.document.blocks.len()),
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn clear_selection(&mut self, cx: &mut Context<Self>) -> bool {
+        self.drag = None;
+        if self
+            .selection
+            .take()
+            .is_some_and(|selection| !selection.is_empty())
+        {
+            cx.notify();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The selection as plain text, the way a browser copies rendered text.
+    pub(crate) fn selected_text(&self) -> Option<String> {
+        let (start, end) = self.selection()?.ordered();
+        let blocks = &self.document.blocks;
+        let text = selection_text(
+            blocks.len(),
+            |block| block_surfaces(&blocks[block]),
+            |block| list_group(&blocks[block]).is_some(),
+            start,
+            end,
+        );
+        (!text.is_empty()).then_some(text)
+    }
+
+    pub(crate) fn copy_selection(&self, cx: &mut Context<Self>) -> bool {
+        match self.selected_text() {
+            Some(text) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Brings a find match into view: jump to its block when it is not painted, then let the
+    /// surface that paints the match fine-tune the scroll (see [`ReaderShared::reveal_rect`]).
+    pub(crate) fn reveal_find_hit(&mut self, hit: FindHit) {
+        self.shared.reveal.set(Some(hit));
+        if self.shared.painted(hit.surface_id()).is_none() {
+            self.scroll_to_block(hit.block);
+        }
+    }
+
+    fn clamp_to_viewport(&self, position: Point<Pixels>) -> Point<Pixels> {
+        let viewport = self.list_state.viewport_bounds();
+        if viewport.size.height <= px(1.0) {
+            return position;
+        }
+        point(
+            position.x,
+            position
+                .y
+                .clamp(viewport.top(), viewport.bottom() - px(1.0)),
+        )
+    }
+
+    fn hit(&self, position: Point<Pixels>) -> Option<TextPoint> {
+        hit_test(
+            &self.shared.sorted_surfaces(),
+            self.clamp_to_viewport(position),
+        )
+    }
+
+    /// The word or block around `point`, for double- and triple-click gestures.
+    fn unit_at(&self, point: TextPoint, granularity: Granularity) -> (TextPoint, TextPoint) {
+        let Some(surface) = self.shared.painted(point.id()) else {
+            return (point, point);
+        };
+        let range = match granularity {
+            Granularity::Character => point.offset..point.offset,
+            Granularity::Word => word_range(&surface.text, point.offset),
+            Granularity::Block => block_unit_range(&surface.text, surface.kind, point.offset),
+        };
+        (
+            TextPoint::new(surface.id, range.start),
+            TextPoint::new(surface.id, range.end),
+        )
+    }
+
+    fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.shared.reveal.set(None);
+        match event.button {
+            MouseButton::Left => {
+                self.app.update(cx, |app, _| app.focus_reader(window)).ok();
+                let Some(point) = self.hit(event.position) else {
+                    self.clear_selection(cx);
+                    return;
+                };
+                let granularity = match event.click_count {
+                    0 | 1 => Granularity::Character,
+                    2 => Granularity::Word,
+                    _ => Granularity::Block,
+                };
+                let origin = match self.selection {
+                    Some(selection)
+                        if event.modifiers.shift && granularity == Granularity::Character =>
+                    {
+                        (selection.anchor, selection.anchor)
+                    }
+                    _ => self.unit_at(point, granularity),
+                };
+                self.drag = Some(DragGesture {
+                    granularity,
+                    origin,
+                    last_position: event.position,
+                    autoscroll: None,
+                });
+                self.extend_drag(point);
+                cx.notify();
+            }
+            MouseButton::Right => {
+                let path = self.document.path.clone();
+                let has_selection = self.has_selection();
+                let position = event.position;
+                self.app
+                    .update(cx, |app, cx| {
+                        app.open_reader_context_menu(&path, has_selection, position, window, cx)
+                    })
+                    .ok();
+            }
+            _ => {}
+        }
+    }
+
+    /// Moves the selection head to `point`, snapping to whole words/blocks for multi-clicks.
+    fn extend_drag(&mut self, point: TextPoint) -> bool {
+        let Some(drag) = self.drag.as_ref() else {
+            return false;
+        };
+        let (origin_start, origin_end) = drag.origin;
+        let next = if drag.granularity == Granularity::Character {
+            TextSelection {
+                anchor: origin_start,
+                head: point,
+            }
+        } else {
+            let (unit_start, unit_end) = self.unit_at(point, drag.granularity);
+            if unit_start < origin_start {
+                TextSelection {
+                    anchor: origin_end,
+                    head: unit_start,
+                }
+            } else {
+                TextSelection {
+                    anchor: origin_start,
+                    head: unit_end.max(origin_end),
+                }
+            }
+        };
+        let changed = self.selection != Some(next);
+        self.selection = Some(next);
+        changed
+    }
+
+    fn mouse_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(drag) = self.drag.as_mut() else {
+            return;
+        };
+        drag.last_position = position;
+        if let Some(point) = self.hit(position)
+            && self.extend_drag(point)
+        {
+            cx.notify();
+        }
+        let idle = self
+            .drag
+            .as_ref()
+            .is_some_and(|drag| drag.autoscroll.is_none());
+        if idle && self.autoscroll_step().is_some() {
+            let task = cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(AUTOSCROLL_TICK).await;
+                    let keep_going = this
+                        .update(cx, |pane, cx| pane.autoscroll_tick(cx))
+                        .unwrap_or(false);
+                    if !keep_going {
+                        break;
+                    }
+                }
+            });
+            if let Some(drag) = self.drag.as_mut() {
+                drag.autoscroll = Some(task);
+            }
+        }
+    }
+
+    /// How far to scroll per tick while the pointer is held near or past a viewport edge.
+    fn autoscroll_step(&self) -> Option<Pixels> {
+        let drag = self.drag.as_ref()?;
+        let viewport = self.list_state.viewport_bounds();
+        if viewport.size.height <= px(0.0) {
+            return None;
+        }
+        let y = drag.last_position.y;
+        let top = viewport.top() + px(AUTOSCROLL_TOP_ZONE);
+        let bottom = viewport.bottom() - px(AUTOSCROLL_BOTTOM_ZONE);
+        let speed = |distance: Pixels| (distance * 0.5).clamp(px(2.0), px(48.0));
+        if y < top {
+            Some(-speed(top - y))
+        } else if y > bottom {
+            Some(speed(y - bottom))
+        } else {
+            None
+        }
+    }
+
+    fn autoscroll_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(step) = self.autoscroll_step() else {
+            if let Some(drag) = self.drag.as_mut() {
+                drag.autoscroll = None;
+            }
+            return false;
+        };
+        scroll_list_by(&self.list_state, step);
+        let position = self.drag.as_ref().map(|drag| drag.last_position);
+        if let Some(point) = position.and_then(|position| self.hit(position)) {
+            self.extend_drag(point);
+        }
+        cx.notify();
+        true
+    }
+
+    fn mouse_up(&mut self, cx: &mut Context<Self>) {
+        if self.drag.take().is_some() {
+            cx.notify();
+        }
+    }
+}
+
+/// Carries a selection through a reload: its ends move with their blocks when those blocks are
+/// unchanged, and the selection clears when either end's block changed (its byte offsets no
+/// longer describe the same text).
+fn remap_selection(
+    selection: TextSelection,
+    diff: &BlockDiff,
+    old_len: usize,
+    new_len: usize,
+) -> Option<TextSelection> {
+    let remap = |point: TextPoint| {
+        if point.block >= old_len {
+            return Some(TextPoint::document_end(new_len));
+        }
+        let block = diff.map_index(point.block)?;
+        Some(TextPoint { block, ..point })
+    };
+    Some(TextSelection {
+        anchor: remap(selection.anchor)?,
+        head: remap(selection.head)?,
+    })
 }
 
 /// Reader list items: every block, then the loading row while a preview shows.
@@ -1834,11 +2406,200 @@ struct ReaderView<'a> {
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     link_state: &'a ReaderLinkState<'a>,
-    find_block: Option<usize>,
+    surfaces: &'a SurfacePaint<'a>,
     /// Body text inside blockquotes uses the muted foreground.
     muted: bool,
     /// The heading a jump in progress is aiming at.
     heading_probe: Option<&'a HeadingProbe>,
+}
+
+/// Per top-level block: hands out surface ids in paint order and knows which find matches and
+/// which part of the selection fall on each surface.
+pub(crate) struct SurfacePaint<'a> {
+    block: usize,
+    next: Cell<usize>,
+    /// This block's matches (a slice of the query's document-wide matches).
+    find_hits: &'a [FindHit],
+    find_active: Option<FindHit>,
+    selection: Option<(TextPoint, TextPoint)>,
+    shared: Rc<ReaderShared>,
+}
+
+impl<'a> SurfacePaint<'a> {
+    /// Claims the next surface. `text` is its logical text (the text `block_surfaces` reports);
+    /// `map` translates it to the painted text when they differ (typeset inline math).
+    fn claim(&self, kind: SurfaceKind, text: &str, map: OffsetMap, theme: Theme) -> ClaimedSurface {
+        let index = self.next.get();
+        self.next.set(index + 1);
+        let id = SurfaceId::new(self.block, index);
+        let find = self
+            .find_hits
+            .iter()
+            .filter(|hit| hit.surface == index && hit.range_end <= text.len())
+            .map(|hit| map.to_painted(hit.range()))
+            .collect::<Vec<_>>();
+        let active = self
+            .find_active
+            .filter(|hit| hit.surface_id() == id && hit.range_end <= text.len())
+            .map(|hit| map.to_painted(hit.range()));
+        let selection = self
+            .selection
+            .and_then(|(start, end)| selected_range(start, end, id, text.len()))
+            .map(|range| map.to_painted(range));
+        ClaimedSurface {
+            id,
+            kind,
+            text: SharedString::from(text.to_owned()),
+            map,
+            find,
+            active,
+            selection,
+            shared: self.shared.clone(),
+            colors: HighlightColors::for_theme(theme),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HighlightColors {
+    find: Hsla,
+    active: Hsla,
+    active_ring: Hsla,
+    active_text: Hsla,
+    selection: Hsla,
+}
+
+impl HighlightColors {
+    /// The redesign's `.hl` / `.hl.act`: a soft accent wash on every match, the active one solid
+    /// accent with dark text; selection is the primary color, behind the glyphs.
+    fn for_theme(theme: Theme) -> Self {
+        Self {
+            find: theme.accent.opacity(0.26),
+            active: theme.accent,
+            active_ring: theme.accent.opacity(0.4),
+            active_text: gpui::rgb(0x1a1206).into(),
+            selection: theme.primary.opacity(match theme.color_scheme {
+                ColorScheme::Light => 0.25,
+                ColorScheme::Dark => 0.32,
+            }),
+        }
+    }
+}
+
+/// One surface's highlights (in painted offsets), ready to restyle its runs and paint behind its
+/// glyphs.
+struct ClaimedSurface {
+    id: SurfaceId,
+    kind: SurfaceKind,
+    /// Logical text and its mapping to the painted text.
+    text: SharedString,
+    map: OffsetMap,
+    find: Vec<Range<usize>>,
+    active: Option<Range<usize>>,
+    selection: Option<Range<usize>>,
+    shared: Rc<ReaderShared>,
+    colors: HighlightColors,
+}
+
+impl ClaimedSurface {
+    /// Highlighted ranges drop run backgrounds (inline code, `<mark>`) so the highlight shows,
+    /// and the active match paints dark text on the solid accent.
+    fn restyle(&self, runs: Vec<TextRun>) -> Vec<TextRun> {
+        let clear = self
+            .find
+            .iter()
+            .cloned()
+            .chain(self.selection.clone())
+            .collect::<Vec<_>>();
+        restyle_runs(
+            runs,
+            &clear,
+            self.active
+                .clone()
+                .map(|range| (range, self.colors.active_text)),
+        )
+    }
+
+    /// An absolutely positioned canvas placed before the text: it paints the highlights (so they
+    /// sit behind the glyphs), registers the surface for hit testing, and performs a pending
+    /// find reveal once the text has a layout.
+    fn overlay(self, layout: TextLayout, painted_text: SharedString) -> impl IntoElement {
+        canvas(
+            |_, _, _| (),
+            move |_, _, window, _| {
+                let text_style = window.text_style();
+                let painted = PaintedSurface {
+                    id: self.id,
+                    kind: self.kind,
+                    text: self.text.clone(),
+                    painted: painted_text,
+                    map: self.map.clone(),
+                    layout,
+                    align: text_style.text_align,
+                    clip: window.content_mask().bounds,
+                };
+                let reveal = self
+                    .shared
+                    .reveal
+                    .get()
+                    .filter(|hit| hit.surface_id() == self.id);
+                if self.selection.is_some()
+                    || !self.find.is_empty()
+                    || self.active.is_some()
+                    || reveal.is_some()
+                {
+                    let geometry = painted.geometry();
+                    let colors = self.colors;
+                    if let Some(range) = self.selection.clone() {
+                        for rect in geometry.rects(range) {
+                            window.paint_quad(fill(rect, colors.selection));
+                        }
+                    }
+                    // Match highlights hug the glyphs rather than the full line box.
+                    let font_size = text_style.font_size.to_pixels(window.rem_size());
+                    let inset = ((geometry.line_height - font_size * 1.35) / 2.0).max(px(0.0));
+                    let tighten = |rect: Bounds<Pixels>| {
+                        Bounds::new(
+                            point(rect.left(), rect.top() + inset),
+                            size(rect.size.width, rect.size.height - inset * 2.0),
+                        )
+                    };
+                    for range in &self.find {
+                        if Some(range) == self.active.as_ref() {
+                            continue;
+                        }
+                        for rect in geometry.rects(range.clone()) {
+                            window
+                                .paint_quad(fill(tighten(rect), colors.find).corner_radii(px(2.0)));
+                        }
+                    }
+                    if let Some(range) = self.active.clone() {
+                        for rect in geometry.rects(range) {
+                            let rect = tighten(rect);
+                            window.paint_quad(
+                                fill(rect.dilate(px(2.0)), colors.active_ring)
+                                    .corner_radii(px(4.0)),
+                            );
+                            window.paint_quad(fill(rect, colors.active).corner_radii(px(2.0)));
+                        }
+                    }
+                    if let Some(hit) = reveal {
+                        if let Some(rect) = geometry.rects(self.map.to_painted(hit.range())).first()
+                        {
+                            self.shared.reveal_rect(*rect, window);
+                        } else {
+                            self.shared.reveal.set(None);
+                        }
+                    }
+                }
+                self.shared.surfaces.borrow_mut().push(painted);
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_0()
+    }
 }
 
 impl ReaderView<'_> {
@@ -1868,7 +2629,7 @@ fn render_reader_item(
     theme: Theme,
     copied_code: Option<(usize, Instant)>,
     link_state: &ReaderLinkState<'_>,
-    find_block: Option<usize>,
+    surfaces: &SurfacePaint<'_>,
     heading_probe: Option<&HeadingProbe>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
@@ -1887,7 +2648,7 @@ fn render_reader_item(
         theme,
         copied_code,
         link_state,
-        find_block,
+        surfaces,
         muted: false,
         heading_probe,
     };
@@ -1963,17 +2724,30 @@ impl Render for ReaderPane {
         let style = self.style;
         let heading_probe = self.jump.as_ref().map(|jump| jump.probe.clone());
         let list_state = self.list_state.clone();
+        let selection = self.selection().map(TextSelection::ordered);
+        let shared = self.shared.clone();
         let viewport = list(list_state.clone(), move |block_index, _, cx| {
             if block_index >= document.blocks.len() {
                 return render_loading_line("Loading the rest of the document…", true, theme);
             }
             app.update(cx, |app, cx| {
                 let handles = app.ensure_block_link_focus_handles(&document, block_index, cx);
-                let paint = app.reader_paint_state(cx);
+                let paint = app.reader_paint_state(&document.path, cx);
                 let link_state = ReaderLinkState {
                     hovered: paint.hovered_link,
                     focused: paint.focused_link,
                     focus_handles: &handles,
+                };
+                let hits = paint.find_hits.as_deref().unwrap_or_default();
+                let first = hits.partition_point(|hit| hit.block < block_index);
+                let last = hits.partition_point(|hit| hit.block <= block_index);
+                let surfaces = SurfacePaint {
+                    block: block_index,
+                    next: Cell::new(0),
+                    find_hits: &hits[first..last],
+                    find_active: paint.find_active,
+                    selection,
+                    shared: shared.clone(),
                 };
                 render_reader_item(
                     &document,
@@ -1982,7 +2756,7 @@ impl Render for ReaderPane {
                     theme,
                     paint.copied_code,
                     &link_state,
-                    paint.find_block,
+                    &surfaces,
                     heading_probe.as_ref(),
                     cx,
                 )
@@ -1995,8 +2769,67 @@ impl Render for ReaderPane {
 
         reader
             .child(viewport)
+            .child(render_selection_input(self.shared.clone(), cx))
             .when_some(scrollbar, |reader, scrollbar| reader.child(scrollbar))
     }
+}
+
+/// Width at the reader's right edge left to the scrollbar rather than text selection.
+const SELECTION_SCROLLBAR_GUTTER: f32 = 10.0;
+
+/// The pane's pointer input for selection: a canvas over the viewport that clears the painted
+/// surface registry before the frame's surfaces register, and routes mouse events to the pane.
+fn render_selection_input(shared: Rc<ReaderShared>, cx: &Context<ReaderPane>) -> impl IntoElement {
+    let pane = cx.entity().downgrade();
+    canvas(
+        move |bounds, window, _| {
+            shared.surfaces.borrow_mut().clear();
+            let bounds = Bounds::from_corners(
+                bounds.origin,
+                point(
+                    bounds.right() - px(SELECTION_SCROLLBAR_GUTTER),
+                    bounds.bottom(),
+                ),
+            );
+            window.insert_hitbox(bounds, HitboxBehavior::Normal)
+        },
+        move |_, hitbox, window, _| {
+            window.on_mouse_event({
+                let pane = pane.clone();
+                let hitbox = hitbox.clone();
+                move |event: &MouseDownEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+                        return;
+                    }
+                    pane.update(cx, |pane, cx| pane.mouse_down(event, window, cx))
+                        .ok();
+                }
+            });
+            window.on_mouse_event({
+                let pane = pane.clone();
+                move |event: &MouseMoveEvent, phase, _, cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    pane.update(cx, |pane, cx| {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            pane.mouse_drag(event.position, cx);
+                        } else {
+                            pane.mouse_up(cx);
+                        }
+                    })
+                    .ok();
+                }
+            });
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                    pane.update(cx, |pane, cx| pane.mouse_up(cx)).ok();
+                }
+            });
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2012,191 +2845,202 @@ fn render_block(
 ) -> AnyElement {
     let theme = view.theme;
     let link_state = view.link_state;
-    let find_block = view.find_block;
     let block_index = block_path_render_index(block_path);
     let block_suffix = block_path_suffix(block_path);
     let document_path = document.path.as_path();
-    let content =
-        match block {
-            DocumentBlock::Heading { level, content } => {
-                let style = BlockStyle::heading(*level);
-                let font_size = view.zoom(style.font_size);
-                let debug_selector = format!("reader-block-{block_suffix}");
-                let probe = view
-                    .heading_probe
-                    .filter(|probe| probe.target == block_path)
-                    .map(HeadingProbe::marker);
-                div()
-                    .id(("reader-block", block_index))
-                    .debug_selector(move || debug_selector)
-                    .relative()
-                    .children(probe)
-                    .w_full()
-                    .min_w_0()
-                    .font_weight(FontWeight(style.font_weight as f32))
-                    .text_size(px(font_size))
-                    .line_height(px(font_size * style.line_height))
-                    .text_color(if style.muted {
+    let content = match block {
+        DocumentBlock::Heading { level, content } => {
+            let style = BlockStyle::heading(*level);
+            let font_size = view.zoom(style.font_size);
+            let debug_selector = format!("reader-block-{block_suffix}");
+            let probe = view
+                .heading_probe
+                .filter(|probe| probe.target == block_path)
+                .map(HeadingProbe::marker);
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .relative()
+                .children(probe)
+                .w_full()
+                .min_w_0()
+                .font_weight(FontWeight(style.font_weight as f32))
+                .text_size(px(font_size))
+                .line_height(px(font_size * style.line_height))
+                .text_color(if style.muted {
+                    theme.muted_foreground
+                } else {
+                    theme.foreground
+                })
+                .child(render_inline_layout(
+                    inline_layout_with_transform(content, style.uppercase),
+                    document_path,
+                    LinkSurfaceKey::block(block_index),
+                    style.font_weight,
+                    if style.muted {
                         theme.muted_foreground
                     } else {
                         theme.foreground
-                    })
-                    .child(render_inline_layout(
-                        inline_layout_with_transform(content, style.uppercase),
-                        document_path,
-                        LinkSurfaceKey::block(block_index),
-                        style.font_weight,
-                        if style.muted {
-                            theme.muted_foreground
-                        } else {
-                            theme.foreground
-                        },
-                        theme,
-                        view.style,
-                        false,
-                        link_state,
-                        cx,
-                    ))
-                    .into_any_element()
-            }
-            DocumentBlock::Paragraph(content) => {
-                let debug_selector = format!("reader-block-{block_suffix}");
-                div()
-                    .id(("reader-block", block_index))
-                    .debug_selector(move || debug_selector)
-                    .w_full()
-                    .min_w_0()
-                    .child(render_inline(
-                        content,
-                        document_path,
-                        LinkSurfaceKey::block(block_index),
-                        400,
-                        view.text_color(),
-                        theme,
-                        view.style,
-                        link_state,
-                        cx,
-                    ))
-                    .into_any_element()
-            }
-            DocumentBlock::ListItem {
-                kind,
-                depth,
-                children,
-            } => render_list_item(
-                kind,
-                *depth,
-                children,
-                list_marker_visible,
-                block_path,
-                parent_list_depth,
-                document,
-                view,
-                cx,
-            ),
-            DocumentBlock::TaskItem {
-                checked,
-                depth,
-                children,
-            } => render_task_item(
-                *checked,
-                *depth,
-                children,
-                block_path,
-                parent_list_depth,
-                document,
-                view,
-                cx,
-            ),
-            DocumentBlock::Blockquote(children) => {
-                let debug_selector = format!("reader-block-{block_suffix}");
-                let padding = BlockStyle::blockquote().padding;
-                div()
-                    .id(("reader-block", block_index))
-                    .debug_selector(move || debug_selector)
-                    .flex()
-                    .w_full()
-                    .min_w_0()
-                    .border_l(px(3.0))
-                    .border_color(blockquote_border(theme))
-                    .py(px(padding[0]))
-                    .text_color(theme.muted_foreground)
-                    .child(div().min_w_0().flex_grow().px(px(padding[1])).child(
-                        render_list_children(
+                    },
+                    theme,
+                    view.style,
+                    false,
+                    link_state,
+                    view.surfaces,
+                    cx,
+                ))
+                .into_any_element()
+        }
+        DocumentBlock::Paragraph(content) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .min_w_0()
+                .child(render_inline(
+                    content,
+                    document_path,
+                    LinkSurfaceKey::block(block_index),
+                    400,
+                    view.text_color(),
+                    theme,
+                    view.style,
+                    link_state,
+                    view.surfaces,
+                    cx,
+                ))
+                .into_any_element()
+        }
+        DocumentBlock::ListItem {
+            kind,
+            depth,
+            children,
+        } => render_list_item(
+            kind,
+            *depth,
+            children,
+            list_marker_visible,
+            block_path,
+            parent_list_depth,
+            document,
+            view,
+            cx,
+        ),
+        DocumentBlock::TaskItem {
+            checked,
+            depth,
+            children,
+        } => render_task_item(
+            *checked,
+            *depth,
+            children,
+            block_path,
+            parent_list_depth,
+            document,
+            view,
+            cx,
+        ),
+        DocumentBlock::Blockquote(children) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            let padding = BlockStyle::blockquote().padding;
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .flex()
+                .w_full()
+                .min_w_0()
+                .border_l(px(3.0))
+                .border_color(blockquote_border(theme))
+                .py(px(padding[0]))
+                .text_color(theme.muted_foreground)
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_grow()
+                        .px(px(padding[1]))
+                        .child(render_list_children(
                             children,
                             0,
                             block_path,
                             document,
                             ReaderView {
-                                find_block: None,
                                 muted: true,
                                 ..view
                             },
                             cx,
-                        ),
-                    ))
-                    .into_any_element()
-            }
-            DocumentBlock::ThematicBreak => {
-                let debug_selector = format!("reader-block-{block_suffix}");
-                div()
-                    .id(("reader-block", block_index))
-                    .debug_selector(move || debug_selector)
-                    .w_full()
-                    .child(div().h(px(1.0)).w_full().bg(theme.border))
-                    .into_any_element()
-            }
-            DocumentBlock::CodeBlock {
-                language,
-                code,
-                highlights,
-            } => render_code_block(
-                language.as_deref(),
-                code,
-                highlights,
-                true,
-                block_path,
-                document_path,
-                view,
-                cx,
-            ),
-            DocumentBlock::Table(table) => {
-                render_table(table, block_index, document_path, view, cx)
-            }
-            DocumentBlock::Image { alt, source } => {
-                render_image(alt, source, block_index, document_path, theme)
-            }
-            DocumentBlock::Alert { kind, children } => {
-                render_alert(*kind, children, block_path, document, view, cx)
-            }
-            DocumentBlock::MermaidCard { source } => {
-                render_mermaid_block(source, block_path, document_path, view, cx)
-            }
-            DocumentBlock::Math { tex } => render_math_block(tex, block_path, document_path, view),
-            DocumentBlock::FootnoteSection { notes } => {
-                render_footnote_section(notes, block_path, document, view, cx)
-            }
-            DocumentBlock::RawText(text) => {
-                let debug_selector = format!("reader-block-{block_suffix}");
-                div()
-                    .id(("reader-block", block_index))
-                    .debug_selector(move || debug_selector)
-                    .w_full()
-                    .min_w_0()
-                    .child(StyledText::new(text.clone()))
-                    .into_any_element()
-            }
-        };
+                        )),
+                )
+                .into_any_element()
+        }
+        DocumentBlock::ThematicBreak => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .child(div().h(px(1.0)).w_full().bg(theme.border))
+                .into_any_element()
+        }
+        DocumentBlock::CodeBlock {
+            language,
+            code,
+            highlights,
+        } => render_code_block(
+            language.as_deref(),
+            code,
+            highlights,
+            true,
+            block_path,
+            document_path,
+            view,
+            cx,
+        ),
+        DocumentBlock::Table(table) => render_table(table, block_index, document_path, view, cx),
+        DocumentBlock::Image { alt, source } => {
+            render_image(alt, source, block_index, document_path, theme)
+        }
+        DocumentBlock::Alert { kind, children } => {
+            render_alert(*kind, children, block_path, document, view, cx)
+        }
+        DocumentBlock::MermaidCard { source } => {
+            render_mermaid_block(source, block_path, document_path, view, cx)
+        }
+        DocumentBlock::Math { tex } => render_math_block(tex, block_path, document_path, view),
+        DocumentBlock::FootnoteSection { notes } => {
+            render_footnote_section(notes, block_path, document, view, cx)
+        }
+        DocumentBlock::RawText(text) => {
+            let debug_selector = format!("reader-block-{block_suffix}");
+            div()
+                .id(("reader-block", block_index))
+                .debug_selector(move || debug_selector)
+                .w_full()
+                .min_w_0()
+                .relative()
+                .cursor(CursorStyle::IBeam)
+                .child({
+                    let claimed =
+                        view.surfaces
+                            .claim(SurfaceKind::Inline, text, OffsetMap::default(), theme);
+                    let text = SharedString::from(text.clone());
+                    let styled = StyledText::new(text.clone());
+                    let layout = styled.layout().clone();
+                    // No runs to restyle: plain text inherits the block's style.
+                    div()
+                        .relative()
+                        .child(claimed.overlay(layout, text))
+                        .child(styled)
+                })
+                .into_any_element()
+        }
+    };
 
-    let find_hit = block_path.len() == 1 && find_block == Some(block_path[0]);
     div()
         .w_full()
         .min_w_0()
         .mt(px(spacing.before))
         .mb(px(spacing.after))
-        .when(find_hit, |block| {
-            block.bg(theme.accent.opacity(0.14)).rounded(px(4.0))
-        })
         .child(content)
         .into_any_element()
 }
@@ -2237,17 +3081,39 @@ fn render_math_block(
             .child(math_source(tex.trim(), true))
             .into_any_element(),
     };
+    let selected =
+        graphic_selection_tint(view.surfaces, &math_source(tex.trim(), true), theme, 4.0);
     div()
         .id((
             "reader-math",
             document_scoped_element_id(document_path, "reader-math", block_index),
         ))
         .debug_selector(move || debug_selector)
+        .relative()
         .w_full()
         .overflow_x_scroll()
         .map(restrict_scroll_to_axis)
         .child(content)
+        .children(selected)
         .into_any_element()
+}
+
+/// Claims a graphic's surface (so ids stay in paint order) and, when the selection covers it,
+/// returns a selection-colored wash over the whole graphic, like a browser selecting an image.
+fn graphic_selection_tint(
+    surfaces: &SurfacePaint<'_>,
+    source: &str,
+    theme: Theme,
+    radius: f32,
+) -> Option<gpui::Div> {
+    let claimed = surfaces.claim(SurfaceKind::Graphic, source, OffsetMap::default(), theme);
+    claimed.selection.is_some().then(|| {
+        div()
+            .absolute()
+            .inset_0()
+            .rounded(px(radius))
+            .bg(claimed.colors.selection)
+    })
 }
 
 /// Mermaid diagram in a code-block card (same radius, border, surface and 32px header with the
@@ -2311,9 +3177,16 @@ fn render_mermaid_block(
         }
     };
     let copied = code_copy_feedback_is_active(view.copied_code, block_index, Instant::now());
+    let selected = graphic_selection_tint(
+        view.surfaces,
+        code_display_text(source),
+        theme,
+        BlockStyle::code_block().radius,
+    );
     div()
         .id(("reader-block", block_index))
         .debug_selector(move || debug_selector)
+        .relative()
         .w_full()
         .min_w_0()
         .rounded(px(BlockStyle::code_block().radius))
@@ -2327,6 +3200,7 @@ fn render_mermaid_block(
             theme,
         ))
         .child(body)
+        .children(selected)
         .into_any_element()
 }
 
@@ -2370,7 +3244,7 @@ fn diagram_state(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn render_inline(
+fn render_inline(
     spans: &[InlineSpan],
     document_path: &Path,
     surface: LinkSurfaceKey,
@@ -2379,6 +3253,7 @@ pub fn render_inline(
     theme: Theme,
     style: ReaderStyle,
     link_state: &ReaderLinkState<'_>,
+    surfaces: &SurfacePaint<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     render_inline_layout(
@@ -2391,6 +3266,7 @@ pub fn render_inline(
         style,
         false,
         link_state,
+        surfaces,
         cx,
     )
 }
@@ -2406,9 +3282,14 @@ fn render_inline_layout(
     style: ReaderStyle,
     tabular_numbers: bool,
     link_state: &ReaderLinkState<'_>,
+    surfaces: &SurfacePaint<'_>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     let mut layout = layout;
+    // Find and selection address the logical text (math as its TeX source); the painted text
+    // swaps typeset formulas for placeholders, so keep a map between the two.
+    let logical_text = layout.text.clone();
+    let logical_math = layout.math.clone();
     let placeholder_font = math_placeholder_font(style);
     let reserved_math = if layout.math.is_empty() {
         Vec::new()
@@ -2425,6 +3306,12 @@ fn render_inline_layout(
             math_width_em(tex, display).map(|width| width * MATH_SCALE)
         })
     };
+    let claimed = surfaces.claim(
+        SurfaceKind::Inline,
+        &logical_text,
+        math_offset_map(&logical_math, &reserved_math),
+        theme,
+    );
     let active_links = layout
         .links
         .iter()
@@ -2450,8 +3337,10 @@ fn render_inline_layout(
         style,
         tabular_numbers,
     );
-    let styled_text = StyledText::new(layout.text.clone()).with_runs(runs);
+    let text = SharedString::from(layout.text.clone());
+    let styled_text = StyledText::new(text.clone()).with_runs(claimed.restyle(runs));
     let text_layout = styled_text.layout().clone();
+    let highlights = claimed.overlay(text_layout.clone(), text);
     let math_slots = reserved_math
         .into_iter()
         .map(|math| InlineMathSlot {
@@ -2494,6 +3383,10 @@ fn render_inline_layout(
         .on_click(
             click_ranges,
             cx.processor(move |this, link_index: usize, _, cx| {
+                // A drag that ends on the link it started on selected text; it is not a click.
+                if this.reader_has_selection(&click_document_path, cx) {
+                    return;
+                }
                 if let Some(target) = click_targets.get(link_index).map(String::as_str) {
                     this.activate_link(&click_document_path, target, cx);
                 }
@@ -2541,6 +3434,7 @@ fn render_inline_layout(
         .min_w_0()
         .relative()
         .whitespace_normal()
+        .cursor(CursorStyle::IBeam)
         .on_hover(move |hovered, _, cx| {
             if !*hovered {
                 weak_app
@@ -2552,6 +3446,7 @@ fn render_inline_layout(
         })
         // Keep every inline style in one StyledText/InteractiveText layout so wrapping remains
         // native text wrapping rather than flex-fragment wrapping.
+        .child(highlights)
         .child(text);
     for (link_index, target, focus_handle) in keyboard_links {
         let keyboard_document_path = document_path.clone();
@@ -2966,15 +3861,7 @@ fn render_alert(
                 .pl(px(ALERT_ICON_SIZE + ALERT_ICON_GAP))
                 .min_w_0()
                 .child(render_list_children(
-                    children,
-                    0,
-                    block_path,
-                    document,
-                    ReaderView {
-                        find_block: None,
-                        ..view
-                    },
-                    cx,
+                    children, 0, block_path, document, view, cx,
                 )),
         )
         .into_any_element()
@@ -3005,11 +3892,7 @@ fn render_footnote_section(
     for (note_index, (label, children)) in notes.iter().enumerate() {
         let mut note_path = block_path.to_vec();
         note_path.push(note_index);
-        let marker = if label.bytes().all(|byte| byte.is_ascii_digit()) {
-            format!("{label}.")
-        } else {
-            label.clone()
-        };
+        let marker = footnote_marker(label);
         list = list.child(
             div()
                 .flex()
@@ -3031,7 +3914,6 @@ fn render_footnote_section(
                     &note_path,
                     document,
                     ReaderView {
-                        find_block: None,
                         muted: true,
                         ..view
                     },
@@ -3338,7 +4220,12 @@ fn render_code_block(
         Some(highlighted) => highlighted_text_runs(highlighted, display.len(), family),
         None => plain_code_runs(display.len(), theme.color_scheme, family),
     };
-    let code_text = StyledText::new(display.to_owned()).with_runs(runs);
+    let claimed = view
+        .surfaces
+        .claim(SurfaceKind::Code, display, OffsetMap::default(), theme);
+    let display_text = SharedString::from(display.to_owned());
+    let code_text = StyledText::new(display_text.clone()).with_runs(claimed.restyle(runs));
+    let code_highlights = claimed.overlay(code_text.layout().clone(), display_text);
     let code_size = view.zoom(READER_FONT_SIZE * 0.875);
     let code_line_height = code_size * BlockStyle::code_block().line_height;
     let [padding_top, padding_x] = BlockStyle::code_block().padding;
@@ -3406,7 +4293,9 @@ fn render_code_block(
                         .text_size(px(code_size))
                         .line_height(px(code_line_height))
                         .whitespace_nowrap()
+                        .cursor(CursorStyle::IBeam)
                         .children(bands)
+                        .child(code_highlights)
                         .child(code_text),
                 ),
         )
@@ -3431,11 +4320,7 @@ fn render_table(
 ) -> AnyElement {
     let theme = view.theme;
     let link_state = view.link_state;
-    let column_count = table
-        .headers
-        .len()
-        .max(table.rows.iter().map(Vec::len).max().unwrap_or(0))
-        .max(1);
+    let column_count = table_column_count(table);
     let mut grid = div()
         .grid()
         .grid_cols(column_count as u16)
@@ -3472,6 +4357,7 @@ fn render_table(
                     view.style,
                     true,
                     link_state,
+                    view.surfaces,
                     cx,
                 )),
         );
@@ -3502,6 +4388,7 @@ fn render_table(
                         theme,
                         view.style,
                         link_state,
+                        view.surfaces,
                         cx,
                     )),
             );

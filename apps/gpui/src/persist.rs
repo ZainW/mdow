@@ -6,6 +6,7 @@ use crate::prefs::{
     ThemeMode, ZoomLevel,
 };
 use crate::session::{Recents, SavedWindowBounds, Session, SessionTabs};
+use crate::split::{PaneId, SessionSplit};
 use serde::Serialize;
 use serde_json::Value;
 use std::fs::{self, File};
@@ -145,6 +146,14 @@ struct WireState {
     last_folder: Option<String>,
     session_tabs: Vec<WireTab>,
     session_active_tab_path: Option<String>,
+    session_split_view: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_primary_pane_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_secondary_pane_path: Option<String>,
+    session_active_pane: String,
+    /// Native only: the divider position (Electron splits evenly).
+    session_split_ratio: f32,
     window_bounds: Option<WireBounds>,
 }
 
@@ -209,6 +218,24 @@ fn encode(prefs: &Prefs, session: &Session) -> WireState {
             .map(|path| path.to_string_lossy().into_owned()),
         session_tabs: paths,
         session_active_tab_path: active,
+        session_split_view: session.split.is_some(),
+        session_primary_pane_path: session
+            .split
+            .as_ref()
+            .map(|split| split.primary.to_string_lossy().into_owned()),
+        session_secondary_pane_path: session
+            .split
+            .as_ref()
+            .map(|split| split.secondary.to_string_lossy().into_owned()),
+        session_active_pane: match session.split.as_ref().map(|split| split.active_pane) {
+            Some(PaneId::Secondary) => "secondary",
+            _ => "primary",
+        }
+        .to_owned(),
+        session_split_ratio: session
+            .split
+            .as_ref()
+            .map_or(crate::split::DEFAULT_RATIO, |split| split.ratio),
         window_bounds: session.window.map(|bounds| WireBounds {
             x: bounds.x,
             y: bounds.y,
@@ -285,6 +312,22 @@ fn decode(value: &Value) -> Restored {
     let window = object
         .and_then(|map| map.get("windowBounds"))
         .and_then(parse_window_bounds);
+    let split = bool_field(object, "sessionSplitView")
+        .unwrap_or(false)
+        .then(|| {
+            Some(SessionSplit {
+                primary: PathBuf::from(string_field(object, "sessionPrimaryPanePath")?),
+                secondary: PathBuf::from(string_field(object, "sessionSecondaryPanePath")?),
+                active_pane: match string_field(object, "sessionActivePane") {
+                    Some("secondary") => PaneId::Secondary,
+                    _ => PaneId::Primary,
+                },
+                ratio: number_field(object, "sessionSplitRatio")
+                    .map(|ratio| ratio as f32)
+                    .unwrap_or(crate::split::DEFAULT_RATIO),
+            })
+        })
+        .flatten();
 
     Restored {
         prefs: Prefs {
@@ -303,6 +346,7 @@ fn decode(value: &Value) -> Restored {
             recents,
             window,
             anchors,
+            split,
         },
     }
 }
@@ -524,6 +568,28 @@ mod tests {
         let restored = decode(&serde_json::to_value(encode(&prefs, &session)).unwrap());
         assert_eq!(restored.prefs, prefs);
         assert_eq!(restored.session, session);
+    }
+
+    #[test]
+    fn split_view_round_trips_with_electrons_session_fields() {
+        let prefs = sample_prefs();
+        let session = sample_session().with_split(Some(SessionSplit {
+            primary: PathBuf::from("/notes/a.md"),
+            secondary: PathBuf::from("/notes/c.md"),
+            active_pane: PaneId::Secondary,
+            ratio: 0.375,
+        }));
+        let json = serde_json::to_value(encode(&prefs, &session)).unwrap();
+        assert_eq!(json["sessionSplitView"], true);
+        assert_eq!(json["sessionPrimaryPanePath"], "/notes/a.md");
+        assert_eq!(json["sessionSecondaryPanePath"], "/notes/c.md");
+        assert_eq!(json["sessionActivePane"], "secondary");
+        assert_eq!(decode(&json).session, session);
+
+        let unsplit = serde_json::to_value(encode(&prefs, &sample_session())).unwrap();
+        assert_eq!(unsplit["sessionSplitView"], false);
+        assert!(unsplit.get("sessionPrimaryPanePath").is_none());
+        assert_eq!(decode(&unsplit).session.split, None);
     }
 
     #[test]

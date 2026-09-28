@@ -7,11 +7,13 @@ use crate::prefs::{
 use crate::session::Recents;
 use crate::sparkle::UpdateUi;
 use crate::syntax::PreparedDocument;
-use crate::theme::{ColorScheme, Metrics, Theme};
+use crate::theme::{ColorScheme, Metrics, Theme, active_ui_scale};
 use crate::ui::field::{Field, FieldEvent};
 use crate::ui::primitives::{
     ListRowStyle, compact_icon_button, icon, key_hint, list_row, tabular_sans,
 };
+use crate::ui::reader::block_surfaces;
+use crate::ui::text_surface::{SurfaceId, find_ranges, searchable_text};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FocusHandle, Focusable,
     FontWeight, Hsla, IntoElement, Render, SharedString, Stateful, Subscription, Window, div,
@@ -130,7 +132,7 @@ impl OverlayHost {
     pub fn render_layer(&self, theme: Theme) -> Option<AnyElement> {
         let open = self.open.as_ref()?;
         Some(match &open.view {
-            OverlayView::Find(view) => find_layer(view.clone()),
+            OverlayView::Find(view) => find_layer(view.clone(), theme),
             OverlayView::Palette(view) => modal_layer(view.clone(), theme),
             OverlayView::Settings(view) => modal_layer(view.clone(), theme),
             OverlayView::Shortcuts(view) => modal_layer(view.clone(), theme),
@@ -138,15 +140,17 @@ impl OverlayHost {
     }
 }
 
-fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
+fn find_layer(view: Entity<FindOverlay>, theme: Theme) -> AnyElement {
     div()
         .absolute()
         // Just below the breadcrumb so the bar never covers its full-width toggle.
-        .top(px(Metrics::TAB_BAR_HEIGHT
-            + Metrics::BREADCRUMB_HEIGHT
+        .top(px(theme.ui.titlebar_height
+            + theme.ui.breadcrumb_height
             + 10.0))
         .right(px(16.0))
         .w(px(340.0))
+        // Clicks on the bar must not fall through to the reader's text selection.
+        .occlude()
         .child(view)
         .into_any_element()
 }
@@ -170,7 +174,7 @@ impl OverlayEdge {
 
 pub fn overlay_surface(width: f32, theme: Theme) -> Div {
     let surface = div()
-        .w(px(width))
+        .w(px(theme.ui.space(width)))
         .rounded(px(Metrics::RADIUS))
         .bg(theme.surface_raised);
     match OverlayEdge::for_theme(theme) {
@@ -208,16 +212,30 @@ fn modal_layer(child: impl IntoElement, theme: Theme) -> AnyElement {
         .into_any_element()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One match: a byte range of a text surface's painted text (see [`SurfaceId`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FindHit {
     pub block: usize,
+    pub surface: usize,
     pub range_start: usize,
     pub range_end: usize,
 }
 
+impl FindHit {
+    pub const fn surface_id(self) -> SurfaceId {
+        SurfaceId::new(self.block, self.surface)
+    }
+
+    pub const fn range(self) -> std::ops::Range<usize> {
+        self.range_start..self.range_end
+    }
+}
+
+/// Every match of the current query, in document order. Shared with the reader's paint state,
+/// which slices out one block's matches per frame instead of recomputing them.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FindMatches {
-    hits: Vec<FindHit>,
+    hits: Arc<[FindHit]>,
     cursor: Option<usize>,
 }
 
@@ -228,21 +246,22 @@ impl FindMatches {
         } else {
             Some(
                 prefer
-                    .and_then(|wanted| {
-                        hits.iter().position(|hit| {
-                            hit.block > wanted.block
-                                || (hit.block == wanted.block
-                                    && hit.range_start >= wanted.range_start)
-                        })
-                    })
+                    .and_then(|wanted| hits.iter().position(|hit| *hit >= wanted))
                     .unwrap_or(0),
             )
         };
-        Self { hits, cursor }
+        Self {
+            hits: hits.into(),
+            cursor,
+        }
     }
 
     pub fn hits(&self) -> &[FindHit] {
         &self.hits
+    }
+
+    pub fn shared_hits(&self) -> Arc<[FindHit]> {
+        self.hits.clone()
     }
 
     pub fn active(&self) -> Option<FindHit> {
@@ -254,27 +273,41 @@ impl FindMatches {
     }
 }
 
-pub fn find_in_blocks(blocks: &[DocumentBlock], query: &str) -> Vec<FindHit> {
+/// The searchable text of every surface of every block, in document order.
+pub type SearchIndex = Vec<Vec<String>>;
+
+pub fn search_index(blocks: &[DocumentBlock]) -> SearchIndex {
+    blocks
+        .iter()
+        .map(|block| {
+            block_surfaces(block)
+                .iter()
+                .map(searchable_text)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+pub fn find_in_index(index: &SearchIndex, query: &str) -> Vec<FindHit> {
     if query.is_empty() {
         return Vec::new();
     }
-    let needle = query.to_lowercase();
     let mut hits = Vec::new();
-    for (block, text) in blocks.iter().enumerate() {
-        let haystack = text.find_text().to_lowercase();
-        let mut start = 0;
-        while let Some(offset) = haystack[start..].find(&needle) {
-            let range_start = start + offset;
-            let range_end = range_start + needle.len();
-            hits.push(FindHit {
+    for (block, surfaces) in index.iter().enumerate() {
+        for (surface, text) in surfaces.iter().enumerate() {
+            hits.extend(find_ranges(text, query).into_iter().map(|range| FindHit {
                 block,
-                range_start,
-                range_end,
-            });
-            start = range_start + needle.len().max(1);
+                surface,
+                range_start: range.start,
+                range_end: range.end,
+            }));
         }
     }
     hits
+}
+
+pub fn find_in_blocks(blocks: &[DocumentBlock], query: &str) -> Vec<FindHit> {
+    find_in_index(&search_index(blocks), query)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -286,6 +319,8 @@ pub enum FindEvent {
 pub struct FindOverlay {
     query: Entity<Field>,
     document: Option<Arc<PreparedDocument>>,
+    /// Built on the first search of a document and reused for every keystroke after it.
+    index: Option<Arc<SearchIndex>>,
     matches: FindMatches,
     theme_mode: ThemeMode,
     _query_events: Subscription,
@@ -312,13 +347,29 @@ impl FindOverlay {
         Self {
             query,
             document,
+            index: None,
             matches: FindMatches::default(),
             theme_mode,
             _query_events: query_events,
         }
     }
 
+    /// The document find searches (the focused split pane's, when split).
+    pub fn document_path(&self) -> Option<&Path> {
+        self.document
+            .as_ref()
+            .map(|document| document.path.as_path())
+    }
+
     pub fn retarget(&mut self, document: Option<Arc<PreparedDocument>>, cx: &mut Context<Self>) {
+        let same = match (&self.document, &document) {
+            (Some(current), Some(next)) => Arc::ptr_eq(current, next),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            self.index = None;
+        }
         self.document = document;
         let query = self.query.read(cx).text().to_owned();
         let prefer = self.matches.active();
@@ -364,11 +415,17 @@ impl FindOverlay {
         cx.notify();
     }
 
-    fn search(&self, query: &str) -> Vec<FindHit> {
-        self.document
-            .as_ref()
-            .map(|document| find_in_blocks(&document.blocks, query))
-            .unwrap_or_default()
+    fn search(&mut self, query: &str) -> Vec<FindHit> {
+        let Some(document) = self.document.as_ref() else {
+            return Vec::new();
+        };
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let index = self
+            .index
+            .get_or_insert_with(|| Arc::new(search_index(&document.blocks)));
+        find_in_index(index, query)
     }
 }
 
@@ -384,7 +441,8 @@ fn find_count_label(query_is_empty: bool, position: Option<(usize, usize)>) -> S
 
 impl Render for FindOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::resolve(self.theme_mode, window.appearance());
+        let theme =
+            Theme::resolve(self.theme_mode, window.appearance()).scaled(active_ui_scale(cx));
         let count = find_count_label(
             self.query.read(cx).text().is_empty(),
             self.matches.position(),
@@ -497,6 +555,7 @@ pub enum CommandId {
     SidebarFolder,
     SidebarOutline,
     ToggleWideMode,
+    ToggleSplitView,
     LineWidth(LineWidth),
     ThemeSystem,
     ThemeLight,
@@ -568,6 +627,11 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             id: CommandId::ToggleWideMode,
             title: "Toggle Wide Mode",
             keys: Some("⇧⌘W"),
+        },
+        CommandSpec {
+            id: CommandId::ToggleSplitView,
+            title: "Toggle Split View",
+            keys: Some("⌘\\"),
         },
         CommandSpec {
             id: CommandId::LineWidth(LineWidth::Narrow),
@@ -832,7 +896,8 @@ impl PaletteOverlay {
 
 impl Render for PaletteOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::resolve(self.theme_mode, window.appearance());
+        let theme =
+            Theme::resolve(self.theme_mode, window.appearance()).scaled(active_ui_scale(cx));
         self.query.update(cx, |field, _| field.apply_theme(theme));
         let selected = self.selected;
         let commands = self
@@ -856,11 +921,11 @@ impl Render for PaletteOverlay {
         if self.items.is_empty() {
             list = list.child(
                 div()
-                    .px(px(10.0))
-                    .py(px(16.0))
+                    .px(px(theme.ui.space(10.0)))
+                    .py(px(theme.ui.space(16.0)))
                     .text_center()
                     .font_family(Metrics::FONT_SANS)
-                    .text_size(px(12.0))
+                    .text_size(px(theme.ui.text(12.0)))
                     .text_color(theme.muted_foreground)
                     .child("No matching files or commands"),
             );
@@ -886,28 +951,28 @@ impl Render for PaletteOverlay {
                 div()
                     .flex()
                     .items_center()
-                    .px(px(12.0))
-                    .h(px(44.0))
+                    .px(px(theme.ui.space(12.0)))
+                    .h(px(theme.ui.space(44.0)))
                     .border_b_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_well)
                     .font_family(Metrics::FONT_SANS)
-                    .text_size(px(13.0))
+                    .text_size(px(theme.ui.text(13.0)))
                     .child(self.query.clone()),
             )
             .child(list)
             .child(
                 div()
-                    .px(px(12.0))
-                    .py(px(8.0))
+                    .px(px(theme.ui.space(12.0)))
+                    .py(px(theme.ui.space(8.0)))
                     .border_t_1()
                     .border_color(theme.border_subtle)
                     .flex()
                     .items_center()
                     .justify_end()
-                    .gap(px(10.0))
+                    .gap(px(theme.ui.space(10.0)))
                     .font_family(Metrics::FONT_SANS)
-                    .text_size(px(10.0))
+                    .text_size(px(theme.ui.text(10.0)))
                     .text_color(theme.muted_foreground)
                     .child(key_hint("↵", theme))
                     .child("Open")
@@ -919,11 +984,11 @@ impl Render for PaletteOverlay {
 
 fn palette_heading(title: &'static str, theme: Theme) -> impl IntoElement {
     div()
-        .px(px(10.0))
-        .pt(px(8.0))
-        .pb(px(4.0))
+        .px(px(theme.ui.space(10.0)))
+        .pt(px(theme.ui.space(8.0)))
+        .pb(px(theme.ui.space(4.0)))
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(10.0))
+        .text_size(px(theme.ui.text(10.0)))
         .text_color(theme.muted_foreground)
         .child(title)
 }
@@ -952,7 +1017,7 @@ fn palette_row(
         },
         theme,
     )
-    .gap(px(8.0))
+    .gap(px(theme.ui.space(8.0)))
     .on_click(cx.listener(move |this, _, _, cx| {
         this.selected = index;
         this.invoke(cx);
@@ -966,7 +1031,7 @@ fn palette_row(
             div()
                 .flex_none()
                 .text_color(theme.muted_foreground)
-                .text_size(px(11.0))
+                .text_size(px(theme.ui.text(11.0)))
                 .child(hint),
         );
     }
@@ -1026,7 +1091,8 @@ const SETTINGS_WIDTH: f32 = 520.0;
 
 impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::resolve(self.prefs.theme_mode, window.appearance());
+        let theme = Theme::resolve(self.prefs.theme_mode, window.appearance())
+            .scaled(self.prefs.interface_scale);
         let prefs = self.prefs;
         let max_height = (f32::from(window.viewport_size().height) - 96.0).max(240.0);
 
@@ -1145,13 +1211,13 @@ impl Render for SettingsPanel {
             .track_focus(&self.focus_handle)
             .max_h(px(max_height))
             .overflow_y_scroll()
-            .pt(px(18.0))
-            .px(px(20.0))
-            .pb(px(16.0))
+            .pt(px(theme.ui.space(18.0)))
+            .px(px(theme.ui.space(20.0)))
+            .pb(px(theme.ui.space(16.0)))
             .flex()
             .flex_col()
             .font_family(Metrics::FONT_SANS)
-            .text_size(px(13.0))
+            .text_size(px(theme.ui.text(13.0)))
             .text_color(theme.foreground)
             .child(
                 div()
@@ -1180,9 +1246,9 @@ impl Render for SettingsPanel {
 
 fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
     div()
-        .mt(px(14.0))
-        .px(px(16.0))
-        .py(px(14.0))
+        .mt(px(theme.ui.space(14.0)))
+        .px(px(theme.ui.space(16.0)))
+        .py(px(theme.ui.space(14.0)))
         .rounded(px(8.0))
         .border_1()
         .border_color(theme.border_subtle)
@@ -1192,22 +1258,22 @@ fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
         .child(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(19.0))
+                .text_size(px(theme.ui.text(19.0)))
                 .line_height(px(19.0 * 1.3))
                 .child("A quiet place to read"),
         )
         .child(
             div()
-                .mt(px(4.0))
+                .mt(px(theme.ui.space(4.0)))
                 .text_size(px(READER_FONT_SIZE))
                 .line_height(px(READER_FONT_SIZE * READER_LINE_HEIGHT))
                 .child("Mdow re-renders the moment you save."),
         )
         .child(
             div()
-                .mt(px(6.0))
+                .mt(px(theme.ui.space(6.0)))
                 .font_family(prefs.code_font.family())
-                .text_size(px(13.0))
+                .text_size(px(theme.ui.text(13.0)))
                 .text_color(theme.muted_foreground)
                 .child("let width = 68;"),
         )
@@ -1216,7 +1282,7 @@ fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
 fn settings_heading(title: &'static str, theme: Theme) -> impl IntoElement {
     div()
         .font_weight(FontWeight::SEMIBOLD)
-        .text_size(px(15.0))
+        .text_size(px(theme.ui.text(15.0)))
         .text_color(theme.foreground)
         .child(title)
 }
@@ -1227,14 +1293,19 @@ fn settings_group(title: &'static str, theme: Theme) -> Div {
         .flex_col()
         .child(
             div()
-                .mt(px(14.0))
-                .mb(px(4.0))
+                .mt(px(theme.ui.space(14.0)))
+                .mb(px(theme.ui.space(4.0)))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(11.0))
+                .text_size(px(theme.ui.text(11.0)))
                 .text_color(theme.muted_foreground)
                 .child(title.to_uppercase()),
         )
-        .child(div().h(px(1.0)).mb(px(6.0)).bg(theme.border_subtle))
+        .child(
+            div()
+                .h(px(theme.ui.space(1.0)))
+                .mb(px(theme.ui.space(6.0)))
+                .bg(theme.border_subtle),
+        )
 }
 
 fn settings_row(
@@ -1246,7 +1317,7 @@ fn settings_row(
     div()
         .flex()
         .items_center()
-        .gap(px(16.0))
+        .gap(px(theme.ui.space(16.0)))
         .min_h(px(36.0))
         .child(
             div()
@@ -1258,8 +1329,8 @@ fn settings_row(
                 .when_some(hint, |label, hint| {
                     label.child(
                         div()
-                            .mt(px(1.0))
-                            .text_size(px(11.5))
+                            .mt(px(theme.ui.space(1.0)))
+                            .text_size(px(theme.ui.text(11.5)))
                             .text_color(theme.muted_foreground)
                             .child(hint),
                     )
@@ -1298,9 +1369,9 @@ fn segmented<const N: usize>(
 ) -> impl IntoElement {
     let mut track = div()
         .flex()
-        .h(px(30.0))
-        .p(px(2.0))
-        .gap(px(2.0))
+        .h(px(theme.ui.space(30.0)))
+        .p(px(theme.ui.space(2.0)))
+        .gap(px(theme.ui.space(2.0)))
         .rounded(px(7.0))
         .bg(theme.surface_well);
     for segment in segments {
@@ -1337,10 +1408,10 @@ fn segment_button(
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(6.0))
+        .gap(px(theme.ui.space(6.0)))
         .rounded(px(5.0))
         .border_1()
-        .text_size(px(12.5))
+        .text_size(px(theme.ui.text(12.5)))
         .text_color(text_color)
         .when_some(font, |segment, family| segment.font_family(family))
         .map(|segment| {
@@ -1378,8 +1449,8 @@ fn zoom_stepper(percent: u16, theme: Theme, cx: &mut Context<SettingsPanel>) -> 
         .items_center()
         // Hug the − 100% + controls instead of stretching across the control column.
         .w(px(2.0 + 26.0 + 52.0 + 26.0 + 2.0))
-        .h(px(30.0))
-        .p(px(2.0))
+        .h(px(theme.ui.space(30.0)))
+        .p(px(theme.ui.space(2.0)))
         .rounded(px(7.0))
         .bg(theme.surface_well)
         .child(compact_icon_button(
@@ -1395,7 +1466,7 @@ fn zoom_stepper(percent: u16, theme: Theme, cx: &mut Context<SettingsPanel>) -> 
                 .w(px(52.0))
                 .text_center()
                 .font_weight(FontWeight::MEDIUM)
-                .text_size(px(12.5))
+                .text_size(px(theme.ui.text(12.5)))
                 .child(format!("{percent}%")),
         )
         .child(compact_icon_button(
@@ -1467,13 +1538,13 @@ fn settings_updates(
             div()
                 .flex()
                 .items_center()
-                .gap(px(10.0))
+                .gap(px(theme.ui.space(10.0)))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_size(px(theme.ui.text(12.0)))
                         .text_color(theme.muted_foreground)
                         .child(update_status(update, auto_update)),
                 )
@@ -1514,7 +1585,7 @@ fn switch(
         .relative()
         .flex_none()
         .w(px(34.0))
-        .h(px(20.0))
+        .h(px(theme.ui.space(20.0)))
         .rounded_full()
         .border_1()
         .border_color(track)
@@ -1527,7 +1598,7 @@ fn switch(
                 .absolute()
                 .top(px(1.0))
                 .left(px(knob_x - 1.0))
-                .size(px(16.0))
+                .size(px(theme.ui.space(16.0)))
                 .rounded_full()
                 .bg(gpui::white())
                 .shadow_sm(),
@@ -1547,15 +1618,15 @@ fn settings_button(
         .tab_index(0)
         .focusable()
         .flex_none()
-        .px(px(10.0))
-        .h(px(28.0))
+        .px(px(theme.ui.space(10.0)))
+        .h(px(theme.ui.space(28.0)))
         .flex()
         .items_center()
         .rounded(px(6.0))
         .border_1()
         .border_color(theme.border)
         .bg(theme.card)
-        .text_size(px(12.0))
+        .text_size(px(theme.ui.text(12.0)))
         .cursor_pointer()
         .hover(move |style| style.bg(theme.muted))
         .active(|style| style.opacity(0.82))
@@ -1567,14 +1638,14 @@ fn settings_button(
 /// "Restore defaults" is a quiet footer action, not a peer of the font choices.
 fn settings_footer(theme: Theme, cx: &mut Context<SettingsPanel>) -> impl IntoElement {
     div()
-        .mt(px(14.0))
-        .pt(px(12.0))
+        .mt(px(theme.ui.space(14.0)))
+        .pt(px(theme.ui.space(12.0)))
         .border_t_1()
         .border_color(theme.border_subtle)
         .flex()
         .items_center()
         .justify_between()
-        .text_size(px(12.0))
+        .text_size(px(theme.ui.text(12.0)))
         .text_color(theme.muted_foreground)
         .child(
             div()
@@ -1584,9 +1655,9 @@ fn settings_footer(theme: Theme, cx: &mut Context<SettingsPanel>) -> impl IntoEl
                 .focusable()
                 .flex()
                 .items_center()
-                .gap(px(6.0))
-                .h(px(24.0))
-                .px(px(6.0))
+                .gap(px(theme.ui.space(6.0)))
+                .h(px(theme.ui.space(24.0)))
+                .px(px(theme.ui.space(6.0)))
                 .ml(px(-6.0))
                 .rounded(px(5.0))
                 .border_1()
@@ -1597,12 +1668,16 @@ fn settings_footer(theme: Theme, cx: &mut Context<SettingsPanel>) -> impl IntoEl
                 .on_click(
                     cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Edited(PrefEdit::ResetAll))),
                 )
-                .child(icon("icons/rotate-ccw.svg", theme.muted_foreground, 12.0))
+                .child(icon(
+                    "icons/rotate-ccw.svg",
+                    theme.muted_foreground,
+                    theme.ui.space(12.0),
+                ))
                 .child("Restore defaults"),
         )
         .child(
             div()
-                .text_size(px(11.5))
+                .text_size(px(theme.ui.text(11.5)))
                 .child("Changes save automatically"),
         )
 }
@@ -1629,8 +1704,8 @@ impl ShortcutsCard {
         }
     }
 
-    fn theme(&self, window: &Window) -> Theme {
-        Theme::resolve(self.theme_mode, window.appearance())
+    fn theme(&self, window: &Window, cx: &App) -> Theme {
+        Theme::resolve(self.theme_mode, window.appearance()).scaled(active_ui_scale(cx))
     }
 }
 
@@ -1641,18 +1716,18 @@ impl Focusable for ShortcutsCard {
 }
 
 impl Render for ShortcutsCard {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme(window);
-        let mut list = div().flex().flex_col().gap(px(6.0));
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme(window, cx);
+        let mut list = div().flex().flex_col().gap(px(theme.ui.space(6.0)));
         for spec in command_catalog() {
             if let Some(keys) = spec.keys {
                 list = list.child(
                     div()
                         .flex()
                         .justify_between()
-                        .h(px(24.0))
+                        .h(px(theme.ui.space(24.0)))
                         .font_family(Metrics::FONT_SANS)
-                        .text_size(px(12.0))
+                        .text_size(px(theme.ui.text(12.0)))
                         .text_color(theme.foreground)
                         .child(spec.title)
                         .child(div().text_color(theme.muted_foreground).child(keys)),
@@ -1661,9 +1736,9 @@ impl Render for ShortcutsCard {
         }
         overlay_surface(420.0, theme)
             .track_focus(&self.focus_handle)
-            .p(px(16.0))
+            .p(px(theme.ui.space(16.0)))
             .child(settings_heading("Keyboard shortcuts", theme))
-            .child(div().mt(px(10.0)).child(list))
+            .child(div().mt(px(theme.ui.space(10.0))).child(list))
     }
 }
 
@@ -1684,9 +1759,9 @@ mod tests {
         });
 
         window
-            .update(cx, |card, window, _| {
+            .update(cx, |card, window, cx| {
                 assert_eq!(window.appearance(), WindowAppearance::Light);
-                assert_eq!(card.theme(window).color_scheme, ColorScheme::Dark);
+                assert_eq!(card.theme(window, cx).color_scheme, ColorScheme::Dark);
             })
             .unwrap();
     }

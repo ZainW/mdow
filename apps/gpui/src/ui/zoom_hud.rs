@@ -155,7 +155,7 @@ pub fn render_zoom_hud(
         .bottom(px(16.0))
         .flex()
         .items_center()
-        .p(px(3.0))
+        .p(px(theme.ui.space(3.0)))
         .rounded(px(Metrics::RADIUS))
         .bg(theme.surface_raised)
         .map(|pill| match theme.color_scheme {
@@ -167,7 +167,7 @@ pub fn render_zoom_hud(
         })
         .occlude()
         .font_family(Metrics::FONT_SANS)
-        .text_size(px(12.0))
+        .text_size(px(theme.ui.text(12.0)))
         .text_color(theme.foreground)
         .on_hover(hover)
         .child(compact_icon_button(
@@ -196,8 +196,8 @@ pub fn render_zoom_hud(
         .child(
             div()
                 .w(px(1.0))
-                .h(px(16.0))
-                .mx(px(3.0))
+                .h(px(theme.ui.space(16.0)))
+                .mx(px(theme.ui.space(3.0)))
                 .bg(theme.border_subtle),
         )
         .child(
@@ -206,10 +206,10 @@ pub fn render_zoom_hud(
                 .debug_selector(|| "zoom-hud-reset".into())
                 .flex()
                 .items_center()
-                .h(px(26.0))
-                .px(px(8.0))
+                .h(px(theme.ui.space(26.0)))
+                .px(px(theme.ui.space(8.0)))
                 .rounded(px(5.0))
-                .text_size(px(11.5))
+                .text_size(px(theme.ui.text(11.5)))
                 .text_color(if at_default {
                     theme.muted_foreground.opacity(0.5)
                 } else {

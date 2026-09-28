@@ -575,3 +575,132 @@ fn diagrams_and_math_keep_their_place_across_a_reload(cx: &mut TestAppContext) {
         })
         .unwrap();
 }
+
+#[gpui::test]
+fn a_selection_follows_unchanged_blocks_through_a_reload(cx: &mut TestAppContext) {
+    use crate::ui::text_surface::{SurfaceId, TextPoint, TextSelection};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("selection.md");
+    let body = paragraphs(40, "Kept");
+    fs::write(&path, format!("# Selection\n\n{body}")).unwrap();
+    let window = blank_window(cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    window
+        .update(&mut visual, |app, _, cx| app.open_path(&path, cx))
+        .unwrap();
+    redraw(&mut visual);
+    let path = window
+        .read_with(&visual, |app, _| active_path(app))
+        .unwrap();
+    let pane = window
+        .read_with(&visual, |app, _| pane(app, &path))
+        .unwrap();
+    let selection = TextSelection {
+        anchor: TextPoint::new(SurfaceId::new(20, 0), 5),
+        head: TextPoint::new(SurfaceId::new(22, 0), 9),
+    };
+    let expected = visual.update(|_, cx| {
+        pane.update(cx, |pane, _| {
+            pane.set_selection(Some(selection));
+            pane.selected_text()
+        })
+    });
+    assert!(expected.is_some());
+
+    let reload = |visual: &mut VisualTestContext, source: String| {
+        fs::write(&path, source).unwrap();
+        window
+            .update(visual, |app, _, cx| {
+                app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx)
+            })
+            .unwrap();
+        redraw(visual);
+    };
+    // Two blocks inserted above: the selection moves with its text.
+    reload(
+        &mut visual,
+        format!("# Selection\n\nNew one.\n\nNew two.\n\n{body}"),
+    );
+    let (moved, text) = visual.update(|_, cx| {
+        let pane = pane.read(cx);
+        (pane.selection(), pane.selected_text())
+    });
+    assert_eq!(moved.unwrap().anchor.block, 22);
+    assert_eq!(moved.unwrap().head.block, 24);
+    assert_eq!(text, expected);
+
+    // Editing the block an end sits in clears the selection: its offset no longer names the
+    // same text.
+    let edited = body.replace("Kept paragraph 19 ", "Edited paragraph 19 ");
+    reload(
+        &mut visual,
+        format!("# Selection\n\nNew one.\n\nNew two.\n\n{edited}"),
+    );
+    assert_eq!(visual.update(|_, cx| pane.read(cx).selection()), None);
+}
+
+#[gpui::test]
+fn split_panes_keep_separate_reading_positions_and_load_off_thread(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let left = dir.path().join("left.md");
+    let right = dir.path().join("right.md");
+    fs::write(&left, format!("# Left\n\n{}", paragraphs(6_000, "Left"))).unwrap();
+    fs::write(
+        &right,
+        format!("# Right\n\n## Deep\n\n{}", paragraphs(300, "Right")),
+    )
+    .unwrap();
+    let window = blank_window(cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    window
+        .update(&mut visual, |app, _, cx| {
+            app.open_path(&right, cx);
+            app.open_path(&left, cx);
+            app.toggle_split_view(cx);
+        })
+        .unwrap();
+    visual.run_until_parked();
+    redraw(&mut visual);
+    let (left, right) = (left.canonicalize().unwrap(), right.canonicalize().unwrap());
+    let (left_list, right_list) = window
+        .update(&mut visual, |app, _, cx| {
+            assert!(app.split.is_enabled());
+            assert_eq!(app.model.tabs.get(&left).unwrap().load, TabLoad::Ready);
+            (
+                pane(app, &left).read(cx).list_state(),
+                pane(app, &right).read(cx).list_state(),
+            )
+        })
+        .unwrap();
+    left_list.scroll_to(ListOffset {
+        item_ix: 3_000,
+        offset_in_item: px(5.0),
+    });
+    redraw(&mut visual);
+
+    // The outline acts on the focused pane only.
+    window
+        .update(&mut visual, |app, _, cx| {
+            let pane_of_right = app.split.pane_of(&right).unwrap();
+            app.focus_pane(pane_of_right, cx);
+            assert_eq!(active_path(app), right);
+            app.jump_to_heading(1, cx);
+        })
+        .unwrap();
+    for _ in 0..4 {
+        redraw(&mut visual);
+    }
+    assert_eq!(left_list.logical_scroll_top().item_ix, 3_000);
+    assert_eq!(right_list.logical_scroll_top().item_ix, 1);
+
+    // Both panes' positions are in the session, alongside the split itself.
+    let session = window
+        .update(&mut visual, |app, _, _| app.session_snapshot())
+        .unwrap();
+    assert!(session.split.is_some());
+    assert_eq!(
+        session.anchors.get(&left).map(|anchor| anchor.block),
+        Some(3_000)
+    );
+    assert!(session.anchors.contains_key(&right));
+}

@@ -69,45 +69,45 @@ pub fn welcome(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> AnyEle
         .debug_selector(|| "welcome".into())
         .flex()
         .flex_col()
-        .w(px(COLUMN_WIDTH))
+        .w(px(theme.ui.space(COLUMN_WIDTH)))
         .max_w_full()
         .font_family(Metrics::FONT_SANS)
         .child(
             border_width(
                 div()
-                    .size(px(44.0))
+                    .size(px(theme.ui.space(44.0)))
                     .flex_none()
                     .rounded(px(11.0))
                     .overflow_hidden()
                     .border_color(theme.border),
                 0.5,
             )
-            .child(brand_logo(44.0)),
+            .child(brand_logo(theme.ui.space(44.0))),
         )
         .child(
             div()
-                .mt(px(16.0))
+                .mt(px(theme.ui.space(16.0)))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(22.0))
-                .line_height(px(28.0))
+                .text_size(px(theme.ui.text(22.0)))
+                .line_height(px(theme.ui.space(28.0)))
                 .text_color(theme.foreground)
                 .child("Mdow"),
         )
         .child(
             div()
-                .mt(px(4.0))
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .mt(px(theme.ui.space(4.0)))
+                .text_size(px(theme.ui.text(14.0)))
+                .line_height(px(theme.ui.space(21.0)))
                 .text_color(theme.muted_foreground)
                 .child("Open a Markdown file or folder to start reading."),
         )
         .child(
             div()
-                .mt(px(20.0))
+                .mt(px(theme.ui.space(20.0)))
                 .flex()
                 .flex_wrap()
                 .items_center()
-                .gap(px(8.0))
+                .gap(px(theme.ui.space(8.0)))
                 .child(action_button(
                     "welcome-open-file",
                     "Open File",
@@ -132,7 +132,7 @@ pub fn welcome(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> AnyEle
         let mut rows = div()
             .flex()
             .flex_col()
-            .pt(px(4.0))
+            .pt(px(theme.ui.space(4.0)))
             .border_t_1()
             .border_color(theme.border_subtle);
         for (index, path) in recents.iter().take(WELCOME_RECENTS).enumerate() {
@@ -148,13 +148,13 @@ pub fn welcome(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> AnyEle
         column = column
             .child(
                 div()
-                    .mt(px(28.0))
-                    .mb(px(6.0))
-                    .px(px(10.0))
+                    .mt(px(theme.ui.space(28.0)))
+                    .mb(px(theme.ui.space(6.0)))
+                    .px(px(theme.ui.space(10.0)))
                     .flex()
                     .items_center()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(px(11.0))
+                    .text_size(px(theme.ui.text(11.0)))
                     .text_color(theme.muted_foreground)
                     .child(div().flex_grow().child("Recent"))
                     .child("⌘K to search all"),
@@ -164,9 +164,9 @@ pub fn welcome(theme: Theme, recents: &Recents, cx: &Context<MdowApp>) -> AnyEle
 
     column = column.child(
         div()
-            .mt(px(18.0))
-            .px(px(10.0))
-            .text_size(px(12.0))
+            .mt(px(theme.ui.space(18.0)))
+            .px(px(theme.ui.space(10.0)))
+            .text_size(px(theme.ui.text(12.0)))
             .text_color(theme.muted_foreground)
             .child("Or drop files and folders anywhere in this window."),
     );
@@ -195,7 +195,7 @@ pub fn error_state(theme: Theme, error: &UserFacingError, cx: &Context<MdowApp>)
         .debug_selector(|| "error-state".into())
         .flex()
         .flex_col()
-        .w(px(COLUMN_WIDTH))
+        .w(px(theme.ui.space(COLUMN_WIDTH)))
         .max_w_full()
         .font_family(Metrics::FONT_SANS)
         .child(
@@ -203,53 +203,57 @@ pub fn error_state(theme: Theme, error: &UserFacingError, cx: &Context<MdowApp>)
                 .flex()
                 .items_center()
                 .justify_center()
-                .size(px(44.0))
+                .size(px(theme.ui.space(44.0)))
                 .rounded(px(11.0))
                 .border_1()
                 .border_color(theme.border_subtle)
                 .bg(theme.muted)
-                .child(icon("icons/alert-circle.svg", theme.destructive, 20.0)),
+                .child(icon(
+                    "icons/alert-circle.svg",
+                    theme.destructive,
+                    theme.ui.space(20.0),
+                )),
         )
         .child(
             div()
-                .mt(px(16.0))
+                .mt(px(theme.ui.space(16.0)))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(18.0))
-                .line_height(px(24.0))
+                .text_size(px(theme.ui.text(18.0)))
+                .line_height(px(theme.ui.space(24.0)))
                 .text_color(theme.foreground)
                 .child(error.title.clone()),
         )
         .child(
             div()
-                .mt(px(4.0))
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .mt(px(theme.ui.space(4.0)))
+                .text_size(px(theme.ui.text(14.0)))
+                .line_height(px(theme.ui.space(21.0)))
                 .text_color(theme.muted_foreground)
                 .child(error.body.clone()),
         )
         .when(!path.is_empty(), |column| {
             column.child(
                 div()
-                    .mt(px(12.0))
-                    .px(px(10.0))
-                    .py(px(7.0))
+                    .mt(px(theme.ui.space(12.0)))
+                    .px(px(theme.ui.space(10.0)))
+                    .py(px(theme.ui.space(7.0)))
                     .rounded(px(6.0))
                     .border_1()
                     .border_color(theme.border_subtle)
                     .bg(theme.surface_well)
                     .truncate()
                     .font_family(Metrics::FONT_MONO)
-                    .text_size(px(11.0))
+                    .text_size(px(theme.ui.text(11.0)))
                     .text_color(theme.muted_foreground)
                     .child(path),
             )
         })
         .child(
             div()
-                .mt(px(20.0))
+                .mt(px(theme.ui.space(20.0)))
                 .flex()
                 .flex_wrap()
-                .gap(px(8.0))
+                .gap(px(theme.ui.space(8.0)))
                 .child(action_button(
                     "error-open-file",
                     "Open File",
@@ -306,29 +310,29 @@ pub fn drop_overlay(theme: Theme, summary: DropSummary) -> AnyElement {
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(10.0))
+                .gap(px(theme.ui.space(10.0)))
                 .font_family(Metrics::FONT_SANS)
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .justify_center()
-                        .size(px(44.0))
+                        .size(px(theme.ui.space(44.0)))
                         .rounded(px(10.0))
                         .bg(tint.opacity(0.16))
-                        .child(icon("icons/file.svg", tint, 20.0)),
+                        .child(icon("icons/file.svg", tint, theme.ui.space(20.0))),
                 )
                 .child(
                     div()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(14.0))
+                        .text_size(px(theme.ui.text(14.0)))
                         .text_color(theme.foreground)
                         .child("Drop to open"),
                 )
                 .child(tabular_nums(
                     div()
                         .debug_selector(|| "drop-overlay-summary".into())
-                        .text_size(px(12.0))
+                        .text_size(px(theme.ui.text(12.0)))
                         .text_color(theme.muted_foreground)
                         .child(summary.label()),
                 )),
