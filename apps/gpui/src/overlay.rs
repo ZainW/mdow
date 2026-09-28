@@ -635,7 +635,7 @@ pub fn palette_items(
             scored.push((score, PaletteItem::File { path, recent }));
         }
     }
-    scored.sort_by(|left, right| right.0.cmp(&left.0));
+    scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
     scored.into_iter().map(|(_, item)| item).collect()
 }
 
