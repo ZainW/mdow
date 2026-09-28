@@ -298,6 +298,15 @@ pub(crate) struct ReaderPaintState {
     pub find_block: Option<usize>,
 }
 
+/// Space pages like a browser: Shift+Space goes back up.
+fn reader_scroll_key(key: &str, shift: bool) -> &str {
+    match (key, shift) {
+        ("space", false) => "pagedown",
+        ("space", true) => "pageup",
+        _ => key,
+    }
+}
+
 fn reader_key_modifiers_are_allowed(
     key: &str,
     control: bool,
@@ -1166,6 +1175,25 @@ impl MdowApp {
         }
     }
 
+    /// Reader scrolling must not steal keys from text fields, modal overlays, or a focused
+    /// control that Space activates.
+    fn reader_may_take_key(&self, key: &str, window: &Window, cx: &App) -> bool {
+        if window
+            .context_stack()
+            .iter()
+            .any(|context| context.contains("Field"))
+        {
+            return false;
+        }
+        match key {
+            "space" => window
+                .focused(cx)
+                .is_none_or(|focused| focused == self.focus_handle),
+            "up" | "down" => matches!(self.overlays.kind(), None | Some(OverlayKind::Find)),
+            _ => true,
+        }
+    }
+
     fn scroll_active_reader(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) else {
             return false;
@@ -1378,13 +1406,15 @@ impl Render for MdowApp {
             .track_focus(&self.focus_handle)
             .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                 let modifiers = event.keystroke.modifiers;
+                let key = event.keystroke.key.as_str();
                 if reader_key_modifiers_are_allowed(
-                    &event.keystroke.key,
+                    key,
                     modifiers.control,
                     modifiers.alt,
                     modifiers.platform,
                     modifiers.function,
-                ) && this.scroll_active_reader(&event.keystroke.key, cx)
+                ) && this.reader_may_take_key(key, window, cx)
+                    && this.scroll_active_reader(reader_scroll_key(key, modifiers.shift), cx)
                 {
                     cx.stop_propagation();
                     return;
@@ -1496,8 +1526,9 @@ mod tests {
     use crate::theme::{TrafficLightClearance, TrafficLights};
     use crate::ui::reader::reader_key_target;
     use gpui::{
-        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, ScrollDelta,
-        ScrollWheelEvent, TestAppContext, TitlebarOptions, VisualTestContext, WindowOptions, point,
+        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, Pixels,
+        ScrollDelta, ScrollWheelEvent, TestAppContext, TitlebarOptions, VisualTestContext,
+        WindowOptions, point,
     };
     use std::{
         fs,
@@ -1878,6 +1909,89 @@ mod tests {
             reader_key_target("pageup", -240.0, 600.0, 1600.0),
             Some(0.0)
         );
+        assert_eq!(
+            reader_key_target("down", -240.0, 600.0, 1600.0),
+            Some(-280.0)
+        );
+        assert_eq!(reader_key_target("up", -20.0, 600.0, 1600.0), Some(0.0));
+        assert_eq!(
+            reader_key_target("down", -1590.0, 600.0, 1600.0),
+            Some(-1600.0)
+        );
+        assert_eq!(reader_scroll_key("space", false), "pagedown");
+        assert_eq!(reader_scroll_key("space", true), "pageup");
+        assert_eq!(reader_scroll_key("down", true), "down");
+    }
+
+    fn long_reader_window(cx: &mut TestAppContext) -> gpui::WindowHandle<MdowApp> {
+        document_window(
+            cx,
+            &(0..80)
+                .map(|index| format!("Paragraph {index} keeps the native reader overflowing."))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        )
+    }
+
+    fn active_reader_offset(
+        window: gpui::WindowHandle<MdowApp>,
+        visual: &mut VisualTestContext,
+    ) -> Pixels {
+        window
+            .update(visual, |app, _, cx| {
+                app.reader_list_state(app.model.tabs.active().unwrap().path(), cx)
+                    .unwrap()
+                    .scroll_px_offset_for_scrollbar()
+                    .y
+            })
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn arrow_and_space_keys_scroll_the_reader(cx: &mut TestAppContext) {
+        let window = long_reader_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        visual.simulate_keystrokes("down");
+        assert_eq!(active_reader_offset(window, &mut visual), px(-40.0));
+        visual.simulate_keystrokes("up");
+        assert_eq!(active_reader_offset(window, &mut visual), px(0.0));
+        visual.simulate_keystrokes("space");
+        let paged = active_reader_offset(window, &mut visual);
+        assert!(paged < px(-40.0), "space should page down, got {paged:?}");
+        visual.simulate_keystrokes("shift-space");
+        assert_eq!(active_reader_offset(window, &mut visual), px(0.0));
+    }
+
+    #[gpui::test]
+    fn reader_keys_leave_text_fields_and_focused_controls_alone(cx: &mut TestAppContext) {
+        let window = long_reader_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        visual.dispatch_action(ToggleFind);
+        visual.update(|window, cx| window.draw(cx).clear());
+        visual.simulate_keystrokes("space down");
+        assert_eq!(active_reader_offset(window, &mut visual), px(0.0));
+        window
+            .update(&mut visual, |app, _, cx| {
+                let find = app.overlays.find().unwrap().read(cx);
+                assert_eq!(find.query_text(cx), " ");
+            })
+            .unwrap();
+
+        visual.dispatch_action(Dismiss);
+        // Focus the titlebar sidebar toggle: Space must activate it rather than page the reader.
+        focus_next(&mut visual, 1);
+        visual.simulate_keystrokes("space");
+        activate_focused(&mut visual, "space");
+        assert_eq!(active_reader_offset(window, &mut visual), px(0.0));
+        window
+            .update(&mut visual, |app, _, _| assert!(!app.sidebar_open))
+            .unwrap();
     }
 
     #[test]

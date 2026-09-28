@@ -341,6 +341,11 @@ impl FindOverlay {
         &self.matches
     }
 
+    #[cfg(test)]
+    pub(crate) fn query_text(&self, cx: &App) -> String {
+        self.query.read(cx).text().to_owned()
+    }
+
     fn recompute(&mut self, query: &str, cx: &mut Context<Self>) {
         let prefer = self.matches.active();
         self.matches = FindMatches::from_hits(self.search(query), prefer);

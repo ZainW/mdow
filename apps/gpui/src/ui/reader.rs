@@ -1047,11 +1047,15 @@ impl ReaderPane {
     }
 }
 
+const READER_LINE_STEP: f32 = 40.0;
+
 pub(crate) fn reader_key_target(key: &str, current: f32, viewport: f32, max: f32) -> Option<f32> {
     let page = viewport * 0.9;
     match key {
         "home" => Some(0.0),
         "end" => Some(-max),
+        "up" => Some((current + READER_LINE_STEP).min(0.0)),
+        "down" => Some((current - READER_LINE_STEP).max(-max)),
         "pageup" => Some((current + page).min(0.0)),
         "pagedown" => Some((current - page).max(-max)),
         _ => None,
