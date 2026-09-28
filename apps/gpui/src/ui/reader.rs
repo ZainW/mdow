@@ -946,6 +946,7 @@ pub(crate) struct ReaderPane {
     style: ReaderStyle,
     theme: Theme,
     list_state: ListState,
+    heading_blocks: Vec<usize>,
     scrollbar_drag_grab_y: Option<f32>,
 }
 
@@ -963,12 +964,22 @@ impl ReaderPane {
         );
         Self {
             app,
+            heading_blocks: document.heading_blocks(),
             document,
             style,
             theme,
             list_state,
             scrollbar_drag_grab_y: None,
         }
+    }
+
+    /// The outline heading at or above the top of the viewport: the first heading in the top
+    /// block when it has any, otherwise the last heading before it.
+    pub(crate) fn active_heading(&self) -> Option<usize> {
+        active_heading_for(
+            &self.heading_blocks,
+            self.list_state.logical_scroll_top().item_ix,
+        )
     }
 
     #[cfg(test)]
@@ -991,6 +1002,7 @@ impl ReaderPane {
         if !Arc::ptr_eq(&self.document, &document) {
             let offset = self.list_state.logical_scroll_top();
             self.document = document;
+            self.heading_blocks = self.document.heading_blocks();
             self.list_state.reset(self.document.blocks.len());
             if offset.item_ix < self.document.blocks.len() {
                 self.list_state.scroll_to(offset);
@@ -1045,6 +1057,12 @@ impl ReaderPane {
         self.scrollbar_drag_grab_y = None;
         self.list_state.scrollbar_drag_ended();
     }
+}
+
+fn active_heading_for(heading_blocks: &[usize], top_block: usize) -> Option<usize> {
+    let seen = heading_blocks.partition_point(|&block| block <= top_block);
+    let block = *heading_blocks.get(seen.checked_sub(1)?)?;
+    Some(heading_blocks.partition_point(|&earlier| earlier < block))
 }
 
 const READER_LINE_STEP: f32 = 40.0;
@@ -2661,6 +2679,19 @@ mod tests {
         assert_eq!(layout.links[0].range, 0..3);
         assert_eq!(layout.links[1].range, 3..6);
         assert_ne!(layout.links[0].node_id, layout.links[1].node_id);
+    }
+
+    #[test]
+    fn active_heading_is_the_first_heading_at_or_above_the_top_block() {
+        let heading_blocks = [2, 5, 5, 9];
+
+        assert_eq!(active_heading_for(&heading_blocks, 0), None);
+        assert_eq!(active_heading_for(&heading_blocks, 2), Some(0));
+        assert_eq!(active_heading_for(&heading_blocks, 4), Some(0));
+        assert_eq!(active_heading_for(&heading_blocks, 5), Some(1));
+        assert_eq!(active_heading_for(&heading_blocks, 8), Some(1));
+        assert_eq!(active_heading_for(&heading_blocks, 40), Some(3));
+        assert_eq!(active_heading_for(&[], 3), None);
     }
 
     #[test]

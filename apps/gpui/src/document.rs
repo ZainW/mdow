@@ -123,6 +123,15 @@ impl ParsedDocument {
         None
     }
 
+    /// The reader block holding each outline heading, in outline order (non-decreasing).
+    pub fn heading_blocks(&self) -> Vec<usize> {
+        self.blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(index, block)| std::iter::repeat_n(index, heading_count(block)))
+            .collect()
+    }
+
     pub fn anchor_block(&self, fragment: &str) -> Option<usize> {
         let fragment = percent_decode_url_path(fragment)?;
         if fragment.is_empty() {

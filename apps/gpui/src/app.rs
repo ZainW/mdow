@@ -1007,6 +1007,12 @@ impl MdowApp {
         }
     }
 
+    /// Outline row to highlight for the reader's current scroll position.
+    pub(crate) fn active_outline_heading(&self, cx: &App) -> Option<usize> {
+        let path = self.model.tabs.active()?.path();
+        self.reader_panes.get(path)?.read(cx).active_heading()
+    }
+
     #[cfg(test)]
     pub(crate) fn reader_list_state(&self, path: &Path, cx: &App) -> Option<gpui::ListState> {
         self.reader_panes
@@ -1348,6 +1354,7 @@ impl Render for MdowApp {
             self.model.workspace.as_ref(),
             self.model.workspace_error.as_ref(),
             headings,
+            self.active_outline_heading(cx),
             active_path.as_deref(),
             layout.sidebar.width,
             cx,
@@ -3475,6 +3482,56 @@ mod tests {
                 assert_eq!(pane.list_state().logical_scroll_top().item_ix, expected);
             })
             .unwrap();
+    }
+
+    #[gpui::test]
+    fn outline_highlights_the_heading_at_the_reader_scroll_position(cx: &mut TestAppContext) {
+        let filler = "A paragraph with enough content to scroll.\n\n".repeat(40);
+        let source = format!("# Intro\n\n{filler}## Middle\n\n{filler}## End\n\n{filler}");
+        let window = document_window(cx, &source);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        click_debug(&mut visual, "Outline");
+        visual.update(|window, cx| window.draw(cx).clear());
+        let active = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, cx| app.active_outline_heading(cx))
+                .unwrap()
+        };
+        assert_eq!(active(&mut visual), Some(0));
+
+        let bounds = visual
+            .debug_bounds("reader-scroll")
+            .expect("reader viewport");
+        let middle_block = window
+            .update(&mut visual, |app, _, _| {
+                app.model.tabs.active().unwrap().document.heading_block(1)
+            })
+            .unwrap()
+            .unwrap();
+        for _ in 0..200 {
+            visual.simulate_event(ScrollWheelEvent {
+                position: bounds.center(),
+                delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),
+                ..Default::default()
+            });
+            visual.update(|window, cx| window.draw(cx).clear());
+            let top = window
+                .update(&mut visual, |app, _, cx| {
+                    app.reader_list_state(app.model.tabs.active().unwrap().path(), cx)
+                        .unwrap()
+                        .logical_scroll_top()
+                        .item_ix
+                })
+                .unwrap();
+            if top >= middle_block {
+                break;
+            }
+        }
+        assert_eq!(active(&mut visual), Some(1));
+
+        click_debug(&mut visual, "outline-row-2");
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert_eq!(active(&mut visual), Some(2));
     }
 
     #[gpui::test]

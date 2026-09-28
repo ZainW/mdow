@@ -85,6 +85,7 @@ pub fn render_sidebar(
     workspace: Option<&WorkspaceTree>,
     workspace_error: Option<&UserFacingError>,
     headings: Option<&[Heading]>,
+    active_heading: Option<usize>,
     active_path: Option<&Path>,
     width: f32,
     cx: &Context<MdowApp>,
@@ -391,9 +392,13 @@ pub fn render_sidebar(
         .child(match mode {
             SidebarMode::Folder => tree.into_any_element(),
             SidebarMode::Recents => render_recents_list(theme, recents, active_path, cx),
-            SidebarMode::Outline => {
-                render_outline_list(theme, headings.unwrap_or(&[]), active_path.is_some(), cx)
-            }
+            SidebarMode::Outline => render_outline_list(
+                theme,
+                headings.unwrap_or(&[]),
+                active_heading,
+                active_path.is_some(),
+                cx,
+            ),
         })
         .child(
             div()
@@ -625,6 +630,7 @@ fn render_recents_list(
 fn render_outline_list(
     theme: Theme,
     headings: &[Heading],
+    active_heading: Option<usize>,
     has_document: bool,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
@@ -669,7 +675,7 @@ fn render_outline_list(
                 list_row(
                     ("outline-row", index),
                     ListRowStyle {
-                        selected: false,
+                        selected: active_heading == Some(index),
                         indent: heading.level.saturating_sub(base_level) as f32 * 12.0,
                     },
                     theme,
