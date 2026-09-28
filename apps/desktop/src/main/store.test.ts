@@ -125,9 +125,8 @@ describe('store', () => {
         codeFont: 'geist-mono',
         theme: 'system',
         autoUpdateEnabled: true,
-        wideMode: false,
         interfaceScale: 'compact',
-        readingWidth: 'standard',
+        readingWidth: 'medium',
         sidebarMode: 'recents',
         companionPreferredProvider: null,
         companionCustomCommand: '',
@@ -136,23 +135,50 @@ describe('store', () => {
     })
 
     it('saves partial state', () => {
-      saveAppState({ wideMode: true })
-      expect(getAppState().wideMode).toBe(true)
+      saveAppState({ readingWidth: 'narrow' })
+      expect(getAppState().readingWidth).toBe('narrow')
       expect(getAppState().lastFolder).toBeNull()
     })
 
     it('saves multiple fields at once', () => {
-      saveAppState({ wideMode: true, lastFolder: '/docs' })
+      saveAppState({ readingWidth: 'full', lastFolder: '/docs' })
       const state = getAppState()
-      expect(state.wideMode).toBe(true)
+      expect(state.readingWidth).toBe('full')
       expect(state.lastFolder).toBe('/docs')
     })
 
     it('saves display preference fields', () => {
-      saveAppState({ interfaceScale: 'large', readingWidth: 'comfortable' })
+      saveAppState({ interfaceScale: 'large', readingWidth: 'wide' })
       const state = getAppState()
       expect(state.interfaceScale).toBe('large')
-      expect(state.readingWidth).toBe('comfortable')
+      expect(state.readingWidth).toBe('wide')
+    })
+  })
+
+  describe('line width migration', () => {
+    it.each([
+      ['standard', 'medium'],
+      ['comfortable', 'wide'],
+      ['wide', 'wide'],
+      ['bogus', 'medium'],
+    ])('migrates a stored %s width to %s and persists it', (stored, expected) => {
+      storeData.set('readingWidth', stored)
+      expect(getAppState().readingWidth).toBe(expected)
+      expect(storeData.get('readingWidth')).toBe(expected)
+    })
+
+    it('folds the legacy wide-mode toggle into Full and clears it', () => {
+      storeData.set('readingWidth', 'standard')
+      storeData.set('wideMode', true)
+      expect(getAppState().readingWidth).toBe('full')
+      expect(storeData.get('readingWidth')).toBe('full')
+      expect(storeData.get('wideMode')).toBe(false)
+      // Stays Full on the next read now that the flag is cleared.
+      expect(getAppState().readingWidth).toBe('full')
+    })
+
+    it('no longer exposes the legacy wideMode flag', () => {
+      expect(getAppState()).not.toHaveProperty('wideMode')
     })
   })
 

@@ -9,8 +9,6 @@ export interface UiSlice {
   sidebarMode: SidebarMode
   toggleSidebar: () => void
   setSidebarMode: (mode: SidebarMode) => void
-  wideMode: boolean
-  toggleWideMode: () => void
   commandPaletteOpen: boolean
   setCommandPaletteOpen: (open: boolean) => void
   searchOpen: boolean
@@ -36,16 +34,6 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
     }
     set({ sidebarMode: mode })
   },
-
-  wideMode: false,
-  toggleWideMode: () =>
-    set((state) => {
-      const wideMode = !state.wideMode
-      if (typeof window !== 'undefined' && window.api) {
-        void window.api.saveAppState({ wideMode })
-      }
-      return { wideMode }
-    }),
 
   docHeadings: [],
   activeHeadingId: null,

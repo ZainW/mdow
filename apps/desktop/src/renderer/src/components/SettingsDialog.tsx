@@ -1,22 +1,19 @@
-import { useId } from 'react'
-import { Sun, Moon, Monitor } from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
+import { Sun, Moon, Monitor, Minus, Plus, RotateCcw } from 'lucide-react'
 import { useAppStore } from '../store/app-store'
+import { ZOOM_MAX, ZOOM_MIN } from '../store/slices/settings-slice'
 import {
   CODE_FONTS,
   CONTENT_FONTS,
-  MARKDOWN_FONT_SIZE,
   MARKDOWN_LINE_HEIGHT,
   getCodeFontFamily,
   getContentFontFamily,
 } from '../lib/typography'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog'
 import { Button } from './ui/button'
-import { Label } from './ui/label'
 import { Switch } from './ui/switch'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-import { cn } from '@renderer/lib/utils'
-import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
-import { iconActiveProps } from '../lib/icons'
+import { SegmentedControl, type SegmentedOption } from './SegmentedControl'
+import { cn, isMac } from '../lib/utils'
 import type { InterfaceScale, ReadingWidth, CompanionProviderId } from '../../../shared/types'
 
 const DEFAULTS = {
@@ -24,7 +21,7 @@ const DEFAULTS = {
   contentFont: 'inter',
   codeFont: 'geist-mono',
   interfaceScale: 'compact' as const,
-  readingWidth: 'standard' as const,
+  readingWidth: 'medium' as const,
   autoUpdateEnabled: true,
 }
 
@@ -32,25 +29,40 @@ const PROVIDER_OPTIONS = [
   { value: 'opencode', label: 'OpenCode' },
   { value: 'codex-acp', label: 'Codex ACP' },
   { value: 'custom', label: 'Custom' },
-] as const satisfies readonly { value: CompanionProviderId; label: string }[]
+] as const satisfies readonly SegmentedOption<CompanionProviderId>[]
 
 const THEME_OPTIONS = [
   { value: 'system', label: 'System', Icon: Monitor },
   { value: 'light', label: 'Light', Icon: Sun },
   { value: 'dark', label: 'Dark', Icon: Moon },
-] as const
+] as const satisfies readonly SegmentedOption<'system' | 'light' | 'dark'>[]
 
 const INTERFACE_SCALE_OPTIONS = [
   { value: 'compact', label: 'Compact' },
   { value: 'comfortable', label: 'Comfortable' },
   { value: 'large', label: 'Large' },
-] as const satisfies readonly { value: InterfaceScale; label: string }[]
+] as const satisfies readonly SegmentedOption<InterfaceScale>[]
 
-const READING_WIDTH_OPTIONS = [
-  { value: 'standard', label: 'Standard' },
-  { value: 'comfortable', label: 'Comfortable' },
+const LINE_WIDTH_OPTIONS = [
+  { value: 'narrow', label: 'Narrow' },
+  { value: 'medium', label: 'Medium' },
   { value: 'wide', label: 'Wide' },
-] as const satisfies readonly { value: ReadingWidth; label: string }[]
+  { value: 'full', label: 'Full' },
+] as const satisfies readonly SegmentedOption<ReadingWidth>[]
+
+// Each font option previews in its own typeface.
+const TEXT_FONT_OPTIONS: SegmentedOption<string>[] = CONTENT_FONTS.map((font) => ({
+  value: font.value,
+  label: font.label,
+  style: { fontFamily: font.family, fontWeight: 400 },
+}))
+const CODE_FONT_OPTIONS: SegmentedOption<string>[] = CODE_FONTS.map((font) => ({
+  value: font.value,
+  label: font.label,
+  style: { fontFamily: font.family },
+}))
+
+const mod = isMac ? '⌘' : 'Ctrl+'
 
 interface SettingsDialogProps {
   open: boolean
@@ -63,20 +75,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const theme = useAppStore((s) => s.theme)
   const interfaceScale = useAppStore((s) => s.interfaceScale)
   const readingWidth = useAppStore((s) => s.readingWidth)
+  const zoomLevel = useAppStore((s) => s.zoomLevel)
   const setContentFont = useAppStore((s) => s.setContentFont)
   const setCodeFont = useAppStore((s) => s.setCodeFont)
   const setTheme = useAppStore((s) => s.setTheme)
   const setInterfaceScale = useAppStore((s) => s.setInterfaceScale)
   const setReadingWidth = useAppStore((s) => s.setReadingWidth)
+  const zoomIn = useAppStore((s) => s.zoomIn)
+  const zoomOut = useAppStore((s) => s.zoomOut)
+  const resetZoom = useAppStore((s) => s.resetZoom)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
   const companionPreferredProvider = useAppStore((s) => s.companionPreferredProvider)
   const setCompanionPreferredProvider = useAppStore((s) => s.setCompanionPreferredProvider)
   const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
   const setCompanionCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
-
-  const contentFamily = getContentFontFamily(contentFont)
-  const codeFamily = getCodeFontFamily(codeFont)
 
   const chooseCompanionExecutable = async () => {
     const executablePath = await window.api.chooseCompanionCustomExecutable()
@@ -93,322 +106,380 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setCodeFont(DEFAULTS.codeFont)
     setInterfaceScale(DEFAULTS.interfaceScale)
     setReadingWidth(DEFAULTS.readingWidth)
+    resetZoom()
     setAutoUpdateEnabled(DEFAULTS.autoUpdateEnabled)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-3rem)] gap-5 overflow-y-auto overscroll-contain sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Tune how markdown reads.</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="settings-dialog max-h-[calc(100dvh-3rem)] gap-0 overflow-y-auto overscroll-contain px-5 pt-[18px] pb-4 text-[13px] sm:max-w-[520px]">
+        <DialogTitle className="text-[15px] font-semibold">Settings</DialogTitle>
+        <DialogDescription className="sr-only">
+          Appearance, reading and update preferences. Changes save automatically.
+        </DialogDescription>
 
-        {/* Decorative preview — not in tab/select flow */}
-        <div
-          className="overflow-hidden rounded-lg border border-border-subtle bg-muted/40 px-4 py-3.5 select-none [&_*]:pointer-events-none"
-          style={{ fontFamily: contentFamily }}
-          aria-hidden="true"
-        >
-          <div
-            className="font-semibold tracking-tight text-foreground"
-            style={{ fontSize: `${MARKDOWN_FONT_SIZE * 1.25}px`, lineHeight: 1.25 }}
-          >
-            The quiet morning
-          </div>
-          <p
-            className="mt-1.5 text-foreground/85"
-            style={{ fontSize: `${MARKDOWN_FONT_SIZE}px`, lineHeight: MARKDOWN_LINE_HEIGHT }}
-          >
-            Words on the page settle into their rhythm, and{' '}
-            <code
-              className="rounded bg-muted px-1 py-px text-foreground"
-              style={{
-                fontFamily: codeFamily,
-                fontSize: `${MARKDOWN_FONT_SIZE * 0.9}px`,
-              }}
-            >
-              ligatures
-            </code>{' '}
-            too.
-          </p>
-        </div>
+        <ReadingPreview contentFont={contentFont} codeFont={codeFont} zoomLevel={zoomLevel} />
 
-        <Field label="Theme">
-          <ThemeRadiogroup theme={theme} onChange={setTheme} />
-        </Field>
-
-        <Field label="Interface scale">
-          <PresetToggleGroup
-            groupLabel="Interface scale"
-            value={interfaceScale}
-            options={INTERFACE_SCALE_OPTIONS}
-            onChange={setInterfaceScale}
-          />
-        </Field>
-
-        <Field label="Reading width">
-          <PresetToggleGroup
-            groupLabel="Reading width"
-            value={readingWidth}
-            options={READING_WIDTH_OPTIONS}
-            onChange={setReadingWidth}
-          />
-        </Field>
-
-        <Field label="Content font">
-          <FontGrid groupLabel="Content font" cols={4}>
-            {CONTENT_FONTS.map((font) => (
-              <FontTile
-                key={font.value}
-                active={contentFont === font.value}
-                label={font.label}
-                family={font.family}
-                glyph="Aa"
-                onClick={() => setContentFont(font.value)}
-              />
-            ))}
-          </FontGrid>
-        </Field>
-
-        <Field label="Code font">
-          <FontGrid groupLabel="Code font" cols={4}>
-            {CODE_FONTS.map((font) => (
-              <FontTile
-                key={font.value}
-                active={codeFont === font.value}
-                label={font.label}
-                family={font.family}
-                glyph="() => {}"
-                glyphSize={13}
-                onClick={() => setCodeFont(font.value)}
-              />
-            ))}
-          </FontGrid>
-        </Field>
-
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium">Companion</h3>
-          <p className="text-xs text-muted-foreground">
-            Local ACP agents only. OpenCode Go is configured inside OpenCode, not here.
-          </p>
-          <PresetToggleGroup
-            groupLabel="Companion provider"
-            value={companionPreferredProvider ?? 'opencode'}
-            options={PROVIDER_OPTIONS}
-            onChange={(value) => setCompanionPreferredProvider(value)}
-          />
-          {companionPreferredProvider === 'custom' && (
-            <div className="space-y-1.5 text-xs">
-              <p className="text-muted-foreground">Custom ACP executable</p>
-              {companionCustomCommand && (
-                <p className="break-all rounded-md border border-border-subtle bg-muted/40 p-2 font-mono">
-                  {companionCustomCommand}
-                </p>
-              )}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => void chooseCompanionExecutable()}
-              >
-                Choose executable…
-              </Button>
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium">Updates</h3>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">
-              Automatically check for updates in the background
-            </span>
-            <Switch
-              checked={autoUpdateEnabled}
-              onCheckedChange={setAutoUpdateEnabled}
-              aria-label="Automatically check for updates in the background"
+        <SettingsGroup title="Appearance">
+          <SettingsRow label="Theme">
+            <SegmentedControl
+              label="Theme"
+              value={theme === 'light' || theme === 'dark' ? theme : 'system'}
+              options={THEME_OPTIONS}
+              onChange={setTheme}
+              className={SEGMENTED_CLASS}
             />
-          </div>
-        </section>
+          </SettingsRow>
+          <SettingsRow label="Interface size">
+            <SegmentedControl
+              label="Interface size"
+              value={interfaceScale}
+              options={INTERFACE_SCALE_OPTIONS}
+              onChange={setInterfaceScale}
+              className={SEGMENTED_CLASS}
+            />
+          </SettingsRow>
+        </SettingsGroup>
 
-        <div className="flex justify-end border-t border-border-subtle pt-3">
-          <Button variant="outline" size="sm" onClick={handleResetDefaults}>
-            Reset to defaults
+        <SettingsGroup title="Reading">
+          <SettingsRow label="Text font">
+            <SegmentedControl
+              label="Text font"
+              value={contentFont}
+              options={TEXT_FONT_OPTIONS}
+              onChange={setContentFont}
+              className={SEGMENTED_CLASS}
+            />
+          </SettingsRow>
+          <SettingsRow label="Code font">
+            <SegmentedControl
+              label="Code font"
+              value={codeFont}
+              options={CODE_FONT_OPTIONS}
+              onChange={setCodeFont}
+              className={SEGMENTED_CLASS}
+            />
+          </SettingsRow>
+          <SettingsRow label="Line width">
+            <SegmentedControl
+              label="Line width"
+              value={readingWidth}
+              options={LINE_WIDTH_OPTIONS}
+              onChange={setReadingWidth}
+              className={SEGMENTED_CLASS}
+            />
+          </SettingsRow>
+          <SettingsRow label="Text size" hint={`${mod}+ / ${mod}−`}>
+            <TextSizeStepper
+              value={zoomLevel}
+              onDecrease={zoomOut}
+              onIncrease={zoomIn}
+              onReset={resetZoom}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+
+        <SettingsGroup title="Companion">
+          <SettingsRow label="Provider" hint="Local ACP agents only">
+            <SegmentedControl
+              label="Companion provider"
+              value={companionPreferredProvider ?? 'opencode'}
+              options={PROVIDER_OPTIONS}
+              onChange={setCompanionPreferredProvider}
+              className={SEGMENTED_CLASS}
+            />
+          </SettingsRow>
+          {companionPreferredProvider === 'custom' && (
+            <SettingsRow label="Executable">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
+                  title={companionCustomCommand || undefined}
+                >
+                  {companionCustomCommand || 'None chosen'}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void chooseCompanionExecutable()}
+                >
+                  Choose…
+                </Button>
+              </div>
+            </SettingsRow>
+          )}
+          <p className="pb-1 pl-[136px] text-[11.5px] text-muted-foreground">
+            OpenCode Go is configured inside OpenCode, not here.
+          </p>
+        </SettingsGroup>
+
+        <SettingsGroup title="Updates">
+          <UpdatesRow />
+          <SettingsRow label="Automatic">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                Check for updates in the background
+              </span>
+              <Switch
+                checked={autoUpdateEnabled}
+                onCheckedChange={setAutoUpdateEnabled}
+                aria-label="Automatically check for updates in the background"
+              />
+            </div>
+          </SettingsRow>
+        </SettingsGroup>
+
+        <div className="mt-3.5 flex items-center border-t border-border-subtle pt-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-1.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+            onClick={handleResetDefaults}
+          >
+            <RotateCcw className="size-3" aria-hidden />
+            Restore defaults
           </Button>
+          <span className="ml-auto text-[11.5px] text-muted-foreground">
+            Changes save automatically
+          </span>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
 
-function PresetToggleGroup<TValue extends string>({
-  groupLabel,
-  value,
-  options,
-  onChange,
-}: {
-  groupLabel: string
-  value: TValue
-  options: readonly { value: TValue; label: string }[]
-  onChange: (value: TValue) => void
-}) {
-  return (
-    <ToggleGroup
-      aria-label={groupLabel}
-      value={[value]}
-      onValueChange={(nextValue) => {
-        const next = options.find((opt) => opt.value === nextValue[0])?.value
-        if (next) onChange(next)
-      }}
-      variant="outline"
-      spacing={0}
-      className="grid w-full grid-cols-3 rounded-md bg-muted p-0.5"
-    >
-      {options.map((opt) => (
-        <ToggleGroupItem
-          key={opt.value}
-          value={opt.value}
-          aria-label={opt.label}
-          className="flex-1 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:bg-input dark:data-pressed:ring-foreground/15"
-        >
-          {opt.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  )
-}
+const SEGMENTED_CLASS = 'h-[30px] w-full'
 
-function ThemeRadiogroup({
-  theme,
-  onChange,
-}: {
-  theme: string
-  onChange: (value: 'system' | 'light' | 'dark') => void
-}) {
-  return (
-    <ToggleGroup
-      aria-label="Theme"
-      value={[theme]}
-      onValueChange={(value) => {
-        const next = THEME_OPTIONS.find((opt) => opt.value === value[0])?.value
-        if (next) onChange(next)
-      }}
-      variant="outline"
-      spacing={0}
-      className="grid w-full grid-cols-3 rounded-md bg-muted p-0.5"
-    >
-      {THEME_OPTIONS.map((opt) => (
-        <ToggleGroupItem
-          key={opt.value}
-          value={opt.value}
-          aria-label={opt.label}
-          className={cn(
-            'flex-1 gap-1.5 rounded-[5px] data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm data-pressed:ring-1 data-pressed:ring-foreground/10 dark:data-pressed:bg-input dark:data-pressed:ring-foreground/15',
-          )}
-        >
-          <opt.Icon
-            className="size-(--button-default-icon-size)"
-            {...iconActiveProps(theme === opt.value)}
-          />
-          {opt.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function SettingsGroup({ title, children }: { title: string; children: React.ReactNode }) {
   const id = useId()
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label id={id} className="font-medium text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
+    <section aria-labelledby={id}>
+      <h3
+        id={id}
+        className="mt-3.5 mb-1 text-[11px] font-semibold tracking-[0.04em] text-muted-foreground uppercase"
+      >
+        {title}
+      </h3>
+      <div className="border-t border-border-subtle pt-1.5">{children}</div>
+    </section>
   )
 }
 
-function FontGrid({
-  groupLabel,
-  cols,
+function SettingsRow({
+  label,
+  hint,
   children,
 }: {
-  groupLabel: string
-  cols: 3 | 4
+  label: string
+  hint?: string
   children: React.ReactNode
 }) {
-  const { containerRef, onKeyDown } = useRovingFocus({ orientation: 'horizontal' })
   return (
-    // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- per WAI-ARIA, focus rests on the active radio inside, not the radiogroup itself
-    <div
-      ref={containerRef}
-      role="radiogroup"
-      aria-label={groupLabel}
-      onKeyDown={onKeyDown}
-      className={cn('m-0 grid min-w-0 gap-1.5', cols === 3 ? 'grid-cols-3' : 'grid-cols-4')}
-    >
-      {children}
+    <div className="flex min-h-10 items-center gap-4">
+      <div className="w-[120px] shrink-0">
+        <div className="text-[13px] text-foreground">{label}</div>
+        {hint && <div className="mt-px text-[11.5px] text-muted-foreground">{hint}</div>}
+      </div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }
 
-function FontTile({
-  active,
-  label,
-  family,
-  glyph,
-  glyphSize,
-  onClick,
+function ReadingPreview({
+  contentFont,
+  codeFont,
+  zoomLevel,
 }: {
-  active: boolean
-  label: string
-  family: string
-  glyph: string
-  glyphSize?: number
-  onClick: () => void
+  contentFont: string
+  codeFont: string
+  zoomLevel: number
 }) {
+  const scale = zoomLevel / 100
   return (
-    <button
-      type="button"
-      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- custom-styled font tile, native radio input would break layout
-      role="radio"
-      tabIndex={rovingTabIndex(active)}
-      aria-checked={active}
-      onClick={onClick}
-      className={cn(
-        'group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 outline-none',
-        'transition-[background-color,border-color,box-shadow,transform] duration-150',
-        'active:scale-[0.98] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
-        active
-          ? 'border-foreground/25 bg-foreground/[0.04] ring-1 ring-foreground/10 dark:border-foreground/30 dark:bg-foreground/[0.06] dark:ring-foreground/20'
-          : 'border-border-subtle bg-background hover:border-border hover:bg-muted/60',
-      )}
+    // Decorative: a real reader sample on the page background, in the chosen fonts and size.
+    <div
+      aria-hidden
+      className="mt-3.5 overflow-hidden rounded-lg border border-border-subtle bg-background px-4 py-3.5 select-none"
     >
-      {active && (
-        <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary" />
-      )}
-      <span
-        className={cn(
-          'leading-none',
-          active ? 'text-foreground' : 'text-foreground/70 group-hover:text-foreground',
-        )}
+      <div
+        className="font-semibold text-foreground"
         style={{
-          fontFamily: family,
-          fontSize: glyphSize ? `${glyphSize / 16}rem` : '1.125rem',
+          fontFamily: getContentFontFamily(contentFont),
+          fontSize: `${19 * scale}px`,
+          lineHeight: 1.3,
         }}
       >
-        {glyph}
-      </span>
-      <span
-        className={cn(
-          'text-[0.625rem] font-medium leading-none tracking-wide',
-          active ? 'text-foreground' : 'text-muted-foreground',
-        )}
+        A quiet place to read
+      </div>
+      <p
+        className="mt-1 text-foreground"
+        style={{
+          fontFamily: getContentFontFamily(contentFont),
+          fontSize: `${16 * scale}px`,
+          lineHeight: MARKDOWN_LINE_HEIGHT,
+        }}
       >
-        {label}
-      </span>
-    </button>
+        Mdow re-renders the moment you save, so notes stay live beside your editor.
+      </p>
+      <div
+        className="mt-1.5 text-muted-foreground"
+        style={{ fontFamily: getCodeFontFamily(codeFont), fontSize: `${13 * scale}px` }}
+      >
+        <span className="text-(--md-alert-caution)">let</span> width ={' '}
+        <span className="text-(--md-alert-note)">68</span>;
+      </div>
+    </div>
+  )
+}
+
+function TextSizeStepper({
+  value,
+  onDecrease,
+  onIncrease,
+  onReset,
+}: {
+  value: number
+  onDecrease: () => void
+  onIncrease: () => void
+  onReset: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <fieldset
+        aria-label="Text size"
+        className="m-0 flex h-[30px] w-fit min-w-0 items-center rounded-[7px] border-0 bg-surface-well p-0.5"
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="h-[26px] w-7 text-muted-foreground hover:text-foreground"
+          aria-label="Decrease text size"
+          disabled={value <= ZOOM_MIN}
+          onClick={onDecrease}
+        >
+          <Minus className="size-3.5" aria-hidden />
+        </Button>
+        <output
+          aria-live="polite"
+          className="w-[52px] text-center text-[12.5px] font-medium tabular-nums"
+        >
+          {value}%
+        </output>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="h-[26px] w-7 text-muted-foreground hover:text-foreground"
+          aria-label="Increase text size"
+          disabled={value >= ZOOM_MAX}
+          onClick={onIncrease}
+        >
+          <Plus className="size-3.5" aria-hidden />
+        </Button>
+      </fieldset>
+      {value !== 100 && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={onReset}
+        >
+          Reset
+        </Button>
+      )}
+    </div>
+  )
+}
+
+type UpdateStatus =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up-to-date' }
+  | { kind: 'available'; version: string }
+  | { kind: 'downloading'; percent: number }
+  | { kind: 'ready' }
+  | { kind: 'error' }
+
+function describeUpdateStatus(status: UpdateStatus, autoUpdateEnabled: boolean): string {
+  switch (status.kind) {
+    case 'checking':
+      return 'Checking…'
+    case 'up-to-date':
+      return 'Up to date'
+    case 'available':
+      return `Version ${status.version} available`
+    case 'downloading':
+      return `Downloading… ${Math.round(status.percent)}%`
+    case 'ready':
+      return 'Update ready to install'
+    case 'error':
+      return 'Couldn’t check for updates'
+    default:
+      return autoUpdateEnabled ? 'Checks automatically' : 'Automatic checks are off'
+  }
+}
+
+function UpdatesRow() {
+  const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
+  const [version, setVersion] = useState<string | null>(null)
+  const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' })
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api
+      .getAppVersion()
+      .then((v) => {
+        if (!cancelled) setVersion(v)
+      })
+      .catch(() => {})
+    const unsubs = [
+      window.api.onUpdateUpToDate(() => setStatus({ kind: 'up-to-date' })),
+      window.api.onUpdateAvailable((info) =>
+        setStatus({ kind: 'available', version: info.version }),
+      ),
+      window.api.onUpdateDownloadProgress((p) =>
+        setStatus({ kind: 'downloading', percent: p.percent }),
+      ),
+      window.api.onUpdateDownloaded(() => setStatus({ kind: 'ready' })),
+      window.api.onUpdateError(() => setStatus({ kind: 'error' })),
+    ]
+    return () => {
+      cancelled = true
+      for (const unsub of unsubs) unsub()
+    }
+  }, [])
+
+  const checkNow = () => {
+    setStatus({ kind: 'checking' })
+    void window.api.checkForUpdates({ manual: true }).catch(() => setStatus({ kind: 'error' }))
+  }
+
+  return (
+    <SettingsRow label={version ? `Mdow ${version}` : 'Mdow'}>
+      <div className="flex items-center gap-2.5">
+        <output
+          aria-live="polite"
+          className={cn(
+            'min-w-0 flex-1 truncate text-xs',
+            status.kind === 'error' ? 'text-destructive' : 'text-muted-foreground',
+          )}
+        >
+          {describeUpdateStatus(status, autoUpdateEnabled)}
+        </output>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={status.kind === 'checking' || status.kind === 'downloading'}
+          onClick={checkNow}
+        >
+          Check now
+        </Button>
+      </div>
+    </SettingsRow>
   )
 }
