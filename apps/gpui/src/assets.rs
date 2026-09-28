@@ -34,11 +34,16 @@ const REQUIRED_ICONS: &[&str] = &[
     "icons/file.svg",
     "icons/folder-open.svg",
     "icons/folder.svg",
+    "icons/info.svg",
+    "icons/lightbulb.svg",
     "icons/list.svg",
     "icons/mdow-logo.svg",
+    "icons/message-square-warning.svg",
+    "icons/octagon-alert.svg",
     "icons/search.svg",
     "icons/settings.svg",
     "icons/sidebar.svg",
+    "icons/triangle-alert.svg",
     "icons/x.svg",
 ];
 
