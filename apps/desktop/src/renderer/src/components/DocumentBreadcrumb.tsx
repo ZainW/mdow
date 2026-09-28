@@ -12,7 +12,7 @@ interface Props {
 const revealLabel = isMac ? 'Reveal in Finder' : 'Show in Folder'
 
 export function DocumentBreadcrumb({ tab, frontmatter }: Props) {
-  const wideMode = useAppStore((s) => s.wideMode)
+  const wideMode = useAppStore((s) => s.readingWidth === 'full')
   const toggleWideMode = useAppStore((s) => s.toggleWideMode)
   const openFolderPath = useAppStore((s) => s.openFolderPath)
 

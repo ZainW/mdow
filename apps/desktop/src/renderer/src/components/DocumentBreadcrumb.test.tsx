@@ -11,7 +11,7 @@ stubWindowApi(() => ({ showInFolder }))
 beforeEach(() => {
   showInFolder.mockClear()
   useAppStore.setState({
-    wideMode: false,
+    readingWidth: 'medium',
     openFolderPath: null,
   })
 })

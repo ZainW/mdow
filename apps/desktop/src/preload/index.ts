@@ -102,6 +102,7 @@ export interface ElectronAPI {
   onMenuSettings: (callback: () => void) => Unsubscribe
   onMenuCloseTab: (callback: () => void) => Unsubscribe
 
+  getAppVersion: () => Promise<string>
   checkForUpdates: (opts?: { manual?: boolean }) => Promise<void>
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
@@ -169,6 +170,7 @@ const api: ElectronAPI = {
   onMenuCloseTab: (callback) => createIpcListener(IPC.MENU_CLOSE_TAB, callback),
   onMenuCheckForUpdates: (callback) => createIpcListener(IPC.MENU_CHECK_FOR_UPDATES, callback),
 
+  getAppVersion: () => ipcRenderer.invoke(IPC.APP_GET_VERSION),
   checkForUpdates: (opts?: { manual?: boolean }) => ipcRenderer.invoke(IPC.UPDATER_CHECK, opts),
   downloadUpdate: () => ipcRenderer.invoke(IPC.UPDATER_DOWNLOAD),
   installUpdate: () => ipcRenderer.invoke(IPC.UPDATER_INSTALL),

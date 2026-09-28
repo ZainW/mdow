@@ -30,7 +30,7 @@ export function useContentClickHandlers({
         window.setTimeout(() => {
           btn.removeAttribute('data-copied')
           btn.setAttribute('aria-label', 'Copy code')
-        }, 1500)
+        }, 2000)
       })
     }
 

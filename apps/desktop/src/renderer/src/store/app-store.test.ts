@@ -33,9 +33,9 @@ describe('app-store', () => {
       sidebarMode: 'recents',
       openFolderPath: null,
       folderTree: [],
-      wideMode: false,
       interfaceScale: 'compact',
-      readingWidth: 'standard',
+      readingWidth: 'medium',
+      lastConstrainedWidth: 'medium',
       commandPaletteOpen: false,
     })
   })
@@ -352,18 +352,19 @@ describe('app-store', () => {
     })
   })
 
-  describe('wideMode', () => {
-    it('starts as false', () => {
-      expect(useAppStore.getState().wideMode).toBe(false)
+  describe('wide mode (Full line width)', () => {
+    it('starts constrained', () => {
+      expect(useAppStore.getState().readingWidth).toBe('medium')
     })
 
-    it('toggles wide mode and persists it', () => {
+    it('toggles to Full and back to the last constrained width, persisting each', () => {
+      useAppStore.getState().setReadingWidth('narrow')
       useAppStore.getState().toggleWideMode()
-      expect(useAppStore.getState().wideMode).toBe(true)
-      expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: true })
+      expect(useAppStore.getState().readingWidth).toBe('full')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ readingWidth: 'full' })
       useAppStore.getState().toggleWideMode()
-      expect(useAppStore.getState().wideMode).toBe(false)
-      expect(window.api.saveAppState).toHaveBeenCalledWith({ wideMode: false })
+      expect(useAppStore.getState().readingWidth).toBe('narrow')
+      expect(window.api.saveAppState).toHaveBeenLastCalledWith({ readingWidth: 'narrow' })
     })
   })
 
@@ -386,14 +387,14 @@ describe('app-store', () => {
       expect(window.api.saveAppState).toHaveBeenCalledWith({ interfaceScale: 'comfortable' })
     })
 
-    it('starts with standard reading width', () => {
-      expect(useAppStore.getState().readingWidth).toBe('standard')
+    it('starts with medium line width', () => {
+      expect(useAppStore.getState().readingWidth).toBe('medium')
     })
 
-    it('sets reading width and persists it', () => {
-      useAppStore.getState().setReadingWidth('comfortable')
-      expect(useAppStore.getState().readingWidth).toBe('comfortable')
-      expect(window.api.saveAppState).toHaveBeenCalledWith({ readingWidth: 'comfortable' })
+    it('sets line width and persists it', () => {
+      useAppStore.getState().setReadingWidth('wide')
+      expect(useAppStore.getState().readingWidth).toBe('wide')
+      expect(window.api.saveAppState).toHaveBeenCalledWith({ readingWidth: 'wide' })
     })
   })
 
@@ -419,7 +420,7 @@ describe('app-store', () => {
       useAppStore.getState().openTab({ path: '/a.md', content: 'hi' })
       useAppStore.getState().toggleSidebar()
       expect(useAppStore.getState().tabs).toHaveLength(1)
-      expect(useAppStore.getState().wideMode).toBe(false)
+      expect(useAppStore.getState().readingWidth).toBe('medium')
     })
 
     it('setting folder does not affect tabs', () => {

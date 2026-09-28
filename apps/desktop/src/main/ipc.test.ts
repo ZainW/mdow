@@ -198,9 +198,9 @@ describe('ipc handlers', () => {
 
     it('does not persist companion commands through generic app state', async () => {
       const handler = handlers.get('store:save-state')!
-      await handler({}, { wideMode: true, companionCustomCommand: '/bin/sh -c whoami' })
+      await handler({}, { readingWidth: 'full', companionCustomCommand: '/bin/sh -c whoami' })
 
-      expect(mockSaveAppState).toHaveBeenCalledWith({ wideMode: true })
+      expect(mockSaveAppState).toHaveBeenCalledWith({ readingWidth: 'full' })
     })
 
     it('stores only an executable explicitly selected in the native dialog', async () => {

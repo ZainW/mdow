@@ -59,7 +59,7 @@ const tab: Tab = {
 }
 
 afterEach(() => {
-  useAppStore.setState({ wideMode: false, readingWidth: 'standard' })
+  useAppStore.setState({ readingWidth: 'medium' })
 })
 
 beforeEach(() => {
@@ -104,7 +104,7 @@ describe('MarkdownView startup', () => {
   })
 
   it('left-aligns the reading column in wide mode', () => {
-    useAppStore.setState({ wideMode: true })
+    useAppStore.setState({ readingWidth: 'full' })
     const { container } = render(<MarkdownView tab={tab} />)
     const frame = container.querySelector('[data-reading-frame]')
     const column = container.querySelector('[data-reading-column]')

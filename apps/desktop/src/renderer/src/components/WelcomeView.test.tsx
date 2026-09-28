@@ -23,24 +23,38 @@ describe('WelcomeView', () => {
     recentsMock.value = []
   })
 
-  it('centers the hero when there are no recents', () => {
-    const { container } = renderWithClient(<WelcomeView />)
-    const heroColumn = container.querySelector('h2')?.parentElement
-    expect(heroColumn?.className).toContain('items-center')
-    expect(heroColumn?.className).toContain('text-center')
-  })
-
-  it('left-aligns the hero next to a recents column', () => {
-    recentsMock.value = ['/Users/zain/a.md', '/Users/zain/b.md']
-    const { container } = renderWithClient(<WelcomeView />)
-    const heroColumn = container.querySelector('h2')?.parentElement
-    expect(heroColumn?.className).not.toContain('items-center')
-    expect(heroColumn?.className).not.toContain('text-center')
-  })
-
-  it('shows the rephrased drop hint', () => {
+  it('shows the tagline and both open actions with their shortcuts', () => {
     renderWithClient(<WelcomeView />)
-    expect(screen.getByText(/Anywhere in this window/)).toBeInTheDocument()
+    expect(screen.getByText('Open a Markdown file or folder to start reading.')).toBeVisible()
+    // Tests run without a platform, so shortcuts use the Windows/Linux spelling.
+    expect(screen.getByRole('button', { name: /Open File/ })).toHaveTextContent('Ctrl+O')
+    expect(screen.getByRole('button', { name: /Open Folder/ })).toHaveTextContent('Ctrl+Shift+O')
+  })
+
+  it('lists recents with their parent folder so duplicates are distinguishable', () => {
+    recentsMock.value = ['/Users/zain/mdow/README.md', '/Users/zain/flagship/README.md']
+    renderWithClient(<WelcomeView />)
+    const rows = screen.getAllByRole('button', { name: /README\.md/ })
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('mdow')
+    expect(rows[1]).toHaveTextContent('flagship')
+    expect(screen.getByText('Ctrl+K to search all')).toBeInTheDocument()
+  })
+
+  it('caps the recent list at five', () => {
+    recentsMock.value = Array.from({ length: 8 }, (_, i) => `/docs/f${i}.md`)
+    renderWithClient(<WelcomeView />)
+    expect(screen.getAllByRole('button', { name: /f\d\.md/ })).toHaveLength(5)
+  })
+
+  it('hides the Recent section when there are no recents', () => {
+    renderWithClient(<WelcomeView />)
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument()
+  })
+
+  it('shows a one-line drop hint', () => {
+    renderWithClient(<WelcomeView />)
+    expect(screen.getByText('Or drop files and folders anywhere in this window.')).toBeVisible()
   })
 
   it('shows a dev samples button in development', () => {

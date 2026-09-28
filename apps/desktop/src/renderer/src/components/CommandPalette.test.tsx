@@ -24,7 +24,7 @@ describe('CommandPalette', () => {
       commandPaletteOpen: true,
       settingsOpen: false,
       sidebarOpen: true,
-      wideMode: false,
+      readingWidth: 'medium',
       splitView: false,
       tabs: [],
       activeTabId: null,
@@ -106,7 +106,7 @@ describe('CommandPalette', () => {
     fireEvent.click(screen.getByText('Toggle Wide Mode'))
 
     await waitFor(() => {
-      expect(useAppStore.getState().wideMode).toBe(true)
+      expect(useAppStore.getState().readingWidth).toBe('full')
       expect(useAppStore.getState().commandPaletteOpen).toBe(false)
     })
   })

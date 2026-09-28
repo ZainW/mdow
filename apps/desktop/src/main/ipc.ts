@@ -269,6 +269,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     getMainWindow()?.close()
   })
 
+  ipcMain.handle('app:get-version', () => app.getVersion())
+
   ipcMain.handle('updater:check', async (_event, opts?: { manual?: boolean }) => {
     const { checkForUpdates } = await loadInitializedUpdater(getMainWindow)
     checkForUpdates(opts)

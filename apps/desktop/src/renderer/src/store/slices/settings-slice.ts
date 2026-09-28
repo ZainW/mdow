@@ -1,5 +1,10 @@
 import type { StateCreator } from 'zustand'
-import type { InterfaceScale, ReadingWidth } from '../../../../shared/types'
+import type { InterfaceScale } from '../../../../shared/types'
+import { DEFAULT_READING_WIDTH, type ReadingWidth } from '../../../../shared/reading-width'
+
+export const ZOOM_MIN = 60
+export const ZOOM_MAX = 200
+const ZOOM_STEP = 10
 
 export interface SettingsSlice {
   zoomLevel: number
@@ -14,23 +19,33 @@ export interface SettingsSlice {
   codeFont: string
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
+  /** The constrained width to return to when leaving Full (not persisted). */
+  lastConstrainedWidth: Exclude<ReadingWidth, 'full'>
   setContentFont: (font: string) => void
   setCodeFont: (font: string) => void
   setInterfaceScale: (scale: InterfaceScale) => void
   setReadingWidth: (width: ReadingWidth) => void
+  /** Flip between Full line width and the last constrained width. */
+  toggleWideMode: () => void
+}
+
+function persistReadingWidth(width: ReadingWidth) {
+  if (typeof window !== 'undefined' && window.api) {
+    void window.api.saveAppState({ readingWidth: width })
+  }
 }
 
 export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set) => ({
   zoomLevel: 100,
   zoomIn: () =>
     set((state) => {
-      const next = Math.min(state.zoomLevel + 10, 200)
+      const next = Math.min(state.zoomLevel + ZOOM_STEP, ZOOM_MAX)
       void window.api.saveAppState({ zoomLevel: next })
       return { zoomLevel: next }
     }),
   zoomOut: () =>
     set((state) => {
-      const next = Math.max(state.zoomLevel - 10, 60)
+      const next = Math.max(state.zoomLevel - ZOOM_STEP, ZOOM_MIN)
       void window.api.saveAppState({ zoomLevel: next })
       return { zoomLevel: next }
     }),
@@ -55,7 +70,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   contentFont: 'inter',
   codeFont: 'geist-mono',
   interfaceScale: 'compact',
-  readingWidth: 'standard',
+  readingWidth: DEFAULT_READING_WIDTH,
+  lastConstrainedWidth: 'medium',
   setContentFont: (font) => {
     void window.api.saveAppState({ contentFont: font })
     set({ contentFont: font })
@@ -69,7 +85,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     set({ interfaceScale: scale })
   },
   setReadingWidth: (width) => {
-    void window.api.saveAppState({ readingWidth: width })
-    set({ readingWidth: width })
+    persistReadingWidth(width)
+    set(
+      width === 'full'
+        ? { readingWidth: width }
+        : { readingWidth: width, lastConstrainedWidth: width },
+    )
   },
+  toggleWideMode: () =>
+    set((state) => {
+      const readingWidth = state.readingWidth === 'full' ? state.lastConstrainedWidth : 'full'
+      persistReadingWidth(readingWidth)
+      return { readingWidth }
+    }),
 })

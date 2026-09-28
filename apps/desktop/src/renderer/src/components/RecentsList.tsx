@@ -4,10 +4,10 @@ import { useRecents } from '../hooks/useRecents'
 import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename, parentDir } from '../lib/path-utils'
+import { invalidateRecents } from '../lib/query-keys'
 import { cn, isMac } from '../lib/utils'
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuItem,
@@ -45,11 +45,8 @@ export function RecentsList() {
     (path: string) => {
       void (async () => {
         const current = await window.api.getRecents()
-        const updated = current.filter((p) => p !== path)
-        await window.api.saveAppState({ recents: updated } as Parameters<
-          typeof window.api.saveAppState
-        >[0])
-        void queryClient.invalidateQueries({ queryKey: ['recents'] })
+        await window.api.saveAppState({ recents: current.filter((p) => p !== path) })
+        invalidateRecents(queryClient)
       })()
     },
     [queryClient],
@@ -67,34 +64,32 @@ export function RecentsList() {
   }
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Recents</SidebarGroupLabel>
+    <SidebarGroup className="pt-0">
       <SidebarGroupContent>
         <SidebarMenu>
           {recents.map((path) => {
-            const dir = parentDir(path)
+            // The immediate parent folder is what tells two README.md files apart.
+            const dir = parentDir(path, 1)
+            const isActive = activeTab?.path === path
             return (
               <SidebarMenuItem key={path}>
                 <ContextMenu>
                   <ContextMenuTrigger
                     render={
                       <SidebarMenuButton
-                        isActive={activeTab?.path === path}
+                        isActive={isActive}
                         onClick={() => void handleClick(path)}
                         title={path}
-                        className={cn(
-                          'h-auto min-h-7 flex-col items-start gap-0 py-1.5',
-                          activeTab?.path === path && 'tree-file-active',
-                        )}
+                        className={cn('h-8 gap-2', isActive && 'tree-file-active')}
                       />
                     }
                   >
-                    <span className="flex w-full min-w-0 items-center gap-2">
-                      <FileText className="size-3.5 shrink-0 opacity-40" />
-                      <span className="truncate">{basename(path)}</span>
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-foreground">
+                      {basename(path)}
                     </span>
                     {dir && (
-                      <span className="w-full truncate pl-5 text-[10px] text-muted-foreground-subtle">
+                      <span className="max-w-[45%] shrink-0 truncate text-[11px] text-muted-foreground">
                         {dir}
                       </span>
                     )}

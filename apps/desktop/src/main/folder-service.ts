@@ -61,7 +61,7 @@ async function appendEntry(
 
   if (entry.isDirectory()) {
     if (depth >= MAX_DEPTH) return
-    const children = await scanInto(fullPath, depth + 1, state)
+    const children = await scanSubfolder(fullPath, depth + 1, state)
     if (children.length > 0) {
       nodes.push({ name: entry.name, path: fullPath, isDirectory: true, children })
     }
@@ -89,6 +89,21 @@ async function scanEntriesAt(
   if (index >= sorted.length || state.truncated) return
   await appendEntry(nodes, sorted[index], folderPath, depth, state)
   await scanEntriesAt(sorted, index + 1, folderPath, depth, state, nodes)
+}
+
+// Unreadable subfolders (permissions, broken mounts, races with deletion) are
+// skipped so one bad directory never fails the whole folder open. Only the
+// root folder's own read error propagates to the caller.
+async function scanSubfolder(
+  folderPath: string,
+  depth: number,
+  state: ScanState,
+): Promise<TreeNode[]> {
+  try {
+    return await scanInto(folderPath, depth, state)
+  } catch {
+    return []
+  }
 }
 
 async function scanInto(folderPath: string, depth: number, state: ScanState): Promise<TreeNode[]> {

@@ -7,11 +7,25 @@ import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
 import { basename, detectSep } from '../lib/path-utils'
 import { fileTreeIcons } from '../lib/file-tree-icons'
-import { SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from './ui/sidebar'
-import { Separator } from './ui/separator'
-import { Input } from './ui/input'
-import { Loader2 } from 'lucide-react'
+import { SidebarGroup, SidebarGroupContent } from './ui/sidebar'
+import { Loader2, Search } from 'lucide-react'
 import { cn, isMac } from '../lib/utils'
+
+// The tree renders in a shadow root; this gives its selected row the same 2px accent marker
+// the outline's active heading and the active recent file use (see `.tree-file-active`).
+const ACTIVE_FILE_MARKER_CSS = `
+  button[data-type='item'][data-item-selected] { position: relative; }
+  button[data-type='item'][data-item-selected]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: var(--accent);
+  }
+`
 
 type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
 
@@ -143,6 +157,7 @@ export function FolderTree() {
     paths: filteredPaths,
     initialExpansion: 'closed',
     icons: fileTreeIcons,
+    unsafeCSS: ACTIVE_FILE_MARKER_CSS,
     onSelectionChange: (selected) => selectionHandlerRef.current(selected),
   }))
 
@@ -196,32 +211,39 @@ export function FolderTree() {
 
   if (!openFolderPath || folderTree.length === 0) return null
 
-  const folderName = basename(openFolderPath)
+  const hasFilter = filterQuery.trim().length > 0
+  const matchCount = filteredPaths.filter((path) => !path.endsWith('/')).length
 
   return (
     <>
-      <Separator />
-      <SidebarGroup className="flex flex-1 flex-col overflow-hidden">
-        <SidebarGroupLabel className="flex shrink-0 justify-between">
-          <span>Folder</span>
-          <span className="font-normal normal-case text-muted-foreground opacity-60">
-            {folderName}
-          </span>
-        </SidebarGroupLabel>
+      <SidebarGroup className="flex flex-1 flex-col overflow-hidden p-0">
         <SidebarGroupContent className="flex flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 px-2 pb-2">
-            <Input
-              value={filterQuery}
-              onChange={(event) => setFilterQuery(event.currentTarget.value)}
-              placeholder="Filter folder..."
-              aria-label="Filter folder"
-              className="h-7"
-            />
-            {filterQuery.trim() && (
-              <p className="mt-1 px-1 text-[10px] text-muted-foreground-subtle">
-                {filteredPaths.length} match{filteredPaths.length === 1 ? '' : 'es'}
-              </p>
-            )}
+          <div className="shrink-0 px-2.5 pb-1">
+            <label className="flex h-7 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-well px-2 text-xs text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+              <Search className="size-3.5 shrink-0" aria-hidden />
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(event) => setFilterQuery(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && filterQuery) {
+                    event.preventDefault()
+                    setFilterQuery('')
+                  }
+                }}
+                placeholder="Filter files"
+                aria-label="Filter files"
+                className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+              />
+              {hasFilter && (
+                <span
+                  aria-live="polite"
+                  className="shrink-0 text-[10.5px] font-medium tabular-nums"
+                >
+                  {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                </span>
+              )}
+            </label>
           </div>
           {folderTreeTruncated && (
             <div

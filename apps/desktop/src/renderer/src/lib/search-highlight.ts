@@ -4,7 +4,8 @@
 
 const MATCH_HIGHLIGHT = 'mdow-search'
 const ACTIVE_HIGHLIGHT = 'mdow-search-active'
-const SKIP_SELECTOR = '.copy-code-btn, .code-lang-badge, .mermaid-container'
+const SKIP_SELECTOR =
+  '.code-block-header, .copy-code-btn, .code-lang-badge, .markdown-alert-title, .mermaid-container'
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

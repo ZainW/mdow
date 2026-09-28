@@ -16,6 +16,8 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { UpdateBanner } from './components/UpdateBanner'
 import { CheatSheetOverlay } from './components/CheatSheetOverlay'
+import { DropOverlay } from './components/DropOverlay'
+import { useWindowFileDrop } from './hooks/useWindowFileDrop'
 import {
   LazyCompanionPanel,
   LazyCompanionShell,
@@ -215,21 +217,27 @@ function MainApp(): React.JSX.Element {
     async (e: React.DragEvent) => {
       e.preventDefault()
       const files = Array.from(e.dataTransfer.files)
+      const others: string[] = []
 
       for (const file of files) {
         const filePath = window.api.getPathForFile(file)
         if (isDocumentPath(file.name)) {
           void openMarkdownFile(filePath)
+        } else {
+          others.push(filePath)
         }
       }
 
-      if (files.length === 1) {
-        const filePath = window.api.getPathForFile(files[0])
+      // Only one folder can be open at a time: open the first one dropped.
+      for (const filePath of others) {
         try {
+          // oxlint-disable-next-line no-await-in-loop -- stop at the first folder
           const stat = await window.api.statFile(filePath)
           if (stat.exists && stat.isDirectory) {
+            // oxlint-disable-next-line no-await-in-loop -- stop at the first folder
             const result = await window.api.openFolderPath(filePath)
             setOpenFolder(result.path, result.tree, result.truncated)
+            return
           }
         } catch {
           // Not a folder or inaccessible
@@ -238,6 +246,8 @@ function MainApp(): React.JSX.Element {
     },
     [openMarkdownFile, setOpenFolder],
   )
+  const onWindowDrop = useCallback((e: React.DragEvent) => void handleDrop(e), [handleDrop])
+  const { summary: dropSummary, handlers: dropHandlers } = useWindowFileDrop(onWindowDrop)
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -257,8 +267,7 @@ function MainApp(): React.JSX.Element {
       <div
         data-ui-scale={interfaceScale}
         className="mdow-shell isolate flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
-        onDrop={(e) => void handleDrop(e)}
-        onDragOver={(e) => e.preventDefault()}
+        {...dropHandlers}
       >
         <TitlebarInset />
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -276,6 +285,7 @@ function MainApp(): React.JSX.Element {
             <CommandPalette />
           </DeferredMount>
           <CheatSheetOverlay />
+          <DropOverlay summary={dropSummary} />
           <DeferredMount when={shortcutsDialogOpen}>
             <ShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
           </DeferredMount>

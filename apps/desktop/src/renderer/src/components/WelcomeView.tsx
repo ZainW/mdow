@@ -1,177 +1,124 @@
-import { useCallback, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useAppStore } from '../store/app-store'
 import { useOpenMarkdownFile } from '../hooks/useOpenMarkdownFile'
+import { useOpenFileDialog } from '../hooks/useOpenFileDialog'
+import { useOpenFolderDialog } from '../hooks/useOpenFolderDialog'
 import { useRecents } from '../hooks/useRecents'
-import { basename, isDocumentPath } from '../lib/path-utils'
-import { cn } from '../lib/utils'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
+import { basename, parentDir } from '../lib/path-utils'
+import { cn, formatShortcut } from '../lib/utils'
 import { Logo } from './Logo'
 import { File, FileText, FolderOpen, FlaskConical } from 'lucide-react'
 import { openDevWorkspace } from '../dev/open-dev-workspace'
 
 const isDev = import.meta.env.DEV
+const RECENT_LIMIT = 5
+
+function WelcomeButton({
+  primary,
+  icon: Icon,
+  label,
+  shortcut,
+  onClick,
+}: {
+  primary?: boolean
+  icon: typeof File
+  label: string
+  shortcut?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-keyshortcuts={shortcut}
+      className={cn(
+        'welcome-btn inline-flex h-8 items-center gap-[7px] rounded-[7px] border px-3 text-[13px] font-medium outline-none',
+        'focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        primary
+          ? 'border-transparent bg-foreground text-background hover:bg-foreground/90'
+          : 'border-border bg-surface-raised text-foreground shadow-(--shadow-raised) hover:bg-muted',
+      )}
+    >
+      <Icon className="size-3.5 shrink-0" aria-hidden />
+      {label}
+      {shortcut && (
+        <kbd className="ml-0.5 font-sans text-[11px] font-medium opacity-55">{shortcut}</kbd>
+      )}
+    </button>
+  )
+}
 
 export function WelcomeView() {
-  const openTab = useAppStore((s) => s.openTab)
-  const setOpenFolder = useAppStore((s) => s.setOpenFolder)
   const openMarkdownFile = useOpenMarkdownFile()
-  const queryClient = useQueryClient()
-  const [isDragOver, setIsDragOver] = useState(false)
+  const openFileDialog = useOpenFileDialog()
+  const openFolderDialog = useOpenFolderDialog()
   const { data: recents = [] } = useRecents()
-
-  const handleOpenFile = useCallback(async () => {
-    const result = await window.api.openFileDialog()
-    if (result) {
-      openTab(result)
-      void queryClient.invalidateQueries({ queryKey: ['recents'] })
-    }
-  }, [openTab, queryClient])
-
-  const handleOpenFolder = useCallback(async () => {
-    const result = await window.api.openFolderDialog()
-    if (result) {
-      setOpenFolder(result.path, result.tree, result.truncated)
-    }
-  }, [setOpenFolder])
-
-  const handleOpenRecent = useCallback(
-    async (path: string) => {
-      await openMarkdownFile(path)
-    },
-    [openMarkdownFile],
-  )
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault()
-      setIsDragOver(false)
-
-      const files = Array.from(e.dataTransfer.files)
-      if (files.length === 0) return
-
-      const paths = files.map((f) => window.api.getPathForFile(f))
-      const mdPaths = paths.filter((p) => isDocumentPath(p))
-
-      if (mdPaths.length > 0) {
-        await Promise.all(mdPaths.map((path) => openMarkdownFile(path)))
-        return
-      }
-
-      if (files.length === 1) {
-        const folderPath = paths[0]
-        try {
-          const scan = await window.api.readFolderTree(folderPath)
-          setOpenFolder(folderPath, scan.tree, scan.truncated)
-        } catch {
-          // Not a directory — ignore.
-        }
-      }
-    },
-    [openMarkdownFile, setOpenFolder],
-  )
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false)
-  }, [])
+  const shownRecents = recents.slice(0, RECENT_LIMIT)
 
   return (
-    <div
-      className={cn(
-        'flex flex-1 flex-col items-center justify-center text-muted-foreground transition-colors duration-150',
-        isDragOver && 'bg-primary/[0.03]',
-      )}
-      onDrop={(e) => void handleDrop(e)}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-    >
-      <div
-        className={cn(
-          'grid w-full max-w-3xl gap-10 px-10',
-          recents.length > 0 ? 'grid-cols-[21fr_19fr]' : 'grid-cols-1 justify-items-center',
-        )}
-      >
-        <div
-          className={cn('flex flex-col gap-3', recents.length === 0 && 'items-center text-center')}
-        >
-          <Logo
-            className={cn(
-              'h-12 w-12 rounded-[22%] shadow-sm ring-1 ring-border/40',
-              recents.length === 0 && 'mb-1',
-            )}
+    <div className="flex flex-1 items-center justify-center overflow-y-auto px-8 py-10">
+      <div className="w-full max-w-[400px]">
+        <Logo className="size-11 rounded-[11px] ring-[0.5px] ring-border" />
+        <h2 className="mt-4 text-[22px]/7 font-semibold tracking-[-0.015em] text-foreground">
+          Mdow
+        </h2>
+        <p className="mt-1 text-sm/[21px] text-muted-foreground">
+          Open a Markdown file or folder to start reading.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <WelcomeButton
+            primary
+            icon={File}
+            label="Open File"
+            shortcut={formatShortcut('O')}
+            onClick={() => void openFileDialog()}
           />
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Mdow</h2>
-          <p className="max-w-[40ch] text-pretty text-sm/relaxed text-muted-foreground">
-            A quiet markdown viewer. Drop a file anywhere, or open one below.
-          </p>
-          <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void handleOpenFile()}>
-              <File data-icon="inline-start" />
-              Open File
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleOpenFolder()}>
-              <FolderOpen data-icon="inline-start" />
-              Open Folder
-            </Button>
-            {isDev && (
-              <Button variant="secondary" size="sm" onClick={openDevWorkspace}>
-                <FlaskConical data-icon="inline-start" />
-                Dev samples
-              </Button>
-            )}
-          </div>
-          <Card
-            size="sm"
-            className={cn(
-              'mt-3 w-full max-w-md ring-1 transition-colors duration-150',
-              isDragOver
-                ? 'bg-primary/5 ring-primary/30'
-                : 'ring-dashed ring-border/70 bg-muted/20',
-            )}
-          >
-            <CardContent className="py-3 text-xs text-muted-foreground">
-              <strong className="font-medium text-foreground/90">Anywhere in this window</strong>
-              {', drop '}
-              <code className="rounded-sm bg-muted px-1 py-px font-mono text-[0.6875rem] text-foreground/80">
-                .md
-              </code>
-              {' or '}
-              <code className="rounded-sm bg-muted px-1 py-px font-mono text-[0.6875rem] text-foreground/80">
-                .html
-              </code>{' '}
-              files or a folder.
-            </CardContent>
-          </Card>
+          <WelcomeButton
+            icon={FolderOpen}
+            label="Open Folder"
+            shortcut={formatShortcut('O', { shift: true })}
+            onClick={() => void openFolderDialog()}
+          />
+          {isDev && (
+            <WelcomeButton icon={FlaskConical} label="Dev samples" onClick={openDevWorkspace} />
+          )}
         </div>
-        {recents.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <p className="font-mono text-[0.6875rem] tracking-[0.18em] text-muted-foreground-subtle uppercase">
-              Recent
-            </p>
-            <ul className="flex flex-col gap-px">
-              {recents.slice(0, 6).map((path) => (
-                <li key={path}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void handleOpenRecent(path)}
-                    title={path}
-                    className="h-8 w-full justify-start gap-2 px-2 font-normal"
-                  >
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground/60" />
-                    <span className="truncate">{basename(path)}</span>
-                  </Button>
-                </li>
-              ))}
+
+        {shownRecents.length > 0 && (
+          <section aria-labelledby="welcome-recent" className="mt-7">
+            <div className="mb-1.5 flex items-center px-2.5 text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
+              <h3 id="welcome-recent" className="flex-1">
+                Recent
+              </h3>
+              <span>{formatShortcut('K')} to search all</span>
+            </div>
+            <ul className="border-t border-border-subtle pt-1">
+              {shownRecents.map((path) => {
+                const dir = parentDir(path, 1)
+                return (
+                  <li key={path}>
+                    <button
+                      type="button"
+                      title={path}
+                      onClick={() => void openMarkdownFile(path)}
+                      className="welcome-recent flex h-[34px] w-full items-center gap-[9px] rounded-md px-2.5 text-left text-[13px] text-foreground outline-none hover:bg-sidebar-accent/70 focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
+                      {dir && (
+                        <span className="max-w-[40%] shrink-0 truncate text-[11.5px] text-muted-foreground">
+                          {dir}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
-          </div>
+          </section>
         )}
+
+        <p className="mt-[18px] px-2.5 text-xs text-muted-foreground">
+          Or drop files and folders anywhere in this window.
+        </p>
       </div>
     </div>
   )

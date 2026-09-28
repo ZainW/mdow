@@ -21,10 +21,11 @@ import { MarkdownContent } from './markdown/components'
 import type { ReadingWidth } from '../../../shared/types'
 
 const READING_WIDTHS = {
-  standard: '48rem',
-  comfortable: '56rem',
-  wide: '68rem',
-} as const satisfies Record<ReadingWidth, string>
+  narrow: '40rem',
+  medium: '48rem',
+  wide: '60rem',
+  full: undefined,
+} as const satisfies Record<ReadingWidth, string | undefined>
 
 interface MarkdownViewProps {
   tab: Tab
@@ -40,7 +41,7 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
 
   const { wideMode, readingWidth, zoomLevel, contentFont, codeFont } = useAppStore(
     useShallow((s) => ({
-      wideMode: s.wideMode,
+      wideMode: s.readingWidth === 'full',
       readingWidth: s.readingWidth,
       zoomLevel: s.zoomLevel,
       contentFont: s.contentFont,
