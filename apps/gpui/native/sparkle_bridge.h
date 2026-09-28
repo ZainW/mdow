@@ -35,6 +35,7 @@ void mdow_sparkle_install(void);
 void mdow_sparkle_dismiss_choice(void);
 int32_t mdow_sparkle_can_check(void);
 int32_t mdow_sparkle_is_enabled(void);
+void mdow_sparkle_set_automatic_checks(int32_t enabled);
 
 #ifdef __cplusplus
 }

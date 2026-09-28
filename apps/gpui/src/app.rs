@@ -12,7 +12,7 @@ use crate::{
         PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
     },
     persist::{SessionRole, StateStore, StoredPrefs},
-    prefs::{ColumnWidth, PrefEdit, Prefs, SidebarMode, ThemeMode},
+    prefs::{PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
     sparkle::{self, UpdateUi},
     syntax::prepare_document,
@@ -365,7 +365,8 @@ impl MdowApp {
         let wide_mode = prefs.reader_width.is_full();
         let update_poll_task = cx.spawn(async move |this, cx| {
             Timer::after(Duration::from_secs(sparkle::LAUNCH_CHECK_DELAY_SECS)).await;
-            let _ = this.update(cx, |_, _| {
+            let _ = this.update(cx, |this, _| {
+                sparkle::set_automatic_checks(this.prefs.get().auto_update);
                 sparkle::start();
             });
             loop {
@@ -678,8 +679,12 @@ impl MdowApp {
 
     fn apply_pref(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
         let session = self.session_snapshot();
+        let auto_update = self.prefs.get().auto_update;
         if !self.prefs.apply(edit, &session) {
             return;
+        }
+        if self.prefs.get().auto_update != auto_update {
+            sparkle::set_automatic_checks(self.prefs.get().auto_update);
         }
         self.wide_mode = self.prefs.get().reader_width.is_full();
         self.overlays
@@ -827,13 +832,7 @@ impl MdowApp {
                 self.apply_pref(PrefEdit::Sidebar(SidebarMode::Outline), cx)
             }
             CommandId::ToggleWideMode => self.apply_pref(PrefEdit::ToggleFull, cx),
-            CommandId::ColumnStandard => {
-                self.apply_pref(PrefEdit::Column(ColumnWidth::Standard), cx)
-            }
-            CommandId::ColumnComfortable => {
-                self.apply_pref(PrefEdit::Column(ColumnWidth::Comfortable), cx)
-            }
-            CommandId::ColumnWide => self.apply_pref(PrefEdit::Column(ColumnWidth::Wide), cx),
+            CommandId::LineWidth(width) => self.apply_pref(PrefEdit::LineWidth(width), cx),
             CommandId::ThemeSystem => self.apply_pref(PrefEdit::Theme(ThemeMode::System), cx),
             CommandId::ThemeLight => self.apply_pref(PrefEdit::Theme(ThemeMode::Light), cx),
             CommandId::ThemeDark => self.apply_pref(PrefEdit::Theme(ThemeMode::Dark), cx),

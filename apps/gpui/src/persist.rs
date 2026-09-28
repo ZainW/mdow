@@ -139,6 +139,7 @@ struct WireState {
     wide_mode: bool,
     zoom_level: u16,
     sidebar_mode: String,
+    auto_update_enabled: bool,
     recents: Vec<String>,
     last_folder: Option<String>,
     session_tabs: Vec<WireTab>,
@@ -181,6 +182,7 @@ fn encode(prefs: &Prefs, session: &Session) -> WireState {
         wide_mode: prefs.reader_width.is_full(),
         zoom_level: prefs.zoom.percent(),
         sidebar_mode: sidebar_mode_wire(prefs.sidebar_mode).to_owned(),
+        auto_update_enabled: prefs.auto_update,
         recents: session
             .recents
             .iter()
@@ -230,6 +232,7 @@ fn decode(value: &Value) -> Restored {
     let sidebar_mode = string_field(object, "sidebarMode")
         .map(parse_sidebar_mode)
         .unwrap_or_default();
+    let auto_update = bool_field(object, "autoUpdateEnabled").unwrap_or(true);
 
     let recents = Recents::from_paths(
         array_field(object, "recents")
@@ -266,6 +269,7 @@ fn decode(value: &Value) -> Restored {
             reader_width,
             zoom,
             sidebar_mode,
+            auto_update,
         },
         session: Session {
             tabs: SessionTabs::new(tab_paths, active),
@@ -388,20 +392,21 @@ fn parse_interface_scale(value: &str) -> InterfaceScale {
     }
 }
 
+/// Electron stores the columns under their original names; only the labels changed.
 fn column_width_wire(column: ColumnWidth) -> &'static str {
     match column {
-        ColumnWidth::Standard => "standard",
-        ColumnWidth::Comfortable => "comfortable",
+        ColumnWidth::Narrow => "standard",
+        ColumnWidth::Medium => "comfortable",
         ColumnWidth::Wide => "wide",
     }
 }
 
 fn parse_column_width(value: &str) -> ColumnWidth {
     match value {
-        "standard" => ColumnWidth::Standard,
-        "comfortable" => ColumnWidth::Comfortable,
+        "standard" => ColumnWidth::Narrow,
+        "comfortable" => ColumnWidth::Medium,
         "wide" => ColumnWidth::Wide,
-        _ => ColumnWidth::Standard,
+        _ => ColumnWidth::Narrow,
     }
 }
 
@@ -425,7 +430,7 @@ fn parse_sidebar_mode(value: &str) -> SidebarMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prefs::PrefEdit;
+    use crate::prefs::{LineWidth, PrefEdit};
     use std::fs;
 
     fn sample_prefs() -> Prefs {
@@ -434,7 +439,8 @@ mod tests {
         prefs.apply(PrefEdit::ContentFont(ContentFont::Georgia));
         prefs.apply(PrefEdit::CodeFont(CodeFont::JetBrainsMono));
         prefs.apply(PrefEdit::InterfaceScale(InterfaceScale::Large));
-        prefs.apply(PrefEdit::Column(ColumnWidth::Comfortable));
+        prefs.apply(PrefEdit::LineWidth(LineWidth::Medium));
+        prefs.apply(PrefEdit::AutoUpdate(false));
         prefs.apply(PrefEdit::ToggleFull);
         prefs.apply(PrefEdit::ZoomIn);
         prefs.apply(PrefEdit::Sidebar(SidebarMode::Outline));
@@ -481,7 +487,7 @@ mod tests {
         assert_eq!(
             full.prefs.reader_width,
             ReaderWidth::Full {
-                returns_to: ColumnWidth::Comfortable
+                returns_to: ColumnWidth::Medium
             }
         );
 
@@ -511,6 +517,7 @@ mod tests {
         assert_eq!(restored.prefs.content_font, ContentFont::Georgia);
         assert_eq!(restored.prefs.zoom, ZoomLevel::default());
         assert_eq!(restored.prefs.sidebar_mode, SidebarMode::Outline);
+        assert!(restored.prefs.auto_update);
         assert_eq!(
             restored.session.recents.iter().collect::<Vec<_>>(),
             vec![Path::new("/kept.md")]
@@ -552,6 +559,7 @@ mod tests {
         assert_eq!(json["wideMode"], true);
         assert_eq!(json["zoomLevel"], 110);
         assert_eq!(json["sidebarMode"], "outline");
+        assert_eq!(json["autoUpdateEnabled"], false);
         assert_eq!(json["lastFolder"], "/notes");
         assert_eq!(json["sessionActiveTabPath"], "/notes/b.md");
         assert_eq!(json["sessionTabs"][1]["path"], "/notes/b.md");

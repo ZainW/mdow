@@ -1,7 +1,7 @@
 use crate::actions::Dismiss;
 use crate::document::DocumentBlock;
 use crate::prefs::{
-    CodeFont, ColumnWidth, ContentFont, InterfaceScale, PrefEdit, Prefs, READER_FONT_SIZE,
+    CodeFont, ContentFont, InterfaceScale, LineWidth, PrefEdit, Prefs, READER_FONT_SIZE,
     READER_LINE_HEIGHT, ThemeMode,
 };
 use crate::session::Recents;
@@ -439,9 +439,7 @@ pub enum CommandId {
     SidebarFolder,
     SidebarOutline,
     ToggleWideMode,
-    ColumnStandard,
-    ColumnComfortable,
-    ColumnWide,
+    LineWidth(LineWidth),
     ThemeSystem,
     ThemeLight,
     ThemeDark,
@@ -514,18 +512,23 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             keys: Some("⇧⌘W"),
         },
         CommandSpec {
-            id: CommandId::ColumnStandard,
-            title: "Reading Width: Standard",
+            id: CommandId::LineWidth(LineWidth::Narrow),
+            title: "Line Width: Narrow",
             keys: None,
         },
         CommandSpec {
-            id: CommandId::ColumnComfortable,
-            title: "Reading Width: Comfortable",
+            id: CommandId::LineWidth(LineWidth::Medium),
+            title: "Line Width: Medium",
             keys: None,
         },
         CommandSpec {
-            id: CommandId::ColumnWide,
-            title: "Reading Width: Wide",
+            id: CommandId::LineWidth(LineWidth::Wide),
+            title: "Line Width: Wide",
+            keys: None,
+        },
+        CommandSpec {
+            id: CommandId::LineWidth(LineWidth::Full),
+            title: "Line Width: Full",
             keys: None,
         },
         CommandSpec {
@@ -1099,24 +1102,14 @@ impl Render for SettingsPanel {
                 cx,
             ))
             .child(seg_row(
-                "Reading width",
-                [
+                "Line width",
+                LineWidth::ALL.map(|width| {
                     (
-                        "Standard",
-                        prefs.reader_width.column() == ColumnWidth::Standard,
-                        PrefEdit::Column(ColumnWidth::Standard),
-                    ),
-                    (
-                        "Comfortable",
-                        prefs.reader_width.column() == ColumnWidth::Comfortable,
-                        PrefEdit::Column(ColumnWidth::Comfortable),
-                    ),
-                    (
-                        "Wide",
-                        prefs.reader_width.column() == ColumnWidth::Wide,
-                        PrefEdit::Column(ColumnWidth::Wide),
-                    ),
-                ],
+                        width.label(),
+                        prefs.reader_width.line_width() == width,
+                        PrefEdit::LineWidth(width),
+                    )
+                }),
                 theme,
                 cx,
             ))

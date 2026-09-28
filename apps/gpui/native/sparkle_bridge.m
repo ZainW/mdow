@@ -218,6 +218,18 @@ int32_t mdow_sparkle_is_enabled(void) {
   return sparkle_configured() ? 1 : 0;
 }
 
+// Mirrors the "Automatically check for updates" setting. Applied before the launch check so a
+// disabled preference never triggers a background check.
+static BOOL gAutomaticChecks = YES;
+
+void mdow_sparkle_set_automatic_checks(int32_t enabled) {
+  gAutomaticChecks = enabled != 0;
+  SPUUpdater *updater = gHost.updater;
+  if (updater != nil && updater.automaticallyChecksForUpdates != gAutomaticChecks) {
+    updater.automaticallyChecksForUpdates = gAutomaticChecks;
+  }
+}
+
 int32_t mdow_sparkle_start(void) {
   if (gHost.updater != nil) {
     return 1;
@@ -241,6 +253,9 @@ int32_t mdow_sparkle_start(void) {
   host.updater = updater;
   gHost = host;
 
+  if (updater.automaticallyChecksForUpdates != gAutomaticChecks) {
+    updater.automaticallyChecksForUpdates = gAutomaticChecks;
+  }
   if (updater.automaticallyChecksForUpdates) {
     [updater checkForUpdatesInBackground];
   }

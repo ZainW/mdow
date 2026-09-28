@@ -274,6 +274,14 @@ pub fn dismiss_choice() {
     macos::dismiss_choice();
 }
 
+/// Electron's `autoUpdateEnabled`. Safe to call before [`start`]: the launch check honors it.
+pub fn set_automatic_checks(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    macos::set_automatic_checks(enabled);
+    #[cfg(not(target_os = "macos"))]
+    let _ = enabled;
+}
+
 pub fn current_ui() -> UpdateUi {
     #[cfg(target_os = "macos")]
     {
@@ -303,6 +311,7 @@ mod macos {
         fn mdow_sparkle_install();
         fn mdow_sparkle_dismiss_choice();
         fn mdow_sparkle_is_enabled() -> i32;
+        fn mdow_sparkle_set_automatic_checks(enabled: i32);
     }
 
     static STARTED: AtomicBool = AtomicBool::new(false);
@@ -357,6 +366,10 @@ mod macos {
 
     pub fn dismiss_choice() {
         unsafe { mdow_sparkle_dismiss_choice() }
+    }
+
+    pub fn set_automatic_checks(enabled: bool) {
+        unsafe { mdow_sparkle_set_automatic_checks(i32::from(enabled)) }
     }
 
     pub fn snapshot() -> UpdateUi {

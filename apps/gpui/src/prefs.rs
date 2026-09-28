@@ -21,24 +21,48 @@ impl ThemeMode {
     }
 }
 
+/// A constrained reading column. `Full` is not a column: it lives on [`ReaderWidth`] so the
+/// full-width toggle can return to the last column the reader chose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ColumnWidth {
     #[default]
-    Standard,
-    Comfortable,
+    Narrow,
+    Medium,
     Wide,
 }
 
 impl ColumnWidth {
-    pub const STANDARD_PX: f32 = 768.0;
-    pub const COMFORTABLE_PX: f32 = 896.0;
+    pub const NARROW_PX: f32 = 768.0;
+    pub const MEDIUM_PX: f32 = 896.0;
     pub const WIDE_PX: f32 = 1088.0;
 
     pub fn max_width(self) -> f32 {
         match self {
-            Self::Standard => Self::STANDARD_PX,
-            Self::Comfortable => Self::COMFORTABLE_PX,
+            Self::Narrow => Self::NARROW_PX,
+            Self::Medium => Self::MEDIUM_PX,
             Self::Wide => Self::WIDE_PX,
+        }
+    }
+}
+
+/// The four choices Settings offers for "Line width".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineWidth {
+    Narrow,
+    Medium,
+    Wide,
+    Full,
+}
+
+impl LineWidth {
+    pub const ALL: [Self; 4] = [Self::Narrow, Self::Medium, Self::Wide, Self::Full];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Narrow => "Narrow",
+            Self::Medium => "Medium",
+            Self::Wide => "Wide",
+            Self::Full => "Full",
         }
     }
 }
@@ -51,7 +75,7 @@ pub enum ReaderWidth {
 
 impl Default for ReaderWidth {
     fn default() -> Self {
-        Self::Column(ColumnWidth::Standard)
+        Self::Column(ColumnWidth::Narrow)
     }
 }
 
@@ -63,10 +87,25 @@ impl ReaderWidth {
         }
     }
 
-    pub fn with_column(self, column: ColumnWidth) -> Self {
+    /// Choosing a column always leaves full width; choosing `Full` remembers the current column
+    /// so the toggle (and the breadcrumb button) can return to it.
+    pub fn with_line_width(self, width: LineWidth) -> Self {
+        match width {
+            LineWidth::Narrow => Self::Column(ColumnWidth::Narrow),
+            LineWidth::Medium => Self::Column(ColumnWidth::Medium),
+            LineWidth::Wide => Self::Column(ColumnWidth::Wide),
+            LineWidth::Full => Self::Full {
+                returns_to: self.column(),
+            },
+        }
+    }
+
+    pub fn line_width(self) -> LineWidth {
         match self {
-            Self::Column(_) => Self::Column(column),
-            Self::Full { .. } => Self::Full { returns_to: column },
+            Self::Column(ColumnWidth::Narrow) => LineWidth::Narrow,
+            Self::Column(ColumnWidth::Medium) => LineWidth::Medium,
+            Self::Column(ColumnWidth::Wide) => LineWidth::Wide,
+            Self::Full { .. } => LineWidth::Full,
         }
     }
 
@@ -214,7 +253,7 @@ pub enum SidebarMode {
     Outline,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Prefs {
     pub theme_mode: ThemeMode,
     pub content_font: ContentFont,
@@ -223,6 +262,23 @@ pub struct Prefs {
     pub reader_width: ReaderWidth,
     pub zoom: ZoomLevel,
     pub sidebar_mode: SidebarMode,
+    /// Electron's `autoUpdateEnabled`: whether Sparkle checks for updates in the background.
+    pub auto_update: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            theme_mode: ThemeMode::default(),
+            content_font: ContentFont::default(),
+            code_font: CodeFont::default(),
+            interface_scale: InterfaceScale::default(),
+            reader_width: ReaderWidth::default(),
+            zoom: ZoomLevel::default(),
+            sidebar_mode: SidebarMode::default(),
+            auto_update: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -231,12 +287,13 @@ pub enum PrefEdit {
     ContentFont(ContentFont),
     CodeFont(CodeFont),
     InterfaceScale(InterfaceScale),
-    Column(ColumnWidth),
+    LineWidth(LineWidth),
     ToggleFull,
     ZoomIn,
     ZoomOut,
     ZoomReset,
     Sidebar(SidebarMode),
+    AutoUpdate(bool),
     ResetAll,
 }
 
@@ -257,12 +314,15 @@ impl Prefs {
             PrefEdit::ContentFont(content_font) => self.content_font = content_font,
             PrefEdit::CodeFont(code_font) => self.code_font = code_font,
             PrefEdit::InterfaceScale(interface_scale) => self.interface_scale = interface_scale,
-            PrefEdit::Column(column) => self.reader_width = self.reader_width.with_column(column),
+            PrefEdit::LineWidth(width) => {
+                self.reader_width = self.reader_width.with_line_width(width)
+            }
             PrefEdit::ToggleFull => self.reader_width = self.reader_width.toggled_full(),
             PrefEdit::ZoomIn => self.zoom = self.zoom.zoomed_in(),
             PrefEdit::ZoomOut => self.zoom = self.zoom.zoomed_out(),
             PrefEdit::ZoomReset => self.zoom = ZoomLevel::default(),
             PrefEdit::Sidebar(sidebar_mode) => self.sidebar_mode = sidebar_mode,
+            PrefEdit::AutoUpdate(enabled) => self.auto_update = enabled,
             PrefEdit::ResetAll => *self = Self::default(),
         }
         *self != before
@@ -285,21 +345,60 @@ mod tests {
 
     #[test]
     fn toggle_full_is_an_involution_that_remembers_the_column() {
-        let comfortable = ReaderWidth::Column(ColumnWidth::Comfortable);
-        let full = comfortable.toggled_full();
+        let medium = ReaderWidth::Column(ColumnWidth::Medium);
+        let full = medium.toggled_full();
         assert_eq!(
             full,
             ReaderWidth::Full {
-                returns_to: ColumnWidth::Comfortable
+                returns_to: ColumnWidth::Medium
             }
         );
         assert!(full.is_full());
         assert_eq!(full.max_width(), None);
-        assert_eq!(full.toggled_full(), comfortable);
-        assert_eq!(
-            full.with_column(ColumnWidth::Wide).toggled_full(),
-            ReaderWidth::Column(ColumnWidth::Wide)
-        );
+        assert_eq!(full.line_width(), LineWidth::Full);
+        assert_eq!(full.toggled_full(), medium);
+    }
+
+    #[test]
+    fn full_line_width_round_trips_through_the_toggle_to_the_last_column() {
+        let mut prefs = Prefs::default();
+        prefs.apply(PrefEdit::LineWidth(LineWidth::Wide));
+        assert!(prefs.apply(PrefEdit::LineWidth(LineWidth::Full)));
+        assert_eq!(prefs.reader_width.line_width(), LineWidth::Full);
+        assert_eq!(prefs.reader_style().max_width, None);
+        assert!(!prefs.apply(PrefEdit::LineWidth(LineWidth::Full)));
+
+        assert!(prefs.apply(PrefEdit::ToggleFull));
+        assert_eq!(prefs.reader_width.line_width(), LineWidth::Wide);
+        assert!(prefs.apply(PrefEdit::ToggleFull));
+        assert_eq!(prefs.reader_width.line_width(), LineWidth::Full);
+
+        // Picking a column while full leaves full width; the toggle then remembers it.
+        assert!(prefs.apply(PrefEdit::LineWidth(LineWidth::Narrow)));
+        assert_eq!(prefs.reader_style().max_width, Some(768.0));
+        prefs.apply(PrefEdit::ToggleFull);
+        prefs.apply(PrefEdit::ToggleFull);
+        assert_eq!(prefs.reader_width.line_width(), LineWidth::Narrow);
+    }
+
+    #[test]
+    fn line_width_choices_cover_every_reader_width() {
+        for width in LineWidth::ALL {
+            assert_eq!(
+                ReaderWidth::default().with_line_width(width).line_width(),
+                width
+            );
+        }
+    }
+
+    #[test]
+    fn automatic_update_checks_default_on_and_reset_with_everything_else() {
+        let mut prefs = Prefs::default();
+        assert!(prefs.auto_update);
+        assert!(prefs.apply(PrefEdit::AutoUpdate(false)));
+        assert!(!prefs.auto_update);
+        assert!(prefs.apply(PrefEdit::ResetAll));
+        assert!(prefs.auto_update);
     }
 
     #[test]
@@ -328,8 +427,8 @@ mod tests {
 
     #[test]
     fn column_widths_match_electron_rem_values_at_sixteen_px() {
-        assert_eq!(ColumnWidth::Standard.max_width(), 768.0);
-        assert_eq!(ColumnWidth::Comfortable.max_width(), 896.0);
+        assert_eq!(ColumnWidth::Narrow.max_width(), 768.0);
+        assert_eq!(ColumnWidth::Medium.max_width(), 896.0);
         assert_eq!(ColumnWidth::Wide.max_width(), 1088.0);
     }
 
