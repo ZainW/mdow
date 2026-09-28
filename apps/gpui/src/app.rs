@@ -5314,13 +5314,17 @@ mod tests {
         visual.update(|window, cx| window.draw(cx).clear());
         click_debug(&mut visual, "settings-zoom-in");
         visual.update(|window, cx| window.draw(cx).clear());
-        click_debug(&mut visual, "settings-auto-update");
+        // The Updates group (and its auto-update switch) only exists on macOS.
+        let has_updates = cfg!(target_os = "macos");
+        if has_updates {
+            click_debug(&mut visual, "settings-auto-update");
+        }
         window
             .update(cx, |app, _, _| {
                 let prefs = app.prefs_snapshot();
                 assert!(prefs.reader_width.is_full());
                 assert_eq!(prefs.zoom.percent(), 110);
-                assert!(!prefs.auto_update);
+                assert_eq!(prefs.auto_update, !has_updates);
             })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
