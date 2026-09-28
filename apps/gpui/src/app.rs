@@ -9,8 +9,9 @@ use crate::{
     actions::{ClearRecents, Minimize, OpenRecent, ToggleFullScreen, Zoom},
     document::{DocumentError, ParsedDocument, load_source, parse_document},
     overlay::{
-        CommandId, FindEvent, FindOverlay, OpenOverlay, OverlayHost, OverlayKind, PaletteAction,
-        PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
+        CommandId, FindEvent, FindHit, FindMatches, FindOverlay, OpenOverlay, OverlayHost,
+        OverlayKind, PaletteAction, PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel,
+        ShortcutsCard, ShortcutsEvent,
     },
     persist::{SessionRole, StateStore, StoredPrefs},
     prefs::{PrefEdit, Prefs, SidebarMode, ThemeMode},
@@ -25,7 +26,7 @@ use crate::{
             render_error_banner, render_reload_error_banner, render_sidebar, render_tab_bar,
             render_update_banner,
         },
-        field::{Field, FieldEvent},
+        field::{self, Field, FieldEvent},
         primitives::{ContextMenu, ContextMenuEntry, ContextMenuEvent, context_menu_layer},
         reader::{
             LinkFocusKey, LinkRoute, LinkSurfaceKey, ReaderPane, classify_link,
@@ -339,6 +340,9 @@ pub enum ContextAction {
     CopyPath(PathBuf),
     Reveal(PathBuf),
     RemoveRecent(PathBuf),
+    /// Reader context menu: copy the selection of the document's reader.
+    CopySelection(PathBuf),
+    SelectAll(PathBuf),
 }
 
 /// Menu entries paired with the action each confirms (`None` for separators).
@@ -469,7 +473,8 @@ pub(crate) struct ReaderPaintState {
     pub copied_code: Option<(usize, Instant)>,
     pub hovered_link: Option<LinkFocusKey>,
     pub focused_link: Option<LinkFocusKey>,
-    pub find_block: Option<usize>,
+    pub find_hits: Option<Arc<[FindHit]>>,
+    pub find_active: Option<FindHit>,
 }
 
 /// Space pages like a browser: Shift+Space goes back up.
@@ -1064,6 +1069,11 @@ impl MdowApp {
             cx.notify();
             return;
         }
+        if let Some(pane) = self.active_reader_pane()
+            && pane.update(cx, |pane, cx| pane.clear_selection(cx))
+        {
+            return;
+        }
         if self.model.dismiss_active_reload_error() {
             cx.notify();
         }
@@ -1134,7 +1144,14 @@ impl MdowApp {
 
     fn on_find_event(&mut self, event: &FindEvent, cx: &mut Context<Self>) {
         match event {
-            FindEvent::ActiveHit(hit) => self.scroll_reader_to_block(hit.block, cx),
+            FindEvent::ActiveHit(hit) => {
+                if let Some(pane) = self.active_reader_pane() {
+                    pane.update(cx, |pane, cx| {
+                        pane.reveal_find_hit(*hit);
+                        cx.notify();
+                    });
+                }
+            }
             FindEvent::Dismissed => {
                 self.overlays.close(None);
                 cx.notify();
@@ -1318,14 +1335,72 @@ impl MdowApp {
     }
 
     pub(crate) fn reader_paint_state(&self, cx: &App) -> ReaderPaintState {
+        let matches = self.overlays.find().map(|find| find.read(cx).matches());
         ReaderPaintState {
             copied_code: self.copied_code,
             hovered_link: self.hovered_link,
             focused_link: self.focused_link,
-            find_block: self
-                .overlays
-                .find()
-                .and_then(|find| find.read(cx).matches().active().map(|hit| hit.block)),
+            find_hits: matches.map(FindMatches::shared_hits),
+            find_active: matches.and_then(FindMatches::active),
+        }
+    }
+
+    fn active_reader_pane(&self) -> Option<Entity<ReaderPane>> {
+        let path = self.model.tabs.active()?.path();
+        self.reader_panes.get(path).cloned()
+    }
+
+    /// A click in the reader takes focus from a text field (such as the find bar) so Copy and
+    /// Select All go to the reader, as in a browser.
+    pub(crate) fn focus_reader(&self, window: &mut Window) {
+        if !self.focus_handle.is_focused(window) {
+            self.focus_handle.focus(window);
+        }
+    }
+
+    pub(crate) fn reader_has_selection(&self, path: &Path, cx: &App) -> bool {
+        self.reader_panes
+            .get(path)
+            .is_some_and(|pane| pane.read(cx).has_selection())
+    }
+
+    pub(crate) fn open_reader_context_menu(
+        &mut self,
+        path: &Path,
+        has_selection: bool,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let spec = vec![
+            menu_item_if(
+                has_selection,
+                "Copy",
+                ContextAction::CopySelection(path.to_owned()),
+            ),
+            menu_item("Select All", ContextAction::SelectAll(path.to_owned())),
+        ];
+        self.open_context_menu(spec, position, window, cx);
+    }
+
+    /// Edit > Copy (and Cmd+C) when no text field has focus: copy the reader's selection.
+    fn on_reader_copy(&mut self, _: &field::Copy, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(pane) = self.active_reader_pane() {
+            pane.update(cx, |pane, cx| pane.copy_selection(cx));
+        }
+    }
+
+    /// Edit > Select All (and Cmd+A) when no text field has focus: select the whole document.
+    fn on_reader_select_all(
+        &mut self,
+        _: &field::SelectAll,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(self.overlays.kind(), None | Some(OverlayKind::Find))
+            && let Some(pane) = self.active_reader_pane()
+        {
+            pane.update(cx, |pane, cx| pane.select_all(cx));
         }
     }
 
@@ -1762,6 +1837,16 @@ impl MdowApp {
             }
             ContextAction::Reveal(path) => self.reveal_path(&path),
             ContextAction::RemoveRecent(path) => self.remove_recent(&path, cx),
+            ContextAction::CopySelection(path) => {
+                if let Some(pane) = self.reader_panes.get(&path).cloned() {
+                    pane.update(cx, |pane, cx| pane.copy_selection(cx));
+                }
+            }
+            ContextAction::SelectAll(path) => {
+                if let Some(pane) = self.reader_panes.get(&path).cloned() {
+                    pane.update(cx, |pane, cx| pane.select_all(cx));
+                }
+            }
         }
     }
 
@@ -2112,6 +2197,8 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::on_dismiss))
             .on_action(cx.listener(Self::on_find_next))
             .on_action(cx.listener(Self::on_find_previous))
+            .on_action(cx.listener(Self::on_reader_copy))
+            .on_action(cx.listener(Self::on_reader_select_all))
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
             .on_action(cx.listener(Self::on_zoom_reset))
@@ -2177,10 +2264,11 @@ mod tests {
     use crate::session::Recents;
     use crate::theme::{TrafficLightClearance, TrafficLights};
     use crate::ui::reader::reader_key_target;
+    use crate::ui::text_surface::{SurfaceId, TextPoint};
     use gpui::{
-        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, Pixels,
-        ScrollDelta, ScrollWheelEvent, TestAppContext, TitlebarOptions, VisualTestContext,
-        WindowOptions, point,
+        FileDropEvent, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent,
+        MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, TestAppContext,
+        TitlebarOptions, VisualTestContext, WindowOptions, point,
     };
     use std::{
         fs,
@@ -5063,5 +5151,406 @@ mod tests {
                 );
             })
             .unwrap();
+    }
+
+    fn active_pane(
+        window: gpui::WindowHandle<MdowApp>,
+        visual: &mut VisualTestContext,
+    ) -> Entity<ReaderPane> {
+        window
+            .update(visual, |app, _, _| app.active_reader_pane().unwrap())
+            .unwrap()
+    }
+
+    /// Where the caret before byte `offset` of surface `surface` of block `block` was painted.
+    fn caret(
+        window: gpui::WindowHandle<MdowApp>,
+        visual: &mut VisualTestContext,
+        block: usize,
+        surface: usize,
+        offset: usize,
+    ) -> Point<Pixels> {
+        let pane = active_pane(window, visual);
+        visual.update(|_, cx| {
+            pane.read(cx)
+                .painted_caret(TextPoint::new(SurfaceId::new(block, surface), offset))
+                .unwrap_or_else(|| panic!("surface {block}/{surface} should be painted"))
+        })
+    }
+
+    fn selected_text(
+        window: gpui::WindowHandle<MdowApp>,
+        visual: &mut VisualTestContext,
+    ) -> Option<String> {
+        let pane = active_pane(window, visual);
+        visual.update(|_, cx| pane.read(cx).selected_text())
+    }
+
+    fn drag(visual: &mut VisualTestContext, from: Point<Pixels>, to: Point<Pixels>) {
+        visual.simulate_mouse_move(from, None, Modifiers::none());
+        visual.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
+        visual.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+        redraw(visual);
+    }
+
+    fn selection_window(
+        cx: &mut TestAppContext,
+        source: &str,
+    ) -> (gpui::WindowHandle<MdowApp>, VisualTestContext) {
+        let window = document_window(cx, source);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        redraw(&mut visual);
+        (window, visual)
+    }
+
+    #[gpui::test]
+    fn dragging_selects_text_within_a_paragraph(cx: &mut TestAppContext) {
+        let (window, mut visual) =
+            selection_window(cx, "First paragraph here.\n\nSecond paragraph text.");
+        let from = caret(window, &mut visual, 0, 0, 6);
+        let to = caret(window, &mut visual, 0, 0, 15);
+        drag(&mut visual, from, to);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("paragraph")
+        );
+
+        // Selection paints behind the glyphs of exactly the selected range.
+        let pane = active_pane(window, &mut visual);
+        let rects = visual.update(|_, cx| pane.read(cx).painted_rects(SurfaceId::new(0, 0), 6..15));
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].left(), from.x);
+        assert_eq!(rects[0].right(), to.x);
+
+        // A plain click elsewhere collapses (clears) the selection.
+        let elsewhere = caret(window, &mut visual, 1, 0, 3);
+        drag(&mut visual, elsewhere, elsewhere);
+        assert_eq!(selected_text(window, &mut visual), None);
+    }
+
+    #[gpui::test]
+    fn dragging_across_blocks_copies_a_blank_line_between_paragraphs(cx: &mut TestAppContext) {
+        let (window, mut visual) =
+            selection_window(cx, "First paragraph here.\n\nSecond paragraph text.");
+        let from = caret(window, &mut visual, 0, 0, 6);
+        let to = caret(window, &mut visual, 1, 0, 6);
+        drag(&mut visual, from, to);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("paragraph here.\n\nSecond")
+        );
+
+        // Dragging backwards selects the same text.
+        drag(&mut visual, to, from);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("paragraph here.\n\nSecond")
+        );
+
+        // Shift-click extends from the anchor (the backward drag anchored after "Second").
+        let end = caret(window, &mut visual, 1, 0, 16);
+        visual.simulate_mouse_down(end, MouseButton::Left, Modifiers::shift());
+        visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::shift());
+        redraw(&mut visual);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some(" paragraph")
+        );
+    }
+
+    #[gpui::test]
+    fn dragging_selects_inside_code_blocks(cx: &mut TestAppContext) {
+        let (window, mut visual) =
+            selection_window(cx, "Intro.\n\n```rust\nfn main() {\n    run();\n}\n```\n");
+        let from = caret(window, &mut visual, 1, 0, 3);
+        let to = caret(window, &mut visual, 1, 0, 22);
+        drag(&mut visual, from, to);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("main() {\n    run();")
+        );
+    }
+
+    #[gpui::test]
+    fn double_click_selects_a_word_and_triple_click_the_block(cx: &mut TestAppContext) {
+        let (window, mut visual) = selection_window(cx, "Alpha bravo_two charlie.");
+        let position = caret(window, &mut visual, 0, 0, 8);
+        for click_count in 1..=2 {
+            visual.simulate_event(MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::none(),
+                click_count,
+                first_mouse: false,
+            });
+            visual.simulate_event(MouseUpEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::none(),
+                click_count,
+            });
+        }
+        redraw(&mut visual);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("bravo_two")
+        );
+
+        visual.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position,
+            modifiers: Modifiers::none(),
+            click_count: 3,
+            first_mouse: false,
+        });
+        visual.simulate_event(MouseUpEvent {
+            button: MouseButton::Left,
+            position,
+            modifiers: Modifiers::none(),
+            click_count: 3,
+        });
+        redraw(&mut visual);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("Alpha bravo_two charlie.")
+        );
+    }
+
+    #[gpui::test]
+    fn select_all_and_copy_put_the_rendered_document_on_the_clipboard(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            cx.bind_keys([
+                gpui::KeyBinding::new("cmd-a", field::SelectAll, None),
+                gpui::KeyBinding::new("cmd-c", field::Copy, None),
+                gpui::KeyBinding::new("cmd-a", field::SelectAll, Some("Field")),
+            ])
+        });
+        let (window, mut visual) = selection_window(
+            cx,
+            "# Title\n\nSome *styled* text.\n\n- one\n- two\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n```\ncode line\n```\n\n> quoted",
+        );
+        visual.simulate_keystrokes("cmd-a cmd-c");
+        assert_eq!(
+            visual.read_from_clipboard().and_then(|item| item.text()),
+            Some(
+                "Title\n\nSome styled text.\n\n• one\n• two\n\nA\tB\n1\t2\n\ncode line\n\nquoted"
+                    .to_owned()
+            )
+        );
+
+        // Escape clears the selection.
+        visual.dispatch_action(Dismiss);
+        assert_eq!(selected_text(window, &mut visual), None);
+
+        // With the find field focused, Cmd+A selects the field's text, not the document.
+        visual.dispatch_action(ToggleFind);
+        redraw(&mut visual);
+        visual.simulate_keystrokes("x cmd-a");
+        assert_eq!(selected_text(window, &mut visual), None);
+    }
+
+    #[gpui::test]
+    fn edit_menu_copy_and_select_all_route_to_the_reader(cx: &mut TestAppContext) {
+        let (window, mut visual) = selection_window(cx, "Menu driven text.");
+        visual.dispatch_action(field::SelectAll);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("Menu driven text.")
+        );
+        visual.dispatch_action(field::Copy);
+        assert_eq!(
+            visual.read_from_clipboard().and_then(|item| item.text()),
+            Some("Menu driven text.".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn reader_context_menu_offers_copy_only_with_a_selection(cx: &mut TestAppContext) {
+        let (window, mut visual) = selection_window(cx, "Right click me please.");
+        let position = caret(window, &mut visual, 0, 0, 2);
+        visual.simulate_mouse_down(position, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        window
+            .update(&mut visual, |app, _, cx| {
+                let menu = app.context_menu_view().expect("reader menu");
+                assert_eq!(
+                    menu.read(cx).entries(),
+                    &[
+                        ContextMenuEntry::disabled("Copy"),
+                        ContextMenuEntry::item("Select All"),
+                    ]
+                );
+                app.context_menu = None;
+            })
+            .unwrap();
+
+        let from = caret(window, &mut visual, 0, 0, 0);
+        let to = caret(window, &mut visual, 0, 0, 5);
+        drag(&mut visual, from, to);
+        visual.simulate_mouse_down(position, MouseButton::Right, Modifiers::none());
+        redraw(&mut visual);
+        window
+            .update(&mut visual, |app, _, cx| {
+                let menu = app.context_menu_view().expect("reader menu");
+                assert_eq!(menu.read(cx).entries()[0], ContextMenuEntry::item("Copy"));
+                app.run_context_action(
+                    ContextAction::CopySelection(PathBuf::from("/tmp/click.md")),
+                    cx,
+                );
+            })
+            .unwrap();
+        assert_eq!(
+            visual.read_from_clipboard().and_then(|item| item.text()),
+            Some("Right".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn link_clicks_activate_but_drags_starting_on_a_link_select(cx: &mut TestAppContext) {
+        let root = tempfile::tempdir().unwrap();
+        let guide = root.path().join("guide.md");
+        fs::write(&guide, "# Guide").unwrap();
+        let (window, mut visual) =
+            selection_window(cx, &format!("Read [the guide]({}) now.", guide.display()));
+        // Drag from inside the link to past it: a selection, no navigation.
+        let from = caret(window, &mut visual, 0, 0, 5);
+        let to = caret(window, &mut visual, 0, 0, 17);
+        drag(&mut visual, from, to);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("the guide no")
+        );
+        window
+            .update(&mut visual, |app, _, _| assert_eq!(app.model.tabs.len(), 1))
+            .unwrap();
+
+        // A drag that stays within the link still selects rather than navigating.
+        let inner = caret(window, &mut visual, 0, 0, 11);
+        drag(&mut visual, from, inner);
+        window
+            .update(&mut visual, |app, _, _| assert_eq!(app.model.tabs.len(), 1))
+            .unwrap();
+
+        // A plain click on the link opens it.
+        let click = caret(window, &mut visual, 0, 0, 8);
+        drag(&mut visual, click, click);
+        window
+            .update(&mut visual, |app, _, _| assert_eq!(app.model.tabs.len(), 2))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn find_highlights_match_ranges_in_nested_blocks_and_code(cx: &mut TestAppContext) {
+        let (window, mut visual) = selection_window(
+            cx,
+            "> - quoted needle\n>   nested\n\n```\nlet needle = 1;\n```\n\n| a | needle |\n| - | - |\n| x | y |",
+        );
+        visual.dispatch_action(ToggleFind);
+        redraw(&mut visual);
+        visual.simulate_keystrokes("n e e d l e");
+        redraw(&mut visual);
+        redraw(&mut visual);
+        let hits = window
+            .update(&mut visual, |app, _, cx| {
+                app.overlays
+                    .find()
+                    .unwrap()
+                    .read(cx)
+                    .matches()
+                    .hits()
+                    .to_vec()
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 3);
+        let pane = active_pane(window, &mut visual);
+        for hit in &hits {
+            let text = visual
+                .update(|_, cx| pane.read(cx).painted_text(hit.surface_id()))
+                .expect("every match's surface is painted");
+            assert_eq!(&text[hit.range()], "needle", "{hit:?}");
+            let rects =
+                visual.update(|_, cx| pane.read(cx).painted_rects(hit.surface_id(), hit.range()));
+            assert_eq!(rects.len(), 1);
+        }
+        // Nested quote/list, the code block, and the table header cell (surface 1).
+        assert_eq!(
+            hits.iter()
+                .map(|hit| (hit.block, hit.surface))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 0), (2, 1)]
+        );
+    }
+
+    #[gpui::test]
+    fn dragging_past_the_viewport_edge_autoscrolls_and_keeps_the_anchor(cx: &mut TestAppContext) {
+        let window = long_reader_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        redraw(&mut visual);
+        redraw(&mut visual);
+        let from = caret(window, &mut visual, 0, 0, 0);
+        let pane = active_pane(window, &mut visual);
+        let viewport = visual.update(|_, cx| pane.read(cx).list_state().viewport_bounds());
+        let below = point(from.x, viewport.bottom() + px(40.0));
+        visual.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_move(below, Some(MouseButton::Left), Modifiers::none());
+        for _ in 0..20 {
+            visual.executor().advance_clock(Duration::from_millis(16));
+            redraw(&mut visual);
+        }
+        visual.simulate_mouse_up(below, MouseButton::Left, Modifiers::none());
+        redraw(&mut visual);
+        assert!(active_reader_offset(window, &mut visual) < px(0.0));
+        let selection = visual.update(|_, cx| pane.read(cx).selection()).unwrap();
+        // The anchor stays on the first paragraph although it scrolled out of view.
+        assert_eq!(selection.anchor, TextPoint::default());
+        assert!(selection.head.block > 0);
+    }
+
+    #[gpui::test]
+    fn stepping_find_scrolls_the_active_match_clear_of_the_find_bar(cx: &mut TestAppContext) {
+        let source = (0..80)
+            .map(|index| {
+                if index == 60 {
+                    "Paragraph with the uniquetarget word.".to_owned()
+                } else {
+                    format!("Paragraph {index} keeps the native reader overflowing.")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let (window, mut visual) = selection_window(cx, &source);
+        visual.dispatch_action(ToggleFind);
+        redraw(&mut visual);
+        visual.simulate_keystrokes("u n i q u e t a r g e t");
+        for _ in 0..4 {
+            redraw(&mut visual);
+        }
+        let hit = window
+            .update(&mut visual, |app, _, cx| {
+                app.overlays
+                    .find()
+                    .unwrap()
+                    .read(cx)
+                    .matches()
+                    .active()
+                    .unwrap()
+            })
+            .unwrap();
+        assert_eq!(hit.block, 60);
+        let pane = active_pane(window, &mut visual);
+        let (rects, viewport) = visual.update(|_, cx| {
+            let pane = pane.read(cx);
+            (
+                pane.painted_rects(hit.surface_id(), hit.range()),
+                pane.list_state().viewport_bounds(),
+            )
+        });
+        let rect = rects.first().expect("the active match is painted");
+        assert!(
+            rect.top() >= viewport.top() + px(60.0) && rect.bottom() <= viewport.bottom(),
+            "match {rect:?} should sit below the find bar inside {viewport:?}"
+        );
     }
 }

@@ -12,6 +12,8 @@ use crate::ui::field::{Field, FieldEvent};
 use crate::ui::primitives::{
     ListRowStyle, compact_icon_button, icon, key_hint, list_row, tabular_sans,
 };
+use crate::ui::reader::block_surfaces;
+use crate::ui::text_surface::{SurfaceId, find_ranges, searchable_text};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FocusHandle, Focusable,
     FontWeight, Hsla, IntoElement, Render, SharedString, Stateful, Subscription, Window, div,
@@ -147,6 +149,8 @@ fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
             + 10.0))
         .right(px(16.0))
         .w(px(340.0))
+        // Clicks on the bar must not fall through to the reader's text selection.
+        .occlude()
         .child(view)
         .into_any_element()
 }
@@ -208,16 +212,30 @@ fn modal_layer(child: impl IntoElement, theme: Theme) -> AnyElement {
         .into_any_element()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One match: a byte range of a text surface's painted text (see [`SurfaceId`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FindHit {
     pub block: usize,
+    pub surface: usize,
     pub range_start: usize,
     pub range_end: usize,
 }
 
+impl FindHit {
+    pub const fn surface_id(self) -> SurfaceId {
+        SurfaceId::new(self.block, self.surface)
+    }
+
+    pub const fn range(self) -> std::ops::Range<usize> {
+        self.range_start..self.range_end
+    }
+}
+
+/// Every match of the current query, in document order. Shared with the reader's paint state,
+/// which slices out one block's matches per frame instead of recomputing them.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FindMatches {
-    hits: Vec<FindHit>,
+    hits: Arc<[FindHit]>,
     cursor: Option<usize>,
 }
 
@@ -228,21 +246,22 @@ impl FindMatches {
         } else {
             Some(
                 prefer
-                    .and_then(|wanted| {
-                        hits.iter().position(|hit| {
-                            hit.block > wanted.block
-                                || (hit.block == wanted.block
-                                    && hit.range_start >= wanted.range_start)
-                        })
-                    })
+                    .and_then(|wanted| hits.iter().position(|hit| *hit >= wanted))
                     .unwrap_or(0),
             )
         };
-        Self { hits, cursor }
+        Self {
+            hits: hits.into(),
+            cursor,
+        }
     }
 
     pub fn hits(&self) -> &[FindHit] {
         &self.hits
+    }
+
+    pub fn shared_hits(&self) -> Arc<[FindHit]> {
+        self.hits.clone()
     }
 
     pub fn active(&self) -> Option<FindHit> {
@@ -254,27 +273,41 @@ impl FindMatches {
     }
 }
 
-pub fn find_in_blocks(blocks: &[DocumentBlock], query: &str) -> Vec<FindHit> {
+/// The searchable text of every surface of every block, in document order.
+pub type SearchIndex = Vec<Vec<String>>;
+
+pub fn search_index(blocks: &[DocumentBlock]) -> SearchIndex {
+    blocks
+        .iter()
+        .map(|block| {
+            block_surfaces(block)
+                .iter()
+                .map(searchable_text)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+pub fn find_in_index(index: &SearchIndex, query: &str) -> Vec<FindHit> {
     if query.is_empty() {
         return Vec::new();
     }
-    let needle = query.to_lowercase();
     let mut hits = Vec::new();
-    for (block, text) in blocks.iter().enumerate() {
-        let haystack = text.find_text().to_lowercase();
-        let mut start = 0;
-        while let Some(offset) = haystack[start..].find(&needle) {
-            let range_start = start + offset;
-            let range_end = range_start + needle.len();
-            hits.push(FindHit {
+    for (block, surfaces) in index.iter().enumerate() {
+        for (surface, text) in surfaces.iter().enumerate() {
+            hits.extend(find_ranges(text, query).into_iter().map(|range| FindHit {
                 block,
-                range_start,
-                range_end,
-            });
-            start = range_start + needle.len().max(1);
+                surface,
+                range_start: range.start,
+                range_end: range.end,
+            }));
         }
     }
     hits
+}
+
+pub fn find_in_blocks(blocks: &[DocumentBlock], query: &str) -> Vec<FindHit> {
+    find_in_index(&search_index(blocks), query)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -286,6 +319,8 @@ pub enum FindEvent {
 pub struct FindOverlay {
     query: Entity<Field>,
     document: Option<Arc<PreparedDocument>>,
+    /// Built on the first search of a document and reused for every keystroke after it.
+    index: Option<Arc<SearchIndex>>,
     matches: FindMatches,
     theme_mode: ThemeMode,
     _query_events: Subscription,
@@ -312,6 +347,7 @@ impl FindOverlay {
         Self {
             query,
             document,
+            index: None,
             matches: FindMatches::default(),
             theme_mode,
             _query_events: query_events,
@@ -319,6 +355,14 @@ impl FindOverlay {
     }
 
     pub fn retarget(&mut self, document: Option<Arc<PreparedDocument>>, cx: &mut Context<Self>) {
+        let same = match (&self.document, &document) {
+            (Some(current), Some(next)) => Arc::ptr_eq(current, next),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            self.index = None;
+        }
         self.document = document;
         let query = self.query.read(cx).text().to_owned();
         let prefer = self.matches.active();
@@ -364,11 +408,17 @@ impl FindOverlay {
         cx.notify();
     }
 
-    fn search(&self, query: &str) -> Vec<FindHit> {
-        self.document
-            .as_ref()
-            .map(|document| find_in_blocks(&document.blocks, query))
-            .unwrap_or_default()
+    fn search(&mut self, query: &str) -> Vec<FindHit> {
+        let Some(document) = self.document.as_ref() else {
+            return Vec::new();
+        };
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let index = self
+            .index
+            .get_or_insert_with(|| Arc::new(search_index(&document.blocks)));
+        find_in_index(index, query)
     }
 }
 
