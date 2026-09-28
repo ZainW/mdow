@@ -1,5 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
+pub use pulldown_cmark::Alignment;
 use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -350,9 +351,18 @@ pub enum ListKind {
 pub struct TableBlock {
     pub headers: Vec<Vec<InlineSpan>>,
     pub rows: Vec<Vec<Vec<InlineSpan>>>,
+    /// GFM column alignment from the delimiter row; missing columns are unaligned.
+    pub alignments: Vec<Alignment>,
 }
 
 impl TableBlock {
+    pub fn alignment(&self, column_index: usize) -> Alignment {
+        self.alignments
+            .get(column_index)
+            .copied()
+            .unwrap_or(Alignment::None)
+    }
+
     fn plain_text(&self) -> String {
         self.text_rows(plain_text_for_spans)
     }
@@ -502,12 +512,13 @@ struct TableContext {
     row: Vec<Vec<InlineSpan>>,
 }
 
-impl Default for TableContext {
-    fn default() -> Self {
+impl TableContext {
+    fn new(alignments: Vec<Alignment>) -> Self {
         Self {
             table: TableBlock {
                 headers: Vec::new(),
                 rows: Vec::new(),
+                alignments,
             },
             in_header: false,
             row: Vec::new(),
@@ -744,7 +755,7 @@ pub fn parse_document(path: PathBuf, source: String) -> ParsedDocument {
                     }
                 }
             }
-            Event::Start(Tag::Table(_)) => table = Some(TableContext::default()),
+            Event::Start(Tag::Table(alignments)) => table = Some(TableContext::new(alignments)),
             Event::End(TagEnd::Table) => {
                 if let Some(table) = table.take() {
                     push_block(
@@ -1585,8 +1596,32 @@ mod tests {
                         vec![InlineSpan::Text("2".into())],
                     ],
                 ],
+                alignments: vec![Alignment::None, Alignment::None],
             })]
         );
+    }
+
+    #[test]
+    fn preserves_gfm_table_column_alignment() {
+        let parsed = parse_document(
+            PathBuf::from("/tmp/aligned.md"),
+            "| L | C | R | N |\n| :-- | :-: | --: | --- |\n| a | b | c | d |\n".into(),
+        );
+
+        let DocumentBlock::Table(table) = &parsed.blocks[0] else {
+            panic!("expected a table");
+        };
+        assert_eq!(
+            table.alignments,
+            vec![
+                Alignment::Left,
+                Alignment::Center,
+                Alignment::Right,
+                Alignment::None
+            ]
+        );
+        assert_eq!(table.alignment(2), Alignment::Right);
+        assert_eq!(table.alignment(9), Alignment::None);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::{
     app::MdowApp,
     document::{
-        AlertKind, DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock,
+        AlertKind, Alignment, DocumentBlock, InlineSpan, ListKind, ParsedDocument, TableBlock,
         footnote_ref_display, is_supported_document, resolve_local_target,
     },
     prefs::{READER_FONT_SIZE, ReaderStyle},
@@ -2272,6 +2272,15 @@ fn render_code_block(
         .into_any_element()
 }
 
+fn align_table_cell<E: Styled>(cell: E, alignment: Alignment) -> E {
+    match alignment {
+        Alignment::None => cell,
+        Alignment::Left => cell.text_left(),
+        Alignment::Center => cell.text_center(),
+        Alignment::Right => cell.text_right(),
+    }
+}
+
 fn render_table(
     table: &TableBlock,
     block_index: usize,
@@ -2298,6 +2307,7 @@ fn render_table(
         let surface = LinkSurfaceKey::table_header(block_index, column_index);
         grid = grid.child(
             div()
+                .map(|cell| align_table_cell(cell, table.alignment(column_index)))
                 .min_w_0()
                 .px(px(14.0))
                 .py(px(10.0))
@@ -2332,6 +2342,7 @@ fn render_table(
             let last_row = row_index + 1 == table.rows.len();
             grid = grid.child(
                 div()
+                    .map(|cell| align_table_cell(cell, table.alignment(column_index)))
                     .min_w_0()
                     .px(px(14.0))
                     .py(px(10.0))
@@ -2631,6 +2642,22 @@ mod tests {
     }
 
     #[test]
+    fn table_cells_apply_their_column_alignment() {
+        let text_align = |alignment| {
+            align_table_cell(div(), alignment)
+                .style()
+                .text
+                .as_ref()
+                .and_then(|text| text.text_align)
+        };
+
+        assert_eq!(text_align(Alignment::None), None);
+        assert_eq!(text_align(Alignment::Left), Some(gpui::TextAlign::Left));
+        assert_eq!(text_align(Alignment::Center), Some(gpui::TextAlign::Center));
+        assert_eq!(text_align(Alignment::Right), Some(gpui::TextAlign::Right));
+    }
+
+    #[test]
     fn nested_horizontal_scrollers_restrict_plain_wheel_events_to_the_vertical_axis() {
         let mut scroller = restrict_scroll_to_axis(div());
 
@@ -2677,6 +2704,7 @@ mod tests {
             DocumentBlock::Table(TableBlock {
                 headers: vec![],
                 rows: vec![],
+                alignments: vec![],
             }),
             DocumentBlock::ListItem {
                 kind: ListKind::Unordered,
@@ -3145,6 +3173,7 @@ mod tests {
                 DocumentBlock::Table(TableBlock {
                     headers: (0..32).map(|_| link()).collect(),
                     rows: (0..31).map(|_| (0..32).map(|_| link()).collect()).collect(),
+                    alignments: Vec::new(),
                 }),
                 DocumentBlock::Paragraph(link()),
             ],

@@ -554,7 +554,11 @@ impl Converter<'_> {
                 rows.push(cells);
             }
         }
-        TableBlock { headers, rows }
+        TableBlock {
+            headers,
+            rows,
+            alignments: Vec::new(),
+        }
     }
 
     fn standalone_image(&self, children: &[Node]) -> Option<DocumentBlock> {
@@ -897,6 +901,7 @@ mod tests {
                 DocumentBlock::Table(TableBlock {
                     headers: vec![vec![InlineSpan::Text("Name".into())]],
                     rows: vec![vec![vec![InlineSpan::Text("one".into())]]],
+                    alignments: Vec::new(),
                 }),
                 DocumentBlock::Paragraph(vec![
                     InlineSpan::Strong(vec![InlineSpan::Text("bold".into())]),
