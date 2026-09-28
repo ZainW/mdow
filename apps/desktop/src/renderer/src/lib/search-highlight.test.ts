@@ -32,7 +32,13 @@ function textIn(element: HTMLElement): Text {
 }
 
 describe('shouldSkipSearchTextNode', () => {
-  it.each(['copy-code-btn', 'code-lang-badge', 'mermaid-container'])('skips text in .%s', (cls) => {
+  it.each([
+    'code-block-header',
+    'copy-code-btn',
+    'code-lang-badge',
+    'markdown-alert-title',
+    'mermaid-container',
+  ])('skips text in .%s', (cls) => {
     const element = document.createElement('div')
     element.className = cls
     element.textContent = 'skip me'

@@ -723,64 +723,72 @@ html.theme-switching * {
   }
 }
 
-/* ── Code block copy button ──────────────────────────────── */
+/* ── Code block header + copy button ─────────────────────── */
 .code-block-wrapper {
   position: relative;
 }
 
+/* A 32px strip above the code: language on the left, Copy on the right.
+   Nothing overlaps the code itself. */
+.code-block-header {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
 .copy-code-btn {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border-radius: 0.375rem;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
   cursor: pointer;
   background: transparent;
   color: var(--muted-foreground);
-  border: 1px solid transparent;
-  opacity: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
   transition:
-    opacity 120ms ease-out,
     background-color 120ms ease-out,
-    color 120ms ease-out,
-    border-color 120ms ease-out;
+    color 120ms ease-out;
 }
 
-/* Reveal on container hover, focus, or right after a copy so the user sees
-   the "Copied" state animate. Touch devices have no hover, so keep it
-   visible there. */
-.code-block-wrapper:hover .copy-code-btn,
-.copy-code-btn:focus-visible,
+/* Label is generated so the copied state can swap it without touching React-owned text. */
+.copy-code-btn::after {
+  content: 'Copy';
+}
+
 .copy-code-btn[data-copied='true'] {
-  opacity: 1;
+  color: var(--md-alert-tip);
 }
 
-@media (hover: none) {
-  .copy-code-btn {
-    opacity: 1;
-  }
+.copy-code-btn[data-copied='true']::after {
+  content: 'Copied';
 }
 
-.copy-code-btn {
+.copy-code-icon {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  flex: none;
   --copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E");
   --copied-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
 }
 
 /* Icons are CSS masks rather than inline SVG: a long document can hold thousands of code blocks,
    and two SVG subtrees per block add up to tens of thousands of DOM nodes. */
-.copy-code-btn::before,
-.copy-code-btn::after {
+.copy-code-icon::before,
+.copy-code-icon::after {
   content: '';
   position: absolute;
   inset: 0;
-  margin: auto;
-  width: 14px;
-  height: 14px;
   background-color: currentColor;
   mask: var(--copy-icon) center / contain no-repeat;
   transition:
@@ -788,36 +796,35 @@ html.theme-switching * {
     transform 120ms var(--ease-out-ui);
 }
 
-.copy-code-btn::after {
+.copy-code-icon::after {
   mask-image: var(--copied-icon);
   opacity: 0;
   transform: scale(0.8);
 }
 
-.copy-code-btn[data-copied='true'] {
-  color: var(--foreground);
-}
-
-.copy-code-btn[data-copied='true']::before {
+.copy-code-btn[data-copied='true'] .copy-code-icon::before {
   opacity: 0;
   transform: scale(0.8);
 }
 
-.copy-code-btn[data-copied='true']::after {
+.copy-code-btn[data-copied='true'] .copy-code-icon::after {
   opacity: 1;
   transform: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .copy-code-btn:hover {
-    background: color-mix(in oklch, var(--foreground) 8%, transparent);
+    background: color-mix(in oklch, var(--foreground) 7%, transparent);
     color: var(--foreground);
-    border-color: var(--border-subtle);
+  }
+
+  .copy-code-btn[data-copied='true']:hover {
+    color: var(--md-alert-tip);
   }
 }
 
 .copy-code-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
 }
 
 .copy-code-btn:focus-visible {
@@ -827,12 +834,15 @@ html.theme-switching * {
 
 @media (prefers-reduced-motion: reduce) {
   .copy-code-btn,
-  .copy-code-btn::before,
-  .copy-code-btn::after {
+  .copy-code-icon::before,
+  .copy-code-icon::after {
     transition: none;
   }
-}
 
+  .copy-code-btn:active {
+    transform: none;
+  }
+}
 /* Sidebar / companion drawers change width. Do not transition it: width
    is a layout property, and ⌘B is a high-frequency keyboard action. */
 

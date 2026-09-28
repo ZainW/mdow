@@ -90,7 +90,20 @@ export function CodeBlock({
 
   return (
     <div ref={ref} className="code-block-wrapper relative">
-      {language ? <span className="code-lang-badge">{language}</span> : null}
+      <div className="code-block-header">
+        <span className="code-lang-badge">{language}</span>
+        {/* Icons and label live in CSS (masks + generated content): a long document can hold
+            thousands of code blocks, and per-block SVG subtrees add up. */}
+        <button
+          className="copy-code-btn"
+          type="button"
+          data-copy-code
+          aria-label="Copy code"
+          title="Copy code"
+        >
+          <span className="copy-code-icon" aria-hidden />
+        </button>
+      </div>
       <pre className={cn(className, lines && 'shiki')} {...preProps}>
         {lines ? (
           // A fresh key swaps the whole <code> element, so text nodes the in-page search wrapped
@@ -102,13 +115,6 @@ export function CodeBlock({
           children
         )}
       </pre>
-      <button
-        className="copy-code-btn"
-        type="button"
-        data-copy-code
-        aria-label="Copy code"
-        title="Copy code"
-      />
     </div>
   )
 }
