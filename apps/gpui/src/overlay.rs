@@ -7,7 +7,7 @@ use crate::prefs::{
 use crate::session::Recents;
 use crate::sparkle::UpdateUi;
 use crate::syntax::PreparedDocument;
-use crate::theme::{ColorScheme, Metrics, Theme};
+use crate::theme::{ColorScheme, Metrics, Theme, TrafficLights};
 use crate::ui::field::{Field, FieldEvent};
 use crate::ui::primitives::{
     ListRowStyle, compact_icon_button, icon, key_hint, list_row, tabular_sans,
@@ -141,7 +141,11 @@ impl OverlayHost {
 fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
     div()
         .absolute()
-        .top(px(84.0))
+        // Just below the breadcrumb so the bar never covers its full-width toggle.
+        .top(px(TrafficLights::titlebar_height()
+            + Metrics::TAB_BAR_HEIGHT
+            + Metrics::BREADCRUMB_HEIGHT
+            + 10.0))
         .right(px(16.0))
         .w(px(340.0))
         .child(view)
@@ -1198,9 +1202,7 @@ fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
                 .mt(px(4.0))
                 .text_size(px(READER_FONT_SIZE))
                 .line_height(px(READER_FONT_SIZE * READER_LINE_HEIGHT))
-                .child(
-                    "Mdow re-renders the moment you save, so notes stay live beside your editor.",
-                ),
+                .child("Mdow re-renders the moment you save."),
         )
         .child(
             div()
@@ -1246,7 +1248,7 @@ fn settings_row(
         .flex()
         .items_center()
         .gap(px(16.0))
-        .min_h(px(40.0))
+        .min_h(px(36.0))
         .child(
             div()
                 .w(px(SETTINGS_LABEL_WIDTH))
@@ -1375,8 +1377,8 @@ fn zoom_stepper(percent: u16, theme: Theme, cx: &mut Context<SettingsPanel>) -> 
     div()
         .flex()
         .items_center()
-        .w_auto()
-        .flex_none()
+        // Hug the − 100% + controls instead of stretching across the control column.
+        .w(px(2.0 + 26.0 + 52.0 + 26.0 + 2.0))
         .h(px(30.0))
         .p(px(2.0))
         .rounded(px(7.0))
@@ -1480,7 +1482,7 @@ fn settings_updates(
             theme,
         ))
         .child(settings_row(
-            "Check automatically",
+            "Auto-check",
             None,
             switch(
                 "settings-auto-update",
