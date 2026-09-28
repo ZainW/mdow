@@ -172,6 +172,27 @@ impl AppModel {
         }
     }
 
+    /// Applies a background rescan of `root`; returns whether the visible tree changed.
+    pub fn apply_workspace_rescan(
+        &mut self,
+        root: &Path,
+        scanned: Result<WorkspaceTree, WorkspaceError>,
+    ) -> bool {
+        let Some(current) = self.workspace.as_ref().filter(|tree| tree.root.path == root) else {
+            return false;
+        };
+        let Ok(mut scanned) = scanned else {
+            // A vanished or unreadable folder keeps its last listing until the reader acts.
+            return false;
+        };
+        if current.same_entries(&scanned) {
+            return false;
+        }
+        scanned.restore_expansion(&current.expanded_directories());
+        self.workspace = Some(scanned);
+        true
+    }
+
     pub fn open_path(&mut self, path: &Path) -> Result<(), AppOpenError> {
         if path.is_dir() {
             self.open_workspace(path)
@@ -282,6 +303,7 @@ pub struct MdowApp {
     /// `None` when the platform watcher could not start; documents then open without live reload.
     file_watcher: Option<FileWatcher>,
     _watch_poll_task: Option<Task<()>>,
+    workspace_refresh: Option<Task<()>>,
     update: UpdateUi,
     update_dismissed: bool,
     _update_poll_task: Task<()>,
@@ -396,6 +418,7 @@ impl MdowApp {
             reader_link_focus_handles: HashMap::new(),
             file_watcher,
             _watch_poll_task: watch_poll_task,
+            workspace_refresh: None,
             update: UpdateUi::default(),
             update_dismissed: false,
             _update_poll_task: update_poll_task,
@@ -424,16 +447,7 @@ impl MdowApp {
                 }
                 if this
                     .update(cx, |this, cx| {
-                        let mut changed = false;
-                        for WatchMessage::Reload(path) in messages {
-                            if this.model.tabs.get(&path).is_some() {
-                                let _ = this.model.reload_path(&path);
-                                changed = true;
-                            }
-                        }
-                        if changed {
-                            cx.notify();
-                        }
+                        this.handle_watch_messages(messages, cx);
                     })
                     .is_err()
                 {
@@ -443,6 +457,50 @@ impl MdowApp {
         })
     }
 
+    fn handle_watch_messages(&mut self, messages: Vec<WatchMessage>, cx: &mut Context<Self>) {
+        let mut changed = false;
+        for message in messages {
+            match message {
+                WatchMessage::Reload(path) => {
+                    if self.model.tabs.get(&path).is_some() {
+                        let _ = self.model.reload_path(&path);
+                        changed = true;
+                    }
+                }
+                WatchMessage::FolderChanged(root) => self.refresh_workspace(&root, cx),
+            }
+        }
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// Rescans the open folder off the main thread and swaps in the result, keeping the
+    /// reader's expanded folders (the filter lives outside the tree, so it survives too).
+    pub(crate) fn refresh_workspace(&mut self, root: &Path, cx: &mut Context<Self>) {
+        if self
+            .model
+            .workspace
+            .as_ref()
+            .is_none_or(|tree| tree.root.path != root)
+        {
+            return;
+        }
+        let root = root.to_owned();
+        self.workspace_refresh = Some(cx.spawn(async move |this, cx| {
+            let scan_root = root.clone();
+            let scanned = cx
+                .background_spawn(async move { scan_workspace(&scan_root) })
+                .await;
+            this.update(cx, |this, cx| {
+                if this.model.apply_workspace_rescan(&root, scanned) {
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
+    }
+
     pub fn open_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         if path.is_dir() {
             match self.model.open_workspace(path) {
@@ -450,6 +508,7 @@ impl MdowApp {
                 Err(AppOpenError::Workspace(_)) => {}
                 Err(AppOpenError::Document(_)) => unreachable!(),
             }
+            self.sync_folder_watch();
             cx.notify();
             return;
         }
@@ -476,6 +535,7 @@ impl MdowApp {
 
     pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>, cx: &mut Context<Self>) {
         let result = self.model.open_paths(paths);
+        self.sync_folder_watch();
         let document_opened = result.document_opened();
         let watch_error = document_opened
             .then(|| self.watch_all_documents())
@@ -488,6 +548,26 @@ impl MdowApp {
         }
         self.drop_state.dropped();
         cx.notify();
+    }
+
+    /// Keeps the recursive folder watch pointed at whichever folder the sidebar shows.
+    fn sync_folder_watch(&mut self) {
+        let root = self
+            .model
+            .workspace
+            .as_ref()
+            .map(|tree| tree.root.path.clone());
+        let Some(watcher) = self.file_watcher.as_mut() else {
+            return;
+        };
+        match root {
+            Some(root) => {
+                if let Err(error) = watcher.watch_folder(&root) {
+                    eprintln!("Mdow: folder watching is unavailable: {error:#}");
+                }
+            }
+            None => watcher.unwatch_folder(),
+        }
     }
 
     fn watch_all_documents(&mut self) -> Option<UserFacingError> {
@@ -521,6 +601,7 @@ impl MdowApp {
 
     fn open_workspace_path(&mut self, path: &Path, cx: &mut Context<Self>) {
         self.model.open_workspace(path).ok();
+        self.sync_folder_watch();
         self.apply_pref(PrefEdit::Sidebar(SidebarMode::Folder), cx);
         self.prefs.save_session(&self.session_snapshot());
         cx.notify();
@@ -663,6 +744,7 @@ impl MdowApp {
         self.model.recents = session.recents.clone();
         if let Some(folder) = session.last_folder.as_ref() {
             self.model.open_workspace(folder).ok();
+            self.sync_folder_watch();
         }
         if let Some(tabs) = session.tabs.as_ref() {
             for path in tabs.iter() {

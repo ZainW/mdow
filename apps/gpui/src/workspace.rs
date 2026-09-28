@@ -412,7 +412,7 @@ fn entry_order(
         .then_with(|| left_name.cmp(right_name))
 }
 
-fn is_ignored_name(name: &str) -> bool {
+pub(crate) fn is_ignored_name(name: &str) -> bool {
     name.starts_with('.') || matches!(name, ".git" | "node_modules" | "target" | "dist" | "build")
 }
 
