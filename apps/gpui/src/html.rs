@@ -43,7 +43,7 @@ const VOID_ELEMENTS: &[&str] = &[
 
 const INLINE_ELEMENTS: &[&str] = &[
     "a", "abbr", "b", "br", "cite", "code", "del", "em", "i", "kbd", "mark", "q", "s", "samp",
-    "small", "span", "strike", "strong", "sub", "sup", "time", "u", "var",
+    "small", "span", "strike", "strong", "sub", "sup", "time", "tt", "u", "var", "ins",
 ];
 
 // ---------------------------------------------------------------------------
@@ -141,6 +141,10 @@ fn parse_nodes(source: &str) -> Vec<Node> {
     root
 }
 
+pub(crate) fn is_void_element(name: &str) -> bool {
+    VOID_ELEMENTS.contains(&name)
+}
+
 fn is_raw_text_element(name: &str) -> bool {
     matches!(name, "script" | "style")
 }
@@ -208,9 +212,9 @@ fn apply_implied_closes(name: &str, root: &mut Vec<Node>, stack: &mut Vec<OpenEl
     }
 }
 
-type OpenTagScan = (String, Vec<(String, String)>, bool, usize);
+pub(crate) type OpenTagScan = (String, Vec<(String, String)>, bool, usize);
 
-fn scan_open_tag(rest: &str) -> Option<OpenTagScan> {
+pub(crate) fn scan_open_tag(rest: &str) -> Option<OpenTagScan> {
     let bytes = rest.as_bytes();
     debug_assert_eq!(bytes.first(), Some(&b'<'));
     let mut index = 1;
@@ -417,7 +421,17 @@ impl Converter<'_> {
                 }
                 "blockquote" => {
                     flush_paragraph(&mut pending, out);
-                    out.push(DocumentBlock::Blockquote(self.quote_spans(children)));
+                    let mut quote = Vec::new();
+                    self.collect_blocks(children, 0, &mut quote);
+                    out.push(DocumentBlock::Blockquote(quote));
+                }
+                // `<details>` renders open: the summary reads as a bold lead-in line.
+                "summary" => {
+                    flush_paragraph(&mut pending, out);
+                    let content = self.inline_spans(children);
+                    if !content.is_empty() {
+                        out.push(DocumentBlock::Paragraph(vec![InlineSpan::Strong(content)]));
+                    }
                 }
                 "table" => {
                     flush_paragraph(&mut pending, out);
@@ -495,32 +509,12 @@ impl Converter<'_> {
         {
             DocumentBlock::MermaidCard { source: code }
         } else {
-            DocumentBlock::CodeBlock { language, code }
-        }
-    }
-
-    /// Untyped Markdown quotes flatten to inline text; HTML quotes match that shape.
-    fn quote_spans(&self, children: &[Node]) -> Vec<InlineSpan> {
-        let mut inner = Vec::new();
-        self.collect_blocks(children, 0, &mut inner);
-        let mut spans = Vec::new();
-        for block in inner {
-            let content = match block {
-                DocumentBlock::Paragraph(content) => content,
-                other => {
-                    let text = other.plain_text();
-                    if text.is_empty() {
-                        continue;
-                    }
-                    vec![InlineSpan::Text(text)]
-                }
-            };
-            if !spans.is_empty() {
-                spans.push(InlineSpan::SoftBreak);
+            DocumentBlock::CodeBlock {
+                language,
+                code,
+                highlights: Default::default(),
             }
-            spans.extend(content);
         }
-        spans
     }
 
     fn table_block(&self, children: &[Node]) -> TableBlock {
@@ -610,10 +604,14 @@ impl Converter<'_> {
             "s" | "del" | "strike" => {
                 spans.push(InlineSpan::Strikethrough(self.inline_spans(children)))
             }
-            "code" | "kbd" | "samp" => spans.push(InlineSpan::Code(collapse_whitespace(
+            "code" | "samp" | "tt" => spans.push(InlineSpan::Code(collapse_whitespace(
                 &raw_text(children),
                 false,
             ))),
+            "kbd" => spans.push(InlineSpan::Kbd(self.inline_spans(children))),
+            "sup" => spans.push(InlineSpan::Superscript(self.inline_spans(children))),
+            "sub" => spans.push(InlineSpan::Subscript(self.inline_spans(children))),
+            "mark" => spans.push(InlineSpan::Mark(self.inline_spans(children))),
             "a" => match attr(attrs, "href").filter(|href| !href.trim().is_empty()) {
                 Some(href) => spans.push(InlineSpan::Link {
                     label: self.inline_spans(children),
@@ -896,8 +894,11 @@ mod tests {
                 DocumentBlock::CodeBlock {
                     language: Some("rust".into()),
                     code: "let n = 1;\n".into(),
+                    highlights: Default::default(),
                 },
-                DocumentBlock::Blockquote(vec![InlineSpan::Text("Quoted".into())]),
+                DocumentBlock::Blockquote(vec![DocumentBlock::Paragraph(vec![InlineSpan::Text(
+                    "Quoted".into()
+                )])]),
                 DocumentBlock::Table(TableBlock {
                     headers: vec![vec![InlineSpan::Text("Name".into())]],
                     rows: vec![vec![vec![InlineSpan::Text("one".into())]]],
