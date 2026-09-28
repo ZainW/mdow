@@ -25,16 +25,17 @@ impl ThemeMode {
 /// full-width toggle can return to the last column the reader chose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ColumnWidth {
-    #[default]
     Narrow,
+    #[default]
     Medium,
     Wide,
 }
 
 impl ColumnWidth {
-    pub const NARROW_PX: f32 = 768.0;
-    pub const MEDIUM_PX: f32 = 896.0;
-    pub const WIDE_PX: f32 = 1088.0;
+    // Electron's 40rem / 48rem / 60rem columns.
+    pub const NARROW_PX: f32 = 640.0;
+    pub const MEDIUM_PX: f32 = 768.0;
+    pub const WIDE_PX: f32 = 960.0;
 
     pub fn max_width(self) -> f32 {
         match self {
@@ -75,7 +76,7 @@ pub enum ReaderWidth {
 
 impl Default for ReaderWidth {
     fn default() -> Self {
-        Self::Column(ColumnWidth::Narrow)
+        Self::Column(ColumnWidth::default())
     }
 }
 
@@ -367,7 +368,7 @@ mod tests {
 
         // Picking a column while full leaves full width; the toggle then remembers it.
         assert!(prefs.apply(PrefEdit::LineWidth(LineWidth::Narrow)));
-        assert_eq!(prefs.reader_style().max_width, Some(768.0));
+        assert_eq!(prefs.reader_style().max_width, Some(640.0));
         prefs.apply(PrefEdit::ToggleFull);
         prefs.apply(PrefEdit::ToggleFull);
         assert_eq!(prefs.reader_width.line_width(), LineWidth::Narrow);
@@ -419,9 +420,9 @@ mod tests {
 
     #[test]
     fn column_widths_match_electron_rem_values_at_sixteen_px() {
-        assert_eq!(ColumnWidth::Narrow.max_width(), 768.0);
-        assert_eq!(ColumnWidth::Medium.max_width(), 896.0);
-        assert_eq!(ColumnWidth::Wide.max_width(), 1088.0);
+        assert_eq!(ColumnWidth::Narrow.max_width(), 640.0);
+        assert_eq!(ColumnWidth::Medium.max_width(), 768.0);
+        assert_eq!(ColumnWidth::Wide.max_width(), 960.0);
     }
 
     #[test]

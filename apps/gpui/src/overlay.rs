@@ -1240,9 +1240,14 @@ impl Render for SettingsPanel {
                         Some("Local ACP agents"),
                         segmented(
                             crate::companion::ProviderId::ALL.map(|id| {
+                                // Like Electron, no preference reads as OpenCode.
+                                let selected = prefs
+                                    .companion
+                                    .provider
+                                    .unwrap_or(crate::companion::ProviderId::OpenCode);
                                 Segment::text(
                                     id.short_label(),
-                                    prefs.companion.provider == Some(id),
+                                    selected == id,
                                     PrefEdit::CompanionProvider(Some(id)),
                                 )
                             }),

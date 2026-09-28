@@ -143,7 +143,8 @@ struct WireState {
     code_font: String,
     interface_scale: String,
     reading_width: String,
-    wide_mode: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reading_width_return: Option<String>,
     zoom_level: u16,
     sidebar_mode: String,
     auto_update_enabled: bool,
@@ -209,8 +210,11 @@ fn encode(prefs: &Prefs, session: &Session) -> WireState {
         content_font: content_font_wire(prefs.content_font).to_owned(),
         code_font: code_font_wire(prefs.code_font).to_owned(),
         interface_scale: interface_scale_wire(prefs.interface_scale).to_owned(),
-        reading_width: column_width_wire(prefs.reader_width.column()).to_owned(),
-        wide_mode: prefs.reader_width.is_full(),
+        reading_width: reading_width_wire(prefs.reader_width).to_owned(),
+        reading_width_return: prefs
+            .reader_width
+            .is_full()
+            .then(|| column_width_wire(prefs.reader_width.column()).to_owned()),
         zoom_level: prefs.zoom.percent(),
         sidebar_mode: sidebar_mode_wire(prefs.sidebar_mode).to_owned(),
         auto_update_enabled: prefs.auto_update,
@@ -271,15 +275,11 @@ fn decode(value: &Value) -> Restored {
     let interface_scale = string_field(object, "interfaceScale")
         .map(parse_interface_scale)
         .unwrap_or_default();
-    let column = string_field(object, "readingWidth")
-        .map(parse_column_width)
-        .unwrap_or_default();
-    let wide_mode = bool_field(object, "wideMode").unwrap_or(false);
-    let reader_width = if wide_mode {
-        ReaderWidth::Full { returns_to: column }
-    } else {
-        ReaderWidth::Column(column)
-    };
+    let reader_width = parse_reading_width(
+        string_field(object, "readingWidth"),
+        string_field(object, "readingWidthReturn"),
+        bool_field(object, "wideMode").unwrap_or(false),
+    );
     let zoom = number_field(object, "zoomLevel")
         .map(ZoomLevel::from_percent)
         .unwrap_or_default();
@@ -493,22 +493,47 @@ fn parse_interface_scale(value: &str) -> InterfaceScale {
     }
 }
 
-/// Electron stores the columns under their original names; only the labels changed.
+/// Line width uses Electron's names (`shared/reading-width.ts`). Full also records the column
+/// the full-width toggle returns to.
+fn reading_width_wire(width: ReaderWidth) -> &'static str {
+    match width {
+        ReaderWidth::Column(column) => column_width_wire(column),
+        ReaderWidth::Full { .. } => "full",
+    }
+}
+
 fn column_width_wire(column: ColumnWidth) -> &'static str {
     match column {
-        ColumnWidth::Narrow => "standard",
-        ColumnWidth::Medium => "comfortable",
+        ColumnWidth::Narrow => "narrow",
+        ColumnWidth::Medium => "medium",
         ColumnWidth::Wide => "wide",
     }
 }
 
-fn parse_column_width(value: &str) -> ColumnWidth {
+/// Current names, plus the pre-1.11 presets (`standard`, `comfortable`) and the separate
+/// `wideMode` flag, migrated the same way Electron's `migrateReadingWidth` does.
+fn parse_column_width(value: &str) -> Option<ColumnWidth> {
     match value {
-        "standard" => ColumnWidth::Narrow,
-        "comfortable" => ColumnWidth::Medium,
-        "wide" => ColumnWidth::Wide,
-        _ => ColumnWidth::Narrow,
+        "narrow" => Some(ColumnWidth::Narrow),
+        "medium" | "standard" => Some(ColumnWidth::Medium),
+        "wide" | "comfortable" => Some(ColumnWidth::Wide),
+        _ => None,
     }
+}
+
+fn parse_reading_width(
+    stored: Option<&str>,
+    returns_to: Option<&str>,
+    legacy_wide_mode: bool,
+) -> ReaderWidth {
+    let column = stored.and_then(parse_column_width);
+    if legacy_wide_mode || stored == Some("full") {
+        let returns_to = column
+            .or_else(|| returns_to.and_then(parse_column_width))
+            .unwrap_or_default();
+        return ReaderWidth::Full { returns_to };
+    }
+    ReaderWidth::Column(column.unwrap_or_default())
 }
 
 fn sidebar_mode_wire(mode: SidebarMode) -> &'static str {
@@ -615,25 +640,38 @@ mod tests {
     }
 
     #[test]
-    fn wide_mode_and_reading_width_merge_into_one_value() {
-        let full = decode(&serde_json::json!({
-            "wideMode": true,
-            "readingWidth": "comfortable"
-        }));
+    fn legacy_widths_and_wide_mode_migrate_like_electron() {
+        let width = |json: Value| decode(&json).prefs.reader_width;
+        let column = ReaderWidth::Column;
+
         assert_eq!(
-            full.prefs.reader_width,
+            width(serde_json::json!({ "readingWidth": "standard" })),
+            column(ColumnWidth::Medium)
+        );
+        assert_eq!(
+            width(serde_json::json!({ "readingWidth": "comfortable" })),
+            column(ColumnWidth::Wide)
+        );
+        assert_eq!(
+            width(serde_json::json!({ "wideMode": true, "readingWidth": "standard" })),
             ReaderWidth::Full {
                 returns_to: ColumnWidth::Medium
             }
         );
-
-        let column = decode(&serde_json::json!({
-            "wideMode": false,
-            "readingWidth": "wide"
-        }));
         assert_eq!(
-            column.prefs.reader_width,
-            ReaderWidth::Column(ColumnWidth::Wide)
+            width(serde_json::json!({ "readingWidth": "narrow" })),
+            column(ColumnWidth::Narrow)
+        );
+        assert_eq!(
+            width(serde_json::json!({ "readingWidth": "full", "readingWidthReturn": "wide" })),
+            ReaderWidth::Full {
+                returns_to: ColumnWidth::Wide
+            }
+        );
+        assert_eq!(width(serde_json::json!({})), column(ColumnWidth::Medium));
+        assert_eq!(
+            width(serde_json::json!({ "readingWidth": "bogus" })),
+            column(ColumnWidth::Medium)
         );
     }
 
@@ -691,8 +729,9 @@ mod tests {
         assert_eq!(json["contentFont"], "georgia");
         assert_eq!(json["codeFont"], "jetbrains-mono");
         assert_eq!(json["interfaceScale"], "large");
-        assert_eq!(json["readingWidth"], "comfortable");
-        assert_eq!(json["wideMode"], true);
+        assert_eq!(json["readingWidth"], "full");
+        assert_eq!(json["readingWidthReturn"], "medium");
+        assert!(json.get("wideMode").is_none());
         assert_eq!(json["zoomLevel"], 110);
         assert_eq!(json["sidebarMode"], "outline");
         assert_eq!(json["autoUpdateEnabled"], false);
