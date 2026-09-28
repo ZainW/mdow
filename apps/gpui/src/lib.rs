@@ -2,6 +2,7 @@ pub mod actions;
 pub mod app;
 pub mod assets;
 pub mod document;
+pub mod graphics;
 pub mod html;
 pub mod menus;
 pub mod overlay;
