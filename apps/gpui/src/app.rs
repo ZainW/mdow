@@ -12,7 +12,7 @@ use crate::{
         PaletteEvent, PaletteOverlay, SettingsEvent, SettingsPanel, ShortcutsCard, ShortcutsEvent,
     },
     persist::{SessionRole, StateStore, StoredPrefs},
-    prefs::{ColumnWidth, PrefEdit, Prefs, SidebarMode, ThemeMode},
+    prefs::{PrefEdit, Prefs, SidebarMode, ThemeMode},
     session::{Recents, SavedWindowBounds, Session},
     sparkle::{self, UpdateUi},
     syntax::prepare_document,
@@ -28,6 +28,7 @@ use crate::{
             clear_expired_code_copy_feedback, document_link_focus_targets,
         },
         welcome::welcome,
+        zoom_hud::{self, ZoomHud, ZoomHudHandlers, render_zoom_hud},
     },
     watcher::{FileWatcher, WatchMessage},
     workspace::{WorkspaceError, WorkspaceTree, scan_workspace},
@@ -285,6 +286,7 @@ pub struct MdowApp {
     update: UpdateUi,
     update_dismissed: bool,
     _update_poll_task: Task<()>,
+    zoom_hud: ZoomHud,
     theme: Theme,
     window_title: Option<String>,
     focus_handle: FocusHandle,
@@ -365,7 +367,8 @@ impl MdowApp {
         let wide_mode = prefs.reader_width.is_full();
         let update_poll_task = cx.spawn(async move |this, cx| {
             Timer::after(Duration::from_secs(sparkle::LAUNCH_CHECK_DELAY_SECS)).await;
-            let _ = this.update(cx, |_, _| {
+            let _ = this.update(cx, |this, _| {
+                sparkle::set_automatic_checks(this.prefs.get().auto_update);
                 sparkle::start();
             });
             loop {
@@ -399,6 +402,7 @@ impl MdowApp {
             update: UpdateUi::default(),
             update_dismissed: false,
             _update_poll_task: update_poll_task,
+            zoom_hud: ZoomHud::default(),
             theme: Theme::for_appearance(window.appearance()),
             window_title: None,
             focus_handle,
@@ -678,8 +682,12 @@ impl MdowApp {
 
     fn apply_pref(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
         let session = self.session_snapshot();
+        let auto_update = self.prefs.get().auto_update;
         if !self.prefs.apply(edit, &session) {
             return;
+        }
+        if self.prefs.get().auto_update != auto_update {
+            sparkle::set_automatic_checks(self.prefs.get().auto_update);
         }
         self.wide_mode = self.prefs.get().reader_width.is_full();
         self.overlays
@@ -752,7 +760,8 @@ impl MdowApp {
         let overlay = match kind {
             OverlayKind::Find => {
                 let document = self.model.tabs.active().map(|tab| tab.document.clone());
-                let view = cx.new(|cx| FindOverlay::new(document, window, cx));
+                let theme_mode = self.prefs.get().theme_mode;
+                let view = cx.new(|cx| FindOverlay::new(document, theme_mode, window, cx));
                 let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
                     this.on_find_event(event, cx);
                 });
@@ -827,19 +836,13 @@ impl MdowApp {
                 self.apply_pref(PrefEdit::Sidebar(SidebarMode::Outline), cx)
             }
             CommandId::ToggleWideMode => self.apply_pref(PrefEdit::ToggleFull, cx),
-            CommandId::ColumnStandard => {
-                self.apply_pref(PrefEdit::Column(ColumnWidth::Standard), cx)
-            }
-            CommandId::ColumnComfortable => {
-                self.apply_pref(PrefEdit::Column(ColumnWidth::Comfortable), cx)
-            }
-            CommandId::ColumnWide => self.apply_pref(PrefEdit::Column(ColumnWidth::Wide), cx),
+            CommandId::LineWidth(width) => self.apply_pref(PrefEdit::LineWidth(width), cx),
             CommandId::ThemeSystem => self.apply_pref(PrefEdit::Theme(ThemeMode::System), cx),
             CommandId::ThemeLight => self.apply_pref(PrefEdit::Theme(ThemeMode::Light), cx),
             CommandId::ThemeDark => self.apply_pref(PrefEdit::Theme(ThemeMode::Dark), cx),
-            CommandId::ZoomIn => self.apply_pref(PrefEdit::ZoomIn, cx),
-            CommandId::ZoomOut => self.apply_pref(PrefEdit::ZoomOut, cx),
-            CommandId::ZoomReset => self.apply_pref(PrefEdit::ZoomReset, cx),
+            CommandId::ZoomIn => self.zoom_with_feedback(PrefEdit::ZoomIn, cx),
+            CommandId::ZoomOut => self.zoom_with_feedback(PrefEdit::ZoomOut, cx),
+            CommandId::ZoomReset => self.zoom_with_feedback(PrefEdit::ZoomReset, cx),
             CommandId::FindInDocument => self.toggle_overlay(OverlayKind::Find, window, cx),
             CommandId::OpenSettings => self.toggle_overlay(OverlayKind::Settings, window, cx),
             CommandId::OpenShortcuts => self.toggle_overlay(OverlayKind::Shortcuts, window, cx),
@@ -982,15 +985,65 @@ impl MdowApp {
     }
 
     fn on_zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
-        self.apply_pref(PrefEdit::ZoomIn, cx);
+        self.zoom_with_feedback(PrefEdit::ZoomIn, cx);
     }
 
     fn on_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
-        self.apply_pref(PrefEdit::ZoomOut, cx);
+        self.zoom_with_feedback(PrefEdit::ZoomOut, cx);
     }
 
     fn on_zoom_reset(&mut self, _: &ZoomReset, _: &mut Window, cx: &mut Context<Self>) {
-        self.apply_pref(PrefEdit::ZoomReset, cx);
+        self.zoom_with_feedback(PrefEdit::ZoomReset, cx);
+    }
+
+    /// Zoom from a shortcut, command or the pill itself, and flash the zoom pill. Settings shows
+    /// its own Text size stepper, so the pill stays hidden behind it.
+    pub(crate) fn zoom_with_feedback(&mut self, edit: PrefEdit, cx: &mut Context<Self>) {
+        self.apply_pref(edit, cx);
+        if self.overlays.kind() == Some(OverlayKind::Settings) {
+            return;
+        }
+        let generation = self.zoom_hud.show();
+        self.expire_zoom_hud_after(generation, zoom_hud::VISIBLE_FOR, cx);
+        cx.notify();
+    }
+
+    fn expire_zoom_hud_after(&self, generation: u64, delay: Duration, cx: &mut Context<Self>) {
+        // The executor's timer (unlike smol's `Timer`) follows the test clock.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            let fade = this
+                .update(cx, |this, cx| {
+                    let reduce_motion = zoom_hud::prefers_reduced_motion();
+                    let fade = this.zoom_hud.expire(generation, reduce_motion);
+                    cx.notify();
+                    fade
+                })
+                .ok()
+                .flatten();
+            if let Some(fade) = fade {
+                cx.background_executor().timer(zoom_hud::FADE_OUT).await;
+                this.update(cx, |this, cx| {
+                    if this.zoom_hud.finish_fade(fade) {
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn hover_zoom_hud(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        if let Some(generation) = self.zoom_hud.hover(hovered) {
+            self.expire_zoom_hud_after(generation, zoom_hud::HOVER_GRACE, cx);
+        }
+        cx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn zoom_hud_phase(&self) -> zoom_hud::HudPhase {
+        self.zoom_hud.phase()
     }
 
     pub(crate) fn set_sidebar_mode(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
@@ -1356,6 +1409,32 @@ impl Render for MdowApp {
             self.sidebar_open,
             self.wide_mode,
         );
+        let zoom_hud = self
+            .zoom_hud
+            .is_visible()
+            .then(|| {
+                render_zoom_hud(
+                    &self.zoom_hud,
+                    self.prefs.get().zoom.percent(),
+                    zoom_hud::prefers_reduced_motion(),
+                    self.theme,
+                    ZoomHudHandlers {
+                        zoom_out: Box::new(cx.listener(|this, _, _, cx| {
+                            this.zoom_with_feedback(PrefEdit::ZoomOut, cx)
+                        })),
+                        zoom_in: Box::new(cx.listener(|this, _, _, cx| {
+                            this.zoom_with_feedback(PrefEdit::ZoomIn, cx)
+                        })),
+                        reset: Box::new(cx.listener(|this, _, _, cx| {
+                            this.zoom_with_feedback(PrefEdit::ZoomReset, cx)
+                        })),
+                        hover: Box::new(cx.listener(|this, hovered: &bool, _, cx| {
+                            this.hover_zoom_hud(*hovered, cx)
+                        })),
+                    },
+                )
+            })
+            .flatten();
         let active_path = self.model.tabs.active().map(|tab| tab.path().to_owned());
         let title = window_title_for(active_path.as_deref());
         if self.window_title.as_deref() != Some(title.as_str()) {
@@ -1527,6 +1606,7 @@ impl Render for MdowApp {
                     .when(layout.sidebar.width > 0.0, |shell| shell.child(sidebar))
                     .child(
                         div()
+                            .relative()
                             .flex()
                             .flex_col()
                             .min_w_0()
@@ -1534,7 +1614,8 @@ impl Render for MdowApp {
                             .flex_grow()
                             .child(tab_bar)
                             .child(breadcrumb)
-                            .child(content),
+                            .child(content)
+                            .children(zoom_hud),
                     ),
             )
             .children(
@@ -3014,6 +3095,74 @@ mod tests {
     }
 
     #[gpui::test]
+    fn zoom_shortcuts_flash_the_zoom_pill_which_then_fades(cx: &mut TestAppContext) {
+        use crate::ui::zoom_hud::HudPhase;
+
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert!(visual.debug_bounds("zoom-hud").is_none());
+
+        window
+            .update(cx, |app, _, cx| {
+                app.zoom_with_feedback(PrefEdit::ZoomIn, cx)
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert!(visual.debug_bounds("zoom-hud").is_some());
+
+        click_debug(&mut visual, "zoom-hud-reset");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.prefs_snapshot().zoom.percent(), 100);
+                assert_eq!(app.zoom_hud_phase(), HudPhase::Shown);
+            })
+            .unwrap();
+
+        // The click left the pointer on the pill, which holds it; leaving starts the grace period.
+        cx.executor().advance_clock(zoom_hud::VISIBLE_FOR);
+        cx.run_until_parked();
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.zoom_hud_phase(), HudPhase::Shown)
+            })
+            .unwrap();
+        visual.simulate_mouse_move(point(px(4.0), px(4.0)), None, Modifiers::none());
+        visual.update(|window, cx| window.draw(cx).clear());
+        cx.executor().advance_clock(zoom_hud::HOVER_GRACE);
+        cx.run_until_parked();
+        let expected = if zoom_hud::prefers_reduced_motion() {
+            HudPhase::Hidden
+        } else {
+            HudPhase::Fading
+        };
+        window
+            .update(cx, |app, _, _| assert_eq!(app.zoom_hud_phase(), expected))
+            .unwrap();
+        cx.executor().advance_clock(zoom_hud::FADE_OUT);
+        cx.run_until_parked();
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.zoom_hud_phase(), HudPhase::Hidden)
+            })
+            .unwrap();
+
+        window
+            .update(cx, |app, window, cx| {
+                app.click_toggle_overlay(OverlayKind::Settings, window, cx);
+                app.zoom_with_feedback(PrefEdit::ZoomIn, cx);
+                assert_eq!(app.prefs_snapshot().zoom.percent(), 110);
+                assert_eq!(app.zoom_hud_phase(), HudPhase::Hidden);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
     fn reload_error_banner_keeps_the_last_document_visible(cx: &mut TestAppContext) {
         let path = PathBuf::from("/tmp/reload-error.md");
         let mut model = AppModel::default();
@@ -3679,6 +3828,27 @@ mod tests {
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.prefs_snapshot().theme_mode, ThemeMode::Dark)
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "Full-LineWidth(Full)");
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-zoom-in");
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-auto-update");
+        window
+            .update(cx, |app, _, _| {
+                let prefs = app.prefs_snapshot();
+                assert!(prefs.reader_width.is_full());
+                assert_eq!(prefs.zoom.percent(), 110);
+                assert!(!prefs.auto_update);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-restore-defaults");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.prefs_snapshot(), Prefs::default())
             })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());

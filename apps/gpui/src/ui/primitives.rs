@@ -1,11 +1,20 @@
 use crate::theme::{Metrics, Theme};
 use gpui::{
-    App, ClickEvent, Div, Hsla, Img, IntoElement, Stateful, Svg, Window, div, img, prelude::*, px,
-    svg,
+    App, ClickEvent, Div, Font, FontFeatures, FontWeight, Hsla, Img, IntoElement, Stateful, Svg,
+    Window, div, font, img, prelude::*, px, svg,
 };
+use std::sync::Arc;
 
 pub fn brand_logo(size: f32) -> Img {
     img("icons/mdow-logo.svg").size(px(size)).flex_none()
+}
+
+/// The UI face with tabular figures, so counters like "2 / 13" or "110%" never jiggle.
+pub fn tabular_sans(weight: FontWeight) -> Font {
+    let mut tabular = font(Metrics::FONT_SANS);
+    tabular.features = FontFeatures(Arc::new(vec![("tnum".into(), 1)]));
+    tabular.weight = weight;
+    tabular
 }
 
 pub fn icon(path: &'static str, color: Hsla, size: f32) -> Svg {
