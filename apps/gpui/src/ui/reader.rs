@@ -494,6 +494,7 @@ fn collect_current_block_link_targets(
         }
         DocumentBlock::CodeBlock { .. }
         | DocumentBlock::MermaidCard { .. }
+        | DocumentBlock::Math { .. }
         | DocumentBlock::Image { .. }
         | DocumentBlock::ThematicBreak
         | DocumentBlock::RawText(_) => {}
@@ -632,10 +633,28 @@ fn append_inline_spans<'a>(
                     layout,
                 )
             }
+            InlineSpan::Math { tex, display } => append_inline_text(
+                &math_source(tex, *display),
+                InlineStyleContext {
+                    code: true,
+                    ..style
+                },
+                false,
+                layout,
+            ),
             // Electron renders soft breaks outside code as <br> (breaksOutsideCode).
             InlineSpan::SoftBreak => append_inline_text("\n", style, false, layout),
             InlineSpan::HardBreak => append_inline_text("\n", style, false, layout),
         }
+    }
+}
+
+/// The TeX source with its delimiters, shown when math cannot be typeset.
+fn math_source(tex: &str, display: bool) -> String {
+    if display {
+        format!("$${tex}$$")
+    } else {
+        format!("${tex}$")
     }
 }
 
@@ -887,6 +906,11 @@ fn block_margins(
         DocumentBlock::ThematicBreak => BlockMargins {
             top: 32.0,
             bottom: 32.0,
+        },
+        // KaTeX display math keeps a 1em margin above and below.
+        DocumentBlock::Math { .. } => BlockMargins {
+            top: 16.0,
+            bottom: 16.0,
         },
         DocumentBlock::Paragraph(_)
         | DocumentBlock::Blockquote(_)
@@ -1491,6 +1515,9 @@ fn render_block(
             view,
             cx,
         ),
+        DocumentBlock::Math { tex } => {
+            render_code_block(Some("math"), tex, None, block_path, document_path, view, cx)
+        }
         DocumentBlock::FootnoteSection { notes } => {
             render_footnote_section(notes, block_path, document, view, cx)
         }
