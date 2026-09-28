@@ -45,7 +45,8 @@ export function TabBar() {
 
   if (tabs.length === 0) {
     return (
-      <div className="flex h-(--tabbar-height) shrink-0 items-center justify-end border-b border-border-subtle bg-background px-1.5">
+      // No documents: no tab strip or divider, only the toolbar action.
+      <div className="flex h-(--tabbar-height) shrink-0 items-center justify-end bg-background px-1.5">
         <Button
           variant={companionOpen ? 'secondary' : 'ghost'}
           size="icon-sm"
@@ -210,9 +211,13 @@ export function TabBar() {
                       type="button"
                       tabIndex={-1}
                       aria-label={`Close ${filename}`}
+                      data-visible={isActive ? 'always' : 'on-reveal'}
+                      // Space stays reserved when hidden, so tabs never change width on hover.
                       className={cn(
                         'tab-close-btn mr-1 flex size-(--tab-close-size) shrink-0 items-center justify-center rounded-sm text-muted-foreground',
-                        isActive ? 'opacity-50' : 'opacity-0 group-hover/tab:opacity-50',
+                        isActive
+                          ? 'opacity-70'
+                          : 'pointer-events-none opacity-0 group-hover/tab:pointer-events-auto group-hover/tab:opacity-70 group-has-[:focus-visible]/tab:opacity-70',
                       )}
                       onClick={(e) => {
                         e.stopPropagation()
