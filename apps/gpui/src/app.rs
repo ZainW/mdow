@@ -757,7 +757,8 @@ impl MdowApp {
         let overlay = match kind {
             OverlayKind::Find => {
                 let document = self.model.tabs.active().map(|tab| tab.document.clone());
-                let view = cx.new(|cx| FindOverlay::new(document, window, cx));
+                let theme_mode = self.prefs.get().theme_mode;
+                let view = cx.new(|cx| FindOverlay::new(document, theme_mode, window, cx));
                 let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
                     this.on_find_event(event, cx);
                 });

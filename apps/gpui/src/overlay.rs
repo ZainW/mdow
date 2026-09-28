@@ -9,7 +9,9 @@ use crate::sparkle::UpdateUi;
 use crate::syntax::PreparedDocument;
 use crate::theme::{ColorScheme, Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
-use crate::ui::primitives::{ListRowStyle, compact_icon_button, icon, key_hint, list_row};
+use crate::ui::primitives::{
+    ListRowStyle, compact_icon_button, icon, key_hint, list_row, tabular_sans,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FocusHandle, Focusable,
     FontWeight, Hsla, IntoElement, Render, SharedString, Stateful, Subscription, Window, div,
@@ -141,7 +143,7 @@ fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
         .absolute()
         .top(px(84.0))
         .right(px(16.0))
-        .w(px(360.0))
+        .w(px(340.0))
         .child(view)
         .into_any_element()
 }
@@ -282,6 +284,7 @@ pub struct FindOverlay {
     query: Entity<Field>,
     document: Option<Arc<PreparedDocument>>,
     matches: FindMatches,
+    theme_mode: ThemeMode,
     _query_events: Subscription,
 }
 
@@ -290,6 +293,7 @@ impl EventEmitter<FindEvent> for FindOverlay {}
 impl FindOverlay {
     pub fn new(
         document: Option<Arc<PreparedDocument>>,
+        theme_mode: ThemeMode,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -306,6 +310,7 @@ impl FindOverlay {
             query,
             document,
             matches: FindMatches::default(),
+            theme_mode,
             _query_events: query_events,
         }
     }
@@ -364,56 +369,78 @@ impl FindOverlay {
     }
 }
 
+/// "2 / 13" while there are matches, "No results" for a query with none (Electron's copy), and
+/// nothing while the query is empty.
+fn find_count_label(query_is_empty: bool, position: Option<(usize, usize)>) -> String {
+    match position {
+        Some((index, total)) => format!("{index} / {total}"),
+        None if query_is_empty => String::new(),
+        None => "No results".into(),
+    }
+}
+
 impl Render for FindOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::for_appearance(window.appearance());
-        let count = match self.matches.position() {
-            None if self.query.read(cx).text().is_empty() => String::new(),
-            None => "0 of 0".into(),
-            Some((index, total)) => format!("{index} of {total}"),
+        let theme = Theme::resolve(self.theme_mode, window.appearance());
+        let count = find_count_label(
+            self.query.read(cx).text().is_empty(),
+            self.matches.position(),
+        );
+        let has_matches = !self.matches.hits.is_empty();
+        let step_color = if has_matches {
+            theme.foreground
+        } else {
+            theme.muted_foreground.opacity(0.5)
         };
         paint_overlay_edge(
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.0))
-                .px(px(10.0))
-                .h(px(36.0))
+                .gap(px(6.0))
+                .pl(px(10.0))
+                .pr(px(6.0))
+                .h(px(38.0))
                 .rounded(px(Metrics::RADIUS))
                 .bg(theme.surface_raised),
             theme,
         )
+        .font_family(Metrics::FONT_SANS)
+        .child(icon("icons/search.svg", theme.muted_foreground, 14.0))
         .child(
             div()
                 .flex_grow()
                 .min_w_0()
-                .font_family(Metrics::FONT_SANS)
-                .text_size(px(12.0))
+                .text_size(px(13.0))
                 .text_color(theme.foreground)
                 .child(self.query.clone()),
         )
         .child(
             div()
-                .w(px(64.0))
                 .flex_none()
-                .font_family(Metrics::FONT_SANS)
-                .text_size(px(11.0))
+                .pr(px(4.0))
+                .font(tabular_sans(FontWeight::NORMAL))
+                .text_size(px(11.5))
                 .text_color(theme.muted_foreground)
                 .child(count),
         )
-        .child(compact_icon_button(
+        .child(
+            div()
+                .flex_none()
+                .w(px(1.0))
+                .h(px(18.0))
+                .bg(theme.border_subtle),
+        )
+        .child(find_step_button(
             "find-prev",
             "icons/chevron-up.svg",
-            24.0,
-            12.0,
+            step_color,
             theme,
             cx.listener(|this, _, _, cx| this.advance(true, cx)),
         ))
-        .child(compact_icon_button(
+        .child(find_step_button(
             "find-next",
             "icons/chevron-down.svg",
-            24.0,
-            12.0,
+            step_color,
             theme,
             cx.listener(|this, _, _, cx| this.advance(false, cx)),
         ))
@@ -421,11 +448,38 @@ impl Render for FindOverlay {
             "find-close",
             "icons/x.svg",
             24.0,
-            12.0,
+            13.0,
             theme,
             cx.listener(|_, _, _, cx| cx.emit(FindEvent::Dismissed)),
         ))
     }
+}
+
+/// Previous/next read as dimmed when there is nothing to step through.
+fn find_step_button(
+    id: &'static str,
+    icon_path: &'static str,
+    color: Hsla,
+    theme: Theme,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .debug_selector(move || id.to_string())
+        .tab_index(0)
+        .focusable()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(24.0))
+        .flex_none()
+        .rounded(px(5.0))
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.muted))
+        .active(|style| style.opacity(0.8))
+        .focus(move |style| style.border_1().border_color(theme.primary))
+        .on_click(on_click)
+        .child(icon(icon_path, color, 14.0))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1634,6 +1688,26 @@ mod tests {
                 assert_eq!(card.theme(window).color_scheme, ColorScheme::Dark);
             })
             .unwrap();
+    }
+
+    #[test]
+    fn find_count_reads_position_no_results_or_nothing() {
+        assert_eq!(find_count_label(true, None), "");
+        assert_eq!(find_count_label(false, None), "No results");
+        assert_eq!(find_count_label(false, Some((2, 13))), "2 / 13");
+    }
+
+    #[test]
+    fn update_status_reflects_the_automatic_check_preference() {
+        assert_eq!(update_status(&UpdateUi::Idle, true), "Checks automatically");
+        assert_eq!(
+            update_status(&UpdateUi::Idle, false),
+            "Automatic checks are off"
+        );
+        assert_eq!(
+            update_status(&UpdateUi::UpToDate { manual: true }, false),
+            "Up to date"
+        );
     }
 
     #[test]
