@@ -532,7 +532,7 @@ impl MdowApp {
         let folder_filter_events = cx.subscribe_in(&folder_filter, window, Self::on_filter_event);
         focus_handle.focus(window);
         let appearance_subscription = cx.observe_window_appearance(window, |this, window, cx| {
-            this.theme = Theme::resolve(this.prefs.get().theme_mode, window.appearance());
+            this.theme = this.resolve_theme(window);
             cx.notify();
         });
         let file_watcher = file_watcher
@@ -595,6 +595,12 @@ impl MdowApp {
             focus_handle,
             _appearance_subscription: appearance_subscription,
         }
+    }
+
+    /// The palette for the theme preference and window appearance, sized for the interface scale.
+    fn resolve_theme(&self, window: &Window) -> Theme {
+        let prefs = self.prefs.get();
+        Theme::resolve(prefs.theme_mode, window.appearance()).scaled(prefs.interface_scale)
     }
 
     fn spawn_watch_poll(
@@ -1917,15 +1923,22 @@ impl Render for MdowApp {
             width: f32::from(bounds.size.width),
             height: f32::from(bounds.size.height),
         });
-        self.theme = Theme::resolve(self.prefs.get().theme_mode, window.appearance());
+        self.theme = self.resolve_theme(window);
         let theme = self.theme;
+        let scale = self.prefs.get().interface_scale;
+        if crate::theme::active_ui_scale(cx) != scale
+            || !cx.has_global::<crate::theme::ActiveUiScale>()
+        {
+            cx.set_global(crate::theme::ActiveUiScale(scale));
+        }
         self.folder_filter
             .update(cx, |field, _| field.apply_theme(theme));
         self.sync_recent_menu(cx);
-        let layout = ShellLayout::for_width(
+        let layout = ShellLayout::for_width_scaled(
             f32::from(window.viewport_size().width),
             self.sidebar_open,
             self.wide_mode,
+            theme.ui,
         );
         let zoom_hud = self
             .zoom_hud
@@ -2150,7 +2163,7 @@ impl Render for MdowApp {
             .overflow_hidden()
             .bg(theme.background)
             .font_family(Metrics::FONT_SANS)
-            .text_size(px(self.prefs.get().interface_scale.tokens().control_font))
+            .text_size(px(theme.ui.control_font))
             .text_color(theme.foreground)
             .child(
                 div()
@@ -3141,6 +3154,64 @@ mod tests {
         );
         let reader = visual.debug_bounds("reader-scroll").expect("reader");
         assert_eq!(reader.top(), px(68.0));
+    }
+
+    #[gpui::test]
+    fn interface_scale_resizes_the_shell_chrome(cx: &mut TestAppContext) {
+        use crate::prefs::InterfaceScale;
+
+        // (scale, sidebar, titlebar row, tab, breadcrumb, icon button)
+        let cases = [
+            (InterfaceScale::Compact, 244.0, 40.0, 28.0, 28.0, 28.0),
+            (InterfaceScale::Comfortable, 264.0, 40.0, 32.0, 32.0, 32.0),
+            (InterfaceScale::Large, 280.0, 44.0, 36.0, 36.0, 36.0),
+        ];
+        for (scale, sidebar_width, row, tab_height, breadcrumb_height, button) in cases {
+            let document =
+                parse_document(PathBuf::from("/tmp/scaled-tab.md"), "# Scaled tab\n".into());
+            let window = cx.update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = MdowApp::new(window, cx);
+                        app.model.tabs.open(document);
+                        app.apply_pref(PrefEdit::InterfaceScale(scale), cx);
+                        app
+                    })
+                })
+                .unwrap()
+            });
+            let mut visual = VisualTestContext::from_window(*window, cx);
+            visual.update(|window, cx| window.draw(cx).clear());
+
+            let sidebar = visual.debug_bounds("sidebar").expect("sidebar");
+            let header = visual.debug_bounds("sidebar-header").expect("header");
+            let toggle = visual.debug_bounds("toggle-sidebar").expect("toggle");
+            let modes = visual.debug_bounds("sidebar-modes").expect("modes");
+            let tab_bar = visual.debug_bounds("tab-bar").expect("tab bar");
+            let tab = visual.debug_bounds("document-tab-0").expect("tab");
+            let find = visual.debug_bounds("toggle-find").expect("find");
+            let breadcrumb = visual.debug_bounds("breadcrumb").expect("breadcrumb");
+            let reader = visual.debug_bounds("reader-scroll").expect("reader");
+
+            assert_eq!(sidebar.size.width, px(sidebar_width), "{scale:?}");
+            assert_eq!(header.size.height, px(row), "{scale:?}");
+            assert_eq!(tab_bar.size.height, px(row), "{scale:?}");
+            assert_eq!(tab.size.height, px(tab_height), "{scale:?}");
+            assert_eq!(modes.size.height, px(button), "{scale:?}");
+            assert_eq!(toggle.size.height, px(button), "{scale:?}");
+            assert_eq!(find.size.height, px(button), "{scale:?}");
+            // Titlebar controls sit in the vertical centre of the scaled row.
+            for control in [tab, toggle, find] {
+                assert_eq!(
+                    control.center().y,
+                    tab_bar.center().y,
+                    "{scale:?} control off-centre"
+                );
+            }
+            assert_eq!(breadcrumb.top(), px(row), "{scale:?}");
+            assert_eq!(breadcrumb.size.height, px(breadcrumb_height), "{scale:?}");
+            assert_eq!(reader.top(), px(row + breadcrumb_height), "{scale:?}");
+        }
     }
 
     #[gpui::test]

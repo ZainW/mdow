@@ -135,39 +135,6 @@ pub enum InterfaceScale {
     Large,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ScaleTokens {
-    pub control_font: f32,
-    pub control_xs_font: f32,
-    pub button_height: f32,
-    pub button_xs_height: f32,
-}
-
-impl InterfaceScale {
-    pub fn tokens(self) -> ScaleTokens {
-        match self {
-            Self::Compact => ScaleTokens {
-                control_font: 12.0,
-                control_xs_font: 10.0,
-                button_height: 28.0,
-                button_xs_height: 20.0,
-            },
-            Self::Comfortable => ScaleTokens {
-                control_font: 13.0,
-                control_xs_font: 11.0,
-                button_height: 32.0,
-                button_xs_height: 24.0,
-            },
-            Self::Large => ScaleTokens {
-                control_font: 14.0,
-                control_xs_font: 12.0,
-                button_height: 36.0,
-                button_xs_height: 28.0,
-            },
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ZoomLevel(u16);
 
