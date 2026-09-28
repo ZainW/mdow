@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod app;
 pub mod assets;
+pub mod companion;
 pub mod document;
 pub mod graphics;
 pub mod html;
