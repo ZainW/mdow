@@ -111,6 +111,9 @@ pub enum SurfaceKind {
     Inline,
     /// A code block: triple-click selects a line.
     Code,
+    /// A typeset graphic (display math, Mermaid diagram): copied as its source, never painted
+    /// as text, so it has no find matches and is selected only as a whole.
+    Graphic,
 }
 
 /// How a surface joins the one before it (inside the same top-level block) when copied.
@@ -136,6 +139,7 @@ pub fn searchable_text(surface: &SurfaceText) -> String {
     match surface.kind {
         SurfaceKind::Inline => surface.text.replace('\n', " "),
         SurfaceKind::Code => surface.text.clone(),
+        SurfaceKind::Graphic => String::new(),
     }
 }
 
@@ -228,7 +232,7 @@ pub fn word_range(text: &str, offset: usize) -> Range<usize> {
 /// What triple-click selects: the whole inline surface, or one line of code.
 pub fn block_unit_range(text: &str, kind: SurfaceKind, offset: usize) -> Range<usize> {
     match kind {
-        SurfaceKind::Inline => 0..text.len(),
+        SurfaceKind::Inline | SurfaceKind::Graphic => 0..text.len(),
         SurfaceKind::Code => {
             let offset = offset.min(text.len());
             let start = text[..offset].rfind('\n').map_or(0, |index| index + 1);
@@ -344,8 +348,10 @@ pub fn restyle_runs(
             if piece.background_color.is_some() && clear_background.iter().any(inside) {
                 piece.background_color = None;
             }
+            // Transparent runs are placeholders another element paints over (inline math).
             if let Some((range, color)) = &recolor
                 && inside(range)
+                && piece.color.a > 0.0
             {
                 piece.color = *color;
             }
@@ -355,6 +361,64 @@ pub fn restyle_runs(
         offset = run_end;
     }
     output
+}
+
+/// Maps offsets between a surface's logical text (what find, selection anchors and copy use)
+/// and its painted text, which swaps some spans (typeset inline math) for placeholder glyphs of a
+/// different length. A replaced span is atomic: ranges touching it cover the whole placeholder,
+/// and carets inside a placeholder snap to the nearer end of its source.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OffsetMap {
+    /// `(logical, painted)` range pairs, in order.
+    spans: Vec<(Range<usize>, Range<usize>)>,
+}
+
+impl OffsetMap {
+    pub fn new(spans: Vec<(Range<usize>, Range<usize>)>) -> Self {
+        Self { spans }
+    }
+
+    fn map(
+        &self,
+        offset: usize,
+        from: impl Fn(&(Range<usize>, Range<usize>)) -> &Range<usize>,
+        to: impl Fn(&(Range<usize>, Range<usize>)) -> &Range<usize>,
+        snap_end: impl Fn(usize, &Range<usize>) -> bool,
+    ) -> usize {
+        let mut shifted = offset as isize;
+        for span in &self.spans {
+            let (source, target) = (from(span), to(span));
+            if offset <= source.start {
+                break;
+            }
+            if offset < source.end {
+                return if snap_end(offset, source) {
+                    target.end
+                } else {
+                    target.start
+                };
+            }
+            shifted += target.len() as isize - source.len() as isize;
+        }
+        shifted.max(0) as usize
+    }
+
+    /// Painted range covering logical `range` (touched placeholders are covered whole).
+    pub fn to_painted(&self, range: Range<usize>) -> Range<usize> {
+        let start = self.map(range.start, |span| &span.0, |span| &span.1, |_, _| false);
+        let end = self.map(range.end, |span| &span.0, |span| &span.1, |_, _| true);
+        start..end.max(start)
+    }
+
+    /// Logical caret for a painted caret: inside a placeholder it snaps to the nearer end.
+    pub fn to_logical(&self, offset: usize) -> usize {
+        self.map(
+            offset,
+            |span| &span.1,
+            |span| &span.0,
+            |offset, placeholder| offset - placeholder.start >= placeholder.end - offset,
+        )
+    }
 }
 
 /// One visual (wrapped) line of a painted surface.
@@ -502,7 +566,10 @@ impl SurfaceGeometry {
 pub struct PaintedSurface {
     pub id: SurfaceId,
     pub kind: SurfaceKind,
+    /// The logical text (see [`OffsetMap`]); `painted` is what the layout shaped.
     pub text: gpui::SharedString,
+    pub painted: gpui::SharedString,
+    pub map: OffsetMap,
     pub layout: TextLayout,
     pub align: TextAlign,
     /// The content mask the surface painted under (code blocks and tables scroll horizontally).
@@ -511,7 +578,7 @@ pub struct PaintedSurface {
 
 impl PaintedSurface {
     pub fn geometry(&self) -> SurfaceGeometry {
-        SurfaceGeometry::measure(&self.layout, &self.text, self.align)
+        SurfaceGeometry::measure(&self.layout, &self.painted, self.align)
     }
 
     fn visible_bounds(&self) -> Bounds<Pixels> {
@@ -546,7 +613,9 @@ pub fn hit_test(surfaces: &[PaintedSurface], position: Point<Pixels>) -> Option<
         }
     }
     if let Some((surface, _)) = best {
-        let offset = surface.geometry().index_for_point(position);
+        let offset = surface
+            .map
+            .to_logical(surface.geometry().index_for_point(position));
         return Some(TextPoint::new(surface.id, offset));
     }
     if let Some(next) = surfaces
@@ -612,6 +681,24 @@ mod tests {
             selected_range(start, all_end, SurfaceId::new(3, 9), 4),
             Some(0..4)
         );
+    }
+
+    #[test]
+    fn offset_map_treats_replaced_spans_atomically() {
+        // Logical "a $x$ b" (math at 2..5) paints as "a ▯▯▯▯▯▯ b" (placeholders at 2..8).
+        let map = OffsetMap::new(vec![(2..5, 2..8)]);
+        assert_eq!(map.to_painted(0..1), 0..1);
+        assert_eq!(map.to_painted(6..7), 9..10);
+        // Any overlap with the formula covers its whole placeholder.
+        assert_eq!(map.to_painted(3..4), 2..8);
+        assert_eq!(map.to_painted(0..3), 0..8);
+        assert_eq!(map.to_painted(2..5), 2..8);
+        // Carets inside a placeholder snap to the nearer end of the source.
+        assert_eq!(map.to_logical(1), 1);
+        assert_eq!(map.to_logical(3), 2);
+        assert_eq!(map.to_logical(6), 5);
+        assert_eq!(map.to_logical(9), 6);
+        assert_eq!(OffsetMap::default().to_painted(4..9), 4..9);
     }
 
     #[test]

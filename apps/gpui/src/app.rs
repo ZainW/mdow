@@ -5484,6 +5484,41 @@ mod tests {
     }
 
     #[gpui::test]
+    fn inline_math_finds_and_copies_as_its_tex_source(cx: &mut TestAppContext) {
+        let (window, mut visual) = selection_window(cx, "Area $x^2$ grows.\n\n$$\ny = 1\n$$");
+        visual.dispatch_action(ToggleFind);
+        redraw(&mut visual);
+        visual.simulate_keystrokes("x ^ 2");
+        redraw(&mut visual);
+        redraw(&mut visual);
+        let hits = window
+            .update(&mut visual, |app, _, cx| {
+                app.overlays
+                    .find()
+                    .unwrap()
+                    .read(cx)
+                    .matches()
+                    .hits()
+                    .to_vec()
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        let hit = hits[0];
+        assert_eq!((hit.block, hit.surface, hit.range()), (0, 0, 6..9));
+        let pane = active_pane(window, &mut visual);
+        let rects =
+            visual.update(|_, cx| pane.read(cx).painted_rects(hit.surface_id(), hit.range()));
+        assert_eq!(rects.len(), 1, "the match covers the typeset formula");
+
+        visual.dispatch_action(Dismiss);
+        visual.dispatch_action(field::SelectAll);
+        assert_eq!(
+            selected_text(window, &mut visual).as_deref(),
+            Some("Area $x^2$ grows.\n\n$$y = 1$$")
+        );
+    }
+
+    #[gpui::test]
     fn dragging_past_the_viewport_edge_autoscrolls_and_keeps_the_anchor(cx: &mut TestAppContext) {
         let window = long_reader_window(cx);
         let mut visual = VisualTestContext::from_window(*window, cx);
