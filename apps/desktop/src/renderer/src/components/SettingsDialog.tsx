@@ -418,7 +418,7 @@ function describeUpdateStatus(status: UpdateStatus, autoUpdateEnabled: boolean):
       return 'Update ready to install'
     case 'error':
       return 'Couldn’t check for updates'
-    default:
+    case 'idle':
       return autoUpdateEnabled ? 'Checks automatically' : 'Automatic checks are off'
   }
 }

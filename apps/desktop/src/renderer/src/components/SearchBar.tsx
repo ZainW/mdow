@@ -76,7 +76,7 @@ export function SearchBar({
       >
         {formatMatchCount(query, matchCount, currentIndex)}
       </output>
-      <span aria-hidden className="h-[18px] w-px shrink-0 bg-border-subtle" />
+      <span aria-hidden className="h-[18px] w-px shrink-0 bg-border" />
       <FindButton
         label="Previous match"
         title="Previous match (Shift+Enter)"

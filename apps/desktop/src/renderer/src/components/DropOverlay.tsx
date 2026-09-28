@@ -13,7 +13,7 @@ export function DropOverlay({ summary }: { summary: DropSummary | null }) {
   const Icon = openable ? FileText : FileX
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-(--z-overlay) bg-background/85 p-3">
+    <div className="pointer-events-none fixed inset-0 z-(--z-overlay) bg-background/95 p-3">
       <DropTarget openable={openable} summaryText={describeDrop(summary)} Icon={Icon} />
     </div>
   )

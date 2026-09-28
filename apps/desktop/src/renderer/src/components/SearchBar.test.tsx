@@ -13,20 +13,20 @@ describe('formatMatchCount', () => {
   })
 })
 
-describe('SearchBar', () => {
-  function renderBar(matchCount = 3) {
-    const props = {
-      matchCount,
-      currentIndex: 1,
-      onNext: vi.fn(),
-      onPrev: vi.fn(),
-      onClose: vi.fn(),
-      onQueryChange: vi.fn(),
-    }
-    render(<SearchBar {...props} />)
-    return props
+function renderBar(matchCount = 3) {
+  const props = {
+    matchCount,
+    currentIndex: 1,
+    onNext: vi.fn(),
+    onPrev: vi.fn(),
+    onClose: vi.fn(),
+    onQueryChange: vi.fn(),
   }
+  render(<SearchBar {...props} />)
+  return props
+}
 
+describe('SearchBar', () => {
   it('focuses the field and reports the count after typing', () => {
     const props = renderBar()
     const input = screen.getByRole('textbox', { name: 'Search in document' })

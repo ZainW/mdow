@@ -76,6 +76,8 @@ export function Sidebar() {
             value={mode}
             options={MODE_OPTIONS}
             onChange={setSidebarMode}
+            // Three modes share ~220px: tighter than the Settings segments so labels never clip.
+            segmentClassName="gap-1 px-1 text-[11.5px] [&_svg]:size-[13px]"
           />
         </SidebarHeader>
         <SidebarSectionHeader mode={mode} />

@@ -424,6 +424,12 @@
   padding-left: 22px;
 }
 
+/* The alert plugin leaves the line break that followed the `[!NOTE]` marker; the title row
+   already provides that break. */
+.markdown-body .markdown-alert-body > br:first-child {
+  display: none;
+}
+
 .markdown-body .markdown-alert-body > :first-child {
   margin-top: 0;
 }

@@ -85,46 +85,50 @@ export function ZoomIndicator() {
   const reduceMotion = prefersReducedMotion()
 
   return (
-    <div
-      data-testid="zoom-indicator"
-      data-visible={visible}
-      className="zoom-indicator floating-surface absolute right-4 bottom-4 z-(--z-sticky) flex items-center rounded-lg p-[3px] text-xs text-foreground"
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: reduceMotion ? undefined : visible ? 'scale(1)' : 'scale(0.96)',
-        pointerEvents: visible ? 'auto' : 'none',
-      }}
-      onTransitionEnd={(e) => {
-        if (e.target === e.currentTarget && !visible) dispatch({ type: 'unmount' })
-      }}
-      onMouseEnter={() => {
-        hovered.current = true
-        clearTimeout(hideTimer.current)
-        dispatch({ type: 'reveal' })
-      }}
-      onMouseLeave={() => {
-        hovered.current = false
-        scheduleHide(ZOOM_HUD_LINGER_MS)
-      }}
-    >
-      <HudButton label="Zoom out" disabled={zoomLevel <= ZOOM_MIN} onClick={zoomOut}>
-        <Minus className="size-[13px]" aria-hidden />
-      </HudButton>
-      <output aria-live="polite" className="w-[46px] text-center font-medium tabular-nums">
-        {zoomLevel}%
-      </output>
-      <HudButton label="Zoom in" disabled={zoomLevel >= ZOOM_MAX} onClick={zoomIn}>
-        <Plus className="size-[13px]" aria-hidden />
-      </HudButton>
-      <span aria-hidden className="mx-[3px] h-4 w-px bg-border-subtle" />
-      <button
-        type="button"
-        onClick={resetZoom}
-        disabled={zoomLevel === 100}
-        className="h-[26px] rounded-md px-2 text-[11.5px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+    // Zero-height sticky rail as the scroller's last child: the pill stays pinned to the
+    // bottom-right of the visible area however far the document is scrolled.
+    <div className="pointer-events-none sticky bottom-0 z-(--z-sticky) h-0">
+      <div
+        data-testid="zoom-indicator"
+        data-visible={visible}
+        className="zoom-indicator floating-surface absolute right-4 bottom-4 flex items-center rounded-lg p-[3px] text-xs text-foreground"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: reduceMotion ? undefined : visible ? 'scale(1)' : 'scale(0.96)',
+          pointerEvents: visible ? 'auto' : 'none',
+        }}
+        onTransitionEnd={(e) => {
+          if (e.target === e.currentTarget && !visible) dispatch({ type: 'unmount' })
+        }}
+        onMouseEnter={() => {
+          hovered.current = true
+          clearTimeout(hideTimer.current)
+          dispatch({ type: 'reveal' })
+        }}
+        onMouseLeave={() => {
+          hovered.current = false
+          scheduleHide(ZOOM_HUD_LINGER_MS)
+        }}
       >
-        Reset
-      </button>
+        <HudButton label="Zoom out" disabled={zoomLevel <= ZOOM_MIN} onClick={zoomOut}>
+          <Minus className="size-[13px]" aria-hidden />
+        </HudButton>
+        <output aria-live="polite" className="w-[46px] text-center font-medium tabular-nums">
+          {zoomLevel}%
+        </output>
+        <HudButton label="Zoom in" disabled={zoomLevel >= ZOOM_MAX} onClick={zoomIn}>
+          <Plus className="size-[13px]" aria-hidden />
+        </HudButton>
+        <span aria-hidden className="mx-[3px] h-4 w-px bg-border" />
+        <button
+          type="button"
+          onClick={resetZoom}
+          disabled={zoomLevel === 100}
+          className="h-[26px] rounded-md px-2 text-[11.5px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+        >
+          Reset
+        </button>
+      </div>
     </div>
   )
 }

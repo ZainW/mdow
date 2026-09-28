@@ -11,6 +11,22 @@ import { SidebarGroup, SidebarGroupContent } from './ui/sidebar'
 import { Loader2, Search } from 'lucide-react'
 import { cn, isMac } from '../lib/utils'
 
+// The tree renders in a shadow root; this gives its selected row the same 2px accent marker
+// the outline's active heading and the active recent file use (see `.tree-file-active`).
+const ACTIVE_FILE_MARKER_CSS = `
+  button[data-type='item'][data-item-selected] { position: relative; }
+  button[data-type='item'][data-item-selected]::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: var(--accent);
+  }
+`
+
 type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
 
 function normalizeRoot(root: string): string {
@@ -141,6 +157,7 @@ export function FolderTree() {
     paths: filteredPaths,
     initialExpansion: 'closed',
     icons: fileTreeIcons,
+    unsafeCSS: ACTIVE_FILE_MARKER_CSS,
     onSelectionChange: (selected) => selectionHandlerRef.current(selected),
   }))
 
