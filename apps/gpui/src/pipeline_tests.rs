@@ -506,3 +506,72 @@ fn the_outline_renders_only_its_visible_rows(cx: &mut TestAppContext) {
     }
     assert!(visual.debug_bounds("outline-row-2500").is_some());
 }
+
+#[gpui::test]
+fn diagrams_and_math_keep_their_place_across_a_reload(cx: &mut TestAppContext) {
+    let section = |index: usize| {
+        format!(
+            "Paragraph {index} before a diagram.\n\n```mermaid\ngraph TD\n  A{index} --> B{index}\n```\n\n$$\nx_{index}^2 + y^2 = z^2\n$$\n\n"
+        )
+    };
+    let body = (0..60).map(section).collect::<String>();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("graphics.md");
+    fs::write(&path, format!("# Graphics\n\n{body}")).unwrap();
+    let window = blank_window(cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    window
+        .update(&mut visual, |app, _, cx| app.open_path(&path, cx))
+        .unwrap();
+    redraw(&mut visual);
+    // Diagrams and math rasterize in the background and grow from their placeholder height.
+    visual.run_until_parked();
+    redraw(&mut visual);
+    let path = window
+        .read_with(&visual, |app, _| active_path(app))
+        .unwrap();
+    let list = window
+        .update(&mut visual, |app, _, cx| {
+            pane(app, &path).read(cx).list_state()
+        })
+        .unwrap();
+    list.scroll_to(ListOffset {
+        item_ix: 91,
+        offset_in_item: px(20.0),
+    });
+    redraw(&mut visual);
+    visual.run_until_parked();
+    redraw(&mut visual);
+    let signature = window
+        .read_with(&visual, |app, _| {
+            app.model
+                .tabs
+                .active()
+                .unwrap()
+                .document
+                .layout()
+                .signatures[91]
+        })
+        .unwrap();
+
+    fs::write(
+        &path,
+        format!("# Graphics\n\nA new paragraph.\n\n$$\na + b\n$$\n\n{body}"),
+    )
+    .unwrap();
+    window
+        .update(&mut visual, |app, _, cx| {
+            app.handle_watch_messages(vec![WatchMessage::Reload(path.clone())], cx)
+        })
+        .unwrap();
+    visual.run_until_parked();
+    redraw(&mut visual);
+    let top = list.logical_scroll_top();
+    assert_eq!((top.item_ix, top.offset_in_item), (93, px(20.0)));
+    window
+        .read_with(&visual, |app, _| {
+            let layout = app.model.tabs.active().unwrap().document.layout();
+            assert_eq!(layout.signatures[93], signature);
+        })
+        .unwrap();
+}
