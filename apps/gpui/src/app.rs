@@ -220,6 +220,16 @@ impl AppModel {
     }
 }
 
+pub const DEFAULT_WINDOW_TITLE: &str = "Mdow Native";
+
+/// Mirrors the Electron shell: the active document's file name, or the app name when empty.
+pub fn window_title_for(active_path: Option<&Path>) -> String {
+    active_path
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| DEFAULT_WINDOW_TITLE.into())
+}
+
 fn canonical_file_identity(path: &Path) -> PathBuf {
     crate::session::file_identity(path)
 }
@@ -274,6 +284,7 @@ pub struct MdowApp {
     update_dismissed: bool,
     _update_poll_task: Task<()>,
     theme: Theme,
+    window_title: Option<String>,
     focus_handle: FocusHandle,
     _appearance_subscription: Subscription,
 }
@@ -396,6 +407,7 @@ impl MdowApp {
             update_dismissed: false,
             _update_poll_task: update_poll_task,
             theme: Theme::for_appearance(window.appearance()),
+            window_title: None,
             focus_handle,
             _appearance_subscription: appearance_subscription,
         }
@@ -1261,6 +1273,11 @@ impl Render for MdowApp {
             self.wide_mode,
         );
         let active_path = self.model.tabs.active().map(|tab| tab.path().to_owned());
+        let title = window_title_for(active_path.as_deref());
+        if self.window_title.as_deref() != Some(title.as_str()) {
+            window.set_window_title(&title);
+            self.window_title = Some(title);
+        }
         let headings = self
             .model
             .tabs
@@ -1988,6 +2005,29 @@ mod tests {
             second.canonicalize().unwrap(),
             root,
         )
+    }
+
+    #[gpui::test]
+    fn window_title_tracks_the_active_document_and_falls_back_when_empty(cx: &mut TestAppContext) {
+        let (window, first, second, _root) = two_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert_eq!(visual.window_title().as_deref(), Some("README.md"));
+
+        window
+            .update(cx, |app, _, cx| app.activate_tab(&second, cx))
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert_eq!(visual.window_title().as_deref(), Some("start.md"));
+
+        window
+            .update(cx, |app, _, cx| {
+                app.close_tab(&second, cx);
+                app.close_tab(&first, cx);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        assert_eq!(visual.window_title().as_deref(), Some(DEFAULT_WINDOW_TITLE));
     }
 
     #[gpui::test]

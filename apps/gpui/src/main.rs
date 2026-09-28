@@ -59,7 +59,7 @@ where
 }
 
 fn default_window_title() -> &'static str {
-    "Mdow Native"
+    mdow_gpui::app::DEFAULT_WINDOW_TITLE
 }
 
 fn app_menus() -> Vec<Menu> {
