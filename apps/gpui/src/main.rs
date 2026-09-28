@@ -163,6 +163,8 @@ fn main() -> anyhow::Result<()> {
             .expect("register required Mdow fonts");
 
         cx.bind_keys(key_bindings());
+        // After the app's own bindings, so the composer's Enter wins over the Field one.
+        cx.bind_keys(mdow_gpui::companion::key_bindings());
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_action(|_: &NewWindow, cx| {
             open_main_window(WindowSeed::Blank, cx);

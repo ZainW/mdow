@@ -1,8 +1,8 @@
 //! The only module that touches disk or Electron wire strings.
 
 use crate::prefs::{
-    CodeFont, ColumnWidth, ContentFont, InterfaceScale, PrefEdit, Prefs, ReaderWidth, SidebarMode,
-    ThemeMode, ZoomLevel,
+    CodeFont, ColumnWidth, CompanionPrefs, ContentFont, InterfaceScale, PrefEdit, Prefs,
+    ReaderWidth, SidebarMode, ThemeMode, ZoomLevel,
 };
 use crate::session::{Recents, SavedWindowBounds, Session, SessionTabs};
 use serde::Serialize;
@@ -89,6 +89,11 @@ impl StoredPrefs {
         &self.prefs
     }
 
+    /// Where `state.json` lives (empty for in-memory stores); companion settings sit beside it.
+    pub fn state_path(&self) -> &Path {
+        self.store.path()
+    }
+
     pub fn apply(&mut self, edit: PrefEdit, session: &Session) -> bool {
         if !self.prefs.apply(edit) {
             return false;
@@ -140,6 +145,8 @@ struct WireState {
     zoom_level: u16,
     sidebar_mode: String,
     auto_update_enabled: bool,
+    companion_enabled: bool,
+    companion_preferred_provider: Option<String>,
     recents: Vec<String>,
     last_folder: Option<String>,
     session_tabs: Vec<WireTab>,
@@ -183,6 +190,11 @@ fn encode(prefs: &Prefs, session: &Session) -> WireState {
         zoom_level: prefs.zoom.percent(),
         sidebar_mode: sidebar_mode_wire(prefs.sidebar_mode).to_owned(),
         auto_update_enabled: prefs.auto_update,
+        companion_enabled: prefs.companion.enabled,
+        companion_preferred_provider: prefs
+            .companion
+            .provider
+            .map(|provider| provider.wire().to_owned()),
         recents: session
             .recents
             .iter()
@@ -233,6 +245,11 @@ fn decode(value: &Value) -> Restored {
         .map(parse_sidebar_mode)
         .unwrap_or_default();
     let auto_update = bool_field(object, "autoUpdateEnabled").unwrap_or(true);
+    let companion = CompanionPrefs {
+        enabled: bool_field(object, "companionEnabled").unwrap_or(true),
+        provider: string_field(object, "companionPreferredProvider")
+            .and_then(crate::companion::ProviderId::from_wire),
+    };
 
     let recents = Recents::from_paths(
         array_field(object, "recents")
@@ -270,6 +287,7 @@ fn decode(value: &Value) -> Restored {
             zoom,
             sidebar_mode,
             auto_update,
+            companion,
         },
         session: Session {
             tabs: SessionTabs::new(tab_paths, active),
@@ -444,6 +462,10 @@ mod tests {
         prefs.apply(PrefEdit::ToggleFull);
         prefs.apply(PrefEdit::ZoomIn);
         prefs.apply(PrefEdit::Sidebar(SidebarMode::Outline));
+        prefs.apply(PrefEdit::CompanionEnabled(false));
+        prefs.apply(PrefEdit::CompanionProvider(Some(
+            crate::companion::ProviderId::CodexAcp,
+        )));
         prefs
     }
 
@@ -560,6 +582,8 @@ mod tests {
         assert_eq!(json["zoomLevel"], 110);
         assert_eq!(json["sidebarMode"], "outline");
         assert_eq!(json["autoUpdateEnabled"], false);
+        assert_eq!(json["companionEnabled"], false);
+        assert_eq!(json["companionPreferredProvider"], "codex-acp");
         assert_eq!(json["lastFolder"], "/notes");
         assert_eq!(json["sessionActiveTabPath"], "/notes/b.md");
         assert_eq!(json["sessionTabs"][1]["path"], "/notes/b.md");

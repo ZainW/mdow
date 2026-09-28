@@ -1103,7 +1103,8 @@ pub fn render_tab_bar(
                     cx.listener(|this, _, window, cx| {
                         this.click_toggle_overlay(OverlayKind::Palette, window, cx);
                     }),
-                )),
+                ))
+                .children(app.companion.toggle_button(theme, cx)),
         )
         .into_any_element()
 }
@@ -1113,6 +1114,7 @@ pub fn render_tab_bar(
 pub fn render_empty_toolbar(
     theme: Theme,
     layout: &ShellLayout,
+    companion_button: Option<AnyElement>,
     cx: &Context<MdowApp>,
 ) -> AnyElement {
     div()
@@ -1129,6 +1131,7 @@ pub fn render_empty_toolbar(
                 .flex()
                 .items_center()
                 .h_full()
+                .gap(px(2.0))
                 .px(px(6.0))
                 .flex_none()
                 .child(icon_button(
@@ -1138,7 +1141,8 @@ pub fn render_empty_toolbar(
                     cx.listener(|this, _, window, cx| {
                         this.click_toggle_overlay(OverlayKind::Palette, window, cx);
                     }),
-                )),
+                ))
+                .children(companion_button),
         )
         .into_any_element()
 }

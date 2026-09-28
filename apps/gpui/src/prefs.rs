@@ -253,6 +253,25 @@ pub enum SidebarMode {
     Outline,
 }
 
+// --- Companion (AI) prefs -------------------------------------------------------------
+/// Whether the AI companion is offered, and which local agent it prefers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompanionPrefs {
+    pub enabled: bool,
+    /// `None`: the first installed agent.
+    pub provider: Option<crate::companion::ProviderId>,
+}
+
+impl Default for CompanionPrefs {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            provider: None,
+        }
+    }
+}
+// --- end Companion prefs ---------------------------------------------------------------
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Prefs {
     pub theme_mode: ThemeMode,
@@ -264,6 +283,7 @@ pub struct Prefs {
     pub sidebar_mode: SidebarMode,
     /// Electron's `autoUpdateEnabled`: whether Sparkle checks for updates in the background.
     pub auto_update: bool,
+    pub companion: CompanionPrefs,
 }
 
 impl Default for Prefs {
@@ -277,6 +297,7 @@ impl Default for Prefs {
             zoom: ZoomLevel::default(),
             sidebar_mode: SidebarMode::default(),
             auto_update: true,
+            companion: CompanionPrefs::default(),
         }
     }
 }
@@ -294,6 +315,8 @@ pub enum PrefEdit {
     ZoomReset,
     Sidebar(SidebarMode),
     AutoUpdate(bool),
+    CompanionEnabled(bool),
+    CompanionProvider(Option<crate::companion::ProviderId>),
     ResetAll,
 }
 
@@ -323,6 +346,8 @@ impl Prefs {
             PrefEdit::ZoomReset => self.zoom = ZoomLevel::default(),
             PrefEdit::Sidebar(sidebar_mode) => self.sidebar_mode = sidebar_mode,
             PrefEdit::AutoUpdate(enabled) => self.auto_update = enabled,
+            PrefEdit::CompanionEnabled(enabled) => self.companion.enabled = enabled,
+            PrefEdit::CompanionProvider(provider) => self.companion.provider = provider,
             PrefEdit::ResetAll => *self = Self::default(),
         }
         *self != before

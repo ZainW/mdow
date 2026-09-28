@@ -51,6 +51,17 @@ const REQUIRED_ICONS: &[&str] = &[
     "icons/sun.svg",
     "icons/triangle-alert.svg",
     "icons/x.svg",
+    // AI Companion
+    "icons/arrow-up.svg",
+    "icons/at-sign.svg",
+    "icons/cpu.svg",
+    "icons/file-text.svg",
+    "icons/gauge.svg",
+    "icons/message-square.svg",
+    "icons/shield.svg",
+    "icons/square-pen.svg",
+    "icons/stop.svg",
+    "icons/wrench.svg",
 ];
 
 pub fn required_assets() -> impl Iterator<Item = &'static str> {

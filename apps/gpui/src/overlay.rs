@@ -508,6 +508,7 @@ pub enum CommandId {
     OpenSettings,
     OpenShortcuts,
     CheckForUpdates,
+    ToggleCompanion,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -633,6 +634,11 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             id: CommandId::OpenShortcuts,
             title: "Keyboard Shortcuts",
             keys: Some("⌘/"),
+        },
+        CommandSpec {
+            id: CommandId::ToggleCompanion,
+            title: "Toggle AI Companion",
+            keys: Some(crate::companion::TOGGLE_KEYS_LABEL),
         },
         #[cfg(target_os = "macos")]
         CommandSpec {
@@ -980,6 +986,7 @@ pub enum SettingsEvent {
     DownloadUpdate,
     ViewReleases,
     InstallUpdate,
+    ChooseCompanionExecutable,
     Dismissed,
 }
 
@@ -1140,6 +1147,78 @@ impl Render for SettingsPanel {
                 theme,
             ));
 
+        // --- Companion settings group ---
+        let companion_enabled = prefs.companion.enabled;
+        let custom_label =
+            crate::companion::ui::custom_command_label(cx).unwrap_or_else(|| "None chosen".into());
+        let companion = settings_group("Companion", theme)
+            .child(settings_row(
+                "AI Companion",
+                Some(crate::companion::TOGGLE_KEYS_LABEL),
+                switch(
+                    "settings-companion-enabled",
+                    companion_enabled,
+                    theme,
+                    cx.listener(move |_, _, _, cx| {
+                        cx.emit(SettingsEvent::Edited(PrefEdit::CompanionEnabled(
+                            !companion_enabled,
+                        )))
+                    }),
+                ),
+                theme,
+            ))
+            .when(companion_enabled, |group| {
+                group
+                    .child(settings_row(
+                        "Provider",
+                        Some("Local ACP agents"),
+                        segmented(
+                            crate::companion::ProviderId::ALL.map(|id| {
+                                Segment::text(
+                                    id.short_label(),
+                                    prefs.companion.provider == Some(id),
+                                    PrefEdit::CompanionProvider(Some(id)),
+                                )
+                            }),
+                            theme,
+                            cx,
+                        ),
+                        theme,
+                    ))
+                    .when(
+                        prefs.companion.provider == Some(crate::companion::ProviderId::Custom),
+                        |group| {
+                            group.child(settings_row(
+                                "Executable",
+                                None,
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .font_family(Metrics::FONT_MONO)
+                                            .text_size(px(11.5))
+                                            .text_color(theme.muted_foreground)
+                                            .child(custom_label),
+                                    )
+                                    .child(settings_button(
+                                        "Choose…",
+                                        "settings-companion-executable",
+                                        theme,
+                                        SettingsEvent::ChooseCompanionExecutable,
+                                        cx,
+                                    )),
+                                theme,
+                            ))
+                        },
+                    )
+            });
+        // --- end Companion settings group ---
+
         overlay_surface(SETTINGS_WIDTH, theme)
             .id("settings-panel")
             .track_focus(&self.focus_handle)
@@ -1171,6 +1250,7 @@ impl Render for SettingsPanel {
             .child(settings_preview(prefs, theme))
             .child(appearance)
             .child(reading)
+            .child(companion)
             .when(cfg!(target_os = "macos"), |panel| {
                 panel.child(settings_updates(&self.update, prefs.auto_update, theme, cx))
             })
