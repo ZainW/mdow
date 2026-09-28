@@ -104,6 +104,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("alt-cmd-h", HideOthers, None),
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+        // Outside a Field, Copy and Select All reach the root and act on the reader's selection.
+        KeyBinding::new("cmd-a", field::SelectAll, None),
+        KeyBinding::new("cmd-c", field::Copy, None),
         KeyBinding::new("left", field::MoveLeft, Some("Field")),
         KeyBinding::new("right", field::MoveRight, Some("Field")),
         KeyBinding::new("shift-left", field::SelectLeft, Some("Field")),
