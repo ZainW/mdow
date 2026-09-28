@@ -1325,16 +1325,24 @@ pub enum ShortcutsEvent {
 }
 
 pub struct ShortcutsCard {
+    theme_mode: ThemeMode,
     focus_handle: FocusHandle,
 }
 
 impl EventEmitter<ShortcutsEvent> for ShortcutsCard {}
 
 impl ShortcutsCard {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(theme_mode: ThemeMode, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window);
-        Self { focus_handle }
+        Self {
+            theme_mode,
+            focus_handle,
+        }
+    }
+
+    fn theme(&self, window: &Window) -> Theme {
+        Theme::resolve(self.theme_mode, window.appearance())
     }
 }
 
@@ -1346,7 +1354,7 @@ impl Focusable for ShortcutsCard {
 
 impl Render for ShortcutsCard {
     fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::for_appearance(window.appearance());
+        let theme = self.theme(window);
         let mut list = div().flex().flex_col().gap(px(6.0));
         for spec in command_catalog() {
             if let Some(keys) = spec.keys {
@@ -1375,6 +1383,25 @@ impl Render for ShortcutsCard {
 mod tests {
     use super::*;
     use crate::document::InlineSpan;
+    use crate::theme::ColorScheme;
+    use gpui::{TestAppContext, WindowAppearance};
+
+    #[gpui::test]
+    fn shortcuts_card_follows_a_forced_theme_preference(cx: &mut TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| ShortcutsCard::new(ThemeMode::Dark, window, cx))
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |card, window, _| {
+                assert_eq!(window.appearance(), WindowAppearance::Light);
+                assert_eq!(card.theme(window).color_scheme, ColorScheme::Dark);
+            })
+            .unwrap();
+    }
 
     #[test]
     fn find_uses_painted_spaces_for_soft_breaks() {

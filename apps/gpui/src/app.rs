@@ -746,7 +746,8 @@ impl MdowApp {
                 OpenOverlay::settings(view, events)
             }
             OverlayKind::Shortcuts => {
-                let view = cx.new(|cx| ShortcutsCard::new(window, cx));
+                let theme_mode = self.prefs.get().theme_mode;
+                let view = cx.new(|cx| ShortcutsCard::new(theme_mode, window, cx));
                 let events = cx.subscribe_in(&view, window, |this, _, event, _, cx| {
                     this.on_shortcuts_event(event, cx);
                 });
