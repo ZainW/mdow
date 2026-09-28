@@ -23,6 +23,17 @@ actions!(
         SidebarRecents,
         SidebarFolder,
         SidebarOutline,
-        CheckForUpdates
+        CheckForUpdates,
+        NextTab,
+        PreviousTab,
+        SelectTab1,
+        SelectTab2,
+        SelectTab3,
+        SelectTab4,
+        SelectTab5,
+        SelectTab6,
+        SelectTab7,
+        SelectTab8,
+        SelectLastTab
     ]
 );

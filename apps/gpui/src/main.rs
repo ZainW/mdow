@@ -7,9 +7,11 @@ use gpui::{
 use mdow_gpui::actions::CheckForUpdates;
 use mdow_gpui::{
     actions::{
-        CloseTab, Dismiss, FindNext, FindPrevious, NewWindow, OpenFile, OpenFolder, Quit,
-        SidebarFolder, SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings,
-        ToggleShortcuts, ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
+        CloseTab, Dismiss, FindNext, FindPrevious, NewWindow, NextTab, OpenFile, OpenFolder,
+        PreviousTab, Quit, SelectLastTab, SelectTab1, SelectTab2, SelectTab3, SelectTab4,
+        SelectTab5, SelectTab6, SelectTab7, SelectTab8, SidebarFolder, SidebarOutline,
+        SidebarRecents, ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar,
+        ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
     },
     app::MdowApp,
     assets::{BUNDLED_FONTS, MdowAssets, discover_asset_root, validate_required_assets},
@@ -104,6 +106,9 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Folder", SidebarFolder),
                 MenuItem::action("Outline", SidebarOutline),
                 MenuItem::separator(),
+                MenuItem::action("Next Tab", NextTab),
+                MenuItem::action("Previous Tab", PreviousTab),
+                MenuItem::separator(),
                 MenuItem::action("Toggle Wide Mode", ToggleWideMode),
                 MenuItem::action("Zoom In", ZoomIn),
                 MenuItem::action("Zoom Out", ZoomOut),
@@ -114,6 +119,62 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Keyboard Shortcuts", ToggleShortcuts),
             ],
         },
+    ]
+}
+
+fn key_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("cmd-n", NewWindow, None),
+        KeyBinding::new("cmd-o", OpenFile, None),
+        KeyBinding::new("cmd-shift-o", OpenFolder, None),
+        KeyBinding::new("cmd-b", ToggleSidebar, None),
+        KeyBinding::new("cmd-w", CloseTab, None),
+        KeyBinding::new("cmd-shift-w", ToggleWideMode, None),
+        KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("cmd-f", ToggleFind, None),
+        KeyBinding::new("cmd-k", TogglePalette, None),
+        KeyBinding::new("cmd-shift-p", TogglePalette, None),
+        KeyBinding::new("cmd-,", ToggleSettings, None),
+        KeyBinding::new("cmd-/", ToggleShortcuts, None),
+        KeyBinding::new("escape", Dismiss, None),
+        KeyBinding::new("cmd-g", FindNext, None),
+        KeyBinding::new("cmd-shift-g", FindPrevious, None),
+        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-0", ZoomReset, None),
+        KeyBinding::new("ctrl-1", SidebarRecents, None),
+        KeyBinding::new("ctrl-2", SidebarFolder, None),
+        KeyBinding::new("ctrl-3", SidebarOutline, None),
+        KeyBinding::new("cmd-alt-right", NextTab, None),
+        KeyBinding::new("cmd-alt-left", PreviousTab, None),
+        KeyBinding::new("ctrl-tab", NextTab, None),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
+        KeyBinding::new("cmd-1", SelectTab1, None),
+        KeyBinding::new("cmd-2", SelectTab2, None),
+        KeyBinding::new("cmd-3", SelectTab3, None),
+        KeyBinding::new("cmd-4", SelectTab4, None),
+        KeyBinding::new("cmd-5", SelectTab5, None),
+        KeyBinding::new("cmd-6", SelectTab6, None),
+        KeyBinding::new("cmd-7", SelectTab7, None),
+        KeyBinding::new("cmd-8", SelectTab8, None),
+        KeyBinding::new("cmd-9", SelectLastTab, None),
+        KeyBinding::new("left", field::MoveLeft, Some("Field")),
+        KeyBinding::new("right", field::MoveRight, Some("Field")),
+        KeyBinding::new("shift-left", field::SelectLeft, Some("Field")),
+        KeyBinding::new("shift-right", field::SelectRight, Some("Field")),
+        KeyBinding::new("cmd-a", field::SelectAll, Some("Field")),
+        KeyBinding::new("home", field::Home, Some("Field")),
+        KeyBinding::new("end", field::End, Some("Field")),
+        KeyBinding::new("backspace", field::Backspace, Some("Field")),
+        KeyBinding::new("delete", field::Delete, Some("Field")),
+        KeyBinding::new("cmd-v", field::Paste, Some("Field")),
+        KeyBinding::new("cmd-c", field::Copy, Some("Field")),
+        KeyBinding::new("cmd-x", field::Cut, Some("Field")),
+        KeyBinding::new("enter", field::Submit, Some("Field")),
+        KeyBinding::new("shift-enter", field::SubmitBackward, Some("Field")),
+        KeyBinding::new("escape", field::Cancel, Some("Field")),
+        KeyBinding::new("down", overlay::SelectNext, Some("Palette")),
+        KeyBinding::new("up", overlay::SelectPrev, Some("Palette")),
     ]
 }
 
@@ -155,46 +216,7 @@ fn main() -> anyhow::Result<()> {
             .add_fonts(fonts)
             .expect("register required Mdow fonts");
 
-        cx.bind_keys([
-            KeyBinding::new("cmd-n", NewWindow, None),
-            KeyBinding::new("cmd-o", OpenFile, None),
-            KeyBinding::new("cmd-shift-o", OpenFolder, None),
-            KeyBinding::new("cmd-b", ToggleSidebar, None),
-            KeyBinding::new("cmd-w", CloseTab, None),
-            KeyBinding::new("cmd-shift-w", ToggleWideMode, None),
-            KeyBinding::new("cmd-q", Quit, None),
-            KeyBinding::new("cmd-f", ToggleFind, None),
-            KeyBinding::new("cmd-k", TogglePalette, None),
-            KeyBinding::new("cmd-shift-p", TogglePalette, None),
-            KeyBinding::new("cmd-,", ToggleSettings, None),
-            KeyBinding::new("cmd-/", ToggleShortcuts, None),
-            KeyBinding::new("escape", Dismiss, None),
-            KeyBinding::new("cmd-g", FindNext, None),
-            KeyBinding::new("cmd-shift-g", FindPrevious, None),
-            KeyBinding::new("cmd-=", ZoomIn, None),
-            KeyBinding::new("cmd--", ZoomOut, None),
-            KeyBinding::new("cmd-0", ZoomReset, None),
-            KeyBinding::new("ctrl-1", SidebarRecents, None),
-            KeyBinding::new("ctrl-2", SidebarFolder, None),
-            KeyBinding::new("ctrl-3", SidebarOutline, None),
-            KeyBinding::new("left", field::MoveLeft, Some("Field")),
-            KeyBinding::new("right", field::MoveRight, Some("Field")),
-            KeyBinding::new("shift-left", field::SelectLeft, Some("Field")),
-            KeyBinding::new("shift-right", field::SelectRight, Some("Field")),
-            KeyBinding::new("cmd-a", field::SelectAll, Some("Field")),
-            KeyBinding::new("home", field::Home, Some("Field")),
-            KeyBinding::new("end", field::End, Some("Field")),
-            KeyBinding::new("backspace", field::Backspace, Some("Field")),
-            KeyBinding::new("delete", field::Delete, Some("Field")),
-            KeyBinding::new("cmd-v", field::Paste, Some("Field")),
-            KeyBinding::new("cmd-c", field::Copy, Some("Field")),
-            KeyBinding::new("cmd-x", field::Cut, Some("Field")),
-            KeyBinding::new("enter", field::Submit, Some("Field")),
-            KeyBinding::new("shift-enter", field::SubmitBackward, Some("Field")),
-            KeyBinding::new("escape", field::Cancel, Some("Field")),
-            KeyBinding::new("down", overlay::SelectNext, Some("Palette")),
-            KeyBinding::new("up", overlay::SelectPrev, Some("Palette")),
-        ]);
+        cx.bind_keys(key_bindings());
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_action(|_: &NewWindow, cx| {
             open_main_window(WindowSeed::Blank, cx);
@@ -309,7 +331,7 @@ fn open_main_window(seed: WindowSeed, cx: &mut App) -> WindowHandle<MdowApp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::OwnedMenuItem;
+    use gpui::{Keystroke, OwnedMenuItem};
     use std::ffi::OsString;
 
     #[test]
@@ -421,5 +443,31 @@ mod tests {
             .count();
         assert_eq!(quit_count, 1);
         assert_eq!(default_window_title(), "Mdow Native");
+    }
+
+    #[test]
+    fn tab_navigation_keys_match_the_electron_shortcuts() {
+        let bindings = key_bindings();
+        let action_for = |keys: &str| {
+            bindings
+                .iter()
+                .find(|binding| {
+                    let wanted = Keystroke::parse(keys).unwrap();
+                    matches!(binding.keystrokes(), [only]
+                        if only.inner().key == wanted.key
+                            && only.inner().modifiers == wanted.modifiers)
+                })
+                .unwrap_or_else(|| panic!("{keys} should be bound"))
+                .action()
+                .as_any()
+        };
+
+        assert!(action_for("cmd-alt-right").is::<NextTab>());
+        assert!(action_for("cmd-alt-left").is::<PreviousTab>());
+        assert!(action_for("ctrl-tab").is::<NextTab>());
+        assert!(action_for("ctrl-shift-tab").is::<PreviousTab>());
+        assert!(action_for("cmd-1").is::<SelectTab1>());
+        assert!(action_for("cmd-8").is::<SelectTab8>());
+        assert!(action_for("cmd-9").is::<SelectLastTab>());
     }
 }

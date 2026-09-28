@@ -1,8 +1,10 @@
 use crate::{
     actions::{
-        CheckForUpdates, CloseTab, Dismiss, FindNext, FindPrevious, OpenFile, OpenFolder,
-        SidebarFolder, SidebarOutline, SidebarRecents, ToggleFind, TogglePalette, ToggleSettings,
-        ToggleShortcuts, ToggleSidebar, ToggleWideMode, ZoomIn, ZoomOut, ZoomReset,
+        CheckForUpdates, CloseTab, Dismiss, FindNext, FindPrevious, NextTab, OpenFile, OpenFolder,
+        PreviousTab, SelectLastTab, SelectTab1, SelectTab2, SelectTab3, SelectTab4, SelectTab5,
+        SelectTab6, SelectTab7, SelectTab8, SidebarFolder, SidebarOutline, SidebarRecents,
+        ToggleFind, TogglePalette, ToggleSettings, ToggleShortcuts, ToggleSidebar, ToggleWideMode,
+        ZoomIn, ZoomOut, ZoomReset,
     },
     document::{DocumentError, ParsedDocument, load_source, parse_document},
     overlay::{
@@ -785,6 +787,8 @@ impl MdowApp {
             CommandId::OpenFile => self.open_file_prompt(cx),
             CommandId::OpenFolder => self.open_folder_prompt(cx),
             CommandId::CloseTab => self.close_active_tab(&CloseTab, window, cx),
+            CommandId::NextTab => self.cycle_tab(1, cx),
+            CommandId::PreviousTab => self.cycle_tab(-1, cx),
             CommandId::ToggleSidebar => self.toggle_sidebar(&ToggleSidebar, window, cx),
             CommandId::SidebarRecents => {
                 self.apply_pref(PrefEdit::Sidebar(SidebarMode::Recents), cx)
@@ -1136,6 +1140,32 @@ impl MdowApp {
         }
     }
 
+    fn select_tab_index(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(path) = self.model.tabs.path_at(index).map(Path::to_owned) {
+            self.activate_tab(&path, cx);
+        }
+    }
+
+    fn cycle_tab(&mut self, step: isize, cx: &mut Context<Self>) {
+        if let Some(path) = self.model.tabs.cycled_path(step).map(Path::to_owned) {
+            self.activate_tab(&path, cx);
+        }
+    }
+
+    fn on_next_tab(&mut self, _: &NextTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.cycle_tab(1, cx);
+    }
+
+    fn on_previous_tab(&mut self, _: &PreviousTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.cycle_tab(-1, cx);
+    }
+
+    fn on_select_last_tab(&mut self, _: &SelectLastTab, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(last) = self.model.tabs.len().checked_sub(1) {
+            self.select_tab_index(last, cx);
+        }
+    }
+
     fn scroll_active_reader(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let Some(path) = self.model.tabs.active().map(|tab| tab.path().to_owned()) else {
             return false;
@@ -1394,6 +1424,17 @@ impl Render for MdowApp {
             .on_action(cx.listener(Self::on_sidebar_recents))
             .on_action(cx.listener(Self::on_sidebar_folder))
             .on_action(cx.listener(Self::on_sidebar_outline))
+            .on_action(cx.listener(Self::on_next_tab))
+            .on_action(cx.listener(Self::on_previous_tab))
+            .on_action(cx.listener(|this, _: &SelectTab1, _, cx| this.select_tab_index(0, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab2, _, cx| this.select_tab_index(1, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab3, _, cx| this.select_tab_index(2, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab4, _, cx| this.select_tab_index(3, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab5, _, cx| this.select_tab_index(4, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab6, _, cx| this.select_tab_index(5, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab7, _, cx| this.select_tab_index(6, cx)))
+            .on_action(cx.listener(|this, _: &SelectTab8, _, cx| this.select_tab_index(7, cx)))
+            .on_action(cx.listener(Self::on_select_last_tab))
             .on_drag_move::<ExternalPaths>(cx.listener(|this, _, window, cx| {
                 this.drag_moved(window, cx);
             }))
@@ -2028,6 +2069,74 @@ mod tests {
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
         assert_eq!(visual.window_title().as_deref(), Some(DEFAULT_WINDOW_TITLE));
+    }
+
+    fn three_tab_window(cx: &mut TestAppContext) -> (gpui::WindowHandle<MdowApp>, Vec<PathBuf>) {
+        let paths = ["a", "b", "c"]
+            .map(|name| PathBuf::from(format!("/tmp/tab-nav-{name}.md")))
+            .to_vec();
+        let mut model = AppModel::default();
+        for path in &paths {
+            model
+                .tabs
+                .open(parse_document(path.clone(), "# Tab\n".into()));
+        }
+        model.tabs.activate(&paths[0]);
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| {
+                    let mut app = MdowApp::new(window, cx);
+                    app.model = model;
+                    app
+                })
+            })
+            .unwrap()
+        });
+        (window, paths)
+    }
+
+    #[gpui::test]
+    fn tab_actions_select_by_number_and_cycle_with_wraparound(cx: &mut TestAppContext) {
+        let (window, paths) = three_tab_window(cx);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+        let active = |visual: &mut VisualTestContext| {
+            window
+                .update(visual, |app, _, _| {
+                    app.model.tabs.active().unwrap().path().to_owned()
+                })
+                .unwrap()
+        };
+
+        visual.dispatch_action(SelectLastTab);
+        assert_eq!(active(&mut visual), paths[2]);
+        visual.dispatch_action(NextTab);
+        assert_eq!(active(&mut visual), paths[0]);
+        visual.dispatch_action(PreviousTab);
+        assert_eq!(active(&mut visual), paths[2]);
+        visual.dispatch_action(SelectTab2);
+        assert_eq!(active(&mut visual), paths[1]);
+        visual.dispatch_action(SelectTab8);
+        assert_eq!(active(&mut visual), paths[1]);
+    }
+
+    #[gpui::test]
+    fn tab_actions_are_ignored_without_tabs(cx: &mut TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| MdowApp::new(window, cx))
+            })
+            .unwrap()
+        });
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|window, cx| window.draw(cx).clear());
+
+        visual.dispatch_action(NextTab);
+        visual.dispatch_action(SelectLastTab);
+
+        window
+            .update(cx, |app, _, _| assert!(app.model.tabs.is_empty()))
+            .unwrap();
     }
 
     #[gpui::test]
@@ -3257,7 +3366,7 @@ mod tests {
             })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
-        click_debug(&mut visual, "palette-item-3");
+        click_debug(&mut visual, "palette-item-5");
         window
             .update(cx, |app, _, _| {
                 assert_eq!(app.overlay_kind(), None);

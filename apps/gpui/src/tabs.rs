@@ -70,6 +70,25 @@ impl TabSet {
         }
     }
 
+    /// The tab at `index` in strip order; out-of-range indexes select nothing.
+    pub fn path_at(&self, index: usize) -> Option<&Path> {
+        self.tabs.get(index).map(DocumentTab::path)
+    }
+
+    /// The tab `step` places away from the active one, wrapping at either end.
+    pub fn cycled_path(&self, step: isize) -> Option<&Path> {
+        let len = self.tabs.len() as isize;
+        if len == 0 {
+            return None;
+        }
+        let current = self
+            .active_path
+            .as_deref()
+            .and_then(|active| self.tabs.iter().position(|tab| tab.path() == active))
+            .unwrap_or(0) as isize;
+        self.path_at((current + step).rem_euclid(len) as usize)
+    }
+
     pub fn close(&mut self, path: &Path) -> Option<DocumentTab> {
         let path = path_identity(path);
         let index = self.tabs.iter().position(|tab| tab.path() == path)?;
@@ -269,6 +288,20 @@ mod tests {
         let tab = tabs.active().unwrap();
         assert_eq!(tab.document.title, "A refreshed");
         assert!(tab.reload_error.is_none());
+    }
+
+    #[test]
+    fn cycling_wraps_around_both_ends_and_indexes_follow_strip_order() {
+        let mut tabs = three_tabs();
+        tabs.activate(Path::new("/tmp/c.md"));
+
+        assert_eq!(tabs.cycled_path(1), Some(Path::new("/tmp/a.md")));
+        assert_eq!(tabs.cycled_path(-1), Some(Path::new("/tmp/b.md")));
+        tabs.activate(Path::new("/tmp/a.md"));
+        assert_eq!(tabs.cycled_path(-1), Some(Path::new("/tmp/c.md")));
+        assert_eq!(tabs.path_at(1), Some(Path::new("/tmp/b.md")));
+        assert_eq!(tabs.path_at(3), None);
+        assert_eq!(TabSet::default().cycled_path(1), None);
     }
 
     #[test]

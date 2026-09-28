@@ -427,6 +427,8 @@ pub enum CommandId {
     OpenFile,
     OpenFolder,
     CloseTab,
+    NextTab,
+    PreviousTab,
     ToggleSidebar,
     SidebarRecents,
     SidebarFolder,
@@ -470,6 +472,16 @@ pub fn command_catalog() -> &'static [CommandSpec] {
             id: CommandId::CloseTab,
             title: "Close Tab",
             keys: Some("⌘W"),
+        },
+        CommandSpec {
+            id: CommandId::NextTab,
+            title: "Next Tab",
+            keys: Some("⌥⌘→"),
+        },
+        CommandSpec {
+            id: CommandId::PreviousTab,
+            title: "Previous Tab",
+            keys: Some("⌥⌘←"),
         },
         CommandSpec {
             id: CommandId::ToggleSidebar,
