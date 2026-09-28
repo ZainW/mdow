@@ -1,5 +1,6 @@
 #import "sparkle_bridge.h"
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <Sparkle/Sparkle.h>
 
@@ -216,6 +217,10 @@ void mdow_sparkle_set_event_callback(mdow_sparkle_event_cb callback) {
 
 int32_t mdow_sparkle_is_enabled(void) {
   return sparkle_configured() ? 1 : 0;
+}
+
+int32_t mdow_reduce_motion(void) {
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion] ? 1 : 0;
 }
 
 const char *mdow_app_version(void) {
