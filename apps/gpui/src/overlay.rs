@@ -7,7 +7,7 @@ use crate::prefs::{
 use crate::session::Recents;
 use crate::sparkle::UpdateUi;
 use crate::syntax::PreparedDocument;
-use crate::theme::{ColorScheme, Metrics, Theme, TrafficLights};
+use crate::theme::{ColorScheme, Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
 use crate::ui::primitives::{
     ListRowStyle, compact_icon_button, icon, key_hint, list_row, tabular_sans,
@@ -142,8 +142,7 @@ fn find_layer(view: Entity<FindOverlay>) -> AnyElement {
     div()
         .absolute()
         // Just below the breadcrumb so the bar never covers its full-width toggle.
-        .top(px(TrafficLights::titlebar_height()
-            + Metrics::TAB_BAR_HEIGHT
+        .top(px(Metrics::TAB_BAR_HEIGHT
             + Metrics::BREADCRUMB_HEIGHT
             + 10.0))
         .right(px(16.0))

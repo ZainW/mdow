@@ -3,6 +3,7 @@ pub mod app;
 pub mod assets;
 pub mod document;
 pub mod html;
+pub mod menus;
 pub mod overlay;
 pub mod persist;
 pub mod prefs;
