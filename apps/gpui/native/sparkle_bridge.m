@@ -232,14 +232,15 @@ const char *mdow_app_version(void) {
 }
 
 // Mirrors the "Automatically check for updates" setting. Applied before the launch check so a
-// disabled preference never triggers a background check.
-static BOOL gAutomaticChecks = YES;
+// disabled preference never triggers a background check. -1 until the app sets it, so a host
+// that never calls this keeps the bundle's own SUEnableAutomaticChecks.
+static int32_t gAutomaticChecks = -1;
 
 void mdow_sparkle_set_automatic_checks(int32_t enabled) {
-  gAutomaticChecks = enabled != 0;
+  gAutomaticChecks = enabled != 0 ? 1 : 0;
   SPUUpdater *updater = gHost.updater;
-  if (updater != nil && updater.automaticallyChecksForUpdates != gAutomaticChecks) {
-    updater.automaticallyChecksForUpdates = gAutomaticChecks;
+  if (updater != nil && updater.automaticallyChecksForUpdates != (gAutomaticChecks == 1)) {
+    updater.automaticallyChecksForUpdates = gAutomaticChecks == 1;
   }
 }
 
@@ -266,8 +267,8 @@ int32_t mdow_sparkle_start(void) {
   host.updater = updater;
   gHost = host;
 
-  if (updater.automaticallyChecksForUpdates != gAutomaticChecks) {
-    updater.automaticallyChecksForUpdates = gAutomaticChecks;
+  if (gAutomaticChecks != -1 && updater.automaticallyChecksForUpdates != (gAutomaticChecks == 1)) {
+    updater.automaticallyChecksForUpdates = gAutomaticChecks == 1;
   }
   if (updater.automaticallyChecksForUpdates) {
     [updater checkForUpdatesInBackground];
