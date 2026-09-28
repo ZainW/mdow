@@ -11,8 +11,9 @@ use crate::theme::{ColorScheme, Metrics, Theme};
 use crate::ui::field::{Field, FieldEvent};
 use crate::ui::primitives::{ListRowStyle, compact_icon_button, icon, key_hint, list_row};
 use gpui::{
-    AnyElement, App, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, FontWeight, Hsla,
-    IntoElement, Render, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FocusHandle, Focusable,
+    FontWeight, Hsla, IntoElement, Render, SharedString, Stateful, Subscription, Window, div,
+    prelude::*, px,
 };
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -962,351 +963,523 @@ impl Focusable for SettingsPanel {
     }
 }
 
+/// Fixed label column so every control in Settings starts on the same x.
+const SETTINGS_LABEL_WIDTH: f32 = 120.0;
+const SETTINGS_WIDTH: f32 = 520.0;
+
 impl Render for SettingsPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::resolve(self.prefs.theme_mode, window.appearance());
         let prefs = self.prefs;
-        overlay_surface(420.0, theme)
+        let max_height = (f32::from(window.viewport_size().height) - 96.0).max(240.0);
+
+        let appearance = settings_group("Appearance", theme)
+            .child(settings_row(
+                "Theme",
+                None,
+                segmented(
+                    [
+                        (ThemeMode::System, "System", "icons/monitor.svg"),
+                        (ThemeMode::Light, "Light", "icons/sun.svg"),
+                        (ThemeMode::Dark, "Dark", "icons/moon.svg"),
+                    ]
+                    .map(|(mode, label, icon_path)| Segment {
+                        label,
+                        selected: prefs.theme_mode == mode,
+                        edit: PrefEdit::Theme(mode),
+                        font: None,
+                        icon: Some(icon_path),
+                    }),
+                    theme,
+                    cx,
+                ),
+                theme,
+            ))
+            .child(settings_row(
+                "Interface size",
+                None,
+                segmented(
+                    [
+                        (InterfaceScale::Compact, "Compact"),
+                        (InterfaceScale::Comfortable, "Comfortable"),
+                        (InterfaceScale::Large, "Large"),
+                    ]
+                    .map(|(scale, label)| {
+                        Segment::text(
+                            label,
+                            prefs.interface_scale == scale,
+                            PrefEdit::InterfaceScale(scale),
+                        )
+                    }),
+                    theme,
+                    cx,
+                ),
+                theme,
+            ));
+
+        let reading = settings_group("Reading", theme)
+            .child(settings_row(
+                "Text font",
+                None,
+                segmented(
+                    [
+                        (ContentFont::Inter, "Inter"),
+                        (ContentFont::Charter, "Charter"),
+                        (ContentFont::SystemSans, "System"),
+                        (ContentFont::Georgia, "Georgia"),
+                    ]
+                    .map(|(font, label)| Segment {
+                        font: Some(font.family()),
+                        ..Segment::text(
+                            label,
+                            prefs.content_font == font,
+                            PrefEdit::ContentFont(font),
+                        )
+                    }),
+                    theme,
+                    cx,
+                ),
+                theme,
+            ))
+            .child(settings_row(
+                "Code font",
+                None,
+                segmented(
+                    [
+                        (CodeFont::GeistMono, "Geist"),
+                        (CodeFont::SfMono, "SF Mono"),
+                        (CodeFont::JetBrainsMono, "JetBrains"),
+                        (CodeFont::SystemMono, "System"),
+                    ]
+                    .map(|(font, label)| Segment {
+                        font: Some(font.family()),
+                        ..Segment::text(label, prefs.code_font == font, PrefEdit::CodeFont(font))
+                    }),
+                    theme,
+                    cx,
+                ),
+                theme,
+            ))
+            .child(settings_row(
+                "Line width",
+                None,
+                segmented(
+                    LineWidth::ALL.map(|width| {
+                        Segment::text(
+                            width.label(),
+                            prefs.reader_width.line_width() == width,
+                            PrefEdit::LineWidth(width),
+                        )
+                    }),
+                    theme,
+                    cx,
+                ),
+                theme,
+            ))
+            .child(settings_row(
+                "Text size",
+                Some("⌘+ / ⌘−"),
+                zoom_stepper(prefs.zoom.percent(), theme, cx),
+                theme,
+            ));
+
+        overlay_surface(SETTINGS_WIDTH, theme)
+            .id("settings-panel")
             .track_focus(&self.focus_handle)
-            .p(px(16.0))
+            .max_h(px(max_height))
+            .overflow_y_scroll()
+            .pt(px(18.0))
+            .px(px(20.0))
+            .pb(px(16.0))
             .flex()
             .flex_col()
-            .gap(px(12.0))
             .font_family(Metrics::FONT_SANS)
-            .text_size(px(12.0))
+            .text_size(px(13.0))
             .text_color(theme.foreground)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(3.0))
-                            .child(settings_heading("Settings", theme))
-                            .child(
-                                div()
-                                    .text_color(theme.muted_foreground)
-                                    .text_size(px(12.0))
-                                    .child("Tune how markdown reads."),
-                            ),
-                    )
+                    .child(settings_heading("Settings", theme))
                     .child(compact_icon_button(
                         "settings-close",
                         "icons/x.svg",
                         24.0,
-                        12.0,
+                        13.0,
                         theme,
                         cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Dismissed)),
                     )),
             )
             .child(settings_preview(prefs, theme))
-            .child(seg_row(
-                "Theme",
-                [
-                    (
-                        "System",
-                        prefs.theme_mode == ThemeMode::System,
-                        PrefEdit::Theme(ThemeMode::System),
-                    ),
-                    (
-                        "Light",
-                        prefs.theme_mode == ThemeMode::Light,
-                        PrefEdit::Theme(ThemeMode::Light),
-                    ),
-                    (
-                        "Dark",
-                        prefs.theme_mode == ThemeMode::Dark,
-                        PrefEdit::Theme(ThemeMode::Dark),
-                    ),
-                ],
-                theme,
-                cx,
-            ))
-            .child(seg_row(
-                "Content font",
-                [
-                    (
-                        "Inter",
-                        prefs.content_font == ContentFont::Inter,
-                        PrefEdit::ContentFont(ContentFont::Inter),
-                    ),
-                    (
-                        "Charter",
-                        prefs.content_font == ContentFont::Charter,
-                        PrefEdit::ContentFont(ContentFont::Charter),
-                    ),
-                    (
-                        "System",
-                        prefs.content_font == ContentFont::SystemSans,
-                        PrefEdit::ContentFont(ContentFont::SystemSans),
-                    ),
-                    (
-                        "Georgia",
-                        prefs.content_font == ContentFont::Georgia,
-                        PrefEdit::ContentFont(ContentFont::Georgia),
-                    ),
-                ],
-                theme,
-                cx,
-            ))
-            .child(seg_row(
-                "Code font",
-                [
-                    (
-                        "Geist",
-                        prefs.code_font == CodeFont::GeistMono,
-                        PrefEdit::CodeFont(CodeFont::GeistMono),
-                    ),
-                    (
-                        "System",
-                        prefs.code_font == CodeFont::SystemMono,
-                        PrefEdit::CodeFont(CodeFont::SystemMono),
-                    ),
-                    (
-                        "SF Mono",
-                        prefs.code_font == CodeFont::SfMono,
-                        PrefEdit::CodeFont(CodeFont::SfMono),
-                    ),
-                    (
-                        "JetBrains",
-                        prefs.code_font == CodeFont::JetBrainsMono,
-                        PrefEdit::CodeFont(CodeFont::JetBrainsMono),
-                    ),
-                ],
-                theme,
-                cx,
-            ))
-            .child(seg_row(
-                "Interface scale",
-                [
-                    (
-                        "Compact",
-                        prefs.interface_scale == InterfaceScale::Compact,
-                        PrefEdit::InterfaceScale(InterfaceScale::Compact),
-                    ),
-                    (
-                        "Comfortable",
-                        prefs.interface_scale == InterfaceScale::Comfortable,
-                        PrefEdit::InterfaceScale(InterfaceScale::Comfortable),
-                    ),
-                    (
-                        "Large",
-                        prefs.interface_scale == InterfaceScale::Large,
-                        PrefEdit::InterfaceScale(InterfaceScale::Large),
-                    ),
-                ],
-                theme,
-                cx,
-            ))
-            .child(seg_row(
-                "Line width",
-                LineWidth::ALL.map(|width| {
-                    (
-                        width.label(),
-                        prefs.reader_width.line_width() == width,
-                        PrefEdit::LineWidth(width),
-                    )
-                }),
-                theme,
-                cx,
-            ))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child("Zoom")
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(6.0))
-                            .child(chip("-", false, PrefEdit::ZoomOut, theme, cx))
-                            .child(
-                                div()
-                                    .min_w(px(40.0))
-                                    .text_center()
-                                    .text_color(theme.muted_foreground)
-                                    .child(format!("{}%", prefs.zoom.percent())),
-                            )
-                            .child(chip("+", false, PrefEdit::ZoomIn, theme, cx))
-                            .child(chip("Reset", false, PrefEdit::ZoomReset, theme, cx)),
-                    ),
-            )
+            .child(appearance)
+            .child(reading)
             .when(cfg!(target_os = "macos"), |panel| {
-                panel.child(settings_updates(self.update.clone(), theme, cx))
+                panel.child(settings_updates(&self.update, prefs.auto_update, theme, cx))
             })
-            .child(chip(
-                "Reset all settings",
-                false,
-                PrefEdit::ResetAll,
-                theme,
-                cx,
-            ))
+            .child(settings_footer(theme, cx))
     }
 }
 
 fn settings_preview(prefs: Prefs, theme: Theme) -> impl IntoElement {
     div()
-        .px(px(12.0))
-        .py(px(10.0))
+        .mt(px(14.0))
+        .px(px(16.0))
+        .py(px(14.0))
         .rounded(px(8.0))
         .border_1()
         .border_color(theme.border_subtle)
-        .bg(theme.muted.opacity(0.4))
+        .bg(theme.background)
         .font_family(prefs.content_font.family())
         .text_color(theme.foreground)
         .child(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(READER_FONT_SIZE * 1.25))
-                .line_height(px(READER_FONT_SIZE * 1.25 * 1.25))
-                .child("The quiet morning"),
+                .text_size(px(19.0))
+                .line_height(px(19.0 * 1.3))
+                .child("A quiet place to read"),
         )
         .child(
             div()
-                .mt(px(6.0))
+                .mt(px(4.0))
                 .text_size(px(READER_FONT_SIZE))
                 .line_height(px(READER_FONT_SIZE * READER_LINE_HEIGHT))
-                .text_color(theme.foreground.opacity(0.85))
-                .child("A short paragraph to judge the reading face."),
+                .child(
+                    "Mdow re-renders the moment you save, so notes stay live beside your editor.",
+                ),
         )
         .child(
             div()
                 .mt(px(6.0))
                 .font_family(prefs.code_font.family())
-                .text_size(px(READER_FONT_SIZE * 0.875))
+                .text_size(px(13.0))
                 .text_color(theme.muted_foreground)
-                .child("const greeting = \"hello\""),
+                .child("let width = 68;"),
         )
 }
 
 fn settings_heading(title: &'static str, theme: Theme) -> impl IntoElement {
     div()
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(px(14.0))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(15.0))
         .text_color(theme.foreground)
         .child(title)
 }
 
-fn settings_updates(
-    update: UpdateUi,
-    theme: Theme,
-    cx: &mut Context<SettingsPanel>,
-) -> impl IntoElement {
-    let status = match &update {
-        UpdateUi::Idle => "Checks run quietly in the background.".to_owned(),
-        UpdateUi::Checking { .. } => "Checking for updates…".into(),
-        UpdateUi::Available { version } => format!("Mdow Native {version} is available"),
-        UpdateUi::Downloading { percent, .. } => format!("Downloading update… {percent}%"),
-        UpdateUi::Ready { .. } => "Update ready. Restart to apply.".into(),
-        UpdateUi::UpToDate { .. } => "You're on the latest version".into(),
-        UpdateUi::Failed { .. } => "Couldn't check for updates. Try again later.".into(),
-        UpdateUi::Unavailable { .. } => update.banner_copy().unwrap_or_default(),
-    };
-    let mut actions = div().flex().gap(px(6.0)).child(action_chip(
-        if update.needs_manual_download() {
-            "Open Releases"
-        } else {
-            "Check for updates"
-        },
-        "settings-check-updates",
-        theme,
-        if update.needs_manual_download() {
-            SettingsEvent::ViewReleases
-        } else {
-            SettingsEvent::CheckForUpdates
-        },
-        cx,
-    ));
-    if update.can_download() {
-        actions = actions.child(action_chip(
-            "Download",
-            "settings-download-update",
-            theme,
-            SettingsEvent::DownloadUpdate,
-            cx,
-        ));
-    }
-    if update.can_install() {
-        actions = actions.child(action_chip(
-            "Restart",
-            "settings-install-update",
-            theme,
-            SettingsEvent::InstallUpdate,
-            cx,
-        ));
-    }
+fn settings_group(title: &'static str, theme: Theme) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap(px(6.0))
-        .pt(px(4.0))
-        .border_t_1()
-        .border_color(theme.border_subtle)
-        .child(div().text_color(theme.muted_foreground).child("Updates"))
         .child(
             div()
-                .text_color(theme.muted_foreground)
+                .mt(px(14.0))
+                .mb(px(4.0))
+                .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(11.0))
-                .child(status),
+                .text_color(theme.muted_foreground)
+                .child(title.to_uppercase()),
         )
-        .child(actions)
+        .child(div().h(px(1.0)).mb(px(6.0)).bg(theme.border_subtle))
 }
 
-fn seg_row<const N: usize>(
-    label: &'static str,
-    options: [(&'static str, bool, PrefEdit); N],
+fn settings_row(
+    label: impl Into<SharedString>,
+    hint: Option<&'static str>,
+    control: impl IntoElement,
     theme: Theme,
-    cx: &mut Context<SettingsPanel>,
 ) -> impl IntoElement {
-    let mut row = div().flex().gap(px(4.0));
-    for (title, selected, edit) in options {
-        row = row.child(chip(title, selected, edit, theme, cx));
-    }
     div()
         .flex()
-        .flex_col()
-        .gap(px(6.0))
-        .child(div().text_color(theme.muted_foreground).child(label))
-        .child(row)
+        .items_center()
+        .gap(px(16.0))
+        .min_h(px(40.0))
+        .child(
+            div()
+                .w(px(SETTINGS_LABEL_WIDTH))
+                .flex_none()
+                .flex()
+                .flex_col()
+                .child(label.into())
+                .when_some(hint, |label, hint| {
+                    label.child(
+                        div()
+                            .mt(px(1.0))
+                            .text_size(px(11.5))
+                            .text_color(theme.muted_foreground)
+                            .child(hint),
+                    )
+                }),
+        )
+        .child(div().flex_1().min_w_0().child(control))
 }
 
-fn chip(
+#[derive(Clone, Copy)]
+struct Segment {
     label: &'static str,
     selected: bool,
     edit: PrefEdit,
+    /// Font options preview in their own typeface.
+    font: Option<&'static str>,
+    icon: Option<&'static str>,
+}
+
+impl Segment {
+    fn text(label: &'static str, selected: bool, edit: PrefEdit) -> Self {
+        Self {
+            label,
+            selected,
+            edit,
+            font: None,
+            icon: None,
+        }
+    }
+}
+
+/// Equal-width segments so selected states line up from row to row.
+fn segmented<const N: usize>(
+    segments: [Segment; N],
     theme: Theme,
     cx: &mut Context<SettingsPanel>,
 ) -> impl IntoElement {
-    let chip_id = format!("{label}-{edit:?}");
-    div()
-        .id(SharedString::from(chip_id.clone()))
-        .debug_selector(move || chip_id)
-        .px(px(8.0))
-        .h(px(28.0))
+    let mut track = div()
         .flex()
-        .items_center()
-        .rounded(px(6.0))
-        .border_1()
-        .border_color(if selected {
-            theme.primary
-        } else {
-            theme.border
-        })
-        .bg(if selected {
-            theme.primary.opacity(0.12)
-        } else {
-            theme.card
-        })
-        .cursor_pointer()
-        .on_click(cx.listener(move |_, _, _, cx| cx.emit(SettingsEvent::Edited(edit))))
-        .child(label)
+        .h(px(30.0))
+        .p(px(2.0))
+        .gap(px(2.0))
+        .rounded(px(7.0))
+        .bg(theme.surface_well);
+    for segment in segments {
+        track = track.child(segment_button(segment, theme, cx));
+    }
+    track
 }
 
-fn action_chip(
+fn segment_button(
+    segment: Segment,
+    theme: Theme,
+    cx: &mut Context<SettingsPanel>,
+) -> impl IntoElement {
+    let Segment {
+        label,
+        selected,
+        edit,
+        font,
+        icon: icon_path,
+    } = segment;
+    let id = format!("{label}-{edit:?}");
+    let text_color = if selected {
+        theme.foreground
+    } else {
+        theme.muted_foreground
+    };
+    div()
+        .id(SharedString::from(id.clone()))
+        .debug_selector(move || id)
+        .tab_index(0)
+        .focusable()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(6.0))
+        .rounded(px(5.0))
+        .border_1()
+        .text_size(px(12.5))
+        .text_color(text_color)
+        .when_some(font, |segment, family| segment.font_family(family))
+        .map(|segment| {
+            if selected {
+                paint_selected_segment(segment, theme)
+            } else {
+                segment
+                    .border_color(theme.border.opacity(0.0))
+                    .cursor_pointer()
+                    .hover(move |style| style.text_color(theme.foreground))
+            }
+        })
+        .focus(move |style| style.border_color(theme.primary))
+        .on_click(cx.listener(move |_, _, _, cx| cx.emit(SettingsEvent::Edited(edit))))
+        .when_some(icon_path, |segment, path| {
+            segment.child(icon(path, text_color, 13.0))
+        })
+        .child(div().truncate().child(label))
+}
+
+fn paint_selected_segment(segment: Stateful<Div>, theme: Theme) -> Stateful<Div> {
+    match theme.color_scheme {
+        ColorScheme::Light => segment
+            .bg(theme.surface_raised)
+            .border_color(theme.border_subtle)
+            .shadow_sm(),
+        ColorScheme::Dark => segment.bg(theme.surface_raised).border_color(theme.border),
+    }
+}
+
+fn zoom_stepper(percent: u16, theme: Theme, cx: &mut Context<SettingsPanel>) -> impl IntoElement {
+    let emit = |edit| cx.listener(move |_, _, _, cx| cx.emit(SettingsEvent::Edited(edit)));
+    div()
+        .flex()
+        .items_center()
+        .w_auto()
+        .flex_none()
+        .h(px(30.0))
+        .p(px(2.0))
+        .rounded(px(7.0))
+        .bg(theme.surface_well)
+        .child(compact_icon_button(
+            "settings-zoom-out",
+            "icons/minus.svg",
+            26.0,
+            13.0,
+            theme,
+            emit(PrefEdit::ZoomOut),
+        ))
+        .child(
+            div()
+                .w(px(52.0))
+                .text_center()
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(px(12.5))
+                .child(format!("{percent}%")),
+        )
+        .child(compact_icon_button(
+            "settings-zoom-in",
+            "icons/plus.svg",
+            26.0,
+            13.0,
+            theme,
+            emit(PrefEdit::ZoomIn),
+        ))
+}
+
+/// Settings status line for the updater: the same states as the banner, phrased as a status
+/// rather than an announcement.
+fn update_status(update: &UpdateUi, auto_update: bool) -> String {
+    match update {
+        UpdateUi::Idle | UpdateUi::Checking { manual: false } if auto_update => {
+            "Checks automatically".into()
+        }
+        UpdateUi::Idle | UpdateUi::Checking { manual: false } => "Automatic checks are off".into(),
+        UpdateUi::Checking { manual: true } => "Checking…".into(),
+        UpdateUi::Available { version } => format!("{version} is available"),
+        UpdateUi::Downloading { percent, .. } => format!("Downloading… {percent}%"),
+        UpdateUi::Ready { .. } => "Ready. Restart to apply.".into(),
+        UpdateUi::UpToDate { .. } => "Up to date".into(),
+        UpdateUi::Failed { .. } => "Couldn't check. Try again later.".into(),
+        UpdateUi::Unavailable { .. } => "No automatic updates in this build".into(),
+    }
+}
+
+fn settings_updates(
+    update: &UpdateUi,
+    auto_update: bool,
+    theme: Theme,
+    cx: &mut Context<SettingsPanel>,
+) -> impl IntoElement {
+    let version = crate::sparkle::app_version()
+        .map(|version| format!("Mdow {version}"))
+        .unwrap_or_else(|| "Mdow Native".into());
+    let (label, id, event) = if update.can_install() {
+        (
+            "Restart",
+            "settings-install-update",
+            SettingsEvent::InstallUpdate,
+        )
+    } else if update.can_download() {
+        (
+            "Download",
+            "settings-download-update",
+            SettingsEvent::DownloadUpdate,
+        )
+    } else if update.needs_manual_download() {
+        (
+            "Open Releases",
+            "settings-check-updates",
+            SettingsEvent::ViewReleases,
+        )
+    } else {
+        (
+            "Check now",
+            "settings-check-updates",
+            SettingsEvent::CheckForUpdates,
+        )
+    };
+    settings_group("Updates", theme)
+        .child(settings_row(
+            version,
+            None,
+            div()
+                .flex()
+                .items_center()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.0))
+                        .text_color(theme.muted_foreground)
+                        .child(update_status(update, auto_update)),
+                )
+                .child(settings_button(label, id, theme, event, cx)),
+            theme,
+        ))
+        .child(settings_row(
+            "Check automatically",
+            None,
+            switch(
+                "settings-auto-update",
+                auto_update,
+                theme,
+                cx.listener(move |_, _, _, cx| {
+                    cx.emit(SettingsEvent::Edited(PrefEdit::AutoUpdate(!auto_update)))
+                }),
+            ),
+            theme,
+        ))
+}
+
+fn switch(
+    id: &'static str,
+    on: bool,
+    theme: Theme,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let (track, knob_x) = if on {
+        (theme.primary, 16.0)
+    } else {
+        (theme.border, 2.0)
+    };
+    div()
+        .id(id)
+        .debug_selector(move || id.to_string())
+        .tab_index(0)
+        .focusable()
+        .relative()
+        .flex_none()
+        .w(px(34.0))
+        .h(px(20.0))
+        .rounded_full()
+        .border_1()
+        .border_color(track)
+        .bg(track)
+        .cursor_pointer()
+        .focus(move |style| style.border_color(theme.foreground.opacity(0.5)))
+        .on_click(on_click)
+        .child(
+            div()
+                .absolute()
+                .top(px(1.0))
+                .left(px(knob_x - 1.0))
+                .size(px(16.0))
+                .rounded_full()
+                .bg(gpui::white())
+                .shadow_sm(),
+        )
+}
+
+fn settings_button(
     label: &'static str,
     id: &'static str,
     theme: Theme,
@@ -1316,7 +1489,10 @@ fn action_chip(
     div()
         .id(id)
         .debug_selector(move || id.to_string())
-        .px(px(8.0))
+        .tab_index(0)
+        .focusable()
+        .flex_none()
+        .px(px(10.0))
         .h(px(28.0))
         .flex()
         .items_center()
@@ -1324,9 +1500,56 @@ fn action_chip(
         .border_1()
         .border_color(theme.border)
         .bg(theme.card)
+        .text_size(px(12.0))
         .cursor_pointer()
+        .hover(move |style| style.bg(theme.muted))
+        .active(|style| style.opacity(0.82))
+        .focus(move |style| style.border_color(theme.primary))
         .on_click(cx.listener(move |_, _, _, cx| cx.emit(event)))
         .child(label)
+}
+
+/// "Restore defaults" is a quiet footer action, not a peer of the font choices.
+fn settings_footer(theme: Theme, cx: &mut Context<SettingsPanel>) -> impl IntoElement {
+    div()
+        .mt(px(14.0))
+        .pt(px(12.0))
+        .border_t_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .items_center()
+        .justify_between()
+        .text_size(px(12.0))
+        .text_color(theme.muted_foreground)
+        .child(
+            div()
+                .id("settings-restore-defaults")
+                .debug_selector(|| "settings-restore-defaults".into())
+                .tab_index(0)
+                .focusable()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .h(px(24.0))
+                .px(px(6.0))
+                .ml(px(-6.0))
+                .rounded(px(5.0))
+                .border_1()
+                .border_color(theme.border.opacity(0.0))
+                .cursor_pointer()
+                .hover(move |style| style.bg(theme.muted).text_color(theme.foreground))
+                .focus(move |style| style.border_color(theme.primary))
+                .on_click(
+                    cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Edited(PrefEdit::ResetAll))),
+                )
+                .child(icon("icons/rotate-ccw.svg", theme.muted_foreground, 12.0))
+                .child("Restore defaults"),
+        )
+        .child(
+            div()
+                .text_size(px(11.5))
+                .child("Changes save automatically"),
+        )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

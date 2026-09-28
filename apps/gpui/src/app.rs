@@ -3632,6 +3632,27 @@ mod tests {
             })
             .unwrap();
         visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "Full-LineWidth(Full)");
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-zoom-in");
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-auto-update");
+        window
+            .update(cx, |app, _, _| {
+                let prefs = app.prefs_snapshot();
+                assert!(prefs.reader_width.is_full());
+                assert_eq!(prefs.zoom.percent(), 110);
+                assert!(!prefs.auto_update);
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
+        click_debug(&mut visual, "settings-restore-defaults");
+        window
+            .update(cx, |app, _, _| {
+                assert_eq!(app.prefs_snapshot(), Prefs::default())
+            })
+            .unwrap();
+        visual.update(|window, cx| window.draw(cx).clear());
         click_debug(&mut visual, "settings-close");
         window
             .update(cx, |app, _, _| assert_eq!(app.overlay_kind(), None))

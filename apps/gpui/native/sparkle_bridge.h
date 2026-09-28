@@ -36,6 +36,8 @@ void mdow_sparkle_dismiss_choice(void);
 int32_t mdow_sparkle_can_check(void);
 int32_t mdow_sparkle_is_enabled(void);
 void mdow_sparkle_set_automatic_checks(int32_t enabled);
+// CFBundleShortVersionString of the running app, or NULL outside a bundle. Copy it immediately.
+const char *mdow_app_version(void);
 
 #ifdef __cplusplus
 }
