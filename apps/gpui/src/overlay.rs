@@ -255,7 +255,7 @@ pub fn find_in_blocks(blocks: &[DocumentBlock], query: &str) -> Vec<FindHit> {
     let needle = query.to_lowercase();
     let mut hits = Vec::new();
     for (block, text) in blocks.iter().enumerate() {
-        let haystack = text.painted_plain_text().to_lowercase();
+        let haystack = text.find_text().to_lowercase();
         let mut start = 0;
         while let Some(offset) = haystack[start..].find(&needle) {
             let range_start = start + offset;
@@ -1416,7 +1416,7 @@ mod tests {
     }
 
     #[test]
-    fn find_uses_painted_spaces_for_soft_breaks() {
+    fn find_matches_across_painted_soft_line_breaks() {
         let blocks = vec![DocumentBlock::Paragraph(vec![
             InlineSpan::Text("hello".into()),
             InlineSpan::SoftBreak,

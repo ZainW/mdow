@@ -191,14 +191,15 @@ impl InlineSpan {
         }
     }
 
-    /// The text as painted by the reader: soft breaks render as spaces, hard breaks as newlines.
-    pub fn painted_plain_text(&self) -> String {
+    /// The text find searches. It stays byte-aligned with what the reader paints, but soft breaks
+    /// (painted as line breaks) fold to spaces so a one-line query can match across them.
+    pub fn find_text(&self) -> String {
         match self {
             Self::Text(text) | Self::Code(text) => text.clone(),
             Self::Emphasis(content) | Self::Strong(content) | Self::Strikethrough(content) => {
-                painted_plain_text_for_spans(content)
+                find_text_for_spans(content)
             }
-            Self::Link { label, .. } => painted_plain_text_for_spans(label),
+            Self::Link { label, .. } => find_text_for_spans(label),
             Self::FootnoteRef { label } => footnote_ref_display(label),
             Self::SoftBreak => " ".into(),
             Self::HardBreak => "\n".into(),
@@ -284,25 +285,26 @@ impl DocumentBlock {
         }
     }
 
-    /// The text as painted by the reader: soft breaks render as spaces, hard breaks as newlines.
-    pub fn painted_plain_text(&self) -> String {
+    /// The text find searches. It stays byte-aligned with what the reader paints, but soft breaks
+    /// (painted as line breaks) fold to spaces so a one-line query can match across them.
+    pub fn find_text(&self) -> String {
         match self {
             Self::Heading { content, .. }
             | Self::Paragraph(content)
-            | Self::Blockquote(content) => painted_plain_text_for_spans(content),
+            | Self::Blockquote(content) => find_text_for_spans(content),
             Self::ListItem { children, .. }
             | Self::TaskItem { children, .. }
-            | Self::Alert { children, .. } => painted_plain_text_for_blocks(children),
+            | Self::Alert { children, .. } => find_text_for_blocks(children),
             Self::FootnoteSection { notes } => notes
                 .iter()
-                .map(|(_, blocks)| painted_plain_text_for_blocks(blocks))
+                .map(|(_, blocks)| find_text_for_blocks(blocks))
                 .filter(|text| !text.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n"),
             Self::ThematicBreak => String::new(),
             Self::CodeBlock { code, .. } => code.clone(),
             Self::MermaidCard { source } => source.clone(),
-            Self::Table(table) => table.painted_plain_text(),
+            Self::Table(table) => table.find_text(),
             Self::Image { alt, .. } | Self::RawText(alt) => alt.clone(),
         }
     }
@@ -367,8 +369,8 @@ impl TableBlock {
         self.text_rows(plain_text_for_spans)
     }
 
-    fn painted_plain_text(&self) -> String {
-        self.text_rows(painted_plain_text_for_spans)
+    fn find_text(&self) -> String {
+        self.text_rows(find_text_for_spans)
     }
 
     fn text_rows(&self, cell_text: impl Fn(&[InlineSpan]) -> String) -> String {
@@ -1156,8 +1158,8 @@ fn plain_text_for_spans(spans: &[InlineSpan]) -> String {
     spans.iter().map(InlineSpan::plain_text).collect()
 }
 
-fn painted_plain_text_for_spans(spans: &[InlineSpan]) -> String {
-    spans.iter().map(InlineSpan::painted_plain_text).collect()
+fn find_text_for_spans(spans: &[InlineSpan]) -> String {
+    spans.iter().map(InlineSpan::find_text).collect()
 }
 
 fn plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
@@ -1169,10 +1171,10 @@ fn plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
         .join("\n")
 }
 
-fn painted_plain_text_for_blocks(blocks: &[DocumentBlock]) -> String {
+fn find_text_for_blocks(blocks: &[DocumentBlock]) -> String {
     blocks
         .iter()
-        .map(DocumentBlock::painted_plain_text)
+        .map(DocumentBlock::find_text)
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
@@ -1424,10 +1426,10 @@ mod tests {
     }
 
     #[test]
-    fn painted_plain_text_renders_soft_breaks_as_spaces() {
+    fn find_text_folds_soft_breaks_to_spaces() {
         let span_level = InlineSpan::SoftBreak;
         assert_eq!(span_level.plain_text(), "\n");
-        assert_eq!(span_level.painted_plain_text(), " ");
+        assert_eq!(span_level.find_text(), " ");
 
         let block = DocumentBlock::Paragraph(vec![
             InlineSpan::Text("one".into()),
@@ -1436,7 +1438,7 @@ mod tests {
             InlineSpan::HardBreak,
             InlineSpan::Text("three".into()),
         ]);
-        assert_eq!(block.painted_plain_text(), "one two\nthree");
+        assert_eq!(block.find_text(), "one two\nthree");
     }
 
     #[test]

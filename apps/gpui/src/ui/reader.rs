@@ -632,7 +632,8 @@ fn append_inline_spans<'a>(
                     layout,
                 )
             }
-            InlineSpan::SoftBreak => append_inline_text(" ", style, false, layout),
+            // Electron renders soft breaks outside code as <br> (breaksOutsideCode).
+            InlineSpan::SoftBreak => append_inline_text("\n", style, false, layout),
             InlineSpan::HardBreak => append_inline_text("\n", style, false, layout),
         }
     }
@@ -2567,7 +2568,7 @@ mod tests {
             InlineSpan::Text("next".into()),
         ]);
 
-        assert_eq!(layout.text, "A quiet reader uses mdow at home today\nnext");
+        assert_eq!(layout.text, "A quiet reader uses mdow at home\ntoday\nnext");
         assert_eq!(
             layout.styles,
             vec![
@@ -2585,6 +2586,23 @@ mod tests {
                 node_id: 0,
             }],
         );
+    }
+
+    #[test]
+    fn soft_breaks_paint_as_line_breaks_that_find_text_matches_byte_for_byte() {
+        let spans = vec![
+            InlineSpan::Text("hello".into()),
+            InlineSpan::SoftBreak,
+            InlineSpan::Emphasis(vec![InlineSpan::Text("wide".into())]),
+            InlineSpan::SoftBreak,
+            InlineSpan::Text("world".into()),
+        ];
+        let painted = inline_layout(&spans).text;
+        let searchable = DocumentBlock::Paragraph(spans).find_text();
+
+        assert_eq!(painted, "hello\nwide\nworld");
+        assert_eq!(searchable, "hello wide world");
+        assert_eq!(painted.len(), searchable.len());
     }
 
     #[test]
