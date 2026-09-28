@@ -388,43 +388,68 @@
   pointer-events: none;
 }
 
-/* ── Alerts / Callouts ── */
+/* ── Alerts / Callouts ──
+   Icon + title row, a 1px tinted outline and a light tint of the same color.
+   The body is indented to line up with the title text. */
 
 .markdown-body .markdown-alert {
+  --alert-color: var(--md-alert-note);
   margin: 1.25em 0;
-  padding: 0.85em 1em;
+  padding: 10px 14px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  border-left-width: 4px;
-  background: var(--muted);
+  border: 1px solid color-mix(in oklab, var(--alert-color) 30%, transparent);
+  background: color-mix(in oklab, var(--alert-color) 7%, transparent);
 }
 
-.markdown-body .markdown-alert > :first-child {
+.markdown-body .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 2px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--alert-color);
+  user-select: none;
+}
+
+.markdown-body .markdown-alert-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.markdown-body .markdown-alert-body {
+  padding-left: 22px;
+}
+
+.markdown-body .markdown-alert-body > :first-child {
   margin-top: 0;
 }
 
-.markdown-body .markdown-alert > :last-child {
+.markdown-body .markdown-alert-body > :last-child {
   margin-bottom: 0;
 }
 
 .markdown-body .markdown-alert-tip {
-  border-left-color: var(--md-alert-tip);
+  --alert-color: var(--md-alert-tip);
 }
 
 .markdown-body .markdown-alert-note {
-  border-left-color: var(--md-alert-note);
+  --alert-color: var(--md-alert-note);
 }
 
 .markdown-body .markdown-alert-important {
-  border-left-color: var(--md-alert-important);
+  --alert-color: var(--md-alert-important);
 }
 
 .markdown-body .markdown-alert-warning {
-  border-left-color: var(--md-alert-warning);
+  --alert-color: var(--md-alert-warning);
 }
 
 .markdown-body .markdown-alert-caution {
-  border-left-color: var(--md-alert-caution);
+  --alert-color: var(--md-alert-caution);
 }
 
 /* ── Mermaid Diagrams ── */
