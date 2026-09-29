@@ -6,10 +6,10 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
-      <title>v1.11.0</title>
-      <link>https://mdow.wania.app/changelog#v1-11-0</link>
-      <guid isPermaLink="false">v1.11.0</guid>
-      <pubDate>Tue, 29 Sep 2026 01:41:19 GMT</pubDate>
+      <title>v1.11.1</title>
+      <link>https://mdow.wania.app/changelog#v1-11-1</link>
+      <guid isPermaLink="false">v1.11.1</guid>
+      <pubDate>Tue, 29 Sep 2026 01:45:13 GMT</pubDate>
       <description>Latest release.
 
 - Mdow Native is rebuilt in React on gpuix and Bun, replacing the Rust GPUI beta; it keeps the same settings, recents, and open tabs

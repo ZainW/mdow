@@ -36,6 +36,12 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # apps/native's tests run on Bun.
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.platform == 'mac'
+        with:
+          bun-version: 1.4.2
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run typecheck

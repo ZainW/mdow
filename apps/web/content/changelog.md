@@ -5,7 +5,7 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.11.0
+## v1.11.1
 
 Latest release.
 
@@ -14,6 +14,7 @@ Latest release.
 - Mdow Native has a full menu bar, opens files from Finder and "Open With", and keeps ⌘W for closing tabs
 - Mdow Native renders GitHub alerts, footnotes, images, tables, and syntax-highlighted code, and opens HTML files
 - Mdow Native for Linux now ships as an AppImage
+- v1.11.0 was tagged but never published: its release checks ran without Bun
 
 ## v1.10.0
 
