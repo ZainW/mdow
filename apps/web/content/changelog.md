@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.10.0
+## v1.11.0
 
 Latest release.
+
+- Mdow Native is rebuilt in React on gpuix and Bun, replacing the Rust GPUI beta; it keeps the same settings, recents, and open tabs
+- Mdow Native updates itself: a banner offers new versions, and Mdow → Check for Updates… checks on demand
+- Mdow Native has a full menu bar, opens files from Finder and "Open With", and keeps ⌘W for closing tabs
+- Mdow Native renders GitHub alerts, footnotes, images, tables, and syntax-highlighted code, and opens HTML files
+- Mdow Native for Linux now ships as an AppImage
+
+## v1.10.0
 
 - Huge documents open about 5× faster: a 3 MB file renders fully in under a second, 9 MB in about 1.5 s
 - Syntax highlighting and Mermaid diagrams render as you scroll to them, nearest first

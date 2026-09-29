@@ -6,18 +6,29 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.11.0</title>
+      <link>https://mdow.wania.app/changelog#v1-11-0</link>
+      <guid isPermaLink="false">v1.11.0</guid>
+      <pubDate>Tue, 29 Sep 2026 01:41:19 GMT</pubDate>
+      <description>Latest release.
+
+- Mdow Native is rebuilt in React on gpuix and Bun, replacing the Rust GPUI beta; it keeps the same settings, recents, and open tabs
+- Mdow Native updates itself: a banner offers new versions, and Mdow → Check for Updates… checks on demand
+- Mdow Native has a full menu bar, opens files from Finder and &quot;Open With&quot;, and keeps ⌘W for closing tabs
+- Mdow Native renders GitHub alerts, footnotes, images, tables, and syntax-highlighted code, and opens HTML files
+- Mdow Native for</description>
+    </item>
+    <item>
       <title>v1.10.0</title>
       <link>https://mdow.wania.app/changelog#v1-10-0</link>
       <guid isPermaLink="false">v1.10.0</guid>
       <pubDate>Sun, 27 Sep 2026 22:45:55 GMT</pubDate>
-      <description>Latest release.
-
-- Huge documents open about 5× faster: a 3 MB file renders fully in under a second, 9 MB in about 1.5 s
+      <description>- Huge documents open about 5× faster: a 3 MB file renders fully in under a second, 9 MB in about 1.5 s
 - Syntax highlighting and Mermaid diagrams render as you scroll to them, nearest first
 - Large files parse in the background so the window stays responsive
 - Outline jumps, links, tab switches, and live reload land exactly where you left off, even in huge files
 - Live reload is faster and only re-renders the parts of the document that changed
-- In-document search no longer</description>
+- In-document search no longer rewrites the page</description>
     </item>
     <item>
       <title>v1.9.3</title>
