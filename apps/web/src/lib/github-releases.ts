@@ -30,8 +30,9 @@ interface GhRelease {
 const REPO = 'ZainW/mdow'
 const GPUI_ALIAS = 'mdownative-mac-beta.zip'
 const GPUI_VERSIONED_SUFFIX = '-arm64-mac-beta.zip'
-const GPUI_LINUX_ALIAS = 'mdownative-linux-beta.zip'
-const GPUI_LINUX_VERSIONED_SUFFIX = '-x64-linux-beta.zip'
+const GPUI_LINUX_ALIAS = 'mdownative-linux-beta.appimage'
+/** The Native updater's asset: `mdow-native_<version>_x86_64.AppImage`. */
+const GPUI_LINUX_VERSIONED = /^mdow-native_.+_x86_64\.appimage$/
 
 function detectArch(name: string): 'arm64' | 'x64' | undefined {
   if (name.includes('arm64')) return 'arm64'
@@ -57,10 +58,7 @@ function gpuiBetaAssetType(name: string): 'alias' | 'versioned' | null {
 function gpuiLinuxBetaAssetType(name: string): 'alias' | 'versioned' | null {
   const normalized = name.toLowerCase()
   if (normalized === GPUI_LINUX_ALIAS) return 'alias'
-  if (normalized.startsWith('mdownative-') && normalized.endsWith(GPUI_LINUX_VERSIONED_SUFFIX)) {
-    const version = normalized.slice('mdownative-'.length, -GPUI_LINUX_VERSIONED_SUFFIX.length)
-    if (version.length > 0) return 'versioned'
-  }
+  if (GPUI_LINUX_VERSIONED.test(normalized)) return 'versioned'
   return null
 }
 
@@ -79,11 +77,10 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
 
     if (normalized.endsWith('.dmg')) {
       dmg.push(releaseAsset(asset))
-    } else if (normalized.endsWith('.zip') && normalized.includes('linux')) {
-      const linuxBetaType = gpuiLinuxBetaAssetType(asset.name)
-      if (linuxBetaType === 'alias') {
+    } else if (normalized.endsWith('.appimage') && gpuiLinuxBetaAssetType(asset.name)) {
+      if (gpuiLinuxBetaAssetType(asset.name) === 'alias') {
         linuxGpuiBeta = releaseAsset(asset)
-      } else if (linuxBetaType === 'versioned') {
+      } else {
         linuxGpuiBeta ??= releaseAsset(asset)
       }
     } else if (normalized.endsWith('.zip') && normalized.includes('mac')) {

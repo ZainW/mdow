@@ -22,13 +22,14 @@ export function NativeDownloadSection({
             </span>
           </div>
           <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-            A GPUI beta for Apple Silicon Macs and x64 Linux. Runs alongside the regular Mdow app.
+            A GPU-rendered beta for Apple Silicon Macs and x64 Linux, built with gpuix. Runs
+            alongside the regular Mdow app.
           </p>
         </div>
         <Link
           to="/docs/$"
           params={{ _splat: 'installation' }}
-          hash="mdow-native-gpui-beta"
+          hash="mdow-native-beta"
           className="link-underline shrink-0 text-sm text-muted-foreground"
         >
           Install notes
@@ -45,8 +46,8 @@ export function NativeDownloadSection({
           <PlatformDownloadRow
             icon={<LinuxIcon className="size-5" />}
             platform="Linux"
-            description="x64 · run MdowNative from the unzipped folder"
-            formats={[{ label: 'Mdow Native', detail: '.zip', url: linuxUrl }]}
+            description="x64 · make the AppImage executable and run it"
+            formats={[{ label: 'Mdow Native', detail: '.AppImage', url: linuxUrl }]}
           />
         ) : null}
       </div>

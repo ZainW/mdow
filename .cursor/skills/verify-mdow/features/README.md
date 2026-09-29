@@ -47,4 +47,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Settings](./settings.md) covers opening Settings and changing theme from each entry point.
 - [Sidebar](./sidebar.md) covers Recents, Folder, and Outline modes.
 
-GPUI Native and the marketing site are not in this map.
+Mdow Native and the marketing site are not in this map.

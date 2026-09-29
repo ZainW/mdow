@@ -5,17 +5,14 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "package:gpui-mac-beta": "bash script/package_gpui_mac_beta.sh",
-    "package:gpui-linux-beta": "bash script/package_gpui_linux_beta.sh",
-    "test:package:gpui-mac-beta": "zsh script/test_package_gpui_mac_beta.zsh",
-    "test:package:gpui-linux-beta": "bash script/test_package_gpui_linux_beta.sh",
-    "test:gpui-workflows": "zsh script/test_gpui_workflows.zsh",
+    "package:native-mac": "bash apps/native/scripts/package-mac.sh",
+    "package:native-linux": "bash apps/native/scripts/package-linux.sh",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "fmt": "turbo fmt",
     "fmt:check": "turbo fmt:check",
     "test": "turbo test",
-    "test:native-updater": "python3 script/test_native_updater.py"
+    "test:native-updater": "bun apps/native/scripts/test-updater.ts"
   },
   "devDependencies": {
     "turbo": "^2.10.12"

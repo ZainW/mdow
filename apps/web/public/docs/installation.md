@@ -15,14 +15,14 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
 
-### Mdow Native (GPUI beta)
+### Mdow Native (beta)
 
-Mdow Native is a separate GPUI beta. On Apple Silicon Macs running macOS 14 or newer, download
-`MdowNative-mac-beta.zip`, unzip it, and move `Mdow Native.app` to Applications. It runs alongside
-the regular Mdow app.
+Mdow Native is a separate beta that renders with GPUI through [gpuix](https://gpuix.dev). On Apple
+Silicon Macs running macOS 14 or newer, download `MdowNative-mac-beta.zip`, unzip it, and move
+`Mdow Native.app` to Applications. It runs alongside the regular Mdow app.
 
-Tagged macOS releases are signed and notarized. Upgrades are manual for now: download the latest
-beta ZIP and replace the old app. Mdow Native does not have an in-app updater yet.
+Tagged macOS releases are signed and notarized. Mdow Native checks for updates in the background
+and offers them in a banner; you can also check from **Mdow → Check for Updates…**.
 
 ## Windows
 
@@ -39,11 +39,16 @@ chmod +x Mdow-*.AppImage
 
 AppImage requires no system installation — run it directly from your Downloads folder or move it anywhere on your PATH.
 
-### Mdow Native (GPUI beta)
+### Mdow Native (beta)
 
-Linux x64 builds ship as `MdowNative-linux-beta.zip`. Unzip the archive and run `MdowNative` from
-that folder so it can find the bundled `assets` directory. It is a separate beta from the Electron
-AppImage and does not have an in-app updater yet.
+Linux x64 builds ship as `MdowNative-linux-beta.AppImage`. Make it executable and run it:
+
+```bash
+chmod +x MdowNative-linux-beta.AppImage
+./MdowNative-linux-beta.AppImage
+```
+
+It is a separate beta from the Electron AppImage and updates itself when run as an AppImage.
 
 ## Updates
 

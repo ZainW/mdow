@@ -8,26 +8,25 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 describe('NativeDownloadSection', () => {
-  it('renders mac and linux GPUI beta downloads', () => {
+  it('renders mac and linux Native beta downloads', () => {
     const macUrl = 'https://example.test/MdowNative-mac-beta.zip'
-    const linuxUrl = 'https://example.test/MdowNative-linux-beta.zip'
+    const linuxUrl = 'https://example.test/MdowNative-linux-beta.AppImage'
 
     render(<NativeDownloadSection macUrl={macUrl} linuxUrl={linuxUrl} />)
 
     expect(screen.getByRole('heading', { name: 'Mdow Native' })).toBeInTheDocument()
     expect(
       screen.getByText(
-        'A GPUI beta for Apple Silicon Macs and x64 Linux. Runs alongside the regular Mdow app.',
+        'A GPU-rendered beta for Apple Silicon Macs and x64 Linux, built with gpuix. Runs alongside the regular Mdow app.',
       ),
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Download macOS Mdow Native (.zip)' })).toHaveAttribute(
       'href',
       macUrl,
     )
-    expect(screen.getByRole('link', { name: 'Download Linux Mdow Native (.zip)' })).toHaveAttribute(
-      'href',
-      linuxUrl,
-    )
+    expect(
+      screen.getByRole('link', { name: 'Download Linux Mdow Native (.AppImage)' }),
+    ).toHaveAttribute('href', linuxUrl)
   })
 
   it('omits the linux row when there is no linux build', () => {

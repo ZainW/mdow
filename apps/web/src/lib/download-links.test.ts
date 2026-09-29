@@ -84,22 +84,24 @@ describe('gpuiLinuxBetaDownloadUrl', () => {
       html_url: 'https://github.com/ZainW/mdow/releases/tag/v1.0.5',
       assets: [
         {
-          name: 'MdowNative-1.0.5-x64-linux-beta.zip',
-          browser_download_url: 'https://example.com/MdowNative-1.0.5-x64-linux-beta.zip',
+          name: 'mdow-native_1.0.5_x86_64.AppImage',
+          browser_download_url: 'https://example.com/mdow-native_1.0.5_x86_64.AppImage',
         },
         {
-          name: 'MdowNative-linux-beta.zip',
-          browser_download_url: 'https://example.com/MdowNative-linux-beta.zip',
+          name: 'MdowNative-linux-beta.AppImage',
+          browser_download_url: 'https://example.com/MdowNative-linux-beta.AppImage',
         },
       ],
     })!
 
-    expect(gpuiLinuxBetaDownloadUrl(release)).toBe('https://example.com/MdowNative-linux-beta.zip')
+    expect(gpuiLinuxBetaDownloadUrl(release)).toBe(
+      'https://example.com/MdowNative-linux-beta.AppImage',
+    )
   })
 
   it('falls back to the durable Linux alias when the API has no beta asset', () => {
     expect(gpuiLinuxBetaDownloadUrl(stableRelease)).toBe(
-      'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.zip',
+      'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.AppImage',
     )
   })
 })

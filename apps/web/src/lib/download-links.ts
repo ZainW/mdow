@@ -4,7 +4,7 @@ export type PlatformId = 'mac' | 'windows' | 'linux'
 export const GPUI_MAC_BETA_DOWNLOAD_URL =
   'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-mac-beta.zip'
 export const GPUI_LINUX_BETA_DOWNLOAD_URL =
-  'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.zip'
+  'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.AppImage'
 
 export function detectPlatform(userAgent: string): PlatformId {
   if (userAgent.includes('Mac')) return 'mac'

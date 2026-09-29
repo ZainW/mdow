@@ -1,0 +1,102 @@
+name: Native verification
+
+'on':
+  pull_request:
+    paths:
+      - 'apps/native/**'
+      - 'script/generate_native_mac_appcast.sh'
+      - 'script/fetch_sparkle.sh'
+      - '.github/workflows/native.yml'
+      - '.github/workflows/release.yml'
+      - 'pnpm-lock.yaml'
+  push:
+    paths:
+      - 'apps/native/**'
+      - 'script/generate_native_mac_appcast.sh'
+      - 'script/fetch_sparkle.sh'
+      - '.github/workflows/native.yml'
+      - '.github/workflows/release.yml'
+      - 'pnpm-lock.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: pnpm install --frozen-lockfile --filter native
+
+      - run: pnpm --filter native run typecheck
+      - run: pnpm --filter native run lint
+      - run: pnpm --filter native run fmt:check
+      - run: pnpm --filter native run test
+
+      # Ad-hoc signed: exercises the build, bundle, asset lookup and a real window.
+      - run: bash apps/native/scripts/package-mac.sh
+        env:
+          CI: 'false'
+
+      # A real signed update from a local feed, and one with a foreign key that must be refused.
+      - run: bun apps/native/scripts/test-updater.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-native-ci-arm64
+          path: dist/native-mac/*.zip
+          if-no-files-found: error
+
+  verify-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install runtime dependencies (Vulkan via lavapipe, X11 via xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            libwayland-client0 \
+            libx11-xcb1 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            xvfb
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: pnpm install --frozen-lockfile --filter native
+
+      - run: pnpm --filter native run typecheck
+      - run: xvfb-run -a pnpm --filter native run test
+      - run: xvfb-run -a bash apps/native/scripts/package-linux.sh
+        env:
+          CI: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-native-ci-linux-x64
+          path: dist/native-linux/*.AppImage
+          if-no-files-found: error
