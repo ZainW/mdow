@@ -10,7 +10,10 @@ import { EMPTY_SESSION } from './lib/persist'
 import { DEFAULT_PREFS } from './lib/prefs'
 import { createAppStore, openDocument, setAppStore, setOverlay } from './store'
 
-const describeUi = hasNativeTestRenderer ? describe : describe.skip
+// The GPU test renderer needs a display on Linux (CI runs these under xvfb in native.yml).
+const hasDisplay =
+  process.platform !== 'linux' || !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY
+const describeUi = hasNativeTestRenderer && hasDisplay ? describe : describe.skip
 
 function mount() {
   const root = createTestRoot({ width: 1100, height: 720 })
