@@ -205,11 +205,28 @@ export function Breadcrumb({ tab }: { tab: Tab }) {
         userSelect: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1, minWidth: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          flexGrow: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+        }}
+      >
         {parents.map((segment) => (
           <div
             key={segment.path}
-            style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}
+            // Folder names give way before the file name in a narrow window.
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              flexShrink: 1,
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
           >
             <Crumb
               label={segment.name}

@@ -232,7 +232,11 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
     if (anchor) {
       const [first = 0, offset = 0, viewport = 0] = anchor
       const top = (sums[first] ?? 0) + offset
-      if (row >= first && (sums[row + 1] ?? 0) <= top + viewport) return
+      // Leave the view alone only when the whole row is inside it. Row heights are estimates, so
+      // keep a margin at the bottom rather than trusting them to the pixel.
+      const rowTop = sums[row] ?? 0
+      const rowBottom = sums[row + 1] ?? rowTop
+      if (rowTop >= top && rowBottom <= top + viewport - FIND_MARGIN) return
     }
     handlers.current.scrollToRow(row)
     noteScroll()
@@ -506,6 +510,21 @@ function BlockView({
   }
 }
 
+/** Space kept below a find match that's treated as already on screen. */
+const FIND_MARGIN = 64
+
+/**
+ * Uppercase the words of inline markdown for label styles (h6, table headers) without changing
+ * what the markdown means: code spans, link targets, autolinks, bare URLs and HTML entities stay
+ * as written. (GPUI text has no text-transform.)
+ */
+export function uppercaseLabel(markdown: string) {
+  return markdown.replace(
+    /(`[^`]*`|\]\([^)]*\)|<[^>\s]+>|https?:\/\/[^\s)]+|&#?\w+;)|([^`\]<&h]+|[\]<&h])/g,
+    (match, kept) => (kept ? match : match.toUpperCase()),
+  )
+}
+
 /** h6 reads as a small muted uppercase label, as on desktop; the rest use the theme's scale. */
 function Heading({
   level,
@@ -522,10 +541,7 @@ function Heading({
     [reader.native, theme.mutedForeground],
   )
   if (level < 6) return <markdown source={source} theme={reader.native} onLinkClick={onLink} />
-  // Uppercase the words but not code spans or link targets.
-  const upper = source.replace(/(`[^`]*`|\]\([^)]*\))|([^`\]]+)/g, (match, kept) =>
-    kept ? match : match.toUpperCase(),
-  )
+  const upper = uppercaseLabel(source)
   return <markdown source={upper} theme={labelTheme} onLinkClick={onLink} />
 }
 
@@ -733,7 +749,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
  * out in a worker on first view, so opening a document never waits on them.
  */
 function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number }) {
-  const { theme, scale } = useUi()
+  const { reader, theme, scale } = useUi()
   // GPUI's SVG rasterizer only sees system fonts, not the ones registered for the app, so
   // diagram labels use the system monospace (the desktop uses IBM Plex Mono / Geist Mono).
   const palette = useMemo(() => mermaidPalette(theme, 'Menlo'), [theme])
@@ -771,7 +787,8 @@ function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number
       </div>
     )
   }
-  const fit = result ? Math.min(1, columnWidth / result.width) : 1
+  // Follow the reader's zoom, but never wider than the column.
+  const fit = result ? Math.min(reader.fontSize / 16, columnWidth / result.width) : 1
   const width = result ? Math.round(result.width * fit) : 0
   const height = result ? Math.round(result.height * fit) : 160
   return (
@@ -869,7 +886,7 @@ function TableBlock({
     >
       {widths.map((width, column) => {
         const raw = cells[column] ?? ''
-        const text = header ? raw.replace(/\*\*/g, '').toUpperCase() : raw
+        const text = header ? uppercaseLabel(raw.replace(/\*\*/g, '')) : raw
         return (
           <div
             key={column}
