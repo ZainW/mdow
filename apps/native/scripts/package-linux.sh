@@ -41,7 +41,9 @@ if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
   exit 1
 fi
 
-cat >"$WORK/packager.json" <<JSON
+# Passed inline: the packager's --config mishandles a JSON file path ("Not a directory").
+# No resources: bundled fonts are only registered on macOS; Linux uses system fonts.
+CONFIG="$(cat <<JSON
 {
   "productName": "Mdow Native",
   "version": "$VERSION",
@@ -53,12 +55,12 @@ cat >"$WORK/packager.json" <<JSON
   "outDir": "$WORK/out",
   "binaries": [{ "path": "$BINARY", "main": true }],
   "icons": ["$ROOT_DIR/apps/desktop/resources/icon.png"],
-  "resources": [{ "src": "$NATIVE_DIR/assets", "target": "assets" }],
   "formats": ["appimage"]
 }
 JSON
+)"
 
-(cd "$NATIVE_DIR" && bun x packager --release --config "$WORK/packager.json")
+(cd "$NATIVE_DIR" && bun x packager --config "$CONFIG")
 BUILT="$(find "$WORK/out" -maxdepth 2 -name '*.AppImage' | head -n 1)"
 if [[ -z "$BUILT" ]]; then
   echo "cargo-packager did not produce an AppImage." >&2
