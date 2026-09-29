@@ -3,7 +3,7 @@ import { useGpuixRequired, useWindowSize } from '@gpuix/react'
 import { followLink, promptOpenFile, promptOpenFolder, runCommand, setRenderer } from './actions'
 import { DOCUMENT_ERROR_COPY } from './lib/documents'
 import { readerMaxWidth } from './lib/prefs'
-import { openPaths, setWindowSize, useApp } from './store'
+import { openPaths, setDragging, setWindowSize, useApp } from './store'
 import { Breadcrumb, ReloadBanner, TabBar, Titlebar } from './ui/Chrome'
 import { METRICS, UI_FONT, UiProvider, useUi } from './ui/context'
 import { CommandPalette, Settings, Shortcuts } from './ui/Overlays'
@@ -62,6 +62,7 @@ function Shell({ saveNow }: AppProps) {
   return (
     <div
       onFileDrop={(event) => {
+        setDragging(false)
         if (event.paths?.length) openPaths(event.paths)
       }}
       style={{

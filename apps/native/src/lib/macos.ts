@@ -288,3 +288,53 @@ export function activateApp() {
   const app = r.send(cls('NSApplication'), sel('sharedApplication'))
   r.sendSetB(app, sel('activateIgnoringOtherApps:'), true)
 }
+
+/**
+ * Report whether a file drag is over the window, for the drop-zone highlight. gpuix only
+ * delivers the final drop (`onFileDrop`), so wrap GPUI's NSDraggingDestination methods on its
+ * window class and chain to the originals so dropping still works.
+ *
+ * Call after `render()`: GPUI registers its window class when it opens the first window.
+ */
+export function handleDragOver(onChange: (active: boolean) => void): boolean {
+  const r = rt()
+  const { objc } = r
+  const windowClass = cls('GPUIWindow')
+  if (!windowClass) return false
+  let active = false
+  const report = (next: boolean) => {
+    if (next === active) return
+    active = next
+    defer(() => onChange(next))
+  }
+
+  const wrap = (selector: string, returns: FFIType, types: string, after: () => void): boolean => {
+    const name = sel(selector)
+    const method = objc.symbols.class_getInstanceMethod(windowClass, name)
+    const original = method ? objc.symbols.method_getImplementation(method) : null
+    if (!original) return false
+    const callOriginal = CFunction({
+      ptr: original,
+      args: [FFIType.ptr, FFIType.ptr, FFIType.ptr],
+      returns,
+    })
+    const wrapped = new JSCallback(
+      (self: Id, cmd: Id, sender: Id) => {
+        const result = callOriginal(self, cmd, sender)
+        after()
+        return result
+      },
+      { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr], returns },
+    )
+    retained.push(wrapped)
+    objc.symbols.class_replaceMethod(windowClass, name, wrapped.ptr, cstr(types))
+    return true
+  }
+
+  // NSDragOperation is an NSUInteger; BOOL is a signed char on arm64 (bool in the ABI).
+  const entered = wrap('draggingEntered:', FFIType.u64, 'Q@:@', () => report(true))
+  wrap('draggingExited:', FFIType.void, 'v@:@', () => report(false))
+  wrap('performDragOperation:', FFIType.bool, 'B@:@', () => report(false))
+  wrap('concludeDragOperation:', FFIType.void, 'v@:@', () => report(false))
+  return entered
+}

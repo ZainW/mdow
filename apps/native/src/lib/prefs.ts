@@ -63,7 +63,7 @@ export const LABELS = {
 const IS_MAC = process.platform === 'darwin'
 
 export const CONTENT_FONT_FAMILY: Record<ContentFont, string> = {
-  inter: 'Inter Variable',
+  inter: 'Inter',
   charter: 'Charter',
   'system-sans': IS_MAC ? '.SystemUIFont' : 'sans-serif',
   georgia: 'Georgia',

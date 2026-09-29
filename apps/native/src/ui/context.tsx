@@ -11,7 +11,7 @@ import {
 } from '../lib/prefs'
 import { nativeTheme, themeFor, type Theme } from '../lib/theme'
 
-export const UI_FONT = 'Inter Variable'
+export const UI_FONT = 'Inter'
 export const UI_MONO = 'Geist Mono'
 
 export const METRICS = {

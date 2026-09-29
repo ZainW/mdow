@@ -5,6 +5,10 @@ The reader paints 400-700, italic emphasis, and tabular figures. This script
 instances variable axes to that range, pins Inter optical size to 16px, and
 subsets glyphs to Latin, Greek, Cyrillic, and the punctuation markdown uses.
 Georgia and SF Mono stay system lookups. They cannot be redistributed.
+
+Desktop and web get variable WOFF2. Mdow Native gets static TTF cuts, because
+GPUI ignores the weight axis of a variable font and paints every weight as the
+default instance, so bold would render as regular.
 """
 
 from __future__ import annotations
@@ -186,21 +190,37 @@ def copy_license(src: Path, dest_name: str) -> None:
         shutil.copy2(src, directory / dest_name)
 
 
+SUBFAMILY = {400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold"}
+
+
 def optimize_variable(
     src: Path,
-    gpui_name: str,
+    stem: str,
+    family: str,
     unicodes: str,
+    weights: tuple[int, ...],
+    italic: bool = False,
     desktop_name: str | None = None,
     web_name: str | None = None,
     **axes: str,
-) -> Path:
-    staged = CACHE / "staged" / gpui_name
+) -> None:
+    """Variable WOFF2 for the web apps, one static TTF per weight for Native."""
+    staged = CACHE / "staged" / f"{stem}.ttf"
     instanced = staged.with_suffix(".instanced.ttf")
     instance(src, instanced, **axes)
-    dest = GPUI_FONTS / gpui_name
-    subset(instanced, dest, unicodes)
-    write_outputs(dest, desktop_name, web_name)
-    return dest
+    variable = staged.with_suffix(".subset.ttf")
+    subset(instanced, variable, unicodes)
+    write_outputs(variable, desktop_name, web_name)
+
+    fixed = {tag: value for tag, value in axes.items() if tag != "wght"}
+    for weight in weights:
+        name = SUBFAMILY[weight]
+        subfamily = ("Italic" if name == "Regular" else f"{name} Italic") if italic else name
+        cut = staged.with_name(f"{stem}-{weight}.instanced.ttf")
+        instance(src, cut, wght=str(weight), **fixed)
+        dest = GPUI_FONTS / f"{stem}-{subfamily.replace(' ', '')}.ttf"
+        subset(cut, dest, unicodes)
+        set_family(dest, family, subfamily)
 
 
 def optimize_static(
@@ -240,45 +260,46 @@ def main() -> int:
         download(url, archive)
         extracted[name] = unzip(archive, CACHE / name)
 
+    for stale in GPUI_FONTS.glob("*.ttf"):
+        stale.unlink()
+
     inter = extracted["inter"]
     geist = extracted["geist"]
     charis = extracted["charis"]
     jetbrains = extracted["jetbrains"]
 
-    optimize_variable(
-        find_file(inter, "InterVariable.ttf"),
-        "InterVariable.ttf",
-        READER_UNICODES,
-        desktop_name="InterVariable.woff2",
-        web_name="InterVariable.woff2",
-        wght="400:700",
-        opsz="16",
-    )
-    optimize_variable(
-        find_file(inter, "InterVariable-Italic.ttf"),
-        "InterVariable-Italic.ttf",
-        READER_UNICODES,
-        desktop_name="InterVariable-Italic.woff2",
-        web_name="InterVariable-Italic.woff2",
-        wght="400:700",
-        opsz="16",
-    )
-    optimize_variable(
-        find_file(geist, "GeistMono[wght].ttf"),
-        "GeistMono-Variable.ttf",
-        MONO_UNICODES,
-        desktop_name="GeistMono-Variable.woff2",
-        web_name="GeistMono-Variable.woff2",
-        wght="400:700",
-    )
-    optimize_variable(
-        find_file(geist, "GeistMono-Italic[wght].ttf"),
-        "GeistMono-Italic-Variable.ttf",
-        MONO_UNICODES,
-        desktop_name="GeistMono-Italic-Variable.woff2",
-        web_name="GeistMono-Italic-Variable.woff2",
-        wght="400:700",
-    )
+    for (
+        package,
+        source,
+        stem,
+        family,
+        unicodes,
+        weights,
+        italic,
+        woff2,
+        on_web,
+        axes,
+    ) in (
+        (inter, "InterVariable.ttf", "Inter", "Inter", READER_UNICODES, (400, 500, 600, 700), False,
+         "InterVariable.woff2", True, {"wght": "400:700", "opsz": "16"}),
+        (inter, "InterVariable-Italic.ttf", "Inter", "Inter", READER_UNICODES, (400, 700), True,
+         "InterVariable-Italic.woff2", True, {"wght": "400:700", "opsz": "16"}),
+        (geist, "GeistMono[wght].ttf", "GeistMono", "Geist Mono", MONO_UNICODES, (400, 500, 700),
+         False, "GeistMono-Variable.woff2", True, {"wght": "400:700"}),
+        (geist, "GeistMono-Italic[wght].ttf", "GeistMono", "Geist Mono", MONO_UNICODES, (400, 700),
+         True, "GeistMono-Italic-Variable.woff2", True, {"wght": "400:700"}),
+    ):
+        optimize_variable(
+            find_file(package, source),
+            stem,
+            family,
+            unicodes,
+            weights,
+            italic=italic,
+            desktop_name=woff2,
+            web_name=woff2 if on_web else None,
+            **axes,
+        )
 
     for src_name, dest_name, subfamily, woff2 in (
         ("Charis-Regular.ttf", "Charter-Regular.ttf", "Regular", "Charter-Regular.woff2"),
@@ -300,20 +321,20 @@ def main() -> int:
             desktop_name=woff2,
         )
 
-    optimize_variable(
-        find_file(jetbrains, "JetBrainsMono[wght].ttf"),
-        "JetBrainsMono-Variable.ttf",
-        MONO_UNICODES,
-        desktop_name="JetBrainsMono-Variable.woff2",
-        wght="400:700",
-    )
-    optimize_variable(
-        find_file(jetbrains, "JetBrainsMono-Italic[wght].ttf"),
-        "JetBrainsMono-Italic-Variable.ttf",
-        MONO_UNICODES,
-        desktop_name="JetBrainsMono-Italic-Variable.woff2",
-        wght="400:700",
-    )
+    for source, italic, woff2 in (
+        ("JetBrainsMono[wght].ttf", False, "JetBrainsMono-Variable.woff2"),
+        ("JetBrainsMono-Italic[wght].ttf", True, "JetBrainsMono-Italic-Variable.woff2"),
+    ):
+        optimize_variable(
+            find_file(jetbrains, source),
+            "JetBrainsMono",
+            "JetBrains Mono",
+            MONO_UNICODES,
+            (400, 700),
+            italic=italic,
+            desktop_name=woff2,
+            wght="400:700",
+        )
 
     copy_license(find_file(inter, "LICENSE.txt"), "Inter-OFL.txt")
     copy_license(find_file(charis, "OFL.txt"), "Charis-OFL.txt")

@@ -9,7 +9,7 @@ import {
 import type { AlertKind, Block, ParsedDocument } from '../lib/markdown'
 import { copyToClipboard } from '../lib/platform'
 import { setOverlay, useApp } from '../store'
-import { METRICS, useUi } from './context'
+import { METRICS, UI_FONT, useUi } from './context'
 import { Icon, IconButton, Label } from './primitives'
 import { onReaderCommand } from './reader-bus'
 
@@ -36,6 +36,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
   const { theme } = useUi()
   const listRef = useRef<PublicInstance | null>(null)
   const blocks = document.blocks
+  const [visible, setVisible] = useState<[number, number]>([0, 0])
   const [start, setStart] = useState(() => {
     const saved = scrollMemory.get(path)
     return saved ? Math.max(0, saved[0] - WINDOW / 4) : 0
@@ -199,6 +200,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
             onVisibleRange={(event) => {
               const first = Math.floor(event.startIndex ?? 0)
               const last = Math.ceil(event.endIndex ?? first)
+              setVisible([first, last])
               if (first < windowStart + WINDOW / 8 || last > end - WINDOW / 8) {
                 const next = Math.max(0, first - WINDOW / 4)
                 if (next !== windowStart) setStart(next)
@@ -210,6 +212,11 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
           </virtual-list>
         )}
       </div>
+      <Scrollbar
+        count={blocks.length}
+        visible={visible}
+        onSeek={(index) => handlers.current.scrollToRow(index)}
+      />
       {findOpen ? (
         <FindBar
           query={query}
@@ -220,6 +227,107 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
           onPrevious={() => search.previous()}
         />
       ) : null}
+    </div>
+  )
+}
+
+const SCROLLBAR_WIDTH = 14
+const MIN_THUMB = 28
+
+/**
+ * GPUI's list paints no scrollbar. The thumb tracks the visible row range: rows vary in height,
+ * so this is proportional to rows, not pixels, which is what makes it cheap on huge files.
+ * Pointer-only: the keyboard already scrolls the reader, and gpuix can't set the aria props a
+ * `scrollbar` role requires.
+ */
+function Scrollbar({
+  count,
+  visible,
+  onSeek,
+}: {
+  count: number
+  visible: [number, number]
+  onSeek: (index: number) => void
+}) {
+  const renderer = useGpuixRequired()
+  const { theme } = useUi()
+  const trackRef = useRef<PublicInstance | null>(null)
+  const grab = useRef<number | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const [first, last] = visible
+  const shown = Math.max(1, last - first)
+  if (count === 0 || shown >= count) return null
+
+  const topFraction = first / count
+  const sizeFraction = shown / count
+
+  const seek = (y: number | undefined, anchor: number) => {
+    const id = trackRef.current?.id
+    const bounds = id !== undefined ? renderer.getElementBounds?.(id) : null
+    if (!bounds || y === undefined || bounds.height <= 0) return
+    const fraction = (y - bounds.y) / bounds.height - anchor
+    onSeek(Math.max(0, Math.min(count - 1, Math.round(fraction * count))))
+  }
+
+  return (
+    <div
+      ref={trackRef}
+      testId="reader-scrollbar"
+      role="presentation"
+      onMouseDown={(event) => {
+        const id = trackRef.current?.id
+        const bounds = id !== undefined ? renderer.getElementBounds?.(id) : null
+        if (!bounds || event.y === undefined) return
+        const at = (event.y - bounds.y) / bounds.height
+        const onThumb = at >= topFraction && at <= topFraction + sizeFraction
+        // Grabbing the thumb keeps the pointer where it grabbed; clicking the track centers it.
+        grab.current = onThumb ? at - topFraction : sizeFraction / 2
+        setDragging(true)
+        seek(event.y, grab.current)
+      }}
+      onMouseMove={(event) => {
+        if (grab.current !== null && event.pressedButton === 0) seek(event.y, grab.current)
+      }}
+      onMouseUp={() => {
+        grab.current = null
+        setDragging(false)
+      }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: SCROLLBAR_WIDTH,
+        display: 'flex',
+        flexDirection: 'column',
+        paddingTop: 2,
+        paddingBottom: 2,
+        userSelect: 'none',
+      }}
+    >
+      {/* Spacers split the room the thumb leaves, so a min-height thumb never overflows. */}
+      <div style={{ flexGrow: first, flexBasis: 0, minHeight: 0 }} />
+      <div
+        style={{
+          height: `${sizeFraction * 100}%`,
+          minHeight: MIN_THUMB,
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: dragging ? 8 : 6,
+            height: '100%',
+            borderRadius: 4,
+            backgroundColor: theme.mutedForeground,
+            opacity: dragging ? 0.55 : 0.3,
+          }}
+        />
+      </div>
+      <div style={{ flexGrow: Math.max(0, count - last), flexBasis: 0, minHeight: 0 }} />
     </div>
   )
 }
@@ -566,7 +674,7 @@ function FindBar({
           paddingLeft: 4,
           fontSize: scale.controlFont + 1,
           color: theme.foreground,
-          fontFamily: 'Inter Variable',
+          fontFamily: UI_FONT,
         }}
       />
       <Label size={scale.controlFont} color={theme.mutedForeground} style={{ minWidth: 64 }}>

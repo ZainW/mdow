@@ -8,7 +8,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { App } from './App'
 import { EMPTY_SESSION } from './lib/persist'
 import { DEFAULT_PREFS } from './lib/prefs'
-import { createAppStore, openDocument, setAppStore, setOverlay } from './store'
+import { createAppStore, openDocument, setAppStore, setDragging, setOverlay } from './store'
 
 // The GPU test renderer needs a display on Linux (CI runs these under xvfb in native.yml).
 const hasDisplay =
@@ -25,6 +25,12 @@ function mount() {
 const text = (root: ReturnType<typeof createTestRoot>) => {
   root.renderer.flush()
   return root.renderer.getAllText().join('\n')
+}
+
+/** What the last frame painted, including text native `<markdown>` builds in Rust. */
+const painted = (root: ReturnType<typeof createTestRoot>) => {
+  root.renderer.flush()
+  return root.renderer.getPaintedText().join('\n')
 }
 
 beforeEach(() => {
@@ -67,6 +73,38 @@ describeUi('App', () => {
     const shown = text(root)
     expect(shown).toContain('Toggle Wide Mode')
     expect(shown).not.toContain('Zoom In')
+    root.unmount()
+  })
+
+  test('dragging the scrollbar moves through a long document', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'mdow-app-')))
+    const path = join(dir, 'long.md')
+    const sections = Array.from({ length: 300 }, (_, i) => `## Section ${i}\n\nParagraph ${i}.`)
+    writeFileSync(path, sections.join('\n\n'))
+    const root = mount()
+    flushSync(() => openDocument(path))
+    root.renderer.flush()
+    const app = await connectTest(root.renderer)
+    const scrollbar = app.getByTestId('reader-scrollbar')
+    await scrollbar.waitFor()
+    expect(painted(root)).toContain('Section 0')
+    await scrollbar.dragBy(0, 2000, { steps: 8, offset: { x: 0, y: -250 } })
+    const shown = painted(root)
+    expect(shown).toContain('Section 299')
+    expect(shown).not.toMatch(/^Section 0$/m)
+    await app.screenshot({ path: '/tmp/sp/scrollbar-end.png' })
+    root.unmount()
+  })
+
+  test('the welcome drop zone answers a drag over the window', async () => {
+    const root = mount()
+    expect(text(root)).toContain('Anywhere in this window')
+    flushSync(() => setDragging(true))
+    expect(text(root)).toContain('Release to open in Mdow')
+    const app = await connectTest(root.renderer)
+    await app.screenshot({ path: '/tmp/sp/drop-active.png' })
+    flushSync(() => setDragging(false))
+    expect(text(root)).toContain('Anywhere in this window')
     root.unmount()
   })
 })
