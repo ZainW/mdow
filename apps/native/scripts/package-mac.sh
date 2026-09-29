@@ -30,6 +30,11 @@ DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/native-mac}"
 CODESIGN="${CODESIGN:-codesign}"
 XCRUN="${XCRUN:-xcrun}"
 
+# Installs of the Rust build update through Sparkle, which refuses a new bundle that drops the
+# EdDSA key it trusts, and generate_appcast will not sign an archive without one. Nothing in
+# this build uses Sparkle; the key is only there so those installs can migrate.
+SPARKLE_PUBLIC_ED_KEY="$(tr -d '[:space:]' <"$NATIVE_DIR/updater/sparkle-public-ed-key.txt")"
+
 mkdir -p "$DIST_DIR"
 DIST_DIR="$(cd "$DIST_DIR" && pwd -P)"
 APP="$DIST_DIR/$APP_NAME.app"
@@ -77,6 +82,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSQuitAlwaysKeepsWindows</key><false/>
+  <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_ED_KEY</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -176,6 +182,7 @@ EXTRACTED="$WORK/extract/$APP_NAME.app"
 "$CODESIGN" --verify --deep --strict --verbose=2 "$EXTRACTED"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$EXTRACTED/Contents/Info.plist")" == "$VERSION" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXTRACTED/Contents/Info.plist")" == "$BUNDLE_ID" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$EXTRACTED/Contents/Info.plist")" == "$SPARKLE_PUBLIC_ED_KEY" ]]
 if [[ "$NOTARIZED" == "true" ]]; then
   spctl -a -vv --type execute "$EXTRACTED"
   "$XCRUN" stapler validate "$EXTRACTED"

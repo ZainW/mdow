@@ -30,3 +30,7 @@ workflow skips signing.
 Builds before the gpuix rewrite update through Sparkle and poll `appcast-native-mac.xml`. The release
 workflow still publishes that appcast, pointing at the new notarized zip, so those installs update once
 into the gpuix build. After that they use the updater above.
+
+The app's Info.plist still carries the old Sparkle `SUPublicEDKey` (`sparkle-public-ed-key.txt`) for
+this handoff: Sparkle refuses an update that drops the key it trusts, and `generate_appcast` will not
+sign an archive without one. Nothing in the gpuix build reads it.
