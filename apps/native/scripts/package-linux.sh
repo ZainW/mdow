@@ -42,7 +42,7 @@ if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
 fi
 
 # Passed inline: the packager's --config mishandles a JSON file path ("Not a directory").
-# No resources: bundled fonts are only registered on macOS; Linux uses system fonts.
+# No resources: the fonts ship inside the binary and are extracted on first launch.
 CONFIG="$(cat <<JSON
 {
   "productName": "Mdow Native",

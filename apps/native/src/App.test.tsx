@@ -8,7 +8,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { App } from './App'
 import { EMPTY_SESSION } from './lib/persist'
 import { DEFAULT_PREFS } from './lib/prefs'
-import { createAppStore, openDocument, setAppStore, setOverlay } from './store'
+import { createAppStore, openDocument, setAppStore, setDragging, setOverlay } from './store'
 
 // The GPU test renderer needs a display on Linux (CI runs these under xvfb in native.yml).
 const hasDisplay =
@@ -67,6 +67,16 @@ describeUi('App', () => {
     const shown = text(root)
     expect(shown).toContain('Toggle Wide Mode')
     expect(shown).not.toContain('Zoom In')
+    root.unmount()
+  })
+
+  test('the welcome drop zone answers a drag over the window', () => {
+    const root = mount()
+    expect(text(root)).toContain('Anywhere in this window')
+    flushSync(() => setDragging(true))
+    expect(text(root)).toContain('Release to open in Mdow')
+    flushSync(() => setDragging(false))
+    expect(text(root)).toContain('Anywhere in this window')
     root.unmount()
   })
 })

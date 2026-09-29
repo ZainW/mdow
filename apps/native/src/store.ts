@@ -47,6 +47,8 @@ export interface AppState {
   systemScheme: ColorScheme
   update: UpdateStatus
   updateDismissed: boolean
+  /** A file drag is over the window (macOS only; gpuix reports just the drop). */
+  dragging: boolean
   window: Session['window']
 }
 
@@ -62,6 +64,7 @@ export function createAppStore(initial: PersistedState, systemScheme: ColorSchem
     systemScheme,
     update: { state: 'idle' },
     updateDismissed: false,
+    dragging: false,
     window: initial.session.window,
   }))
   return store
@@ -254,6 +257,10 @@ export function setWindowSize(width: number, height: number) {
   const window = get().window
   if (window?.width === width && window?.height === height) return
   set({ window: { width: Math.round(width), height: Math.round(height) } })
+}
+
+export function setDragging(dragging: boolean) {
+  if (get().dragging !== dragging) set({ dragging })
 }
 
 export function setSystemScheme(systemScheme: ColorScheme) {

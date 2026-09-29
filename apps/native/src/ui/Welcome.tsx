@@ -57,6 +57,7 @@ export function Welcome({
             Open Folder
           </Button>
         </div>
+        <DropZone />
         {recents.length > 0 ? (
           <div
             style={{
@@ -121,6 +122,63 @@ export function Welcome({
             ))}
           </div>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Lights up while a file is dragged over the window. The drop itself lands anywhere. */
+function DropZone() {
+  const { theme, scale } = useUi()
+  const dragging = useApp((state) => state.dragging)
+  return (
+    <div
+      testId="drop-zone"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        width: '100%',
+        height: 76,
+        marginTop: 24,
+        paddingLeft: 16,
+        paddingRight: 16,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: dragging ? theme.primary : theme.border,
+        backgroundColor: dragging ? theme.selection : undefined,
+        userSelect: 'none',
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          flexShrink: 0,
+          borderRadius: 7,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.muted,
+        }}
+      >
+        <Icon name="file" size={17} color={dragging ? theme.primary : theme.mutedForeground} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        <Label size={scale.controlFont} weight={500}>
+          {dragging ? 'Release to open in Mdow' : 'Anywhere in this window'}
+        </Label>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Label size={scale.controlXsFont + 1} color={theme.mutedForeground}>
+            Drop
+          </Label>
+          <Label mono size={scale.controlXsFont + 1} style={{ paddingLeft: 3, paddingRight: 3 }}>
+            .md
+          </Label>
+          <Label size={scale.controlXsFont + 1} color={theme.mutedForeground}>
+            files or a folder
+          </Label>
+        </div>
       </div>
     </div>
   )
