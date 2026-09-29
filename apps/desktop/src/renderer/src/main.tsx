@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
+import { warmHighlighter } from './lib/highlight'
 import './assets/styles/index.css'
 import './assets/styles/markdown.css'
 
@@ -17,8 +18,7 @@ const queryClient = new QueryClient({
 function runMarkdownWarmup(): void {
   void import('./lib/markdown')
     .then(({ initMarkdown }) => initMarkdown())
-    .then(() => import('./lib/highlight'))
-    .then(({ warmHighlighter }) => warmHighlighter())
+    .then(() => warmHighlighter())
 }
 
 function scheduleMarkdownWarmup(): void {
