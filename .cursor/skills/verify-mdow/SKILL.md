@@ -4,7 +4,7 @@ description: >-
   Drives the Mdow Electron desktop markdown viewer with an isolated Playwright
   _electron harness. Use when proving a desktop feature, verifying UI after a
   change, or running the verify-mdow launch/doctor/drive/cleanup loop. Does not
-  drive GPUI Native or the marketing site.
+  drive Mdow Native or the marketing site.
 ---
 
 # Verify Mdow (Electron desktop)
@@ -13,7 +13,7 @@ Primary surface is the **Electron app** in `apps/desktop` (product name Mdow). A
 
 Other surfaces in this repo, not driven by this skill:
 
-- `apps/gpui` — native Apple Silicon beta. No Playwright attach. Do not treat GPUI as a substitute proof for Electron.
+- `apps/native` — Mdow Native beta (gpuix + Bun). No Playwright attach; it has its own gpuix automation (`apps/native/scripts/capture.ts`). Do not treat it as a substitute proof for Electron.
 - `apps/web` — marketing site. Out of scope.
 - Cursor IDE browser MCP — a web tab without `window.api`. It cannot open this app.
 

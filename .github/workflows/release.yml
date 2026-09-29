@@ -145,7 +145,7 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
-  gpui-mac-beta:
+  native-mac:
     env:
       SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
     runs-on: macos-15
@@ -153,45 +153,29 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select full Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-      - name: Ensure Metal toolchain is available
-        run: xcrun metal -v || xcodebuild -downloadComponent MetalToolchain
-
-      - uses: dtolnay/rust-toolchain@1.93.0
-        with:
-          components: rustfmt, clippy
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/gpui/target
-          key: ${{ runner.os }}-gpui-cargo-${{ hashFiles('apps/gpui/Cargo.lock') }}
-
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - run: cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check
-      - run: cargo test --locked --manifest-path apps/gpui/Cargo.toml
-      - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
-      - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
-      - run: pnpm run test:native-updater
-      - run: pnpm run test:package:gpui-mac-beta
-      - run: VERSION=0.0.0-ci pnpm run package:gpui-mac-beta
-        env:
-          CI: 'false'
-          DIST_DIR: ${{ runner.temp }}/gpui-mac-smoke
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: pnpm install --frozen-lockfile --filter native
+
+      - name: Check the version matches the tag
+        run: test "$(bun -e "console.log(require('./apps/native/package.json').version)")" = "${GITHUB_REF_NAME#v}"
+
+      - run: pnpm --filter native run typecheck
+      - run: pnpm --filter native run lint
+      - run: pnpm --filter native run test
 
       - name: Import Apple signing certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
-          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
+          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
           P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
@@ -200,62 +184,43 @@ jobs:
           KEYCHAIN_PASSWORD=$(uuidgen)
 
           printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          ls -la "$CERTIFICATE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security import "$CERTIFICATE_PATH" \
-            -P "$P12_PASSWORD" \
-            -A \
-            -t cert \
-            -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
-
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
 
           echo "=== Available signing identities ==="
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
-      - name: Build signed and notarized Mdow Native beta
+      - name: Build signed and notarized Mdow Native
         shell: bash
         env:
           CI: 'true'
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
-          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
+          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}" bash script/package_gpui_mac_beta.sh
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+        run: VERSION="${GITHUB_REF_NAME#v}" bash apps/native/scripts/package-mac.sh
 
-      - name: Verify expected GPUI package ZIPs
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          test -f "dist/gpui-mac/MdowNative-$VERSION-arm64-mac-beta.zip"
-          test -f dist/gpui-mac/MdowNative-mac-beta.zip
-
-      - name: Generate Native Sparkle appcast
+      # Installs of the Rust build update through Sparkle. Keep publishing its feed, pointed at
+      # the new zip, so they move to this build once and use the gpuix updater from then on.
+      - name: Generate Sparkle migration appcast
         if: env.SPARKLE_PRIVATE_ED_KEY != ''
-        env:
-          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-        run: VERSION="${GITHUB_REF_NAME#v}" bash script/generate_native_mac_appcast.sh
+        run: VERSION="${GITHUB_REF_NAME#v}" DIST_DIR=dist/native-mac bash script/generate_native_mac_appcast.sh
 
-      - name: Upload GPUI Mac beta workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: gpui-mac-beta
-          path: dist/gpui-mac/*.zip
+          name: native-mac
+          path: |
+            dist/native-mac/*.zip
+            dist/native-mac/*.tar.gz*
+            dist/native-mac/*.xml
           if-no-files-found: error
 
       - name: Ensure draft GitHub release exists
@@ -266,60 +231,41 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --draft --title "$TAG" --notes ""
 
-      - name: Upload GPUI Mac beta
+      - name: Upload Mdow Native for macOS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          shopt -s nullglob
           TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" dist/gpui-mac/MdowNative-*.zip --clobber
-
-      - name: Upload Native Sparkle appcast
-        if: env.SPARKLE_PRIVATE_ED_KEY != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          test -s dist/gpui-mac/appcast-native-mac.xml
-          gh release upload "$TAG" dist/gpui-mac/appcast-native-mac.xml --clobber
+          gh release upload "$TAG" \
+            dist/native-mac/MdowNative-*.zip \
+            dist/native-mac/*.app.tar.gz* \
+            dist/native-mac/*.xml \
+            --clobber
 
       - name: Clean up keychain
         if: ${{ always() }}
         env:
-          KEYCHAIN_PATH: ${{ runner.temp }}/gpui-mac-signing.keychain-db
-        run: |
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
+        run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
-  gpui-linux-beta:
+  native-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install GPUI Linux build dependencies
+      - name: Install runtime dependencies for the smoke test
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang \
-            libvulkan-dev \
-            libwayland-dev \
-            libx11-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            pkg-config \
-            xvfb \
-            zip
-
-      - uses: dtolnay/rust-toolchain@1.93.0
-        with:
-          components: rustfmt, clippy
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/gpui/target
-          key: ${{ runner.os }}-gpui-linux-cargo-${{ hashFiles('apps/gpui/Cargo.lock') }}
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            libwayland-client0 \
+            libx11-xcb1 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            xvfb
 
       - uses: pnpm/action-setup@v6
 
@@ -327,29 +273,23 @@ jobs:
         with:
           node-version: 22
 
-      - run: cargo fmt --manifest-path apps/gpui/Cargo.toml -- --check
-      - run: xvfb-run -a cargo test --locked --manifest-path apps/gpui/Cargo.toml
-      - run: cargo clippy --locked --manifest-path apps/gpui/Cargo.toml --all-targets -- -D warnings
-      - run: cargo build --release --locked --manifest-path apps/gpui/Cargo.toml
-      - run: pnpm run test:package:gpui-linux-beta
-      - run: VERSION=0.0.0-ci pnpm run package:gpui-linux-beta
-        env:
-          DIST_DIR: ${{ runner.temp }}/gpui-linux-smoke
-
-      - name: Build Mdow Native Linux beta
-        run: VERSION="${GITHUB_REF_NAME#v}" bash script/package_gpui_linux_beta.sh
-
-      - name: Verify expected GPUI Linux package ZIPs
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          test -f "dist/gpui-linux/MdowNative-$VERSION-x64-linux-beta.zip"
-          test -f dist/gpui-linux/MdowNative-linux-beta.zip
-
-      - name: Upload GPUI Linux beta workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          name: gpui-linux-beta
-          path: dist/gpui-linux/*.zip
+          bun-version: 1.4.2
+
+      - run: pnpm install --frozen-lockfile --filter native
+
+      - name: Build Mdow Native AppImage
+        env:
+          CI: 'true'
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+        run: VERSION="${GITHUB_REF_NAME#v}" xvfb-run -a bash apps/native/scripts/package-linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux
+          path: dist/native-linux/*.AppImage*
           if-no-files-found: error
 
       - name: Ensure draft GitHub release exists
@@ -360,18 +300,18 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --draft --title "$TAG" --notes ""
 
-      - name: Upload GPUI Linux beta
+      - name: Upload Mdow Native for Linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" dist/gpui-linux/MdowNative-*.zip --clobber
+          gh release upload "$TAG" dist/native-linux/*.AppImage* --clobber
 
   publish:
     needs:
       - release
-      - gpui-mac-beta
-      - gpui-linux-beta
+      - native-mac
+      - native-linux
     runs-on: ubuntu-latest
     permissions:
       contents: write

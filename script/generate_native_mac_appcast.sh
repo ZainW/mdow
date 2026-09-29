@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Sign the Mac Native zip with Sparkle EdDSA and write appcast-native-mac.xml.
+# Only installs of the old Rust build read this feed; it moves them onto the gpuix build.
 # Requires SPARKLE_PRIVATE_ED_KEY (GitHub Actions secret). Never commit that key.
 set -euo pipefail
 
@@ -9,7 +10,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/gpui-mac}"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/native-mac}"
 VERSION="${VERSION:-}"
 REPO="${GITHUB_REPOSITORY:-ZainW/mdow}"
 TAG="${GITHUB_REF_NAME:-}"
@@ -43,7 +44,7 @@ if [[ -z "${SPARKLE_PRIVATE_ED_KEY:-}" && -z "${SPARKLE_SIGNING_ACCOUNT:-}" ]]; 
 fi
 
 bash "$ROOT_DIR/script/fetch_sparkle.sh"
-GENERATE_APPCAST="${SPARKLE_VENDOR_DIR:-$ROOT_DIR/apps/gpui/vendor/Sparkle}/bin/generate_appcast"
+GENERATE_APPCAST="${SPARKLE_VENDOR_DIR:-$ROOT_DIR/dist/sparkle-tools}/bin/generate_appcast"
 if [[ ! -x "$GENERATE_APPCAST" ]]; then
   echo "Sparkle generate_appcast is missing after fetch." >&2
   exit 1

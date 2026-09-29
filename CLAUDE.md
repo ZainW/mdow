@@ -8,7 +8,7 @@ This is a pnpm monorepo managed by Turborepo.
 
 - `apps/desktop/` — Electron markdown viewer (the main app)
 - `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
-- `apps/gpui/` — GPUI native beta for Apple Silicon Macs
+- `apps/native/` — Mdow Native beta (macOS arm64, Linux x64): React on [gpuix](https://gpuix.dev) (Zed's GPUI), run and compiled with Bun
 - `packages/` — shared libraries (none yet)
 
 ## Build & Development
@@ -27,6 +27,8 @@ To target a specific workspace:
 
 - `pnpm run --filter desktop dev`
 - `pnpm run --filter desktop build:dist -- --mac`
+- `pnpm run --filter native start:hot` — run Mdow Native with hot reload (needs Bun)
+- `pnpm run package:native-mac` / `package:native-linux` — build the signed native bundles
 
 Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 
@@ -46,6 +48,7 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - **Renderer** (`apps/desktop/src/renderer/src/`): React app with Zustand store + TanStack Query
 - Desktop markdown rendering uses comark + `@comark/react` + Shiki + Mermaid
 - Website docs and changelog render with md4x
+- **Native** (`apps/native/`): gpuix renders the React tree with GPUI (no DOM, no webview). Markdown is split into blocks (`src/lib/markdown.ts`) and each block paints through gpuix's native `<markdown>`/`<code>` inside a windowed `<virtual-list>`. macOS menus, Finder open events and font registration go through the Objective-C runtime with `bun:ffi` (`src/lib/macos.ts`). Tests: `bun test` (headless GPU renderer).
 - Path alias: `@renderer/*` maps to `src/renderer/src/*` (within the desktop workspace)
 
 ## Key Patterns

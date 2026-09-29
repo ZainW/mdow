@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Download and verify Sparkle 2 for the Mac Native (GPUI) updater.
-# CI and local `cargo` builds on macOS call this from apps/gpui/build.rs.
+# Download and verify Sparkle 2 tools for the Mac Native migration appcast.
+# generate_native_mac_appcast.sh calls this; nothing links Sparkle anymore.
 # Not used on Linux.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ SPARKLE_SHA256="${SPARKLE_SHA256:-52bf9e88cdd972fc0c81501377a880e90d47031bd8ca54
 SPARKLE_URL="${SPARKLE_URL:-https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-VENDOR_DIR="${SPARKLE_VENDOR_DIR:-$ROOT_DIR/apps/gpui/vendor/Sparkle}"
+VENDOR_DIR="${SPARKLE_VENDOR_DIR:-$ROOT_DIR/dist/sparkle-tools}"
 FRAMEWORK="$VENDOR_DIR/Sparkle.framework"
 GENERATE_APPCAST="$VENDOR_DIR/bin/generate_appcast"
 

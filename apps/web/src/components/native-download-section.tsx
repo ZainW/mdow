@@ -13,7 +13,7 @@ export function NativeDownloadSection({
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">Beta</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-tight">Mdow Native</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          A GPUI beta for Apple Silicon Macs and x64 Linux.
+          A GPU-rendered beta for Apple Silicon Macs and x64 Linux, built with gpuix.
         </p>
         <p className="mt-1 text-sm text-muted-foreground">Runs alongside the regular Mdow app.</p>
       </div>
@@ -27,7 +27,7 @@ export function NativeDownloadSection({
           <DownloadCard
             platform="Linux — x64"
             icon={'\u{1F427}'}
-            formats={[{ label: 'Download Mdow Native (.zip)', url: linuxUrl }]}
+            formats={[{ label: 'Download Mdow Native (.AppImage)', url: linuxUrl }]}
           />
         ) : null}
       </div>
