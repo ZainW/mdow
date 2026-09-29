@@ -12,6 +12,7 @@ import { Reader } from './ui/Reader'
 import { Sidebar } from './ui/Sidebar'
 import { UpdateBanner } from './ui/UpdateBanner'
 import { Welcome } from './ui/Welcome'
+import { ZoomHud } from './ui/ZoomHud'
 
 export interface AppProps {
   /** Flush persisted state before the process exits for an update restart. */
@@ -78,7 +79,15 @@ function Shell({ saveNow }: AppProps) {
       <Titlebar />
       <div style={{ display: 'flex', flexGrow: 1, minHeight: 0 }}>
         {showSidebar ? <Sidebar onOpenFolder={() => void promptOpenFolder()} /> : null}
-        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flexGrow: 1,
+            minWidth: 0,
+            position: 'relative',
+          }}
+        >
           <TabBar />
           <Breadcrumb tab={tab} />
           <UpdateBanner beforeRestart={saveNow} />
@@ -118,6 +127,7 @@ function Shell({ saveNow }: AppProps) {
               </EmptyState>
             </div>
           )}
+          <ZoomHud />
         </div>
       </div>
       {overlay === 'palette' ? <CommandPalette onCommand={runCommand} /> : null}

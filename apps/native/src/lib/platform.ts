@@ -32,21 +32,32 @@ export async function copyToClipboard(text: string) {
   return spawnQuiet(['xclip', '-selection', 'clipboard'], text)
 }
 
-/** gpuix exposes no window appearance, so ask the OS. Cheap enough to poll. */
+const APPEARANCE_COMMAND = IS_MAC
+  ? ['defaults', 'read', '-g', 'AppleInterfaceStyle']
+  : ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme']
+
+function schemeFrom(output: string): ColorScheme {
+  return (IS_MAC ? output.trim() === 'Dark' : output.includes('dark')) ? 'dark' : 'light'
+}
+
+/**
+ * The same question without blocking the UI thread, for polling. The synchronous version spends
+ * ~5ms in a subprocess, which is a dropped frame at 120Hz every time it runs.
+ */
+export async function systemColorSchemeAsync(): Promise<ColorScheme> {
+  try {
+    const proc = Bun.spawn(APPEARANCE_COMMAND, { stdout: 'pipe', stderr: 'ignore' })
+    return schemeFrom(await new Response(proc.stdout).text())
+  } catch {
+    return 'light'
+  }
+}
+
+/** gpuix exposes no window appearance, so ask the OS. Used once at startup. */
 export function systemColorScheme(): ColorScheme {
   try {
-    if (IS_MAC) {
-      const result = Bun.spawnSync(['defaults', 'read', '-g', 'AppleInterfaceStyle'], {
-        stdout: 'pipe',
-        stderr: 'ignore',
-      })
-      return result.stdout.toString().trim() === 'Dark' ? 'dark' : 'light'
-    }
-    const result = Bun.spawnSync(
-      ['gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'],
-      { stdout: 'pipe', stderr: 'ignore' },
-    )
-    return result.stdout.toString().includes('dark') ? 'dark' : 'light'
+    const result = Bun.spawnSync(APPEARANCE_COMMAND, { stdout: 'pipe', stderr: 'ignore' })
+    return schemeFrom(result.stdout.toString())
   } catch {
     return 'light'
   }

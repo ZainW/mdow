@@ -2,7 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseHtml, parseMarkdown, slugify, stripFrontmatter } from './markdown'
+import {
+  CODE_CHUNK_LINES,
+  LIST_CHUNK_ITEMS,
+  parseHtml,
+  parseMarkdown,
+  slugify,
+  stripFrontmatter,
+  TABLE_CHUNK_ROWS,
+} from './markdown'
 
 const kinds = (markdown: string, path = '/docs/a.md') =>
   parseMarkdown(markdown, path).blocks.map((block) => block.kind)
@@ -108,5 +116,107 @@ describe('parseMarkdown', () => {
     )
     expect(doc.blocks.map((block) => block.kind)).toEqual(['heading', 'markdown'])
     expect(doc.outline[0]?.text).toBe('Page')
+  })
+
+  test('takes the HTML title when there is no frontmatter title', () => {
+    const doc = parseHtml('<!DOCTYPE html><title>Report &amp; Notes</title><p>x</p>', '/a.html')
+    expect(doc.title).toBe('Report & Notes')
+    expect(doc.blocks.map((block) => block.text)).toEqual(['x'])
+  })
+})
+
+describe('splitting large blocks into rows', () => {
+  test('a long list becomes joined rows that keep their numbering', () => {
+    const items = Array.from({ length: LIST_CHUNK_ITEMS * 2 + 3 }, (_, i) => `${i + 1}. item ${i}`)
+    const blocks = parseMarkdown(items.join('\n') + '\n', '/a.md').blocks
+    expect(blocks).toHaveLength(3)
+    expect(blocks.map((block) => block.joinNext)).toEqual([true, true, false])
+    expect(blocks[1]).toMatchObject({ kind: 'markdown' })
+    expect((blocks[1] as { source: string }).source.startsWith(`${LIST_CHUNK_ITEMS + 1}. `)).toBe(
+      true,
+    )
+    expect(blocks.map((block) => block.text).join('\n')).toContain(
+      `item ${LIST_CHUNK_ITEMS * 2 + 2}`,
+    )
+  })
+
+  test('slices of a list numbered all `1.` continue the count', () => {
+    const items = Array.from({ length: LIST_CHUNK_ITEMS + 2 }, (_, i) => `1. item ${i}`)
+    const blocks = parseMarkdown(`${items.join('\n')}\n`, '/a.md').blocks as { source: string }[]
+    expect(blocks).toHaveLength(2)
+    expect(blocks[1]!.source.startsWith(`${LIST_CHUNK_ITEMS + 1}. item ${LIST_CHUNK_ITEMS}`)).toBe(
+      true,
+    )
+    // A list that starts elsewhere keeps its offset.
+    const offset = parseMarkdown(
+      `${Array.from({ length: LIST_CHUNK_ITEMS + 1 }, (_, i) => `${i + 5}. x`).join('\n')}\n`,
+      '/a.md',
+    ).blocks as { source: string }[]
+    expect(offset[1]!.source.startsWith(`${LIST_CHUNK_ITEMS + 5}. x`)).toBe(true)
+  })
+
+  test('a long code fence is cut at blank lines and copies whole', () => {
+    const lines = Array.from({ length: CODE_CHUNK_LINES * 3 }, (_, i) =>
+      i % 10 === 9 ? '' : `x${i}`,
+    )
+    const code = lines.join('\n')
+    const blocks = parseMarkdown('```ts\n' + code + '\n```\n', '/a.md').blocks
+    expect(blocks.length).toBeGreaterThan(1)
+    expect(blocks.map((block) => block.kind === 'code' && block.part)).toEqual([
+      'first',
+      ...Array(blocks.length - 2).fill('middle'),
+      'last',
+    ])
+    expect(blocks[0]).toMatchObject({ copy: code })
+    expect(blocks.map((block) => (block as { code: string }).code).join('\n')).toBe(code)
+    // Seams land after a blank line.
+    for (const block of blocks.slice(0, -1)) {
+      expect(
+        (block as { code: string }).code.endsWith('\n') ||
+          (block as { code: string }).code.split('\n').at(-1) === '',
+      ).toBe(true)
+    }
+  })
+
+  test('mermaid fences are never split', () => {
+    const body = Array.from({ length: CODE_CHUNK_LINES * 3 }, (_, i) => `  a${i} --> a${i + 1}`)
+    const blocks = parseMarkdown(
+      '```mermaid\nflowchart TD\n' + body.join('\n') + '\n```\n',
+      '/a.md',
+    ).blocks
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({ kind: 'code', language: 'mermaid', part: 'whole' })
+  })
+
+  test('a long table becomes table rows with one header and shared widths', () => {
+    const rows = Array.from(
+      { length: TABLE_CHUNK_ROWS * 2 + 1 },
+      (_, i) => `| ${i} | row **${i}** |`,
+    )
+    const blocks = parseMarkdown(
+      `| id | description |\n|---:|---|\n${rows.join('\n')}\n`,
+      '/a.md',
+    ).blocks
+    expect(blocks.map((block) => block.kind)).toEqual(['table', 'table', 'table'])
+    const [first, second] = blocks as Extract<(typeof blocks)[number], { kind: 'table' }>[]
+    expect(first!.header).toEqual(['id', 'description'])
+    expect(second!.header).toBeNull()
+    expect(first!.widths).toEqual(second!.widths)
+    expect(first!.widths[1]!).toBeGreaterThan(first!.widths[0]!)
+    expect(first!.align).toEqual(['right', null])
+    expect(second!.rows[0]).toEqual([`${TABLE_CHUNK_ROWS}`, `row **${TABLE_CHUNK_ROWS}**`])
+    expect(second!.text).toContain(`row ${TABLE_CHUNK_ROWS}`)
+  })
+
+  test('small tables stay native markdown', () => {
+    expect(kinds('| a | b |\n|---|---|\n| 1 | 2 |\n')).toEqual(['markdown'])
+  })
+
+  test('data URL images get their size', () => {
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"/>',
+    ).toString('base64')
+    const [block] = parseMarkdown(`![Chart](<data:image/svg+xml;base64,${svg}>)\n`, '/a.md').blocks
+    expect(block).toMatchObject({ kind: 'image', width: 40, height: 20, alt: 'Chart' })
   })
 })

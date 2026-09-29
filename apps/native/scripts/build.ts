@@ -44,7 +44,18 @@ writeFileSync(
 
 try {
   const result = Bun.spawnSync(
-    ['bun', 'build', '--compile', '--minify', '--sourcemap', entry, '--outfile', outfile],
+    [
+      'bun',
+      'build',
+      '--compile',
+      '--minify',
+      '--sourcemap',
+      entry,
+      // Workers are separate entrypoints in a compiled binary.
+      join(root, 'src/lib/mermaid-worker.ts'),
+      '--outfile',
+      outfile,
+    ],
     { cwd: root, stdout: 'inherit', stderr: 'inherit' },
   )
   if (result.exitCode !== 0) process.exit(result.exitCode ?? 1)

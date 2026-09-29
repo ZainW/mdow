@@ -10,7 +10,10 @@ import { parse, NodeType, type HTMLElement, type Node } from 'node-html-parser'
  * document's folder.
  */
 export function htmlToMarkdown(html: string, baseDir: string): string {
-  const root = parse(html, { comment: false, blockTextElements: { script: true, style: true } })
+  const root = parse(html.replace(/^\s*<!doctype[^>]*>/i, ''), {
+    comment: false,
+    blockTextElements: { script: true, style: true },
+  })
   const out: string[] = []
   new Converter(baseDir).blocks(root.childNodes, out, '')
   return (
@@ -85,7 +88,11 @@ class Converter {
       const tag = element.rawTagName?.toLowerCase() ?? ''
       if (STRIPPED.has(tag)) continue
 
-      if (/^h[1-6]$/.test(tag)) {
+      if (tag === 'svg') {
+        out.push(indent + this.svg(element))
+      } else if (isMermaid(element)) {
+        out.push(this.fence('mermaid', decode(element.rawText).trim(), indent))
+      } else if (/^h[1-6]$/.test(tag)) {
         const text = this.inline(element.childNodes).trim()
         if (text) out.push(`${indent}${'#'.repeat(Number(tag[1]))} ${text}`)
       } else if (tag === 'p') {
@@ -97,7 +104,20 @@ class Converter {
         out.push(this.codeFence(element, indent))
       } else if (tag === 'ul' || tag === 'ol') {
         out.push(this.list(element, indent))
-      } else if (tag === 'blockquote') {
+      } else if (tag === 'nav') {
+        // Site navigation reads as one line of links rather than a pile of runs.
+        const links = element
+          .querySelectorAll('a')
+          .map((link) => this.inline([link]).trim())
+          .filter(Boolean)
+        if (links.length > 0) out.push(indent + links.join(' · '))
+      } else if (tag === 'summary' || tag === 'dt') {
+        const text = this.inline(element.childNodes).trim()
+        if (text) out.push(indent + wrap('**', text))
+      } else if (tag === 'figcaption') {
+        const text = this.inline(element.childNodes).trim()
+        if (text) out.push(indent + wrap('*', text))
+      } else if (tag === 'blockquote' || tag === 'aside') {
         const inner: string[] = []
         this.blocks(element.childNodes, inner, '')
         out.push(
@@ -150,10 +170,28 @@ class Converter {
       ? 'mermaid'
       : (/(?:language|lang)-([\w+#-]+)/.exec(classes)?.[1] ?? '')
     const text = decode((code ?? pre).rawText).replace(/\n$/, '')
+    return this.fence(language, text, indent)
+  }
+
+  private fence(language: string, text: string, indent: string) {
     const fence = text.includes('```') ? '~~~~' : '```'
     return [`${indent}${fence}${language}`, ...text.split('\n'), fence]
       .map((line, index) => (index === 0 ? line : indent + line))
       .join('\n')
+  }
+
+  /**
+   * Inline SVG (charts, diagrams, logos) becomes an image the reader draws as-is. It is a data
+   * URL, so nothing is fetched, and scripts inside it never run in GPUI's rasterizer.
+   */
+  private svg(element: HTMLElement) {
+    let markup = element.toString()
+    if (!/\sxmlns=/.test(markup.slice(0, markup.indexOf('>')))) {
+      markup = markup.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"')
+    }
+    const label = element.getAttribute('aria-label') ?? element.querySelector('title')?.text ?? ''
+    const data = `data:image/svg+xml;base64,${Buffer.from(markup).toString('base64')}`
+    return `![${escapeText(label.trim())}](<${data}>)`
   }
 
   private table(table: HTMLElement) {
@@ -213,6 +251,8 @@ class Converter {
             if (!href) return text
             return `[${text || href}](<${this.target(href)}>)`
           }
+          case 'svg':
+            return this.svg(element)
           case 'img': {
             const src = element.getAttribute('src')
             if (!src) return ''
@@ -240,6 +280,27 @@ class Converter {
 function splitSuffix(target: string): [string, string?] {
   const index = target.search(/[?#]/)
   return index === -1 ? [target] : [target.slice(0, index), target.slice(index)]
+}
+
+/**
+ * A Mermaid source block. A page saved after Mermaid ran holds the drawn `<svg>` inside the
+ * same element, so only a text-only element is source; a drawn one falls through and its SVG
+ * paints as an image.
+ */
+function isMermaid(element: HTMLElement) {
+  const tag = element.rawTagName?.toLowerCase()
+  return (
+    (tag === 'div' || tag === 'pre') &&
+    /\bmermaid\b/.test(element.getAttribute('class') ?? '') &&
+    !element.childNodes.some((child) => child.nodeType === NodeType.ELEMENT_NODE)
+  )
+}
+
+/** The document's `<title>`, when it has one. */
+export function htmlTitle(html: string): string | null {
+  const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
+  const title = match ? decode(match[1]!).replace(/\s+/g, ' ').trim() : ''
+  return title || null
 }
 
 function isInline(node: Node) {

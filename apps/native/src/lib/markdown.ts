@@ -1,27 +1,52 @@
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Lexer, type Token, type Tokens } from 'marked'
-import { htmlToMarkdown } from './html'
-import { imageSize } from './image-size'
+import { htmlTitle, htmlToMarkdown } from './html'
+import { dataImageSize, imageSize } from './image-size'
 
 export type AlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution'
 
-export type Block =
-  | { kind: 'markdown'; id: string; source: string; text: string }
-  | { kind: 'heading'; id: string; level: number; source: string; text: string; slug: string }
-  | { kind: 'code'; id: string; language: string; code: string; text: string }
-  | { kind: 'alert'; id: string; alert: AlertKind; source: string; text: string }
+/**
+ * One reader row. A long list, table or code fence is split across several rows so no single row
+ * costs more than a frame to lay out; `joinNext` marks a row whose continuation follows directly.
+ */
+export type Block = BlockBody & { id: string; text: string; joinNext?: boolean }
+
+export type BlockBody =
+  | { kind: 'markdown'; source: string }
+  | { kind: 'heading'; level: number; source: string; slug: string }
   | {
-      kind: 'image'
-      id: string
-      src: string | null
-      alt: string
-      width: number
-      height: number
-      text: string
+      kind: 'code'
+      language: string
+      code: string
+      /** Where this row sits in a fence split across rows. */
+      part: 'whole' | 'first' | 'middle' | 'last'
+      /** The whole fence, for Copy. Set on the row that shows the header. */
+      copy: string
     }
-  | { kind: 'rule'; id: string; text: string }
-  | { kind: 'footnotes'; id: string; items: Footnote[]; text: string }
+  | { kind: 'alert'; alert: AlertKind; source: string }
+  | { kind: 'image'; src: string | null; alt: string; width: number; height: number }
+  | { kind: 'rule' }
+  | { kind: 'footnotes'; items: Footnote[] }
+  | {
+      kind: 'table'
+      /** Inline markdown per cell. Only the first row of a split table has a header. */
+      header: string[] | null
+      rows: string[][]
+      align: (TableAlign | null)[]
+      /** Column share of the reading width, summing to 1, identical across a table's rows. */
+      widths: number[]
+    }
+
+export type TableAlign = 'left' | 'center' | 'right'
+
+/** A list is cut after this many items or characters, whichever comes first. */
+export const LIST_CHUNK_ITEMS = 12
+export const CHUNK_CHARS = 4000
+/** Code fences longer than this are cut into rows, preferring blank lines as seams. */
+export const CODE_CHUNK_LINES = 40
+/** Tables with more body rows than this are drawn by the reader in slices of this size. */
+export const TABLE_CHUNK_ROWS = 24
 
 export interface Footnote {
   label: string
@@ -79,7 +104,8 @@ export function parseMarkdown(markdown: string, filePath: string): ParsedDocumen
 }
 
 export function parseHtml(html: string, filePath: string): ParsedDocument {
-  return parseMarkdown(htmlToMarkdown(html, dirname(filePath)), filePath)
+  const parsed = parseMarkdown(htmlToMarkdown(html, dirname(filePath)), filePath)
+  return { ...parsed, title: parsed.title ?? htmlTitle(html) }
 }
 
 interface BuildContext {
@@ -114,7 +140,7 @@ function pushToken(ctx: BuildContext, token: Token) {
     case 'code': {
       const code = token as Tokens.Code
       const language = (code.lang ?? '').trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-      ctx.blocks.push({ kind: 'code', id, language, code: code.text, text: code.text })
+      pushCode(ctx, id, language, code.text)
       return
     }
     case 'hr':
@@ -159,22 +185,145 @@ function pushToken(ctx: BuildContext, token: Token) {
       return
     }
     case 'list':
-      ctx.blocks.push({
-        kind: 'markdown',
-        id,
-        source: taskMarkers(token.raw.trimEnd()),
-        text: blockText(token),
-      })
+      pushList(ctx, id, token as Tokens.List)
       return
+    case 'table': {
+      const table = token as Tokens.Table
+      if (table.rows.length > TABLE_CHUNK_ROWS) {
+        pushTable(ctx, id, table)
+        return
+      }
+      break
+    }
   }
   const source = token.raw.trimEnd()
   if (!source.trim()) return
   ctx.blocks.push({ kind: 'markdown', id, source, text: blockText(token) })
 }
 
+/** Mermaid is never split: the diagram needs the whole source. */
+function pushCode(ctx: BuildContext, id: string, language: string, code: string) {
+  const lines = code.split('\n')
+  if (language === 'mermaid' || lines.length <= CODE_CHUNK_LINES * 1.5) {
+    ctx.blocks.push({ kind: 'code', id, language, code, text: code, part: 'whole', copy: code })
+    return
+  }
+  const pieces: string[] = []
+  let start = 0
+  while (start < lines.length) {
+    let end = Math.min(lines.length, start + CODE_CHUNK_LINES)
+    if (lines.length - end < CODE_CHUNK_LINES / 2) end = lines.length
+    else {
+      // A blank line keeps multi-line strings and comments from straddling the seam.
+      for (let at = end; at > start + CODE_CHUNK_LINES / 2; at--) {
+        if (!lines[at - 1]!.trim()) {
+          end = at
+          break
+        }
+      }
+    }
+    pieces.push(lines.slice(start, end).join('\n'))
+    start = end
+  }
+  pieces.forEach((piece, index) => {
+    const last = index === pieces.length - 1
+    ctx.blocks.push({
+      kind: 'code',
+      id: index === 0 ? id : `b${ctx.nextId++}`,
+      language,
+      code: piece,
+      text: piece,
+      part: index === 0 ? 'first' : last ? 'last' : 'middle',
+      copy: index === 0 ? code : '',
+      joinNext: !last,
+    })
+  })
+}
+
+function pushList(ctx: BuildContext, id: string, list: Tokens.List) {
+  const groups: Tokens.ListItem[][] = [[]]
+  let chars = 0
+  for (const item of list.items) {
+    const group = groups.at(-1)!
+    if (
+      group.length >= LIST_CHUNK_ITEMS ||
+      (group.length > 0 && chars + item.raw.length > CHUNK_CHARS)
+    ) {
+      groups.push([item])
+      chars = item.raw.length
+    } else {
+      group.push(item)
+      chars += item.raw.length
+    }
+  }
+  const first = typeof list.start === 'number' ? list.start : 1
+  let before = 0
+  groups.forEach((items, index) => {
+    const last = index === groups.length - 1
+    let raw = items.map((item) => item.raw).join('')
+    // A slice numbers from its first marker, so give it the item's real position. Lists that
+    // number every item `1.` would otherwise restart at 1 in each slice.
+    if (list.ordered && index > 0) {
+      const number = first + before
+      raw = /^\s*\d+[.)]/.test(raw)
+        ? raw.replace(/^(\s*)\d+([.)])/, `$1${number}$2`)
+        : `${number}. ${raw}`
+    }
+    before += items.length
+    ctx.blocks.push({
+      kind: 'markdown',
+      id: index === 0 ? id : `b${ctx.nextId++}`,
+      source: taskMarkers(raw.trimEnd()),
+      text: items.map((item) => item.tokens.map(blockText).join('\n')).join('\n'),
+      joinNext: !last,
+    })
+  })
+}
+
+function pushTable(ctx: BuildContext, id: string, table: Tokens.Table) {
+  const cell = (value: Tokens.TableCell) => value.text.trim()
+  const header = table.header.map(cell)
+  const rows = table.rows.map((row) => row.map(cell))
+  const columns = Math.max(header.length, ...rows.map((row) => row.length))
+  // Weight columns by typical content length so a short id column doesn't take a fifth.
+  const weights = Array.from({ length: columns }, (_, column) => {
+    const lengths = [header, ...rows].map((row) => plainLength(row[column] ?? ''))
+    const sorted = lengths.toSorted((a, b) => a - b)
+    const typical = sorted[Math.floor(sorted.length * 0.9)] ?? 0
+    return Math.max(4, Math.min(60, typical)) + 4
+  })
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+  const widths = weights.map((weight) => weight / total)
+  const align = Array.from({ length: columns }, (_, column) => table.align[column] ?? null)
+  for (let start = 0; start < rows.length; start += TABLE_CHUNK_ROWS) {
+    const slice = rows.slice(start, start + TABLE_CHUNK_ROWS)
+    const last = start + TABLE_CHUNK_ROWS >= rows.length
+    ctx.blocks.push({
+      kind: 'table',
+      id: start === 0 ? id : `b${ctx.nextId++}`,
+      header: start === 0 ? header : null,
+      rows: slice,
+      align,
+      widths,
+      text: [
+        ...(start === 0 ? [table.header] : []),
+        ...table.rows.slice(start, start + TABLE_CHUNK_ROWS),
+      ]
+        .map((row) => row.map((value) => inlineText(value.tokens)).join('\n'))
+        .join('\n'),
+      joinNext: !last,
+    })
+  }
+}
+
+function plainLength(source: string) {
+  return source.replace(/[`*_~]|\]\([^)]*\)|!?\[/g, '').length
+}
+
 function imageBlock(ctx: BuildContext, id: string, image: Tokens.Image): Block {
-  const src = resolveLocalImage(image.href, ctx.baseDir)
-  const size = src ? imageSize(src) : null
+  const inline = /^data:image\//i.test(image.href)
+  const src = inline ? image.href : resolveLocalImage(image.href, ctx.baseDir)
+  const size = inline ? dataImageSize(image.href) : src ? imageSize(src) : null
   return {
     kind: 'image',
     id,
