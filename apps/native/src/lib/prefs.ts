@@ -24,7 +24,7 @@ export const DEFAULT_PREFS: Prefs = {
   readingWidth: 'standard',
   wideMode: false,
   zoomLevel: 100,
-  sidebarMode: 'folder',
+  sidebarMode: 'recents',
 }
 
 export const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark']
@@ -34,12 +34,14 @@ export const INTERFACE_SCALES: InterfaceScale[] = ['compact', 'comfortable', 'la
 export const COLUMN_WIDTHS: ColumnWidth[] = ['standard', 'comfortable', 'wide']
 export const SIDEBAR_MODES: SidebarMode[] = ['recents', 'folder', 'outline']
 
-export const READER_FONT_SIZE = 16
-export const READER_LINE_HEIGHT = 1.75
+/** Matches the desktop reader: 15.5px Inter at a 1.65 line height. */
+export const READER_FONT_SIZE = 15.5
+export const READER_LINE_HEIGHT = 1.65
 export const ZOOM_MIN = 60
 export const ZOOM_MAX = 200
 export const ZOOM_STEP = 10
 
+/** The reading frame, 48px side padding included, as on desktop (48/56/68rem). */
 export const COLUMN_PX: Record<ColumnWidth, number> = {
   standard: 768,
   comfortable: 896,

@@ -178,7 +178,8 @@ render(<App saveNow={saveNow} />, {
   minHeight: 360,
   titlebarTransparent: true,
   trafficLightX: 14,
-  trafficLightY: 14,
+  // Centered in the 28px titlebar strip, like the desktop app.
+  trafficLightY: 7,
   focus: process.env.GPUIX_BACKGROUND !== '1',
   onKeyDown(event) {
     const command = commandForKey(event)

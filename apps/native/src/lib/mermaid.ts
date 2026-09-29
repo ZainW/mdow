@@ -27,19 +27,17 @@ function splitKey(key: string): [MermaidPalette, string] {
   return [JSON.parse(key.slice(0, newline)) as MermaidPalette, key.slice(newline + 1)]
 }
 
-/** Ink-on-paper diagrams: the reader's own colours, with the link blue for arrowheads. */
+/** Ink on paper, like the desktop: warm node fills, hairline strokes, muted edges, mono labels. */
 export function mermaidPalette(theme: Theme, font: string): MermaidPalette {
-  const hex = (color: string) => toHex(parseColor(color) ?? [128, 128, 128, 255])
-  const bg = hex(theme.surfaceWell)
-  const fg = hex(theme.foreground)
+  const { paper, paperWarm, ink, inkMuted, line } = theme.diagram
   return {
-    bg,
-    fg,
-    line: mix(fg, bg, 0.45),
-    accent: hex(theme.primary),
-    muted: hex(theme.mutedForeground),
-    surface: hex(theme.surfaceRaised),
-    border: mix(fg, bg, 0.22),
+    bg: paper,
+    fg: ink,
+    line: inkMuted,
+    accent: inkMuted,
+    muted: inkMuted,
+    surface: paperWarm,
+    border: line,
     font,
   }
 }
@@ -133,7 +131,11 @@ export function renderMermaid(source: string, palette: MermaidPalette): MermaidR
   let result: MermaidResult
   try {
     const options: RenderOptions = { ...palette, transparent: true, padding: 16 }
-    const svg = resolveCss(renderMermaidSVG(source.trim(), options))
+    // Square node corners become the desktop's 6px radius.
+    const svg = resolveCss(renderMermaidSVG(source.trim(), options)).replace(
+      /(<rect[^>]*?)rx="0" ry="0"/g,
+      '$1rx="6" ry="6"',
+    )
     const width = Number(/<svg[^>]*\swidth="([\d.]+)"/.exec(svg)?.[1] ?? 0)
     const height = Number(/<svg[^>]*\sheight="([\d.]+)"/.exec(svg)?.[1] ?? 0)
     if (!width || !height) throw new Error('Diagram has no size')
@@ -244,12 +246,6 @@ function colorMix(inner: string): string | null {
   const pa = a[2] ? Number(a[2]) / 100 : b[2] ? 1 - Number(b[2]) / 100 : 0.5
   const mixed = ca.map((channel, i) => channel * pa + cb[i]! * (1 - pa))
   return toHex(mixed)
-}
-
-function mix(a: string, b: string, share: number) {
-  const ca = parseColor(a)!
-  const cb = parseColor(b)!
-  return toHex(ca.map((channel, i) => channel * share + cb[i]! * (1 - share)))
 }
 
 /** `#rgb`, `#rrggbb(aa)` or the theme's `hsl(h s% l% / a)`, as 0–255 RGBA. */

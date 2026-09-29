@@ -1,42 +1,27 @@
 import { basename, dirname, sep } from 'node:path'
 import { documentKind } from '../lib/documents'
-import { IS_MAC, openExternal, revealInFileManager } from '../lib/platform'
-import {
-  activateTab,
-  closeTab,
-  setPrefs,
-  toggleOverlay,
-  toggleSidebar,
-  useApp,
-  type Tab,
-} from '../store'
+import { openExternal, revealInFileManager } from '../lib/platform'
+import { activateTab, closeTab, setPrefs, toggleOverlay, useApp, type Tab } from '../store'
 import { METRICS, useUi } from './context'
 import { activateOnEnter, Icon, IconButton, Label } from './primitives'
+import { READER_ICONS, type ReaderIconName } from './reader-icons'
 
-/** The strip beside the traffic lights. We paint it because the native titlebar is hidden. */
+/**
+ * The strip the traffic lights sit in. Like the desktop app it holds nothing: the sidebar
+ * toggles with ⌘B and the View menu.
+ */
 export function Titlebar() {
   const { theme } = useUi()
-  const sidebarOpen = useApp((state) => state.sidebarOpen)
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        height: METRICS.titlebarHeight,
-        paddingLeft: IS_MAC ? METRICS.trafficLightClearance : 8,
-        flexShrink: 0,
-        backgroundColor: theme.sidebar,
-        borderBottomWidth: 1,
-        borderColor: theme.border,
-      }}
-    >
-      <IconButton
-        icon="sidebar"
-        label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-        testId="toggle-sidebar"
-        onClick={toggleSidebar}
-      />
-    </div>
+      style={{ height: METRICS.titlebarHeight, flexShrink: 0, backgroundColor: theme.background }}
+    />
+  )
+}
+
+function ChromeIcon({ name, size, color }: { name: ReaderIconName; size: number; color: string }) {
+  return (
+    <svg source={READER_ICONS[name]} style={{ width: size, height: size, flexShrink: 0, color }} />
   )
 }
 
@@ -44,14 +29,16 @@ export function TabBar() {
   const { theme } = useUi()
   const tabs = useApp((state) => state.tabs)
   const activePath = useApp((state) => state.activePath)
+  const activeIndex = tabs.findIndex((tab) => tab.path === activePath)
   return (
     <div
       style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'stretch',
         height: METRICS.chromeRowHeight,
         borderBottomWidth: 1,
-        borderColor: theme.border,
+        borderColor: theme.borderSubtle,
+        backgroundColor: theme.background,
         flexShrink: 0,
       }}
     >
@@ -68,24 +55,25 @@ export function TabBar() {
           overflowX: 'scroll',
         }}
       >
-        {tabs.length === 0 ? (
-          <div style={{ paddingLeft: 6 }}>
-            <Label color={theme.mutedForeground}>No document</Label>
-          </div>
-        ) : (
-          tabs.map((tab) => <TabItem key={tab.path} tab={tab} active={tab.path === activePath} />)
-        )}
+        {tabs.map((tab, index) => (
+          <TabItem
+            key={tab.path}
+            tab={tab}
+            active={index === activeIndex}
+            // A hairline between two inactive neighbours, as on desktop.
+            separator={index > 0 && index !== activeIndex && index - 1 !== activeIndex}
+          />
+        ))}
       </div>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 2,
-          height: '100%',
-          paddingLeft: 8,
-          paddingRight: 8,
-          borderLeftWidth: 1,
-          borderColor: theme.border,
+          paddingLeft: 6,
+          paddingRight: 6,
+          borderLeftWidth: tabs.length > 0 ? 1 : 0,
+          borderColor: theme.borderSubtle,
           flexShrink: 0,
         }}
       >
@@ -93,22 +81,23 @@ export function TabBar() {
           icon="search"
           label="Find"
           testId="find-button"
+          size={24}
           onClick={() => toggleOverlay('find')}
         />
         <IconButton
           icon="command"
           label="Command palette"
           testId="palette-button"
+          size={24}
           onClick={() => toggleOverlay('palette')}
         />
-        <IconButton icon="settings" label="Settings" onClick={() => toggleOverlay('settings')} />
       </div>
     </div>
   )
 }
 
-function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
-  const { theme } = useUi()
+function TabItem({ tab, active, separator }: { tab: Tab; active: boolean; separator: boolean }) {
+  const { theme, scale } = useUi()
   const title = basename(tab.path)
   return (
     <div
@@ -123,31 +112,46 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
       }}
       onKeyDown={activateOnEnter(() => activateTab(tab.path))}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        height: METRICS.tabHeight + 4,
+        height: METRICS.tabHeight,
         maxWidth: METRICS.tabMaxWidth,
         paddingLeft: 10,
         paddingRight: 4,
         borderRadius: 6,
         borderWidth: 1,
-        borderColor: active ? theme.border : '#00000000',
-        backgroundColor: active ? theme.surfaceRaised : undefined,
+        borderColor: active ? theme.borderSubtle : '#00000000',
+        backgroundColor: active ? theme.background : undefined,
+        boxShadow: active
+          ? { offsetX: 0, offsetY: 1, blurRadius: 2, spreadRadius: 0, color: '#0000000a' }
+          : undefined,
         cursor: 'pointer',
         flexShrink: 0,
-        hover: active ? undefined : { backgroundColor: theme.sidebarAccent },
         userSelect: 'none',
       }}
     >
-      <Icon
-        name={tab.document.ok ? 'file' : 'alert-circle'}
-        size={14}
-        color={active ? theme.foreground : theme.mutedForeground}
-      />
+      {separator ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: -1,
+            top: 7,
+            width: 1,
+            height: 14,
+            backgroundColor: theme.borderSubtle,
+          }}
+        />
+      ) : null}
+      {tab.document.ok ? (
+        <ChromeIcon name="file-text" size={14} color={theme.mutedForeground} />
+      ) : (
+        <Icon name="alert-circle" size={14} color={theme.destructive} />
+      )}
       <Label
+        size={scale.controlFont}
         color={active ? theme.foreground : theme.mutedForeground}
-        weight={active ? 500 : 400}
         style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', minWidth: 0, flexShrink: 1 }}
       >
         {title}
@@ -159,97 +163,166 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
         onClick={() => closeTab(tab.path)}
         onKeyDown={activateOnEnter(() => closeTab(tab.path))}
         style={{
-          width: 20,
-          height: 20,
+          width: 24,
+          height: 24,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: 4,
           flexShrink: 0,
           cursor: 'pointer',
-          hover: { backgroundColor: theme.muted },
+          opacity: active ? 0.5 : 0,
+          hover: { opacity: 0.9, backgroundColor: theme.muted },
         }}
       >
-        <Icon name="x" size={12} />
+        <Icon name="x" size={12} color={theme.mutedForeground} />
       </div>
     </div>
   )
 }
 
-export function Breadcrumb({ tab }: { tab: Tab | null }) {
-  const { theme } = useUi()
+export function Breadcrumb({ tab }: { tab: Tab }) {
+  const { theme, scale } = useUi()
   const wideMode = useApp((state) => state.prefs.wideMode)
-  const title = tab?.document.ok ? tab.document.parsed.title : null
-  const segments = tab ? breadcrumbSegments(tab.path) : []
+  const title = tab.document.ok ? tab.document.parsed.title : null
+  const segments = breadcrumbSegments(tab.path)
+  const parents = segments.slice(0, -1)
+  const file = segments.at(-1)
+  const textSize = scale.controlXsFont + 1
   return (
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
         height: METRICS.breadcrumbHeight,
-        paddingLeft: 14,
-        paddingRight: 8,
-        gap: 4,
+        paddingLeft: 12,
+        paddingRight: 12,
+        gap: 8,
         borderBottomWidth: 1,
-        borderColor: theme.border,
+        borderColor: theme.borderSubtle,
+        backgroundColor: theme.background,
         flexShrink: 0,
         userSelect: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexGrow: 1, minWidth: 0 }}>
-        {tab ? (
-          segments.map((segment, index) => {
-            const last = index === segments.length - 1
-            return (
-              <div
-                key={segment.path}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}
-              >
-                {index > 0 ? <Icon name="chevron-right" size={12} /> : null}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => void revealInFileManager(segment.path)}
-                  onKeyDown={activateOnEnter(() => void revealInFileManager(segment.path))}
-                  style={{
-                    paddingLeft: 2,
-                    paddingRight: 2,
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    minWidth: 0,
-                    hover: { backgroundColor: theme.sidebarAccent },
-                  }}
-                >
-                  <Label
-                    color={last ? theme.foreground : theme.mutedForeground}
-                    style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
-                  >
-                    {last && title ? title : segment.name}
-                  </Label>
-                </div>
-              </div>
-            )
-          })
-        ) : (
-          <Label color={theme.mutedForeground}>Welcome</Label>
-        )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          flexGrow: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+        }}
+      >
+        {parents.map((segment) => (
+          <div
+            key={segment.path}
+            // Folder names give way before the file name in a narrow window.
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              flexShrink: 1,
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <Crumb
+              label={segment.name}
+              path={segment.path}
+              size={textSize}
+              color={theme.mutedForeground}
+            />
+            <Icon name="chevron-right" size={10} color={`${theme.mutedForeground}`} />
+          </div>
+        ))}
+        {file ? (
+          <Crumb
+            label={title ?? file.name}
+            path={file.path}
+            size={textSize}
+            color={theme.foreground}
+            weight={500}
+          />
+        ) : null}
       </div>
-      {tab && documentKind(tab.path) === 'html' ? (
+      {documentKind(tab.path) === 'html' ? (
         <IconButton
           icon="external-link"
           label="Open in browser"
           testId="open-in-browser"
+          size={20}
           onClick={() => void openExternal(tab.path)}
         />
       ) : null}
-      {tab ? (
-        <IconButton
-          icon="expand"
-          label={wideMode ? 'Exit wide mode' : 'Wide mode'}
-          active={wideMode}
-          onClick={() => setPrefs({ wideMode: !wideMode })}
+      <div
+        role="button"
+        aria-label={wideMode ? 'Exit wide mode' : 'Wide mode'}
+        aria-pressed={wideMode}
+        tabIndex={0}
+        onClick={() => setPrefs({ wideMode: !wideMode })}
+        onKeyDown={activateOnEnter(() => setPrefs({ wideMode: !wideMode }))}
+        style={{
+          width: 20,
+          height: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 6,
+          cursor: 'pointer',
+          hover: { backgroundColor: theme.muted },
+        }}
+      >
+        <ChromeIcon
+          name={wideMode ? 'fold-horizontal' : 'arrow-left-right'}
+          size={12}
+          color={theme.mutedForeground}
         />
-      ) : null}
+      </div>
+    </div>
+  )
+}
+
+function Crumb({
+  label,
+  path,
+  size,
+  color,
+  weight,
+}: {
+  label: string
+  path: string
+  size: number
+  color: string
+  weight?: number
+}) {
+  const { theme } = useUi()
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => void revealInFileManager(path)}
+      onKeyDown={activateOnEnter(() => void revealInFileManager(path))}
+      style={{
+        paddingLeft: 2,
+        paddingRight: 2,
+        paddingTop: 1,
+        paddingBottom: 1,
+        borderRadius: 4,
+        cursor: 'pointer',
+        minWidth: 0,
+        hover: { backgroundColor: theme.muted },
+      }}
+    >
+      <Label
+        size={size}
+        color={color}
+        weight={weight}
+        style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+      >
+        {label}
+      </Label>
     </div>
   )
 }

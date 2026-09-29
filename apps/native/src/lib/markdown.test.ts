@@ -43,7 +43,7 @@ describe('parseMarkdown', () => {
   test('turns GitHub alerts into alert blocks', () => {
     const [block] = parseMarkdown('> [!WARNING]\n> Mind the **gap**.\n', '/a.md').blocks
     expect(block).toMatchObject({ kind: 'alert', alert: 'warning', source: 'Mind the **gap**.' })
-    expect(kinds('> plain quote\n')).toEqual(['markdown'])
+    expect(kinds('> plain quote\n')).toEqual(['quote'])
   })
 
   test('collects footnotes and replaces references with markers', () => {
@@ -208,8 +208,14 @@ describe('splitting large blocks into rows', () => {
     expect(second!.text).toContain(`row ${TABLE_CHUNK_ROWS}`)
   })
 
-  test('small tables stay native markdown', () => {
-    expect(kinds('| a | b |\n|---|---|\n| 1 | 2 |\n')).toEqual(['markdown'])
+  test('small tables are drawn by the reader too', () => {
+    expect(kinds('| a | b |\n|---|---|\n| 1 | 2 |\n')).toEqual(['table'])
+    expect(kinds('| a | b |\n|---|---|\n')).toEqual(['table'])
+  })
+
+  test('plain blockquotes become quote rows with their inner markdown', () => {
+    const [block] = parseMarkdown('> Quoted **text**\n> - item\n', '/a.md').blocks
+    expect(block).toMatchObject({ kind: 'quote', source: 'Quoted **text**\n- item' })
   })
 
   test('data URL images get their size', () => {

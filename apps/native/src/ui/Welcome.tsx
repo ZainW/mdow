@@ -1,10 +1,11 @@
-import { basename, dirname } from 'node:path'
+import { basename } from 'node:path'
 import { openDocument, useApp } from '../store'
-import { useUi } from './context'
+import { UI_MONO, useUi } from './context'
 import { ICONS } from './icons'
-import { activateOnEnter, Button, Icon, Label } from './primitives'
+import { activateOnEnter, Button, Icon, Label, withAlpha } from './primitives'
 
 const LOGO = `data:image/svg+xml;base64,${Buffer.from(ICONS['mdow-logo']).toString('base64')}`
+const LOGO_SIZE = 48
 
 export function Welcome({
   onOpenFile,
@@ -13,8 +14,10 @@ export function Welcome({
   onOpenFile: () => void
   onOpenFolder: () => void
 }) {
-  const { theme, scale } = useUi()
-  const recents = useApp((state) => state.recents).slice(0, 5)
+  const { theme } = useUi()
+  const recents = useApp((state) => state.recents).slice(0, 6)
+  const split = recents.length > 0
+  const align = split ? 'flex-start' : 'center'
   return (
     <div
       testId="welcome"
@@ -25,160 +28,218 @@ export function Welcome({
         justifyContent: 'center',
         flexGrow: 1,
         minHeight: 0,
-        padding: 32,
       }}
     >
+      {/* Desktop: max-w-3xl, px-10, gap-10; intro and recents split 21fr / 19fr. */}
       <div
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 10,
-          width: 360,
+          justifyContent: 'center',
+          gap: 40,
+          width: '100%',
+          maxWidth: 768,
+          paddingLeft: 40,
+          paddingRight: 40,
         }}
       >
-        {/* <svg> tints every shape one colour; the full-colour logo needs <img>. */}
-        <img src={LOGO} alt="Mdow" style={{ width: 56, height: 56, marginBottom: 6 }} />
-        <Label size={scale.controlFont + 12} weight={600}>
-          Mdow
-        </Label>
-        <Label
-          size={scale.controlFont + 2}
-          color={theme.mutedForeground}
-          style={{ textAlign: 'center' }}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: align,
+            gap: 12,
+            flexGrow: split ? 21 : 0,
+            flexBasis: split ? 0 : undefined,
+            minWidth: 0,
+          }}
         >
-          A quiet markdown viewer. Drop a file anywhere, or open one below.
-        </Label>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <Button icon="file" variant="primary" onClick={onOpenFile} testId="welcome-open-file">
-            Open File
-          </Button>
-          <Button icon="folder-open" onClick={onOpenFolder}>
-            Open Folder
-          </Button>
-        </div>
-        <DropZone />
-        {recents.length > 0 ? (
-          <div
+          {/* <svg> tints every shape one colour; the full-colour logo needs <img>. */}
+          <img
+            src={LOGO}
+            alt="Mdow"
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              width: '100%',
-              marginTop: 28,
-              gap: 2,
+              width: LOGO_SIZE,
+              height: LOGO_SIZE,
+              borderRadius: LOGO_SIZE * 0.22,
+              marginBottom: split ? 0 : 4,
+              boxShadow: {
+                offsetX: 0,
+                offsetY: 0,
+                blurRadius: 0,
+                spreadRadius: 1,
+                color: withAlpha(theme.border, 0.4),
+              },
             }}
+          />
+          <Label size={24} weight={600} style={{ lineHeight: 32 }}>
+            Mdow
+          </Label>
+          <Label
+            size={14}
+            color={theme.mutedForeground}
+            style={{ textAlign: split ? 'left' : 'center', lineHeight: 22.75, maxWidth: 352 }}
           >
-            <div style={{ paddingLeft: 10, paddingBottom: 6 }}>
-              <Label size={scale.controlXsFont + 1} weight={600} color={theme.mutedForeground}>
-                RECENT
-              </Label>
-            </div>
-            {recents.map((path) => (
-              <div
-                key={path}
-                role="button"
-                tabIndex={0}
-                onClick={() => openDocument(path)}
-                onKeyDown={activateOnEnter(() => openDocument(path))}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  paddingLeft: 10,
-                  paddingRight: 10,
-                  paddingTop: 7,
-                  paddingBottom: 7,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  hover: { backgroundColor: theme.sidebarAccent },
-                  userSelect: 'none',
-                }}
-              >
-                <Icon name="file" size={14} />
-                <Label
-                  style={{
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                    flexShrink: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  {basename(path)}
-                </Label>
-                <div style={{ flexGrow: 1 }} />
-                <Label
-                  size={scale.controlFont}
-                  color={theme.mutedForeground}
-                  style={{
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                    flexShrink: 1,
-                    minWidth: 0,
-                  }}
-                >
-                  {basename(dirname(path))}
-                </Label>
-              </div>
-            ))}
+            A quiet markdown viewer. Drop a file anywhere, or open one below.
+          </Label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Button icon="file" small muted onClick={onOpenFile} testId="welcome-open-file">
+              Open File
+            </Button>
+            <Button icon="folder-open" small muted onClick={onOpenFolder}>
+              Open Folder
+            </Button>
           </div>
-        ) : null}
+          <DropHint />
+        </div>
+        {split ? <RecentColumn recents={recents} /> : null}
       </div>
     </div>
   )
 }
 
-/** Lights up while a file is dragged over the window. The drop itself lands anywhere. */
-function DropZone() {
+/**
+ * The card under the buttons: "Anywhere in this window, drop .md or .html files or a folder."
+ * It lights up like the desktop's while a file is dragged over the window (macOS reports the
+ * drag through the store's `dragging` flag); the drop itself lands anywhere.
+ */
+function DropHint() {
   const { theme, scale } = useUi()
   const dragging = useApp((state) => state.dragging)
+  // gpuix text doesn't flow across styled runs, so each word is its own run and the row wraps
+  // between them. A trailing no-break space keeps the gap without indenting a wrapped line.
+  const words = (value: string, color: string, weight = 400) =>
+    value.split(' ').map((word, index, all) =>
+      word === '' ? null : (
+        <Label
+          key={`${value}:${word}`}
+          size={scale.controlFont}
+          weight={weight}
+          color={color}
+          style={{ whiteSpace: 'nowrap', lineHeight: 19.5 }}
+        >
+          {index < all.length - 1 ? `${word}\u00a0` : word}
+        </Label>
+      ),
+    )
+  const muted = theme.mutedForeground
   return (
     <div
       testId="drop-zone"
       style={{
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 12,
-        width: '100%',
-        height: 76,
-        marginTop: 24,
-        paddingLeft: 16,
-        paddingRight: 16,
+        marginTop: 12,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingTop: 19,
+        paddingBottom: 19,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: dragging ? theme.primary : theme.border,
-        backgroundColor: dragging ? theme.selection : undefined,
+        borderColor: dragging ? withAlpha(theme.primary, 0.3) : withAlpha(theme.border, 0.7),
+        backgroundColor: dragging ? withAlpha(theme.primary, 0.05) : withAlpha(theme.muted, 0.2),
+        maxWidth: 448,
         userSelect: 'none',
       }}
     >
-      <div
+      {/* One run, so the phrase reads (and is found) as a whole; it always fits the card. */}
+      <Label
+        size={scale.controlFont}
+        weight={500}
+        color={dragging ? theme.primary : withAlpha(theme.foreground, 0.9)}
+        style={{ whiteSpace: 'nowrap', lineHeight: 19.5 }}
+      >
+        {dragging ? 'Release to open in Mdow' : 'Anywhere in this window'}
+      </Label>
+      {words(', drop ', muted)}
+      <Chip>.md</Chip>
+      {words('or ', muted)}
+      <Chip>.html</Chip>
+      {words('files or a folder.', muted)}
+    </div>
+  )
+}
+
+function Chip({ children }: { children: string }) {
+  const { theme, scale } = useUi()
+  return (
+    <div
+      style={{
+        paddingLeft: 4,
+        paddingRight: 4,
+        paddingTop: 1,
+        paddingBottom: 1,
+        borderRadius: 2,
+        backgroundColor: theme.muted,
+        marginRight: 3.5,
+      }}
+    >
+      <text
         style={{
-          width: 32,
-          height: 32,
-          flexShrink: 0,
-          borderRadius: 7,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: theme.muted,
+          fontFamily: UI_MONO,
+          fontSize: scale.controlFont - 1,
+          color: withAlpha(theme.foreground, 0.8),
         }}
       >
-        <Icon name="file" size={17} color={dragging ? theme.primary : theme.mutedForeground} />
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-        <Label size={scale.controlFont} weight={500}>
-          {dragging ? 'Release to open in Mdow' : 'Anywhere in this window'}
-        </Label>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <Label size={scale.controlXsFont + 1} color={theme.mutedForeground}>
-            Drop
-          </Label>
-          <Label mono size={scale.controlXsFont + 1} style={{ paddingLeft: 3, paddingRight: 3 }}>
-            .md
-          </Label>
-          <Label size={scale.controlXsFont + 1} color={theme.mutedForeground}>
-            files or a folder
-          </Label>
-        </div>
+        {children}
+      </text>
+    </div>
+  )
+}
+
+function RecentColumn({ recents }: { recents: string[] }) {
+  const { theme, scale } = useUi()
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        flexGrow: 19,
+        flexBasis: 0,
+        minWidth: 0,
+      }}
+    >
+      <text
+        style={{
+          fontFamily: UI_MONO,
+          fontSize: scale.controlFont - 1,
+          color: withAlpha(theme.mutedForeground, 0.9),
+        }}
+      >
+        RECENT
+      </text>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {recents.map((path) => (
+          <div
+            key={path}
+            role="button"
+            tabIndex={0}
+            onClick={() => openDocument(path)}
+            onKeyDown={activateOnEnter(() => openDocument(path))}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 32,
+              paddingLeft: 8,
+              paddingRight: 8,
+              borderRadius: 6,
+              cursor: 'pointer',
+              hover: { backgroundColor: withAlpha(theme.muted, theme.scheme === 'dark' ? 0.5 : 1) },
+              userSelect: 'none',
+            }}
+          >
+            <Icon name="file-text" size={14} color={withAlpha(theme.mutedForeground, 0.6)} />
+            <Label
+              size={scale.controlFont}
+              color={theme.mutedForeground}
+              style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', flexShrink: 1, minWidth: 0 }}
+            >
+              {basename(path)}
+            </Label>
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -1,21 +1,25 @@
 import type { ReactNode } from 'react'
 import type { EventPayload, StyleDesc } from '@gpuix/react'
+import { withAlpha } from '../lib/theme'
 import { ICONS, type IconName } from './icons'
 import { UI_FONT, useUi } from './context'
 
+/** `filled` paints the shape solid, as the desktop does for an active choice's icon. */
 export function Icon({
   name,
   size = 16,
   color,
+  filled,
 }: {
   name: IconName
   size?: number
   color?: string
+  filled?: boolean
 }) {
   const { theme } = useUi()
   return (
     <svg
-      source={ICONS[name]}
+      source={filled ? ICONS[name].replace('fill="none"', 'fill="currentColor"') : ICONS[name]}
       style={{ width: size, height: size, flexShrink: 0, color: color ?? theme.mutedForeground }}
     />
   )
@@ -103,6 +107,7 @@ export function Button({
   variant = 'outline',
   testId,
   small,
+  muted,
 }: {
   children: ReactNode
   icon?: IconName
@@ -110,6 +115,8 @@ export function Button({
   variant?: 'outline' | 'primary' | 'ghost' | 'destructive'
   testId?: string
   small?: boolean
+  /** Muted label, as for buttons sitting in muted copy (the welcome screen). */
+  muted?: boolean
 }) {
   const { theme, scale } = useUi()
   const color =
@@ -117,7 +124,12 @@ export function Button({
       ? theme.background
       : variant === 'destructive'
         ? theme.destructive
-        : theme.foreground
+        : muted
+          ? theme.mutedForeground
+          : theme.foreground
+  // shadcn's outline button fills with `input/30` in dark mode; `border` is the same colour.
+  const outlineFill = theme.scheme === 'dark' ? withAlpha(theme.border, 0.3) : undefined
+  const outlineHover = theme.scheme === 'dark' ? withAlpha(theme.border, 0.5) : theme.muted
   return (
     <div
       role="button"
@@ -128,23 +140,33 @@ export function Button({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
+        gap: small ? 4 : 6,
         height: small ? scale.buttonXsHeight + 4 : scale.buttonHeight + 4,
-        paddingLeft: small ? 8 : 12,
+        paddingLeft: small ? (icon ? 6 : 8) : 12,
         paddingRight: small ? 8 : 12,
         borderRadius: 6,
         borderWidth: variant === 'outline' ? 1 : 0,
         borderColor: theme.border,
-        backgroundColor: variant === 'primary' ? theme.foreground : undefined,
+        backgroundColor:
+          variant === 'primary'
+            ? theme.foreground
+            : variant === 'outline'
+              ? outlineFill
+              : undefined,
         cursor: 'pointer',
         flexShrink: 0,
         userSelect: 'none',
         hover: {
-          backgroundColor: variant === 'primary' ? theme.mutedForeground : theme.sidebarAccent,
+          backgroundColor:
+            variant === 'primary'
+              ? theme.mutedForeground
+              : variant === 'outline'
+                ? outlineHover
+                : theme.sidebarAccent,
         },
       }}
     >
-      {icon ? <Icon name={icon} color={color} /> : null}
+      {icon ? <Icon name={icon} color={color} size={small ? 12 : 16} /> : null}
       <Label color={color} size={small ? scale.controlFont : undefined} weight={500}>
         {children}
       </Label>
@@ -152,23 +174,25 @@ export function Button({
   )
 }
 
+/** Desktop `<Kbd>`: a borderless 20px muted chip with 10px medium text. */
 export function Kbd({ children }: { children: string }) {
-  const { theme, scale } = useUi()
+  const { theme } = useUi()
   return (
     <div
       style={{
-        paddingLeft: 6,
-        paddingRight: 6,
-        paddingTop: 1,
-        paddingBottom: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 20,
+        minWidth: 20,
+        paddingLeft: 4,
+        paddingRight: 4,
         borderRadius: 4,
-        borderWidth: 1,
-        borderColor: theme.border,
         backgroundColor: theme.muted,
         flexShrink: 0,
       }}
     >
-      <Label size={scale.controlXsFont + 1} color={theme.mutedForeground}>
+      <Label size={10} weight={500} color={theme.mutedForeground}>
         {children}
       </Label>
     </div>
@@ -244,20 +268,69 @@ export function activateOnEnter(action: () => void) {
   }
 }
 
+/** Tailwind-style `/75` alpha modifiers for theme colours. */
+export { withAlpha }
+
 export function EmptyState({
   icon,
   title,
   body,
   detail,
+  size = 'md',
   children,
 }: {
   icon: IconName
   title: string
   body: string
   detail?: string
+  /** `sm` is the compact, top-aligned sidebar variant. */
+  size?: 'sm' | 'md'
   children?: ReactNode
 }) {
   const { theme, scale } = useUi()
+  if (size === 'sm') {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 6,
+          paddingLeft: 12,
+          paddingRight: 12,
+          paddingTop: 24,
+          paddingBottom: 24,
+        }}
+      >
+        <Icon name={icon} size={20} color={withAlpha(theme.mutedForeground, 0.4)} />
+        <Label
+          size={scale.controlFont}
+          color={withAlpha(theme.foreground, 0.8)}
+          style={{ textAlign: 'center', lineHeight: 16 }}
+        >
+          {title}
+        </Label>
+        <Label
+          size={scale.controlFont - 1}
+          color={withAlpha(theme.mutedForeground, 0.9)}
+          style={{ textAlign: 'center', lineHeight: 15, maxWidth: 158 }}
+        >
+          {body}
+        </Label>
+        {detail ? (
+          <Label
+            mono
+            size={scale.controlFont - 1}
+            color={theme.mutedForeground}
+            style={{ textAlign: 'center', maxWidth: 200 }}
+          >
+            {detail}
+          </Label>
+        ) : null}
+        {children ? <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>{children}</div> : null}
+      </div>
+    )
+  }
   return (
     <div
       style={{
