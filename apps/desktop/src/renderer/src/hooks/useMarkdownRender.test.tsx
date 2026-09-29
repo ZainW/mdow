@@ -98,6 +98,27 @@ describe('useMarkdownRender', () => {
     expect(hook.current.isPartial).toBe(false)
   })
 
+  it('previews a huge document opened in a pane that already shows another one', async () => {
+    let finishFull: ((value: ReturnType<typeof renderWithHeading>) => void) | undefined
+    markdownMock.renderMarkdown.mockImplementation((text: string) =>
+      text === HUGE
+        ? new Promise((resolve) => (finishFull = resolve))
+        : Promise.resolve(renderWithHeading(text === HEAD ? 'preview' : 'small')),
+    )
+    const { result: hook, rerender } = renderHook(
+      ({ tabId, content }) =>
+        useMarkdownRender({ tabId, content, retryKey: 0, allowPreview: true }),
+      { initialProps: { tabId: 'tab-1', content: 'small document' } },
+    )
+    await waitFor(() => expect(hook.current.renderResult?.headings[0]?.id).toBe('small'))
+
+    rerender({ tabId: 'tab-2', content: HUGE })
+    await waitFor(() => expect(hook.current.isPartial).toBe(true))
+    expect(hook.current.renderResult?.headings[0]?.id).toBe('preview')
+    finishFull?.(renderWithHeading('full'))
+    await waitFor(() => expect(hook.current.isPartial).toBe(false))
+  })
+
   it('skips the preview when restoring a saved position', async () => {
     markdownMock.renderMarkdown.mockResolvedValue({
       tree: { nodes: [] },

@@ -79,6 +79,7 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
     scrollAnchor: tab.scrollAnchor,
     renderVersion,
     partial: isPartial,
+    failed: renderError,
     updateTabScroll,
   })
   useContentClickHandlers({

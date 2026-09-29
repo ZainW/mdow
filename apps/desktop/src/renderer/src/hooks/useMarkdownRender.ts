@@ -94,6 +94,8 @@ export function useMarkdownRender({
       dispatchRender({ type: 'reset' })
       return undefined
     }
+    // What's on screen belongs to the previous document when the pane switched tabs.
+    const showingThisDocument = lastRenderedTabIdRef.current === tabId && renderedRef.current
     if (lastRenderedTabIdRef.current !== tabId) {
       lastRenderedTabIdRef.current = tabId
       dispatchRender({ type: 'clear-tab' })
@@ -118,7 +120,7 @@ export function useMarkdownRender({
 
     // Only fresh opens get a preview: restoring a saved position needs the whole document, and a
     // reload or retry of a document already on screen keeps showing it until the new render lands.
-    const head = allowPreviewRef.current && !renderedRef.current ? sliceDocumentHead(content) : null
+    const head = allowPreviewRef.current && !showingThisDocument ? sliceDocumentHead(content) : null
 
     void loadRenderDocument()
       .then((renderDocument) => {

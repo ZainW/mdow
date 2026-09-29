@@ -15,6 +15,7 @@ export function useScrollRestoration({
   scrollAnchor,
   renderVersion,
   partial = false,
+  failed = false,
   updateTabScroll,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>
@@ -25,12 +26,15 @@ export function useScrollRestoration({
   renderVersion: number
   /** The rendered content is a preview of the document's opening. */
   partial?: boolean
+  /** The render failed; a preview shown before it no longer counts. */
+  failed?: boolean
   updateTabScroll: (tabId: string, scrollPosition: number, anchor: ScrollAnchor | null) => void
 }): void {
   const savedRef = useRef({ scrollPosition, scrollAnchor })
   savedRef.current = { scrollPosition, scrollAnchor }
   const restoringRef = useRef<() => void>(() => {})
-  const partialRef = useRef(partial)
+  // The tab whose preview is on screen, if any.
+  const previewTabRef = useRef<string | null>(null)
 
   useEffect(() => {
     const scroller = scrollRef.current
@@ -62,8 +66,8 @@ export function useScrollRestoration({
     const scroller = scrollRef.current
     const container = contentRef.current
     if (!scroller || !container || renderVersion === 0) return undefined
-    const fromPreview = partialRef.current
-    partialRef.current = partial
+    const fromPreview = !partial && previewTabRef.current === tabId
+    previewTabRef.current = partial ? tabId : null
     // The preview's blocks are the full render's opening, so the reader is already in the right
     // place; the saved position lags the live one by the save debounce.
     if (fromPreview && !partial) return undefined
@@ -71,9 +75,13 @@ export function useScrollRestoration({
     restoringRef.current()
     restoringRef.current = restoreScrollPosition(scroller, container, anchor, top)
     return undefined
-    // `partial` changes only together with `renderVersion`.
+    // `partial` and `tabId` change only together with `renderVersion`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollRef, contentRef, renderVersion])
+
+  useEffect(() => {
+    if (failed) previewTabRef.current = null
+  }, [failed])
 
   useEffect(() => () => restoringRef.current(), [])
 }
