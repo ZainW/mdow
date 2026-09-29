@@ -12,13 +12,11 @@ export function DocsSidebar({ docs, currentSlug }: DocsSidebarProps) {
   const groups = groupByCategory(docs)
 
   return (
-    <nav className="space-y-7 text-sm">
+    <nav className="space-y-7 text-sm" aria-label="Documentation">
       {groups.map((group) => (
         <div key={group.category}>
-          <h4 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {group.category}
-          </h4>
-          <ul className="space-y-0.5">
+          <h2 className="mb-2 px-3 text-xs font-medium text-faint">{group.category}</h2>
+          <ul className="space-y-px">
             {group.docs.map((doc) => {
               const active = doc.slug === currentSlug
               return (
@@ -26,11 +24,12 @@ export function DocsSidebar({ docs, currentSlug }: DocsSidebarProps) {
                   <Link
                     to="/docs/$"
                     params={{ _splat: doc.slug }}
+                    aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'relative block rounded-md px-3 py-1.5 transition-[background-color,color] duration-150 ease',
+                      'block rounded-lg px-3 py-2 transition-[background-color,color] duration-150 ease lg:py-1.5',
                       active
-                        ? 'bg-surface text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-primary'
-                        : 'text-muted-foreground hover:bg-surface/60 hover:text-foreground',
+                        ? 'bg-muted font-medium text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                     )}
                   >
                     {doc.title}

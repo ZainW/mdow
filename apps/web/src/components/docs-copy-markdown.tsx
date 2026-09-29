@@ -1,20 +1,22 @@
 import { CopyButton } from '~/components/copy-button'
+import { FileIcon } from './icons'
 
 interface DocsCopyMarkdownProps {
   markdown: string
   slug: string
 }
 
+/** Page actions: copy the page as Markdown, or open the raw .md file. */
 export function DocsCopyMarkdown({ markdown, slug }: DocsCopyMarkdownProps) {
   return (
-    <div className="not-prose mb-8 flex flex-wrap items-center gap-3 rounded-lg border border-border-subtle bg-surface px-4 py-3 text-sm">
-      <span className="text-muted-foreground">Copy this page as Markdown</span>
-      <CopyButton value={markdown} />
+    <div className="flex items-center gap-1.5">
+      <CopyButton value={markdown} label="Copy page" />
       <a
         href={`/docs/${slug}.md`}
-        className="text-primary underline underline-offset-2 hover:text-primary/80"
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-subtle bg-card px-2 text-xs font-medium text-muted-foreground transition-[background-color,color] duration-150 ease hover:bg-muted hover:text-foreground"
       >
-        Raw .md
+        <FileIcon className="size-3.5" />
+        .md
       </a>
     </div>
   )

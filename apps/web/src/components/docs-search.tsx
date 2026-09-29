@@ -1,191 +1,230 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { DocMeta } from '~/lib/content'
-import { buildSearchIndex, search } from '~/lib/search-index'
+import { useFocusTrap } from '~/hooks/use-focus-trap'
+import { formatShortcut, useModKey } from '~/hooks/use-mod-key'
+import { buildSearchIndex, search, type SearchEntry } from '~/lib/search-index'
 import { cn } from '~/lib/utils'
+import { FileIcon, SearchIcon } from './icons'
 
-interface DocsSearchProps {
-  docs: DocMeta[]
+export function DocsSearchTrigger({
+  onOpen,
+  className,
+}: {
+  onOpen: () => void
+  className?: string
+}) {
+  const modKey = useModKey()
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'flex h-10 w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground',
+        'transition-[border-color,color] duration-150 ease hover:border-border-strong hover:text-foreground',
+        className,
+      )}
+    >
+      <SearchIcon className="size-4" />
+      <span>Search docs</span>
+      {modKey && <kbd className="kbd ml-auto">{formatShortcut(modKey, 'K')}</kbd>}
+    </button>
+  )
 }
 
-export function DocsSearch({ docs }: DocsSearchProps) {
-  const [open, setOpen] = useState(false)
+interface DocsSearchDialogProps {
+  entries: SearchEntry[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+/** The one search dialog for the docs. Owns the ⌘K / Ctrl+K shortcut. */
+export function DocsSearchDialog({ entries, open, onOpenChange }: DocsSearchDialogProps) {
   const [query, setQuery] = useState('')
-  const [shortcutLabel, setShortcutLabel] = useState('⌘K')
-  const [results, setResults] = useState<ReturnType<typeof search>>([])
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const listId = useId()
   const navigate = useNavigate()
 
-  useEffect(() => {
-    buildSearchIndex(docs)
-  }, [docs])
+  useFocusTrap(open, dialogRef)
 
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && !navigator.platform.startsWith('Mac')) {
-      setShortcutLabel('Ctrl K')
-    }
-  }, [])
+    buildSearchIndex(entries)
+  }, [entries])
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setOpen((prev) => !prev)
+        onOpenChange(!open)
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onOpenChange])
 
   useEffect(() => {
-    if (open) {
-      inputRef.current?.focus()
-      setQuery('')
-      setResults([])
-      setSelected(0)
+    if (!open) return
+    setQuery('')
+    setSelected(0)
+    inputRef.current?.focus()
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = ''
     }
   }, [open])
 
-  const onQueryChange = useCallback((value: string) => {
-    setQuery(value)
-    setResults(search(value))
-    setSelected(0)
-  }, [])
+  // With no query, list every page so the dialog doubles as a quick switcher.
+  const results = useMemo(
+    () => (query.trim() ? search(query) : entries.filter((e) => !e.section)),
+    [query, entries],
+  )
+
+  useEffect(() => {
+    listRef.current
+      ?.querySelector(`[data-index="${selected}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
 
   const goTo = useCallback(
-    (slug: string) => {
-      setOpen(false)
-      navigate({ to: '/docs/$', params: { _splat: slug } })
+    (entry: SearchEntry) => {
+      onOpenChange(false)
+      navigate({
+        to: '/docs/$',
+        params: { _splat: entry.slug },
+        hash: entry.section?.id,
+      })
     },
-    [navigate],
+    [navigate, onOpenChange],
   )
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSelected((s) => Math.min(s + 1, results.length - 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSelected((s) => Math.max(s - 1, 0))
-      } else if (e.key === 'Enter' && results[selected]) {
-        goTo(results[selected].slug)
-      } else if (e.key === 'Escape') {
-        setOpen(false)
-      }
-    },
-    [results, selected, goTo],
-  )
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-md border border-border-subtle bg-surface px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
-        <span>Search docs</span>
-        <kbd className="ml-auto rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono">
-          {shortcutLabel}
-        </kbd>
-      </button>
-    )
+  function onInputKeyDown(e: ReactKeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelected((s) => Math.min(s + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelected((s) => Math.max(s - 1, 0))
+    } else if (e.key === 'Enter' && results[selected]) {
+      e.preventDefault()
+      goTo(results[selected])
+    } else if (e.key === 'Escape') {
+      onOpenChange(false)
+    }
   }
 
+  if (!open) return null
+
   return (
-    <div className="fixed inset-0 z-modal flex items-start justify-center pt-[15vh]">
+    <div className="fixed inset-0 z-modal flex items-start justify-center px-4 pt-[12vh]">
       <div
-        className="fixed inset-0 bg-background/70 backdrop-blur-md"
-        onClick={() => setOpen(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false)
-        }}
-        role="button"
-        tabIndex={-1}
-        aria-label="Close search"
+        className="animate-overlay-in fixed inset-0 bg-foreground/15 backdrop-blur-[2px] dark:bg-black/50"
+        onClick={() => onOpenChange(false)}
+        aria-hidden
       />
-      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl border border-border-subtle bg-popover shadow-soft-lg">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search documentation"
+        className="animate-pop-in relative w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-popover shadow-[0_24px_64px_-16px_hsl(var(--shadow-color)/0.35)]"
+      >
         <div className="flex items-center gap-3 border-b border-border-subtle px-4">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-muted-foreground"
-            aria-hidden
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
+          <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Search docs..."
-            className="flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-muted-foreground"
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setSelected(0)
+            }}
+            onKeyDown={onInputKeyDown}
+            placeholder="Search docs…"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-activedescendant={results[selected] ? `${listId}-${selected}` : undefined}
+            className="h-14 flex-1 bg-transparent text-base outline-none placeholder:text-faint sm:text-[15px]"
           />
-          <kbd className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="kbd cursor-pointer hover:text-foreground"
+            aria-label="Close search"
+          >
             esc
-          </kbd>
+          </button>
         </div>
-        {results.length > 0 && (
-          <ul className="max-h-80 overflow-y-auto py-2">
+        {results.length > 0 ? (
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label="Results"
+            className="max-h-[min(24rem,60vh)] overflow-y-auto p-2"
+          >
             {results.map((r, i) => (
-              <li key={r.slug}>
+              <li
+                key={`${r.slug}#${r.section?.id ?? ''}`}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === selected}
+                data-index={i}
+              >
                 <button
                   type="button"
-                  onMouseEnter={() => setSelected(i)}
-                  onClick={() => goTo(r.slug)}
+                  tabIndex={-1}
+                  onMouseMove={() => setSelected(i)}
+                  onClick={() => goTo(r)}
                   className={cn(
-                    'flex w-full flex-col items-start gap-0.5 px-4 py-2.5 text-left transition-colors',
-                    i === selected ? 'bg-surface' : '',
+                    'flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left',
+                    i === selected && 'bg-muted',
                   )}
                 >
-                  <span className="text-sm font-medium text-foreground">{r.title}</span>
-                  {r.description && (
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {r.description}
+                  <span
+                    className={cn(
+                      'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-card text-muted-foreground',
+                      r.section && 'border-transparent bg-transparent font-mono text-sm',
+                    )}
+                    aria-hidden
+                  >
+                    {r.section ? '#' : <FileIcon className="size-3.5" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {r.section ? r.section.text : r.title}
                     </span>
-                  )}
-                  <span className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {r.category}
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {r.section ? `${r.category} · ${r.title}` : r.description || r.category}
+                    </span>
                   </span>
                 </button>
               </li>
             ))}
           </ul>
+        ) : (
+          <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No results for &ldquo;{query}&rdquo;
+          </p>
         )}
-        {query && results.length === 0 && (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">No results found.</p>
-        )}
-        <div className="flex items-center gap-3 border-t border-border-subtle bg-surface/50 px-4 py-2 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-border bg-background px-1 font-mono">↑↓</kbd>{' '}
-            navigate
+        <div className="hidden items-center gap-4 border-t border-border-subtle bg-surface/60 px-4 py-2.5 text-xs text-muted-foreground sm:flex">
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">↑</kbd>
+            <kbd className="kbd">↓</kbd>
+            to navigate
           </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-border bg-background px-1 font-mono">↵</kbd>{' '}
-            select
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">↵</kbd>
+            to open
           </span>
         </div>
       </div>

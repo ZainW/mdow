@@ -2,6 +2,9 @@
 import type { ReactNode } from 'react'
 import { Outlet, createRootRoute, HeadContent, Scripts, Link } from '@tanstack/react-router'
 import appCss from '~/styles/app.css?url'
+import interFont from '~/assets/fonts/InterVariable.woff2?url'
+import newsreaderFont from '~/assets/fonts/Newsreader-Variable.woff2?url'
+import { btnPrimary, btnSecondary } from '~/lib/button-styles'
 import { seo } from '~/lib/seo'
 import { SiteHeader } from '~/components/site-header'
 import { SiteFooter } from '~/components/site-footer'
@@ -12,11 +15,13 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+      { name: 'theme-color', content: '#faf8f5', media: '(prefers-color-scheme: light)' },
+      { name: 'theme-color', content: '#1b1a19', media: '(prefers-color-scheme: dark)' },
       ...seo({
-        title: 'Mdow: AI Markdown Reader for Mac, Windows & Linux',
+        title: 'Mdow: A Quiet Markdown Reader for Mac, Windows & Linux',
         description:
-          'Read markdown and ask questions about local files with OpenCode and ACP. Free for Mac, Windows, and Linux, with Mermaid and Shiki built in.',
+          'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
       }),
     ],
     links: [
@@ -25,11 +30,13 @@ export const Route = createRootRoute({
       { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
       { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
       { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+      { rel: 'preload', as: 'font', type: 'font/woff2', href: interFont, crossOrigin: 'anonymous' },
       {
         rel: 'preload',
-        as: 'image',
-        href: '/screenshots/reading-dark.avif',
-        type: 'image/avif',
+        as: 'font',
+        type: 'font/woff2',
+        href: newsreaderFont,
+        crossOrigin: 'anonymous',
       },
       {
         rel: 'alternate',
@@ -55,12 +62,20 @@ function RootComponent() {
 function NotFound() {
   return (
     <RootDocument>
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <h1 className="text-4xl font-bold">404</h1>
-        <p className="text-muted-foreground">Page not found.</p>
-        <Link to="/" className="text-primary underline underline-offset-4">
-          Go home
-        </Link>
+      <div className="mx-auto flex min-h-[65vh] max-w-xl flex-col items-center justify-center px-5 py-20 text-center">
+        <p className="font-mono text-sm text-muted-foreground">404</p>
+        <h1 className="font-display mt-4 text-5xl">This page isn&rsquo;t here.</h1>
+        <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+          It may have moved, or the link might be mistyped.
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Link to="/" className={btnPrimary('md')}>
+            Back to home
+          </Link>
+          <Link to="/docs" className={btnSecondary('md')}>
+            Browse the docs
+          </Link>
+        </div>
       </div>
     </RootDocument>
   )
@@ -72,9 +87,17 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen font-sans">
+      <body className="flex min-h-screen flex-col font-sans">
+        <a
+          href="#main"
+          className="sr-only z-modal rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        >
+          Skip to content
+        </a>
         <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <main id="main" className="flex-1">
+          {children}
+        </main>
         <SiteFooter />
         <Scripts />
       </body>

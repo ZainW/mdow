@@ -1,3 +1,6 @@
+import { extractHeadings } from './extract-headings'
+import type { SearchEntry } from './search-index'
+
 export interface DocMeta {
   slug: string
   title: string
@@ -100,4 +103,46 @@ export function groupByCategory(docs: DocMeta[]): { category: string; docs: DocM
     map.set(doc.category, list)
   }
   return [...map.entries()].map(([category, docs]) => ({ category, docs }))
+}
+
+function plainText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * One entry per page plus one per h2 section, for client-side docs search.
+ * Section entries carry their body text so queries match more than headings.
+ */
+export async function getSearchEntries(): Promise<SearchEntry[]> {
+  const docs = await getAllDocs()
+  const entries: SearchEntry[] = []
+  for (const meta of docs) {
+    const doc = await getDoc(meta.slug)
+    if (!doc) continue
+    const [intro, ...sections] = doc.html.split(/(?=<h2[\s>])/)
+    entries.push({
+      slug: meta.slug,
+      title: meta.title,
+      description: meta.description,
+      category: meta.category,
+      content: plainText(intro).slice(0, 600),
+    })
+    for (const section of sections) {
+      const [heading] = extractHeadings(section)
+      if (!heading || heading.level !== 2) continue
+      entries.push({
+        slug: meta.slug,
+        title: meta.title,
+        description: '',
+        category: meta.category,
+        section: { id: heading.id, text: heading.text },
+        content: plainText(section.replace(/<h2[\s\S]*?<\/h2>/, '')).slice(0, 600),
+      })
+    }
+  }
+  return entries
 }

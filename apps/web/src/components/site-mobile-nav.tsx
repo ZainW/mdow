@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { cn } from '~/lib/utils'
-import { btnPrimaryClass } from '~/lib/button-styles'
+import { createPortal } from 'react-dom'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useFocusTrap } from '~/hooks/use-focus-trap'
-
-const links = [
-  { to: '/docs' as const, label: 'Docs' },
-  { to: '/changelog' as const, label: 'Changelog' },
-  { to: '/download' as const, label: 'Download' },
-]
+import { btnPrimary } from '~/lib/button-styles'
+import { GITHUB_URL, NAV_LINKS } from '~/lib/site'
+import { cn } from '~/lib/utils'
+import { CloseIcon, ExternalIcon, MenuIcon } from './icons'
 
 export function SiteMobileNav() {
   const [open, setOpen] = useState(false)
-  const navRef = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLDivElement>(null)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   useFocusTrap(open, navRef)
+
+  useEffect(() => {
+    setOpen(false)
+  }, [pathname])
 
   useEffect(() => {
     const main = document.querySelector('main')
@@ -23,10 +25,6 @@ export function SiteMobileNav() {
       main?.setAttribute('inert', '')
       footer?.setAttribute('inert', '')
       document.body.style.overflow = 'hidden'
-    } else {
-      main?.removeAttribute('inert')
-      footer?.removeAttribute('inert')
-      document.body.style.overflow = ''
     }
     return () => {
       main?.removeAttribute('inert')
@@ -49,70 +47,63 @@ export function SiteMobileNav() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-[background-color,color] duration-150 ease hover:bg-muted hover:text-foreground"
+        className="btn btn-ghost ml-1 size-11 rounded-lg p-0"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? 'Close menu' : 'Open menu'}
       >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          aria-hidden
-        >
-          {open ? (
-            <>
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </>
-          ) : (
-            <>
-              <path d="M4 6h16" />
-              <path d="M4 12h16" />
-              <path d="M4 18h16" />
-            </>
-          )}
-        </svg>
+        {open ? <CloseIcon className="size-5" /> : <MenuIcon className="size-5" />}
       </button>
       {open && (
         <>
+          {/* Portaled: the header's backdrop-filter would otherwise contain this
+              fixed overlay to the header's own box. */}
+          {createPortal(
+            <div
+              className="animate-overlay-in fixed inset-0 top-[calc(4rem+env(safe-area-inset-top))] z-[99] bg-background/60 backdrop-blur-sm"
+              aria-hidden
+              onClick={() => setOpen(false)}
+            />,
+            document.body,
+          )}
           <div
-            className="fixed inset-0 z-overlay bg-foreground/20"
-            aria-hidden
-            onClick={() => setOpen(false)}
-          />
-          <nav
             id="mobile-nav"
             ref={navRef}
             className={cn(
-              'absolute left-0 right-0 top-14 z-modal border-b bg-background/95 px-6 py-4 backdrop-blur-sm',
-              'flex flex-col gap-1',
-              'pb-[max(1rem,env(safe-area-inset-bottom))]',
+              'animate-drop-in absolute inset-x-0 top-16 z-modal border-b border-border-subtle bg-background px-5 pt-2',
+              'pb-[max(1.25rem,env(safe-area-inset-bottom))]',
             )}
           >
-            {links.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                onClick={() => setOpen(false)}
-                className="rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-[background-color,color] duration-150 ease hover:bg-muted hover:text-foreground"
-                activeProps={{ className: 'bg-muted text-foreground' }}
+            <nav aria-label="Mobile" className="flex flex-col">
+              {NAV_LINKS.map((link) => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => setOpen(false)}
+                  className="flex min-h-12 items-center border-b border-border-subtle text-base text-muted-foreground"
+                  activeProps={{ className: 'text-foreground font-medium' }}
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <a
+                href={GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-12 items-center justify-between border-b border-border-subtle text-base text-muted-foreground"
               >
-                {link.label}
-              </Link>
-            ))}
+                GitHub
+                <ExternalIcon className="size-4" />
+              </a>
+            </nav>
             <Link
               to="/download"
               onClick={() => setOpen(false)}
-              className={cn(btnPrimaryClass, 'mt-2 h-11 px-4 text-sm font-medium')}
+              className={btnPrimary('lg', 'mt-5 w-full')}
             >
-              Download for free
+              Download Mdow
             </Link>
-          </nav>
+          </div>
         </>
       )}
     </div>
