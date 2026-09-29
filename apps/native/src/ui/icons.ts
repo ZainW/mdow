@@ -5,12 +5,15 @@ import chevronDown from '../../assets/icons/chevron-down.svg' with { type: 'text
 import chevronRight from '../../assets/icons/chevron-right.svg' with { type: 'text' }
 import chevronUp from '../../assets/icons/chevron-up.svg' with { type: 'text' }
 import clock from '../../assets/icons/clock.svg' with { type: 'text' }
+import code from '../../assets/icons/code.svg' with { type: 'text' }
 import command from '../../assets/icons/command.svg' with { type: 'text' }
 import copy from '../../assets/icons/copy.svg' with { type: 'text' }
 import expand from '../../assets/icons/expand.svg' with { type: 'text' }
+import externalLink from '../../assets/icons/external-link.svg' with { type: 'text' }
 import file from '../../assets/icons/file.svg' with { type: 'text' }
 import folderOpen from '../../assets/icons/folder-open.svg' with { type: 'text' }
 import folder from '../../assets/icons/folder.svg' with { type: 'text' }
+import image from '../../assets/icons/image.svg' with { type: 'text' }
 import list from '../../assets/icons/list.svg' with { type: 'text' }
 import mdowLogo from '../../assets/icons/mdow-logo.svg' with { type: 'text' }
 import search from '../../assets/icons/search.svg' with { type: 'text' }
@@ -25,12 +28,15 @@ export const ICONS = {
   'chevron-right': chevronRight,
   'chevron-up': chevronUp,
   clock: clock,
+  code: code,
   command: command,
   copy: copy,
   expand: expand,
+  'external-link': externalLink,
   file: file,
   'folder-open': folderOpen,
   folder: folder,
+  image: image,
   list: list,
   'mdow-logo': mdowLogo,
   search: search,

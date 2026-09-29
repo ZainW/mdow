@@ -41,3 +41,20 @@ export function imageSize(path: string): ImageSize | null {
   cache.set(path, { mtime, size })
   return size
 }
+
+/** Pixel size of a `data:image/…` URL, base64 or percent-encoded. */
+export function dataImageSize(url: string): ImageSize | null {
+  const comma = url.indexOf(',')
+  if (comma === -1) return null
+  const meta = url.slice(0, comma)
+  const payload = url.slice(comma + 1)
+  try {
+    const bytes = /;base64$/i.test(meta)
+      ? Buffer.from(payload, 'base64')
+      : Buffer.from(decodeURIComponent(payload))
+    const result = measure(bytes)
+    return result.width && result.height ? { width: result.width, height: result.height } : null
+  } catch {
+    return null
+  }
+}

@@ -12,8 +12,9 @@ import {
   registerFonts,
   type MenuSpec,
 } from './lib/macos'
+import { refreshReduceMotion } from './lib/motion'
 import { defaultStatePath, loadState, saveState } from './lib/persist'
-import { IS_MAC, systemColorScheme } from './lib/platform'
+import { IS_MAC, systemColorScheme, systemColorSchemeAsync } from './lib/platform'
 import { APP_VERSION } from './lib/updater'
 import { FileWatcher, FolderWatcher } from './lib/watcher'
 import {
@@ -128,9 +129,13 @@ store.subscribe((state, previous) => {
   }
 })
 
+void refreshReduceMotion()
 if (firstRun)
   setInterval(() => {
-    if (store.getState().prefs.theme === 'system') setSystemScheme(systemColorScheme())
+    void refreshReduceMotion()
+    if (store.getState().prefs.theme === 'system') {
+      void systemColorSchemeAsync().then(setSystemScheme)
+    }
   }, APPEARANCE_POLL_MS).unref()
 
 process.on('exit', () => {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   findRanges,
   useGpuixRequired,
@@ -7,15 +7,25 @@ import {
   type PublicInstance,
 } from '@gpuix/react'
 import type { AlertKind, Block, ParsedDocument } from '../lib/markdown'
+import {
+  cachedMermaid,
+  mermaidPalette,
+  renderMermaidAsync,
+  type MermaidResult,
+} from '../lib/mermaid'
+import { easeOut, reduceMotion } from '../lib/motion'
 import { copyToClipboard } from '../lib/platform'
 import { setOverlay, useApp } from '../store'
 import { METRICS, useUi } from './context'
 import { Icon, IconButton, Label } from './primitives'
 import { onReaderCommand } from './reader-bus'
+import { estimateHeights, prefixSums } from './scroll-model'
+import { noteScroll, Scrollbar, type ScrollSource } from './Scrollbar'
 
 const WINDOW = 120
 const ESTIMATED_ROW = 64
-const LINE_STEP = 48
+const LINE_STEP = 56
+const GLIDE_MS = 180
 /** Page keys move 90% of the viewport so a line of context stays on screen. */
 const PAGE_FRACTION = 0.9
 
@@ -33,7 +43,7 @@ export interface ReaderProps {
 
 export function Reader({ path, document, columnWidth, inset, onLink }: ReaderProps) {
   const renderer = useGpuixRequired()
-  const { theme } = useUi()
+  const { theme, reader } = useUi()
   const listRef = useRef<PublicInstance | null>(null)
   const blocks = document.blocks
   const [start, setStart] = useState(() => {
@@ -76,22 +86,85 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
     }
   }, [path, renderer])
 
+  // A scroll to a row outside the rendered window waits for React to move the window there;
+  // scrolling first would target a row the list doesn't have yet (End used to stop short).
+  const pendingScroll = useRef<[number, number] | null>(null)
   const scrollToRow = (index: number, offset = 0) => {
     const id = listRef.current?.id
     if (id === undefined) return
-    setStart((current) =>
-      index >= current && index < current + WINDOW ? current : Math.max(0, index - WINDOW / 4),
-    )
-    renderer.scrollToItem?.(id, Math.max(0, Math.min(index, blocks.length)), offset)
+    const target = Math.max(0, Math.min(index, blocks.length))
+    const inWindow =
+      target >= windowStart && target <= end && (target < end || end === blocks.length)
+    if (inWindow) {
+      renderer.scrollToItem?.(id, target, offset)
+      return
+    }
+    pendingScroll.current = [target, offset]
+    setStart(Math.max(0, Math.min(target - WINDOW / 4, blocks.length - (WINDOW * 3) / 4)))
+  }
+  useEffect(() => {
+    const pending = pendingScroll.current
+    const id = listRef.current?.id
+    if (!pending || id === undefined) return
+    pendingScroll.current = null
+    renderer.scrollToItem?.(id, pending[0], pending[1])
+  }, [windowStart, renderer])
+
+  // Scroll by pixels through the list's own offset, which GPUI resolves into a row anchor.
+  // Growing the anchor's in-row offset instead left the list anchored on an early row, so every
+  // frame laid out all rows above the viewport and the rendered window never advanced.
+  const nudge = (pixels: number) => {
+    const id = listRef.current?.id
+    const offset = id !== undefined ? renderer.getScrollOffset?.(id) : null
+    if (!offset || id === undefined) return
+    renderer.scrollTo?.(id, 0, Math.min(0, (offset[1] ?? 0) - pixels))
   }
 
+  // Keyboard scrolling glides instead of jumping. A new press while one is running adds to the
+  // remaining distance, so holding an arrow key reads as one continuous motion.
+  const glide = useRef<{ timer: ReturnType<typeof setTimeout>; left: number } | null>(null)
   const scrollBy = (pixels: number) => {
-    const id = listRef.current?.id
-    const anchor = id !== undefined ? renderer.getListScrollTop?.(id) : null
-    if (!anchor || id === undefined) return
-    const [index = 0, offset = 0] = anchor
-    const next = offset + pixels
-    renderer.scrollToItem?.(id, index, index === 0 ? Math.max(0, next) : next)
+    const remaining = glide.current ? glide.current.left : 0
+    if (glide.current) clearTimeout(glide.current.timer)
+    const total = remaining + pixels
+    if (reduceMotion()) {
+      glide.current = null
+      nudge(total)
+      noteScroll()
+      return
+    }
+    const started = performance.now()
+    let moved = 0
+    const step = () => {
+      const t = Math.min(1, (performance.now() - started) / GLIDE_MS)
+      const target = total * easeOut(t)
+      nudge(target - moved)
+      moved = target
+      noteScroll()
+      if (t < 1) glide.current = { timer: setTimeout(step, 8), left: total - moved }
+      else glide.current = null
+    }
+    step()
+  }
+  useEffect(
+    () => () => {
+      if (glide.current) clearTimeout(glide.current.timer)
+    },
+    [],
+  )
+
+  const sums = useMemo(
+    () => prefixSums(estimateHeights(blocks, columnWidth, reader.fontSize)),
+    [blocks, columnWidth, reader.fontSize],
+  )
+  const scrollSource: ScrollSource = {
+    sums,
+    anchor: () => {
+      const id = listRef.current?.id
+      const anchor = id === undefined ? null : renderer.getListScrollTop?.(id)
+      return anchor ? [anchor[0] ?? 0, anchor[1] ?? 0, anchor[2] ?? 0] : null
+    },
+    seek: (row, offset) => handlers.current.scrollToRow(row, offset),
   }
 
   const rowOfMatch = (match: number) => {
@@ -121,6 +194,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
         switch (command.type) {
           case 'scroll':
             toRow(command.to === 'top' ? 0 : blocks.length)
+            noteScroll()
             break
           case 'page':
             by(command.direction * viewport * PAGE_FRACTION)
@@ -130,10 +204,12 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
             break
           case 'block':
             toRow(command.index)
+            noteScroll()
             break
           case 'slug': {
             const index = document.slugs.get(command.slug)
             if (index !== undefined) toRow(index)
+            noteScroll()
             break
           }
           case 'find':
@@ -180,6 +256,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
       <div
         {...search.props}
         testId="reader-pane"
+        onScroll={noteScroll}
         style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}
       >
         {blocks.length === 0 ? (
@@ -210,6 +287,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
           </virtual-list>
         )}
       </div>
+      {blocks.length > 0 ? <Scrollbar source={scrollSource} /> : null}
       {findOpen ? (
         <FindBar
           query={query}
@@ -240,7 +318,7 @@ const Row = memo(function Row({
   onLink: (href: string) => void
 }) {
   const { reader } = useUi()
-  const gap = reader.fontSize
+  const gap = block.joinNext ? joinGap(block, reader.fontSize) : reader.fontSize
   return (
     <div
       style={{
@@ -266,6 +344,12 @@ const Row = memo(function Row({
   )
 })
 
+/** Space between the rows of one split list, table or code fence. */
+function joinGap(block: Block, fontSize: number) {
+  if (block.kind === 'markdown') return Math.round(fontSize * 0.25)
+  return 0
+}
+
 function BlockView({
   block,
   columnWidth,
@@ -284,7 +368,19 @@ function BlockView({
     case 'heading':
       return <markdown source={block.source} theme={reader.native} onLinkClick={link} />
     case 'code':
-      return <CodeBlock language={block.language} code={block.code} />
+      if (block.language === 'mermaid') {
+        return <MermaidBlock code={block.code} columnWidth={columnWidth} />
+      }
+      return (
+        <CodeBlock
+          language={block.language}
+          code={block.code}
+          part={block.part}
+          copy={block.copy}
+        />
+      )
+    case 'table':
+      return <TableBlock block={block} columnWidth={columnWidth} onLink={link} />
     case 'alert':
       return <Alert kind={block.alert} source={block.source} onLink={link} />
     case 'image': {
@@ -405,14 +501,155 @@ export function nativeLanguage(language: string) {
   return LANGUAGE_ALIASES[language.toLowerCase()]
 }
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
-  const { reader, theme, scale } = useUi()
+function CodeBlock({
+  language,
+  code,
+  part = 'whole',
+  copy = code,
+}: {
+  language: string
+  code: string
+  part?: CodeBlockPart
+  copy?: string
+}) {
+  const { reader, theme } = useUi()
+  const top = part === 'whole' || part === 'first'
+  const bottom = part === 'whole' || part === 'last'
+  const radius = METRICS.radius
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        borderTopLeftRadius: top ? radius : 0,
+        borderTopRightRadius: top ? radius : 0,
+        borderBottomLeftRadius: bottom ? radius : 0,
+        borderBottomRightRadius: bottom ? radius : 0,
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderTopWidth: top ? 1 : 0,
+        borderBottomWidth: bottom ? 1 : 0,
+        borderColor: theme.borderSubtle,
+        backgroundColor: theme.surfaceWell,
+      }}
+    >
+      {top ? (
+        <BlockHeader label={language}>
+          <CopyButton text={copy} label="Copy code" />
+        </BlockHeader>
+      ) : null}
+      <code
+        code={code}
+        language={nativeLanguage(language)}
+        theme={reader.native}
+        style={{
+          paddingLeft: 14,
+          paddingRight: 14,
+          paddingBottom: bottom ? 12 : 0,
+          paddingTop: top ? 2 : 0,
+          minWidth: 0,
+          fontFamily: reader.codeFont,
+          fontSize: reader.native.metrics?.codeTextSize,
+          lineHeight: reader.native.metrics?.codeLineHeight,
+          color: theme.foreground,
+        }}
+      />
+    </div>
+  )
+}
+
+type CodeBlockPart = 'whole' | 'first' | 'middle' | 'last'
+
+function BlockHeader({ label, children }: { label: string; children?: ReactNode }) {
+  const { theme, scale } = useUi()
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 2,
+        paddingLeft: 14,
+        paddingRight: 6,
+        paddingTop: 4,
+        userSelect: 'none',
+      }}
+    >
+      <Label mono size={scale.controlXsFont + 1} color={theme.mutedForeground}>
+        {label}
+      </Label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>{children}</div>
+    </div>
+  )
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const { scale } = useUi()
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 2000)
+    const timer = setTimeout(() => setCopied(false), 1600)
     return () => clearTimeout(timer)
   }, [copied])
+  return (
+    <IconButton
+      icon={copied ? 'check' : 'copy'}
+      label={copied ? 'Copied' : label}
+      size={scale.buttonXsHeight + 4}
+      onClick={() => {
+        void copyToClipboard(text).then((ok) => setCopied(ok))
+      }}
+    />
+  )
+}
+
+/**
+ * Diagrams lay out on first view, not at parse time, so opening a document never waits on them.
+ * Laying out the first diagram warms ELK and can take ~80ms; later ones take a few.
+ */
+function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number }) {
+  const { theme, reader, scale } = useUi()
+  const palette = useMemo(
+    () => mermaidPalette(theme, reader.contentFont),
+    [theme, reader.contentFont],
+  )
+  const [result, setResult] = useState<MermaidResult | null>(() => cachedMermaid(code, palette))
+  const [showSource, setShowSource] = useState(false)
+  useEffect(() => {
+    if (result && cachedMermaid(code, palette) === result) return
+    let live = true
+    void renderMermaidAsync(code, palette).then((next) => {
+      if (live) setResult(next)
+    })
+    return () => {
+      live = false
+    }
+  }, [code, palette, result])
+
+  if (result && !result.ok) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <CodeBlock language="mermaid" code={code} />
+        <Label size={scale.controlFont} color={theme.mutedForeground}>
+          {`Couldn't draw this diagram: ${result.error}`}
+        </Label>
+      </div>
+    )
+  }
+  if (showSource) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <CodeBlock language="mermaid" code={code} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+          <IconButton icon="image" label="Show diagram" onClick={() => setShowSource(false)} />
+        </div>
+      </div>
+    )
+  }
+  const inner = columnWidth - 2
+  const fit = result ? Math.min(reader.fontSize / 16, (inner - 24) / result.width) : 1
+  const width = result ? Math.round(result.width * fit) : 0
+  const height = result ? Math.round(result.height * fit) : 160
   return (
     <div
       style={{
@@ -424,45 +661,113 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         backgroundColor: theme.surfaceWell,
       }}
     >
+      <BlockHeader label="mermaid">
+        <IconButton
+          icon="code"
+          label="Show source"
+          size={scale.buttonXsHeight + 4}
+          onClick={() => setShowSource(true)}
+        />
+        <CopyButton text={code} label="Copy source" />
+      </BlockHeader>
       <div
         style={{
           display: 'flex',
+          justifyContent: 'center',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingLeft: 14,
-          paddingRight: 6,
-          paddingTop: 4,
-          userSelect: 'none',
+          height: height + 16,
+          paddingBottom: 12,
         }}
       >
-        <Label mono size={scale.controlXsFont + 1} color={theme.mutedForeground}>
-          {language === 'mermaid' ? 'mermaid diagram' : language}
-        </Label>
-        <IconButton
-          icon={copied ? 'check' : 'copy'}
-          label={copied ? 'Copied' : 'Copy code'}
-          size={scale.buttonXsHeight + 4}
-          onClick={() => {
-            void copyToClipboard(code).then((ok) => setCopied(ok))
-          }}
-        />
+        {result?.ok ? (
+          <img src={result.src} alt="Mermaid diagram" style={{ width, height }} />
+        ) : (
+          <Label size={scale.controlFont} color={theme.mutedForeground}>
+            Drawing diagram…
+          </Label>
+        )}
       </div>
-      <code
-        code={code}
-        language={nativeLanguage(language)}
-        theme={reader.native}
-        style={{
-          paddingLeft: 14,
-          paddingRight: 14,
-          paddingBottom: 12,
-          paddingTop: 2,
-          minWidth: 0,
-          fontFamily: reader.codeFont,
-          fontSize: reader.native.metrics?.codeTextSize,
-          lineHeight: reader.native.metrics?.codeLineHeight,
-          color: theme.foreground,
-        }}
-      />
+    </div>
+  )
+}
+
+const INLINE_SYNTAX = /[\\`*_~[\]<>&!]|https?:\/\//
+
+function TableBlock({
+  block,
+  columnWidth,
+  onLink,
+}: {
+  block: Extract<Block, { kind: 'table' }>
+  columnWidth: number
+  onLink: (event: EventPayload) => void
+}) {
+  const { reader, theme } = useUi()
+  const cellTheme = useMemo(
+    () => ({
+      ...reader.native,
+      metrics: { ...reader.native.metrics, mdBlockGap: 0 },
+    }),
+    [reader.native],
+  )
+  const pad = Math.round(reader.fontSize * 0.5)
+  const widths = block.widths.map((share) => Math.floor(share * columnWidth))
+  const row = (cells: string[], header: boolean, key: number) => (
+    <div
+      key={key}
+      style={{
+        display: 'flex',
+        borderBottomWidth: 1,
+        borderColor: header ? theme.border : theme.borderSubtle,
+      }}
+    >
+      {widths.map((width, column) => (
+        <div
+          key={column}
+          style={{
+            display: 'flex',
+            width,
+            minWidth: 0,
+            paddingLeft: pad,
+            paddingRight: pad,
+            paddingTop: pad * 0.75,
+            paddingBottom: pad * 0.75,
+            justifyContent:
+              block.align[column] === 'right'
+                ? 'flex-end'
+                : block.align[column] === 'center'
+                  ? 'center'
+                  : 'flex-start',
+          }}
+        >
+          {INLINE_SYNTAX.test(cells[column] ?? '') ? (
+            <markdown
+              source={header ? `**${cells[column]}**` : cells[column]}
+              theme={cellTheme}
+              onLinkClick={onLink}
+            />
+          ) : (
+            // Plain cells skip the markdown parser; most cells of a big table are plain.
+            <div
+              style={{
+                fontFamily: reader.contentFont,
+                fontSize: reader.fontSize,
+                lineHeight: Math.round(reader.fontSize * reader.lineHeight),
+                fontWeight: header ? 600 : 400,
+                color: theme.foreground,
+              }}
+            >
+              {cells[column] ?? ''}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {block.header ? row(block.header, true, -1) : null}
+      {block.rows.map((cells, index) => row(cells, false, index))}
     </div>
   )
 }

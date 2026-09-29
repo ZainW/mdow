@@ -1,11 +1,13 @@
 import { basename, dirname } from 'node:path'
-import { useMemo, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useGpuixRequired, type PublicInstance } from '@gpuix/react'
+import type { OutlineEntry } from '../lib/markdown'
 import { LABELS, SIDEBAR_MODES, type SidebarMode } from '../lib/prefs'
 import { visibleRows, WORKSPACE_ERROR_COPY } from '../lib/workspace'
 import { openDocument, setOverlay, setPrefs, toggleDirectory, useApp } from '../store'
 import { METRICS, useUi } from './context'
 import { activateOnEnter, Button, EmptyState, Icon, Label } from './primitives'
-import { sendReader } from './reader-bus'
+import { sendReader, useTopRow } from './reader-bus'
 import type { IconName } from './icons'
 
 const MODE_ICONS: Record<SidebarMode, IconName> = {
@@ -346,7 +348,6 @@ function FolderTree({ onOpenFolder }: { onOpenFolder: () => void }) {
 }
 
 function Outline() {
-  const { theme } = useUi()
   const tab = useApp((state) => state.tabs.find((item) => item.path === state.activePath))
   const outline = tab?.document.ok ? tab.document.parsed.outline : []
   if (outline.length === 0) {
@@ -360,35 +361,112 @@ function Outline() {
       </div>
     )
   }
-  const minLevel = Math.min(...outline.map((entry) => entry.level))
+  return <OutlineList outline={outline} />
+}
+
+/** Outline rows mounted at once. A 3MB document has ~16k headings, so the outline is windowed. */
+const OUTLINE_WINDOW = 160
+const OUTLINE_ROW = 30
+
+function OutlineList({ outline }: { outline: OutlineEntry[] }) {
+  const renderer = useGpuixRequired()
+  const listRef = useRef<PublicInstance | null>(null)
+  const topRow = useTopRow()
+  const minLevel = useMemo(() => Math.min(...outline.map((entry) => entry.level)), [outline])
+  const [start, setStart] = useState(0)
+  const shown = useRef<[number, number]>([0, 0])
+  // The current section is the last heading at or above the reading line.
+  let active = -1
+  for (let i = 0; i < outline.length && outline[i]!.blockIndex <= topRow; i++) active = i
+  const windowStart = Math.min(start, Math.max(0, outline.length - 1))
+  const end = Math.min(outline.length, windowStart + OUTLINE_WINDOW)
+
+  // Follow the reader: keep the current section in view without fighting a user scrolling here.
+  useEffect(() => {
+    const id = listRef.current?.id
+    if (active < 0 || id === undefined) return
+    const [first, last] = shown.current
+    if (active >= first && active < last - 1) return
+    setStart((current) =>
+      active >= current && active < current + OUTLINE_WINDOW
+        ? current
+        : Math.max(0, active - OUTLINE_WINDOW / 4),
+    )
+    renderer.scrollToItem?.(id, Math.max(0, active - 3), 0)
+  }, [active, renderer])
+
+  const rows = []
+  for (let index = windowStart; index < end; index++) {
+    const entry = outline[index]!
+    rows.push(
+      <OutlineRow
+        key={entry.slug}
+        entry={entry}
+        indent={entry.level - minLevel}
+        active={index === active}
+      />,
+    )
+  }
   return (
-    <ScrollArea>
-      {outline.map((entry) => (
-        <div
-          key={entry.slug}
-          role="button"
-          tabIndex={0}
-          onClick={() => sendReader({ type: 'block', index: entry.blockIndex })}
-          onKeyDown={activateOnEnter(() => sendReader({ type: 'block', index: entry.blockIndex }))}
-          style={{
-            paddingTop: 5,
-            paddingBottom: 5,
-            paddingLeft: 10 + (entry.level - minLevel) * 12,
-            paddingRight: 10,
-            borderRadius: 6,
-            cursor: 'pointer',
-            hover: { backgroundColor: theme.sidebarAccent },
-            userSelect: 'none',
-          }}
-        >
-          <Label
-            color={entry.level === minLevel ? theme.foreground : theme.mutedForeground}
-            style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
-          >
-            {entry.text}
-          </Label>
-        </div>
-      ))}
-    </ScrollArea>
+    <virtual-list
+      ref={listRef}
+      testId="outline"
+      itemCount={outline.length}
+      windowStart={windowStart}
+      estimatedItemHeight={OUTLINE_ROW}
+      overdraw={200}
+      onVisibleRange={(event) => {
+        const first = Math.floor(event.startIndex ?? 0)
+        const last = Math.ceil(event.endIndex ?? first)
+        shown.current = [first, last]
+        if (first < windowStart + OUTLINE_WINDOW / 8 || last > end - OUTLINE_WINDOW / 8) {
+          const next = Math.max(0, first - OUTLINE_WINDOW / 4)
+          if (next !== windowStart) setStart(next)
+        }
+      }}
+      style={{ flexGrow: 1, minHeight: 0, paddingLeft: 6, paddingRight: 6, paddingTop: 6 }}
+    >
+      {rows}
+    </virtual-list>
   )
 }
+
+const OutlineRow = memo(function OutlineRow({
+  entry,
+  indent,
+  active,
+}: {
+  entry: OutlineEntry
+  indent: number
+  active: boolean
+}) {
+  const { theme } = useUi()
+  const go = () => sendReader({ type: 'block', index: entry.blockIndex })
+  return (
+    <div
+      role="button"
+      aria-current={active ? 'location' : undefined}
+      tabIndex={0}
+      onClick={go}
+      onKeyDown={activateOnEnter(go)}
+      style={{
+        paddingTop: 5,
+        paddingBottom: 5,
+        paddingLeft: 10 + indent * 12,
+        paddingRight: 10,
+        borderRadius: 6,
+        cursor: 'pointer',
+        backgroundColor: active ? theme.sidebarAccent : undefined,
+        hover: { backgroundColor: theme.sidebarAccent },
+        userSelect: 'none',
+      }}
+    >
+      <Label
+        color={active || indent === 0 ? theme.foreground : theme.mutedForeground}
+        style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+      >
+        {entry.text}
+      </Label>
+    </div>
+  )
+})

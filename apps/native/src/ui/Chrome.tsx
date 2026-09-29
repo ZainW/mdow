@@ -1,5 +1,6 @@
 import { basename, dirname, sep } from 'node:path'
-import { IS_MAC, revealInFileManager } from '../lib/platform'
+import { documentKind } from '../lib/documents'
+import { IS_MAC, openExternal, revealInFileManager } from '../lib/platform'
 import {
   activateTab,
   closeTab,
@@ -233,6 +234,14 @@ export function Breadcrumb({ tab }: { tab: Tab | null }) {
           <Label color={theme.mutedForeground}>Welcome</Label>
         )}
       </div>
+      {tab && documentKind(tab.path) === 'html' ? (
+        <IconButton
+          icon="external-link"
+          label="Open in browser"
+          testId="open-in-browser"
+          onClick={() => void openExternal(tab.path)}
+        />
+      ) : null}
       {tab ? (
         <IconButton
           icon="expand"

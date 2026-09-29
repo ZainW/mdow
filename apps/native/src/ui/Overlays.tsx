@@ -17,26 +17,35 @@ import {
   THEME_MODES,
 } from '../lib/prefs'
 import { workspaceFiles } from '../lib/workspace'
+import { useEnter } from '../lib/motion'
 import { IS_MAC } from '../lib/platform'
 import { openDocument, setOverlay, setPrefs, useApp, zoomBy, type UpdateStatus } from '../store'
 import { UI_FONT, useUi } from './context'
 import { activateOnEnter, Button, Icon, IconButton, Kbd, Label, Segmented } from './primitives'
 
+/**
+ * `animate` fades the scrim and lifts the panel a few pixels. The palette leaves it off: it is
+ * opened from the keyboard many times a day and must feel instant.
+ */
 function Modal({
   children,
   width,
   top,
   testId,
+  animate = false,
 }: {
   children: ReactNode
   width: number
   top?: number
   testId?: string
+  animate?: boolean
 }) {
   const { theme } = useUi()
+  const enter = useEnter(animate)
   return (
     <div
       style={{
+        opacity: enter,
         position: 'absolute',
         top: 0,
         left: 0,
@@ -52,28 +61,32 @@ function Modal({
       }}
     >
       <div
-        testId={testId}
-        onMouseDownOutside={() => setOverlay(null)}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          width,
-          maxHeight: '80%',
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: theme.border,
-          backgroundColor: theme.surfaceRaised,
-          overflow: 'hidden',
-          boxShadow: {
-            offsetX: 0,
-            offsetY: 16,
-            blurRadius: 48,
-            spreadRadius: 0,
-            color: '#00000040',
-          },
-        }}
+        style={{ position: 'relative', top: 8 * (1 - enter), display: 'flex', maxHeight: '80%' }}
       >
-        {children}
+        <div
+          testId={testId}
+          onMouseDownOutside={() => setOverlay(null)}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            width,
+            maxHeight: '100%',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: theme.border,
+            backgroundColor: theme.surfaceRaised,
+            overflow: 'hidden',
+            boxShadow: {
+              offsetX: 0,
+              offsetY: 16,
+              blurRadius: 48,
+              spreadRadius: 0,
+              color: '#00000040',
+            },
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -312,7 +325,7 @@ export function Settings({ onCheckForUpdates }: { onCheckForUpdates: () => void 
   const prefs = useApp((state) => state.prefs)
   const update = useApp((state) => state.update)
   return (
-    <Modal width={520} testId="settings">
+    <Modal width={520} testId="settings" animate>
       <div
         style={{
           display: 'flex',
@@ -453,7 +466,7 @@ export function updateLabel(update: UpdateStatus) {
 export function Shortcuts() {
   const { theme, scale } = useUi()
   return (
-    <Modal width={460} testId="shortcuts">
+    <Modal width={460} testId="shortcuts" animate>
       <div
         style={{
           display: 'flex',

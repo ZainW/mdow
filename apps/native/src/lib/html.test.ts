@@ -54,4 +54,38 @@ describe('htmlToMarkdown', () => {
       md('<section><custom-thing>Hello &amp; welcome&nbsp;home</custom-thing></section>'),
     ).toBe('Hello & welcome home\n')
   })
+
+  test('drops the doctype', () => {
+    expect(md('<!DOCTYPE html>\n<p>Hi</p>')).toBe('Hi\n')
+  })
+
+  test('div.mermaid becomes a mermaid fence', () => {
+    expect(md('<div class="mermaid">\nflowchart LR\n  a --&gt; b\n</div>')).toBe(
+      '```mermaid\nflowchart LR\n  a --> b\n```\n',
+    )
+  })
+
+  test('inline SVG becomes a data-URL image', () => {
+    const out = md(
+      '<figure><svg viewBox="0 0 10 10" aria-label="Dot"><circle r="4"/></svg><figcaption>A dot</figcaption></figure>',
+    )
+    const match = /^!\[Dot\]\(<data:image\/svg\+xml;base64,([^>]+)>\)/.exec(out)
+    expect(match).not.toBeNull()
+    expect(Buffer.from(match![1]!, 'base64').toString()).toContain(
+      'xmlns="http://www.w3.org/2000/svg"',
+    )
+    expect(out).toContain('*A dot*')
+  })
+
+  test('nav, aside, details and definition lists read as prose', () => {
+    const out = md(`
+      <nav><a href="#a">A</a><a href="#b">B</a></nav>
+      <aside><p>Note</p></aside>
+      <details><summary>More</summary><p>Body</p></details>
+      <dl><dt>Term</dt><dd>Meaning</dd></dl>`)
+    expect(out).toContain('[A](<#a>) · [B](<#b>)')
+    expect(out).toContain('> Note')
+    expect(out).toContain('**More**\n\nBody')
+    expect(out).toContain('**Term**\n\nMeaning')
+  })
 })
