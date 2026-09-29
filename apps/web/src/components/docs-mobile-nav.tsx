@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { DocMeta } from '~/lib/content'
+import { useFocusTrap } from '~/hooks/use-focus-trap'
 import { DocsSidebar } from './docs-sidebar'
+import { CloseIcon, MenuIcon } from './icons'
 
 interface DocsMobileNavProps {
   docs: DocMeta[]
@@ -9,86 +12,73 @@ interface DocsMobileNavProps {
 
 export function DocsMobileNav({ docs, currentSlug }: DocsMobileNavProps) {
   const [open, setOpen] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const current = docs.find((d) => d.slug === currentSlug)
+
+  useFocusTrap(open, panelRef)
 
   useEffect(() => {
     setOpen(false)
   }, [currentSlug])
 
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-      return () => {
-        document.body.style.overflow = ''
-      }
+    if (!open) return
+    document.body.style.overflow = 'hidden'
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = ''
+      document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
 
   return (
-    <div className="lg:hidden">
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium transition-colors hover:bg-muted"
-        aria-label="Open documentation menu"
+        className="inline-flex h-9 min-w-0 max-w-[55%] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium"
+        aria-expanded={open}
+        aria-label={`Documentation menu${current ? `, current page ${current.title}` : ''}`}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-        >
-          <line x1="3" x2="21" y1="6" y2="6" />
-          <line x1="3" x2="21" y1="12" y2="12" />
-          <line x1="3" x2="21" y1="18" y2="18" />
-        </svg>
-        Menu
+        <MenuIcon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate">{current?.title ?? 'Menu'}</span>
       </button>
-      {open && (
-        <div className="fixed inset-0 z-modal">
-          <div
-            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setOpen(false)
-            }}
-            role="button"
-            tabIndex={-1}
-            aria-label="Close menu"
-          />
-          <aside className="absolute left-0 top-0 h-full w-72 max-w-[80vw] overflow-y-auto border-r border-border bg-background p-6 shadow-soft-lg">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-sm font-semibold">Documentation</span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label="Close menu"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
+      {/* Portaled: the sticky docs bar uses backdrop-filter, which would
+          otherwise become the containing block for this fixed drawer. */}
+      {open &&
+        createPortal(
+          <div className="fixed inset-0 z-modal">
+            <div
+              className="animate-overlay-in absolute inset-0 bg-foreground/15 backdrop-blur-[2px] dark:bg-black/50"
+              onClick={() => setOpen(false)}
+              aria-hidden
+            />
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Documentation"
+              className="animate-slide-in-left absolute inset-y-0 left-0 w-80 max-w-[85vw] overflow-y-auto border-r border-border bg-background px-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] shadow-[16px_0_48px_-16px_hsl(var(--shadow-color)/0.3)]"
+            >
+              <div className="mb-4 flex items-center justify-between pl-3">
+                <span className="text-sm font-semibold">Documentation</span>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="btn btn-ghost size-11 rounded-lg p-0"
+                  aria-label="Close menu"
                 >
-                  <path d="M18 6 6 18" />
-                  <path d="m6 6 12 12" />
-                </svg>
-              </button>
+                  <CloseIcon className="size-5" />
+                </button>
+              </div>
+              <DocsSidebar docs={docs} currentSlug={currentSlug} />
             </div>
-            <DocsSidebar docs={docs} currentSlug={currentSlug} />
-          </aside>
-        </div>
-      )}
-    </div>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }

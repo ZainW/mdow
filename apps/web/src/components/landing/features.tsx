@@ -1,153 +1,150 @@
-import { BrowserFrame } from '~/components/browser-frame'
-import { FeatureRow } from '~/components/feature-row'
-import { GradientSection } from '~/components/gradient-section'
-import { Screenshot } from './screenshot'
+import type { ReactNode } from 'react'
+import { Link } from '@tanstack/react-router'
+import { useModKey } from '~/hooks/use-mod-key'
+import { cn } from '~/lib/utils'
+import { ArrowRightIcon, CheckIcon } from '../icons'
+import {
+  CodeMock,
+  CompanionMock,
+  DiagramMock,
+  LiveReloadMock,
+  PaletteMock,
+  SpeedMock,
+  TreeMock,
+} from './mocks'
 
-function CodeMockup() {
-  return (
-    <BrowserFrame
-      title="example.ts"
-      ariaLabel="Illustration of TypeScript syntax highlighting in a code block"
-    >
-      <div className="p-5 font-mono text-[13px] leading-[1.7]">
-        <div>
-          <span className="text-primary">import</span>
-          <span className="text-foreground">{' { render } '}</span>
-          <span className="text-primary">from</span>
-          <span className="text-[oklch(0.65_0.14_160)]"> 'mdow'</span>
-        </div>
-        <div className="mt-1.5">
-          <span className="text-primary">const</span>
-          <span className="text-foreground"> html </span>
-          <span className="text-muted-foreground">= </span>
-          <span className="text-[oklch(0.6_0.13_242)]">render</span>
-          <span className="text-muted-foreground">(</span>
-          <span className="text-[oklch(0.65_0.14_160)]">'# Hello'</span>
-          <span className="text-muted-foreground">)</span>
-        </div>
-        <div className="mt-3 text-muted-foreground/70">
-          <span className="text-muted-foreground/50">{'// '}</span>
-          Editor-quality highlighting via Shiki
-        </div>
-      </div>
-    </BrowserFrame>
-  )
-}
-
-function MermaidMockup() {
-  return (
-    <BrowserFrame
-      title="diagram.md"
-      ariaLabel="Illustration of an inline Mermaid flowchart with Idea, Draft, and Publish steps"
-    >
-      <div className="px-6 py-8">
-        <div className="flex items-center justify-center gap-4 text-sm">
-          <div className="rounded-md border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
-            Idea
-          </div>
-          <svg
-            width="24"
-            height="12"
-            viewBox="0 0 24 12"
-            fill="none"
-            className="text-muted-foreground/60"
-            aria-hidden
-          >
-            <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-          <div className="rounded-md border border-border-subtle bg-surface px-4 py-2.5 shadow-soft">
-            Draft
-          </div>
-          <svg
-            width="24"
-            height="12"
-            viewBox="0 0 24 12"
-            fill="none"
-            className="text-muted-foreground/60"
-            aria-hidden
-          >
-            <path d="M0 6h20m0 0l-4-4m4 4l-4 4" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-          <div className="rounded-md border border-primary/25 bg-primary/8 px-4 py-2.5 font-medium text-foreground shadow-soft ring-1 ring-primary/10">
-            Publish
-          </div>
-        </div>
-      </div>
-    </BrowserFrame>
-  )
-}
-
-function ThemeMockup() {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <Screenshot
-        name="reading-light"
-        alt="Mdow in light mode"
-        className="rounded-lg shadow-card"
-      />
-      <Screenshot name="reading-dark" alt="Mdow in dark mode" className="rounded-lg shadow-card" />
-    </div>
-  )
-}
-
-function DropFileMockup() {
-  return (
-    <Screenshot
-      name="empty-light"
-      alt="Mdow welcome screen with open file and open folder actions"
-      className="rounded-lg shadow-elevated"
-    />
-  )
-}
-
-function SidebarMockup() {
-  return (
-    <Screenshot
-      name="sidebar-light"
-      alt="Mdow folder sidebar with a file tree and tabbed documents"
-      className="rounded-lg shadow-elevated"
-    />
-  )
-}
+const EXTRAS = [
+  'Tabs and side-by-side split view',
+  'Find in document with highlighted matches',
+  'Local HTML files in a sandboxed viewer',
+  'Light and dark themes that follow your system',
+  'Drag and drop files or whole folders',
+  'Wide reading mode for fewer distractions',
+]
 
 export function LandingFeatures() {
+  const modKey = useModKey() || '⌘'
+
   return (
-    <GradientSection innerClassName="space-y-24 md:space-y-32">
-      <FeatureRow
-        title="Just drop a file in"
-        description="Open a file, open a folder, or drag and drop. No setup, no accounts, no configuration. Mdow gets out of your way and lets you read."
-        align="left"
-      >
-        <DropFileMockup />
-      </FeatureRow>
-      <FeatureRow
-        title="Browse folders like a project"
-        description="Open a directory and navigate your markdown files in a collapsible tree. Switch between Recents, Outline, and Folder views from the sidebar."
-        align="right"
-      >
-        <SidebarMockup />
-      </FeatureRow>
-      <FeatureRow
-        title="Editor-quality syntax highlighting"
-        description="Powered by Shiki — the same engine VS Code uses. 30+ languages, themed for both light and dark mode out of the box."
-        align="left"
-      >
-        <CodeMockup />
-      </FeatureRow>
-      <FeatureRow
-        title="Mermaid diagrams, rendered inline"
-        description="Flowcharts, sequence diagrams, state machines — write them in plain text and watch them render where you'd expect."
-        align="right"
-      >
-        <MermaidMockup />
-      </FeatureRow>
-      <FeatureRow
-        title="Light and dark, just right"
-        description="Clean white in light mode, cool blue-gray in dark. Follows your system, switches instantly, never fights your eyes."
-        align="left"
-      >
-        <ThemeMockup />
-      </FeatureRow>
-    </GradientSection>
+    <section id="features" className="scroll-mt-20 py-20 md:py-28">
+      <div className="mx-auto max-w-6xl px-5 sm:px-6">
+        <div className="max-w-2xl">
+          <p className="eyebrow">Features</p>
+          <h2 className="font-display mt-3 text-4xl leading-[1.08] sm:text-5xl">
+            Everything a reader needs. Nothing an editor does.
+          </h2>
+          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+            Keep writing in the editor you love. Mdow is where you go to read, navigate, and
+            understand what you wrote.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <FeatureCard
+            className="md:col-span-2 lg:col-span-4"
+            title="Ask your documents"
+            description={
+              <>
+                Chat about the open file, a whole folder, or anything you{' '}
+                <code className="font-mono text-[0.92em] text-foreground">@</code>-mention. Answers
+                come from the ACP agent you already run, like OpenCode or Codex, with citations that
+                jump straight to the source.
+              </>
+            }
+            link={{ label: 'How the companion works', slug: 'ai-companion' }}
+          >
+            <CompanionMock />
+          </FeatureCard>
+          <FeatureCard
+            className="lg:col-span-2"
+            title="Fast with huge files"
+            description="Multi-megabyte documents open in about a second. Highlighting and diagrams render as you scroll to them."
+          >
+            <SpeedMock />
+          </FeatureCard>
+          <FeatureCard
+            className="lg:col-span-2"
+            title="Editor-grade code"
+            description="Shiki highlighting, the engine behind VS Code, themed for light and dark."
+          >
+            <CodeMock />
+          </FeatureCard>
+          <FeatureCard
+            className="lg:col-span-2"
+            title="Mermaid, inline"
+            description="Flowcharts and sequence diagrams render right where you wrote them."
+          >
+            <DiagramMock />
+          </FeatureCard>
+          <FeatureCard
+            className="lg:col-span-2"
+            title="Folders and outlines"
+            description="Browse a project as a tree and jump between headings in long reads."
+          >
+            <TreeMock />
+          </FeatureCard>
+          <FeatureCard
+            className="lg:col-span-3"
+            title="Keyboard first"
+            description={`Jump to any file or action from the command palette with ${modKey}K. Hold ${modKey} for a cheat sheet.`}
+            link={{ label: 'All shortcuts', slug: 'shortcuts' }}
+          >
+            <PaletteMock modKey={modKey} />
+          </FeatureCard>
+          <FeatureCard
+            className="md:col-span-2 lg:col-span-3"
+            title="Live as you save"
+            description="Mdow watches your files. Save in your editor and only the parts that changed re-render, right where you left off."
+          >
+            <LiveReloadMock />
+          </FeatureCard>
+        </div>
+
+        <ul className="mt-12 grid gap-x-8 gap-y-3 border-t border-border-subtle pt-10 text-[15px] sm:grid-cols-2 lg:grid-cols-3">
+          {EXTRAS.map((item) => (
+            <li key={item} className="flex items-start gap-3 text-muted-foreground">
+              <CheckIcon className="mt-1 size-4 shrink-0 text-accent" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+function FeatureCard({
+  title,
+  description,
+  link,
+  className,
+  children,
+}: {
+  title: string
+  description: ReactNode
+  link?: { label: string; slug: string }
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <article className={cn('surface-card flex flex-col overflow-hidden rounded-2xl', className)}>
+      <div className="flex flex-1 items-center bg-surface/60 px-6 py-8 sm:px-8 dark:bg-background/40">
+        <div className="w-full">{children}</div>
+      </div>
+      <div className="border-t border-border-subtle px-6 py-5 sm:px-8">
+        <h3 className="font-semibold tracking-tight">{title}</h3>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground">{description}</p>
+        {link && (
+          <Link
+            to="/docs/$"
+            params={{ _splat: link.slug }}
+            className="group mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+          >
+            {link.label}
+            <ArrowRightIcon className="size-3.5 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
+          </Link>
+        )}
+      </div>
+    </article>
   )
 }

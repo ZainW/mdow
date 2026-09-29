@@ -17,7 +17,7 @@ The companion is read-only. It helps you understand local documents without modi
 
 Open multiple documents at once and switch between them from the tab bar. Close tabs with a click or keyboard shortcut, reorder them with drag and drop, and reopen recent files from the sidebar or app menu.
 
-![Mdow with multiple tabs open](/screenshots/sidebar-dark.webp)
+![Mdow with several tabs open and the Outline sidebar](/screenshots/outline-light.webp)
 
 ## Side-by-side reading
 

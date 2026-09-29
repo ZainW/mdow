@@ -3,11 +3,11 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { LandingHero } from '~/components/landing/hero'
 import { LandingFeatures } from '~/components/landing/features'
-import { LandingHighlights } from '~/components/landing/highlights'
-import { LandingProductPreview } from '~/components/landing/product-preview'
-import { LandingTrust } from '~/components/landing/trust'
+import { LandingReaderSection } from '~/components/landing/reader-section'
+import { LandingLatestRelease } from '~/components/landing/latest-release'
 import { LandingCta } from '~/components/landing/cta'
 import { DownloadBar } from '~/components/landing/download-bar'
+import { getReleases, releaseHeadline } from '~/lib/changelog'
 import { detectPlatform, primaryDownloadUrl } from '~/lib/download-links'
 import { fetchLatestRelease } from '~/lib/github-releases'
 import { absoluteUrl, canonical, jsonLd, seo, SITE_URL } from '~/lib/seo'
@@ -22,10 +22,27 @@ const loadHomeData = createServerFn({ method: 'GET' }).handler(async () => {
     release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
   )
 
+  const [latest] = getReleases()
+  let latestRelease = null
+  if (latest) {
+    const { renderToHtml, init } = await import('md4x')
+    await init()
+    const highlights = latest.bullets.slice(0, 4)
+    latestRelease = {
+      version: latest.version,
+      anchor: latest.anchor,
+      date: latest.date,
+      headline: releaseHeadline(latest),
+      highlightsHtml: renderToHtml(highlights.map((b) => `- ${b}`).join('\n')),
+      total: latest.bullets.length,
+    }
+  }
+
   return {
     platform,
     release,
     downloadUrl: release ? primaryDownloadUrl(release, platform) : null,
+    latestRelease,
   }
 })
 
@@ -33,9 +50,9 @@ export const Route = createFileRoute('/')({
   loader: () => loadHomeData(),
   head: ({ loaderData }) => ({
     meta: seo({
-      title: 'Mdow: AI Markdown Reader for Mac, Windows & Linux',
+      title: 'Mdow: A Quiet Markdown Reader for Mac, Windows & Linux',
       description:
-        'Read markdown and ask questions about local files with OpenCode and ACP. Free for Mac, Windows, and Linux, with Mermaid and Shiki built in.',
+        'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
     }),
     links: [canonical('/')],
     scripts: [
@@ -82,15 +99,19 @@ export const Route = createFileRoute('/')({
 })
 
 function HomePage() {
-  const { platform, release, downloadUrl } = Route.useLoaderData()
+  const { platform, release, downloadUrl, latestRelease } = Route.useLoaderData()
 
   return (
     <>
-      <LandingHero platform={platform} release={release} downloadUrl={downloadUrl} />
+      <LandingHero
+        platform={platform}
+        release={release}
+        downloadUrl={downloadUrl}
+        latest={latestRelease}
+      />
       <LandingFeatures />
-      <LandingHighlights />
-      <LandingProductPreview />
-      <LandingTrust />
+      <LandingReaderSection />
+      {latestRelease && <LandingLatestRelease release={latestRelease} />}
       <LandingCta platform={platform} downloadUrl={downloadUrl} />
       <DownloadBar platform={platform} release={release} downloadUrl={downloadUrl} />
     </>

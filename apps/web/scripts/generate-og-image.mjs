@@ -8,86 +8,91 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const outPath = join(__dirname, '../public/og-image.png')
-const screenshotPath = join(__dirname, '../public/screenshots/reading-dark.webp')
+const b64 = (path) => readFileSync(join(__dirname, path)).toString('base64')
 
-const screenshotB64 = readFileSync(screenshotPath).toString('base64')
+const screenshot = b64('../public/screenshots/reading-light.webp')
+const logo = b64('../public/mdow-logo.svg')
+const serif = b64('../src/assets/fonts/Newsreader-Variable.woff2')
+const serifItalic = b64('../src/assets/fonts/Newsreader-Italic-Variable.woff2')
+const sans = b64('../src/assets/fonts/InterVariable.woff2')
 
 const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <style>
+    @font-face { font-family: Newsreader; src: url(data:font/woff2;base64,${serif}); font-weight: 200 800; }
+    @font-face { font-family: Newsreader; font-style: italic; src: url(data:font/woff2;base64,${serifItalic}); font-weight: 200 800; }
+    @font-face { font-family: Inter; src: url(data:font/woff2;base64,${sans}); font-weight: 400 700; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       width: 1200px;
       height: 630px;
-      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-      background: radial-gradient(ellipse 80% 70% at 30% 0%, #2a2520 0%, #141414 55%);
-      color: #f5f5f4;
-      display: flex;
-      align-items: center;
-      padding: 56px 64px;
-      gap: 48px;
       overflow: hidden;
+      position: relative;
+      font-family: Inter, sans-serif;
+      color: #26231f;
+      background:
+        radial-gradient(ellipse 60% 70% at 20% 0%, rgba(214, 120, 70, 0.08), transparent 70%),
+        #faf7f2;
     }
-    .copy { flex: 1; min-width: 0; }
-    .eyebrow {
-      font-size: 14px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #a8a29e;
-      margin-bottom: 20px;
+    .lines {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(to bottom, transparent 0, transparent 31px, rgba(38, 35, 31, 0.05) 31px, rgba(38, 35, 31, 0.05) 32px);
+      -webkit-mask-image: linear-gradient(to right, black, transparent 55%);
     }
+    .copy { position: absolute; left: 72px; top: 78px; width: 520px; }
+    .brand { display: flex; align-items: center; gap: 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+    .brand img { width: 44px; height: 44px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.08); }
     h1 {
-      font-size: 52px;
-      line-height: 1.05;
-      letter-spacing: -0.03em;
-      font-weight: 700;
-      margin-bottom: 20px;
+      margin-top: 64px;
+      font-family: Newsreader, serif;
+      font-weight: 440;
+      font-size: 76px;
+      line-height: 0.98;
+      letter-spacing: -0.02em;
     }
-    p {
-      font-size: 22px;
-      line-height: 1.45;
-      color: #d6d3d1;
-      max-width: 34ch;
-    }
-    .badge {
-      display: inline-block;
-      margin-top: 28px;
-      padding: 10px 18px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      font-size: 16px;
-      color: #e7e5e4;
-    }
+    h1 em { font-style: italic; }
+    p { margin-top: 26px; font-size: 23px; line-height: 1.45; color: #6b645c; max-width: 25ch; }
+    .url { position: absolute; left: 72px; bottom: 60px; font-size: 18px; color: #8a8279; }
     .shot {
-      width: 520px;
-      border-radius: 16px;
+      position: absolute;
+      left: 640px;
+      top: 92px;
+      width: 820px;
+      border-radius: 14px;
       overflow: hidden;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.45);
-      border: 1px solid rgba(255,255,255,0.08);
-      flex-shrink: 0;
+      background: #fff;
+      box-shadow:
+        0 0 0 1px rgba(38, 35, 31, 0.1),
+        0 12px 24px -8px rgba(60, 40, 20, 0.12),
+        0 40px 80px -24px rgba(60, 40, 20, 0.22);
     }
     .shot img { display: block; width: 100%; height: auto; }
+    .lights { position: absolute; left: 11px; top: 17px; display: flex; gap: 4px; }
+    .lights span { width: 6px; height: 6px; border-radius: 50%; }
   </style>
 </head>
 <body>
+  <div class="lines"></div>
   <div class="copy">
-    <div class="eyebrow">Mdow</div>
-    <h1>A quiet place to read markdown</h1>
-    <p>Beautiful rendering, syntax highlighting, and a calm reading experience for Mac, Windows, and Linux.</p>
-    <div class="badge">Free download · mdow.app</div>
+    <div class="brand"><img src="data:image/svg+xml;base64,${logo}" alt="" />Mdow</div>
+    <h1>A quiet place to read <em>markdown</em>.</h1>
+    <p>A fast, focused reader for your notes, docs, and READMEs.</p>
   </div>
+  <div class="url">mdow.wania.app · Free for macOS, Windows &amp; Linux</div>
   <div class="shot">
-    <img src="data:image/webp;base64,${screenshotB64}" alt="" />
+    <img src="data:image/webp;base64,${screenshot}" alt="" />
+    <div class="lights"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
   </div>
 </body>
 </html>`
 
 const browser = await chromium.launch()
-const page = await browser.newPage({ viewport: { width: 1200, height: 630 } })
+const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 })
 await page.setContent(html, { waitUntil: 'networkidle' })
+await page.evaluate(() => document.fonts.ready)
 await page.screenshot({ path: outPath, type: 'png' })
 await browser.close()
 
