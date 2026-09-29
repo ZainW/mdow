@@ -140,6 +140,21 @@ describe('splitting large blocks into rows', () => {
     )
   })
 
+  test('slices of a list numbered all `1.` continue the count', () => {
+    const items = Array.from({ length: LIST_CHUNK_ITEMS + 2 }, (_, i) => `1. item ${i}`)
+    const blocks = parseMarkdown(`${items.join('\n')}\n`, '/a.md').blocks as { source: string }[]
+    expect(blocks).toHaveLength(2)
+    expect(blocks[1]!.source.startsWith(`${LIST_CHUNK_ITEMS + 1}. item ${LIST_CHUNK_ITEMS}`)).toBe(
+      true,
+    )
+    // A list that starts elsewhere keeps its offset.
+    const offset = parseMarkdown(
+      `${Array.from({ length: LIST_CHUNK_ITEMS + 1 }, (_, i) => `${i + 5}. x`).join('\n')}\n`,
+      '/a.md',
+    ).blocks as { source: string }[]
+    expect(offset[1]!.source.startsWith(`${LIST_CHUNK_ITEMS + 5}. x`)).toBe(true)
+  })
+
   test('a long code fence is cut at blank lines and copies whole', () => {
     const lines = Array.from({ length: CODE_CHUNK_LINES * 3 }, (_, i) =>
       i % 10 === 9 ? '' : `x${i}`,

@@ -256,11 +256,20 @@ function pushList(ctx: BuildContext, id: string, list: Tokens.List) {
       chars += item.raw.length
     }
   }
+  const first = typeof list.start === 'number' ? list.start : 1
+  let before = 0
   groups.forEach((items, index) => {
     const last = index === groups.length - 1
-    // Item raws keep their own markers, so an ordered slice starts at its real number.
     let raw = items.map((item) => item.raw).join('')
-    if (list.ordered && index > 0 && !/^\s*\d/.test(raw)) raw = `${list.start || 1}. ${raw}`
+    // A slice numbers from its first marker, so give it the item's real position. Lists that
+    // number every item `1.` would otherwise restart at 1 in each slice.
+    if (list.ordered && index > 0) {
+      const number = first + before
+      raw = /^\s*\d+[.)]/.test(raw)
+        ? raw.replace(/^(\s*)\d+([.)])/, `$1${number}$2`)
+        : `${number}. ${raw}`
+    }
+    before += items.length
     ctx.blocks.push({
       kind: 'markdown',
       id: index === 0 ? id : `b${ctx.nextId++}`,

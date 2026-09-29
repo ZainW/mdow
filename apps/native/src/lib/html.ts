@@ -282,9 +282,18 @@ function splitSuffix(target: string): [string, string?] {
   return index === -1 ? [target] : [target.slice(0, index), target.slice(index)]
 }
 
+/**
+ * A Mermaid source block. A page saved after Mermaid ran holds the drawn `<svg>` inside the
+ * same element, so only a text-only element is source; a drawn one falls through and its SVG
+ * paints as an image.
+ */
 function isMermaid(element: HTMLElement) {
   const tag = element.rawTagName?.toLowerCase()
-  return (tag === 'div' || tag === 'pre') && /\bmermaid\b/.test(element.getAttribute('class') ?? '')
+  return (
+    (tag === 'div' || tag === 'pre') &&
+    /\bmermaid\b/.test(element.getAttribute('class') ?? '') &&
+    !element.childNodes.some((child) => child.nodeType === NodeType.ELEMENT_NODE)
+  )
 }
 
 /** The document's `<title>`, when it has one. */

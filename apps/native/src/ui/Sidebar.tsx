@@ -375,6 +375,7 @@ function OutlineList({ outline }: { outline: OutlineEntry[] }) {
   const minLevel = useMemo(() => Math.min(...outline.map((entry) => entry.level)), [outline])
   const [start, setStart] = useState(0)
   const shown = useRef<[number, number]>([0, 0])
+  const pendingScroll = useRef<number | null>(null)
   // The current section is the last heading at or above the reading line.
   let active = -1
   for (let i = 0; i < outline.length && outline[i]!.blockIndex <= topRow; i++) active = i
@@ -387,13 +388,23 @@ function OutlineList({ outline }: { outline: OutlineEntry[] }) {
     if (active < 0 || id === undefined) return
     const [first, last] = shown.current
     if (active >= first && active < last - 1) return
-    setStart((current) =>
-      active >= current && active < current + OUTLINE_WINDOW
-        ? current
-        : Math.max(0, active - OUTLINE_WINDOW / 4),
-    )
-    renderer.scrollToItem?.(id, Math.max(0, active - 3), 0)
-  }, [active, renderer])
+    const target = Math.max(0, active - 3)
+    if (target >= windowStart && target < end) {
+      renderer.scrollToItem?.(id, target, 0)
+      return
+    }
+    // Outside the rendered window: move the window first, then scroll once it has committed
+    // (scrolling now would target a row the list doesn't have yet and stop short).
+    pendingScroll.current = target
+    setStart(Math.max(0, target - OUTLINE_WINDOW / 4))
+  }, [active, renderer, windowStart, end])
+  useEffect(() => {
+    const id = listRef.current?.id
+    const target = pendingScroll.current
+    if (target === null || id === undefined) return
+    pendingScroll.current = null
+    renderer.scrollToItem?.(id, target, 0)
+  }, [windowStart, renderer])
 
   const rows = []
   for (let index = windowStart; index < end; index++) {

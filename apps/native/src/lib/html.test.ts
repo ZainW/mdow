@@ -59,6 +59,13 @@ describe('htmlToMarkdown', () => {
     expect(md('<!DOCTYPE html>\n<p>Hi</p>')).toBe('Hi\n')
   })
 
+  test('an already-drawn div.mermaid keeps its svg instead of becoming a fence', () => {
+    const out = md(
+      '<div class="mermaid" data-processed="true"><svg viewBox="0 0 10 10"><text>Start</text></svg></div>',
+    )
+    expect(out).not.toContain('```mermaid')
+  })
+
   test('div.mermaid becomes a mermaid fence', () => {
     expect(md('<div class="mermaid">\nflowchart LR\n  a --&gt; b\n</div>')).toBe(
       '```mermaid\nflowchart LR\n  a --> b\n```\n',

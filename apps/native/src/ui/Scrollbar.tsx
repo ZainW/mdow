@@ -170,7 +170,15 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
         // Catch moves anywhere over the reader while dragging, so the thumb keeps following.
         <div
           role="presentation"
-          onMouseMove={(event) => seekTo(drag.top + ((event.y ?? 0) - drag.y))}
+          onMouseMove={(event) => {
+            // The button came up somewhere we didn't see (the sidebar, outside the window):
+            // end the drag instead of scrolling with no button held.
+            if (event.pressedButton !== 0) {
+              setDrag(null)
+              return
+            }
+            seekTo(drag.top + ((event.y ?? 0) - drag.y))
+          }}
           onMouseUp={() => setDrag(null)}
           onMouseDownOutside={() => setDrag(null)}
           style={{
