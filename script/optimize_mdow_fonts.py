@@ -190,17 +190,37 @@ def optimize_variable(
     src: Path,
     gpui_name: str,
     unicodes: str,
+    gpui_weights: tuple[int, ...],
     desktop_name: str | None = None,
     web_name: str | None = None,
     **axes: str,
 ) -> Path:
-    staged = CACHE / "staged" / gpui_name
+    """Subset a variable font for desktop/web, and cut static GPUI instances from it.
+
+    Mdow Native bundles static instances only: CoreText recomputes glyph advances from outlines
+    for variable TrueType fonts each time GPUI sizes a font for a line, which made shaping new
+    text ~4x slower than with static files. `gpui_name` is the stem of the static files, written
+    as `<stem>-<weight>.ttf`.
+    """
+    staged = CACHE / "staged" / f"{gpui_name}.ttf"
+    staged.parent.mkdir(parents=True, exist_ok=True)
     instanced = staged.with_suffix(".instanced.ttf")
     instance(src, instanced, **axes)
-    dest = GPUI_FONTS / gpui_name
-    subset(instanced, dest, unicodes)
-    write_outputs(dest, desktop_name, web_name)
-    return dest
+    subset(instanced, staged, unicodes)
+    write_outputs(staged, desktop_name, web_name)
+    for weight in gpui_weights:
+        write_static_instance(staged, GPUI_FONTS / f"{gpui_name}-{weight}.ttf", weight)
+    return staged
+
+
+def write_static_instance(variable: Path, dest: Path, weight: int) -> None:
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib import instancer
+
+    static = instancer.instantiateVariableFont(
+        TTFont(variable), {"wght": weight}, updateFontNames=True
+    )
+    static.save(dest)
 
 
 def optimize_static(
@@ -247,8 +267,9 @@ def main() -> int:
 
     optimize_variable(
         find_file(inter, "InterVariable.ttf"),
-        "InterVariable.ttf",
+        "Inter",
         READER_UNICODES,
+        (400, 500, 600, 700),
         desktop_name="InterVariable.woff2",
         web_name="InterVariable.woff2",
         wght="400:700",
@@ -256,8 +277,9 @@ def main() -> int:
     )
     optimize_variable(
         find_file(inter, "InterVariable-Italic.ttf"),
-        "InterVariable-Italic.ttf",
+        "Inter-Italic",
         READER_UNICODES,
+        (400, 500, 600, 700),
         desktop_name="InterVariable-Italic.woff2",
         web_name="InterVariable-Italic.woff2",
         wght="400:700",
@@ -265,16 +287,18 @@ def main() -> int:
     )
     optimize_variable(
         find_file(geist, "GeistMono[wght].ttf"),
-        "GeistMono-Variable.ttf",
+        "GeistMono",
         MONO_UNICODES,
+        (400, 500, 700),
         desktop_name="GeistMono-Variable.woff2",
         web_name="GeistMono-Variable.woff2",
         wght="400:700",
     )
     optimize_variable(
         find_file(geist, "GeistMono-Italic[wght].ttf"),
-        "GeistMono-Italic-Variable.ttf",
+        "GeistMono-Italic",
         MONO_UNICODES,
+        (400, 700),
         desktop_name="GeistMono-Italic-Variable.woff2",
         web_name="GeistMono-Italic-Variable.woff2",
         wght="400:700",
@@ -302,15 +326,17 @@ def main() -> int:
 
     optimize_variable(
         find_file(jetbrains, "JetBrainsMono[wght].ttf"),
-        "JetBrainsMono-Variable.ttf",
+        "JetBrainsMono",
         MONO_UNICODES,
+        (400, 500, 700),
         desktop_name="JetBrainsMono-Variable.woff2",
         wght="400:700",
     )
     optimize_variable(
         find_file(jetbrains, "JetBrainsMono-Italic[wght].ttf"),
-        "JetBrainsMono-Italic-Variable.ttf",
+        "JetBrainsMono-Italic",
         MONO_UNICODES,
+        (400, 700),
         desktop_name="JetBrainsMono-Italic-Variable.woff2",
         wght="400:700",
     )
