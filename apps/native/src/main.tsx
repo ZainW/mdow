@@ -7,11 +7,13 @@ import { App } from './App'
 import { commandForKey, type CommandId } from './lib/commands'
 import {
   activateApp,
+  handleDragOver,
   handleOpenUrls,
   installMenuBar,
   registerFonts,
   type MenuSpec,
 } from './lib/macos'
+import { registerFontsLinux } from './lib/linux'
 import { refreshReduceMotion } from './lib/motion'
 import { defaultStatePath, loadState, saveState } from './lib/persist'
 import { IS_MAC, systemColorScheme, systemColorSchemeAsync } from './lib/platform'
@@ -26,6 +28,7 @@ import {
   rescanWorkspace,
   restoreTabs,
   setAppStore,
+  setDragging,
   setSystemScheme,
 } from './store'
 import { CHECK_INTERVAL_MS, checkForUpdates, LAUNCH_CHECK_DELAY_MS } from './update-flow'
@@ -67,6 +70,8 @@ if (IS_MAC && assets) {
       .filter((name) => name.endsWith('.ttf'))
       .map((name) => join(fonts, name)),
   )
+} else if (process.platform === 'linux') {
+  registerFontsLinux((await import('./lib/bundled-fonts')).BUNDLED_FONTS)
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +192,8 @@ render(<App saveNow={saveNow} />, {
     }
   },
 })
+
+if (IS_MAC && firstRun) handleDragOver(setDragging)
 
 type MenuModifiers = ('cmd' | 'shift' | 'alt' | 'ctrl')[]
 
