@@ -56,10 +56,11 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
     })),
   )
 
-  const { renderResult, renderError, isRendering, renderVersion } = useMarkdownRender({
+  const { renderResult, renderError, isRendering, isPartial, renderVersion } = useMarkdownRender({
     tabId: tab.id,
     content: tab.content,
     retryKey,
+    allowPreview: tab.scrollPosition === 0 && !tab.scrollAnchor,
   })
 
   const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
@@ -77,6 +78,7 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
     scrollPosition: tab.scrollPosition,
     scrollAnchor: tab.scrollAnchor,
     renderVersion,
+    partial: isPartial,
     updateTabScroll,
   })
   useContentClickHandlers({
@@ -154,6 +156,11 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
             // with unchanged content are skipped), while switching documents starts fresh.
             <div key={tab.id}>
               <MarkdownContent result={renderResult} docPath={tab.path} />
+              {isPartial && (
+                <output className="block py-6 text-center text-xs text-muted-foreground">
+                  Loading the rest of the document…
+                </output>
+              )}
             </div>
           ) : isRendering ? (
             <DocumentSkeleton />

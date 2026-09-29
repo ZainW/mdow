@@ -14,6 +14,7 @@ export function useScrollRestoration({
   scrollPosition,
   scrollAnchor,
   renderVersion,
+  partial = false,
   updateTabScroll,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>
@@ -22,11 +23,14 @@ export function useScrollRestoration({
   scrollPosition: number
   scrollAnchor: ScrollAnchor | null | undefined
   renderVersion: number
+  /** The rendered content is a preview of the document's opening. */
+  partial?: boolean
   updateTabScroll: (tabId: string, scrollPosition: number, anchor: ScrollAnchor | null) => void
 }): void {
   const savedRef = useRef({ scrollPosition, scrollAnchor })
   savedRef.current = { scrollPosition, scrollAnchor }
   const restoringRef = useRef<() => void>(() => {})
+  const partialRef = useRef(partial)
 
   useEffect(() => {
     const scroller = scrollRef.current
@@ -58,10 +62,17 @@ export function useScrollRestoration({
     const scroller = scrollRef.current
     const container = contentRef.current
     if (!scroller || !container || renderVersion === 0) return undefined
+    const fromPreview = partialRef.current
+    partialRef.current = partial
+    // The preview's blocks are the full render's opening, so the reader is already in the right
+    // place; the saved position lags the live one by the save debounce.
+    if (fromPreview && !partial) return undefined
     const { scrollAnchor: anchor, scrollPosition: top } = savedRef.current
     restoringRef.current()
     restoringRef.current = restoreScrollPosition(scroller, container, anchor, top)
     return undefined
+    // `partial` changes only together with `renderVersion`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollRef, contentRef, renderVersion])
 
   useEffect(() => () => restoringRef.current(), [])

@@ -1,6 +1,6 @@
 import { _electron as electron } from 'playwright'
 import electronPath from 'electron'
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,11 @@ const appDir = resolve(__dirname, '..')
 const fixturesDir = join(__dirname, 'fixtures')
 const smallFixture = join(fixturesDir, 'small.md')
 const superFixture = join(fixturesDir, 'super.md')
+
+// Override to stress absurd sizes, e.g. MDOW_PERF_HUGE_REPS=10000 (~30MB). The huge budget only
+// applies at the default size.
+const DEFAULT_HUGE_REPS = 1_000
+const hugeReps = Number(process.env.MDOW_PERF_HUGE_REPS) || DEFAULT_HUGE_REPS
 
 const budgets = {
   smallFirstContentMs: 2_500,
@@ -46,7 +51,7 @@ async function createLargeFixture(workDir) {
 
 async function createHugeFixture(workDir) {
   const source = await readFile(superFixture, 'utf8')
-  const sections = Array.from({ length: 1_000 }, (_, i) =>
+  const sections = Array.from({ length: hugeReps }, (_, i) =>
     [`# Huge Fixture Iteration ${i + 1}`, source].join('\n\n'),
   )
   const target = join(workDir, 'huge.md')
@@ -328,8 +333,11 @@ try {
     await measureHugeRun(hugeFixture, { checkNavigation: true }),
   ]
   const hugeFullRenderMs = Math.min(...hugeSamples)
-  console.log(`huge (3MB): fullRender=${hugeFullRenderMs.toFixed(1)}ms`)
-  assertBudget('huge full render', hugeFullRenderMs, budgets.hugeFullRenderMs)
+  const hugeMb = (await stat(hugeFixture)).size / 1_000_000
+  console.log(`huge (${hugeMb.toFixed(1)}MB): fullRender=${hugeFullRenderMs.toFixed(1)}ms`)
+  if (hugeReps === DEFAULT_HUGE_REPS) {
+    assertBudget('huge full render', hugeFullRenderMs, budgets.hugeFullRenderMs)
+  }
 
   const superRun = await launchForFile(largeFixture, 'super')
   try {
