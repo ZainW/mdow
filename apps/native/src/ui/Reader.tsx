@@ -15,9 +15,10 @@ import {
 } from '../lib/mermaid'
 import { easeOut, reduceMotion } from '../lib/motion'
 import { copyToClipboard } from '../lib/platform'
+import { withAlpha } from '../lib/theme'
 import { setOverlay, useApp } from '../store'
 import { METRICS, useUi } from './context'
-import { Icon, IconButton, Label } from './primitives'
+import { Icon, IconButton, Kbd, Label } from './primitives'
 import { onReaderCommand } from './reader-bus'
 import { estimateHeights, prefixSums } from './scroll-model'
 import { noteScroll, Scrollbar, type ScrollSource } from './Scrollbar'
@@ -221,10 +222,22 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
     [blocks.length, document.slugs, renderer],
   )
 
-  // Keep the active match on screen as the find cursor moves.
+  // Keep the active match on screen as the find cursor moves, without moving a row that is
+  // already in view.
   useEffect(() => {
     if (!activeQuery || total === 0) return
-    handlers.current.scrollToRow(handlers.current.rowOfMatch(search.active))
+    const row = handlers.current.rowOfMatch(search.active)
+    const id = listRef.current?.id
+    const anchor = id === undefined ? null : renderer.getListScrollTop?.(id)
+    if (anchor) {
+      const [first = 0, offset = 0, viewport = 0] = anchor
+      const top = (sums[first] ?? 0) + offset
+      if (row >= first && (sums[row + 1] ?? 0) <= top + viewport) return
+    }
+    handlers.current.scrollToRow(row)
+    noteScroll()
+    // `sums` and the renderer are read at the moment the cursor moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQuery, search.active, total])
 
   const rows = []
@@ -234,6 +247,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
       <Row
         key={block.id}
         block={block}
+        previous={blocks[index - 1]}
         first={index === 0}
         last={index === blocks.length - 1}
         columnWidth={columnWidth}
@@ -304,6 +318,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
 
 const Row = memo(function Row({
   block,
+  previous,
   first,
   last,
   columnWidth,
@@ -311,6 +326,7 @@ const Row = memo(function Row({
   onLink,
 }: {
   block: Block
+  previous: Block | undefined
   first: boolean
   last: boolean
   columnWidth: number
@@ -318,14 +334,22 @@ const Row = memo(function Row({
   onLink: (href: string) => void
 }) {
   const { reader } = useUi()
-  const gap = block.joinNext ? joinGap(block, reader.fontSize) : reader.fontSize
+  const f = reader.fontSize
+  const [top, bottom] = blockMargins(block)
+  // Vertical margins collapse like CSS: the gap between two rows is the larger of the two.
+  const above = first
+    ? METRICS.readerTopPadding
+    : previous?.joinNext
+      ? 0
+      : Math.max(0, top - blockMargins(previous!)[1]) * f
+  const below = last ? METRICS.readerBottomPadding : block.joinNext ? joinGap(block, f) : bottom * f
   return (
     <div
       style={{
         display: 'flex',
         paddingLeft: inset,
-        paddingTop: first ? METRICS.readerTopPadding : 0,
-        paddingBottom: last ? METRICS.readerBottomPadding : gap,
+        paddingTop: above,
+        paddingBottom: below,
       }}
     >
       <div
@@ -343,6 +367,35 @@ const Row = memo(function Row({
     </div>
   )
 })
+
+/** Heading margins in em of the body size, [top, bottom], from the desktop stylesheet. */
+const HEADING_MARGINS: [number, number][] = [
+  [3.75, 1.125],
+  [2.7, 0.75],
+  [1.725, 0.46],
+  [1.3, 0.3],
+  [1.14, 0.24],
+  [0.875, 0.175],
+]
+
+/** A row's desktop margins in em of the body size: [top, bottom]. */
+function blockMargins(block: Block): [number, number] {
+  switch (block.kind) {
+    case 'heading':
+      return HEADING_MARGINS[block.level - 1] ?? [1, 0.2]
+    case 'code':
+      return block.language === 'mermaid' ? [1.5, 1.5] : [1.25, 1.25]
+    case 'table':
+    case 'alert':
+      return [1.25, 1.25]
+    case 'rule':
+      return [2, 2]
+    case 'footnotes':
+      return [2, 0]
+    default:
+      return [0, 1]
+  }
+}
 
 /** Space between the rows of one split list, table or code fence. */
 function joinGap(block: Block, fontSize: number) {
@@ -365,8 +418,11 @@ function BlockView({
   }
   switch (block.kind) {
     case 'markdown':
-    case 'heading':
       return <markdown source={block.source} theme={reader.native} onLinkClick={link} />
+    case 'heading':
+      return <Heading level={block.level} source={block.source} onLink={link} />
+    case 'quote':
+      return <Quote source={block.source} onLink={link} />
     case 'code':
       if (block.language === 'mermaid') {
         return <MermaidBlock code={block.code} columnWidth={columnWidth} />
@@ -401,16 +457,12 @@ function BlockView({
           src={block.src}
           alt={block.alt}
           objectFit="contain"
-          style={{ width, height, borderRadius: 6, alignSelf: 'flex-start' }}
+          style={{ width, height, borderRadius: 8, alignSelf: 'flex-start' }}
         />
       )
     }
     case 'rule':
-      return (
-        <div style={{ paddingTop: reader.fontSize * 0.5, paddingBottom: reader.fontSize * 0.5 }}>
-          <div style={{ height: 1, backgroundColor: theme.border }} />
-        </div>
-      )
+      return <div style={{ height: 1, backgroundColor: theme.border }} />
     case 'footnotes':
       return (
         <div
@@ -452,6 +504,54 @@ function BlockView({
         </div>
       )
   }
+}
+
+/** h6 reads as a small muted uppercase label, as on desktop; the rest use the theme's scale. */
+function Heading({
+  level,
+  source,
+  onLink,
+}: {
+  level: number
+  source: string
+  onLink: (event: EventPayload) => void
+}) {
+  const { reader, theme } = useUi()
+  const labelTheme = useMemo(
+    () => ({ ...reader.native, text: theme.mutedForeground }),
+    [reader.native, theme.mutedForeground],
+  )
+  if (level < 6) return <markdown source={source} theme={reader.native} onLinkClick={onLink} />
+  // Uppercase the words but not code spans or link targets.
+  const upper = source.replace(/(`[^`]*`|\]\([^)]*\))|([^`\]]+)/g, (match, kept) =>
+    kept ? match : match.toUpperCase(),
+  )
+  return <markdown source={upper} theme={labelTheme} onLinkClick={onLink} />
+}
+
+function Quote({ source, onLink }: { source: string; onLink: (event: EventPayload) => void }) {
+  const { reader, theme } = useUi()
+  const quoteTheme = useMemo(
+    () => ({ ...reader.native, text: theme.mutedForeground }),
+    [reader.native, theme.mutedForeground],
+  )
+  const f = reader.fontSize
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeftWidth: 3,
+        borderColor: withAlpha(theme.mutedForeground, 0.45),
+        paddingTop: f * 0.4,
+        paddingBottom: f * 0.4,
+        paddingLeft: f,
+        paddingRight: f,
+      }}
+    >
+      <markdown source={source} theme={quoteTheme} onLinkClick={onLink} />
+    </div>
+  )
 }
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -513,12 +613,16 @@ function CodeBlock({
   copy?: string
 }) {
   const { reader, theme } = useUi()
+  const [hover, setHover] = useState(false)
   const top = part === 'whole' || part === 'first'
   const bottom = part === 'whole' || part === 'last'
-  const radius = METRICS.radius
+  const radius = 10
   return (
     <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         borderTopLeftRadius: top ? radius : 0,
@@ -529,24 +633,19 @@ function CodeBlock({
         borderRightWidth: 1,
         borderTopWidth: top ? 1 : 0,
         borderBottomWidth: bottom ? 1 : 0,
-        borderColor: theme.borderSubtle,
-        backgroundColor: theme.surfaceWell,
+        borderColor: theme.border,
+        backgroundColor: theme.muted,
       }}
     >
-      {top ? (
-        <BlockHeader label={language}>
-          <CopyButton text={copy} label="Copy code" />
-        </BlockHeader>
-      ) : null}
       <code
         code={code}
         language={nativeLanguage(language)}
         theme={reader.native}
         style={{
-          paddingLeft: 14,
-          paddingRight: 14,
-          paddingBottom: bottom ? 12 : 0,
-          paddingTop: top ? 2 : 0,
+          paddingLeft: 18,
+          paddingRight: 18,
+          paddingTop: top ? 14 : 0,
+          paddingBottom: bottom ? 14 : 0,
           minWidth: 0,
           fontFamily: reader.codeFont,
           fontSize: reader.native.metrics?.codeTextSize,
@@ -554,37 +653,63 @@ function CodeBlock({
           color: theme.foreground,
         }}
       />
+      {top ? <CodeChrome language={language} copy={copy} hover={hover} /> : null}
     </div>
   )
 }
 
 type CodeBlockPart = 'whole' | 'first' | 'middle' | 'last'
 
-function BlockHeader({ label, children }: { label: string; children?: ReactNode }) {
-  const { theme, scale } = useUi()
+/** The language badge and a copy button that shows on hover, pinned to the card's corner. */
+function CodeChrome({
+  language,
+  copy,
+  hover,
+  children,
+}: {
+  language: string
+  copy: string
+  hover: boolean
+  children?: ReactNode
+}) {
+  const { theme } = useUi()
   return (
     <div
       style={{
+        position: 'absolute',
+        top: 8,
+        right: 8,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 2,
-        paddingLeft: 14,
-        paddingRight: 6,
-        paddingTop: 4,
+        gap: 8,
         userSelect: 'none',
       }}
     >
-      <Label mono size={scale.controlXsFont + 1} color={theme.mutedForeground}>
-        {label}
-      </Label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>{children}</div>
+      {language ? (
+        <div
+          style={{
+            paddingLeft: 6,
+            paddingRight: 6,
+            paddingTop: 1,
+            paddingBottom: 1,
+            borderRadius: 4,
+            backgroundColor: theme.muted,
+          }}
+        >
+          <Label mono size={11} weight={500} color={theme.mutedForeground}>
+            {language.toLowerCase()}
+          </Label>
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 2, opacity: hover ? 1 : 0 }}>
+        {children}
+        <CopyButton text={copy} label="Copy code" />
+      </div>
     </div>
   )
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
-  const { scale } = useUi()
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -595,7 +720,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <IconButton
       icon={copied ? 'check' : 'copy'}
       label={copied ? 'Copied' : label}
-      size={scale.buttonXsHeight + 4}
+      size={28}
       onClick={() => {
         void copyToClipboard(text).then((ok) => setCopied(ok))
       }}
@@ -604,17 +729,17 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 /**
- * Diagrams lay out on first view, not at parse time, so opening a document never waits on them.
- * Laying out the first diagram warms ELK and can take ~80ms; later ones take a few.
+ * Diagrams sit straight on the page like the desktop's, with source and copy on hover. They lay
+ * out in a worker on first view, so opening a document never waits on them.
  */
 function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number }) {
-  const { theme, reader, scale } = useUi()
-  const palette = useMemo(
-    () => mermaidPalette(theme, reader.contentFont),
-    [theme, reader.contentFont],
-  )
+  const { theme, scale } = useUi()
+  // GPUI's SVG rasterizer only sees system fonts, not the ones registered for the app, so
+  // diagram labels use the system monospace (the desktop uses IBM Plex Mono / Geist Mono).
+  const palette = useMemo(() => mermaidPalette(theme, 'Menlo'), [theme])
   const [result, setResult] = useState<MermaidResult | null>(() => cachedMermaid(code, palette))
   const [showSource, setShowSource] = useState(false)
+  const [hover, setHover] = useState(false)
   useEffect(() => {
     if (result && cachedMermaid(code, palette) === result) return
     let live = true
@@ -628,9 +753,9 @@ function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number
 
   if (result && !result.ok) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <CodeBlock language="mermaid" code={code} />
-        <Label size={scale.controlFont} color={theme.mutedForeground}>
+        <Label mono size={scale.controlFont} color={theme.destructive}>
           {`Couldn't draw this diagram: ${result.error}`}
         </Label>
       </div>
@@ -646,46 +771,40 @@ function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number
       </div>
     )
   }
-  const inner = columnWidth - 2
-  const fit = result ? Math.min(reader.fontSize / 16, (inner - 24) / result.width) : 1
+  const fit = result ? Math.min(1, columnWidth / result.width) : 1
   const width = result ? Math.round(result.width * fit) : 0
   const height = result ? Math.round(result.height * fit) : 160
   return (
     <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
+        position: 'relative',
         display: 'flex',
-        flexDirection: 'column',
-        borderRadius: METRICS.radius,
-        borderWidth: 1,
-        borderColor: theme.borderSubtle,
-        backgroundColor: theme.surfaceWell,
+        justifyContent: 'center',
+        alignItems: 'center',
+        height,
       }}
     >
-      <BlockHeader label="mermaid">
-        <IconButton
-          icon="code"
-          label="Show source"
-          size={scale.buttonXsHeight + 4}
-          onClick={() => setShowSource(true)}
-        />
-        <CopyButton text={code} label="Copy source" />
-      </BlockHeader>
+      {result?.ok ? (
+        <img src={result.src} alt="Mermaid diagram" style={{ width, height }} />
+      ) : (
+        <Label size={scale.controlFont} color={theme.mutedForeground}>
+          Drawing diagram…
+        </Label>
+      )}
       <div
         style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
           display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: height + 16,
-          paddingBottom: 12,
+          gap: 2,
+          opacity: hover ? 1 : 0,
         }}
       >
-        {result?.ok ? (
-          <img src={result.src} alt="Mermaid diagram" style={{ width, height }} />
-        ) : (
-          <Label size={scale.controlFont} color={theme.mutedForeground}>
-            Drawing diagram…
-          </Label>
-        )}
+        <IconButton icon="code" label="Show source" size={28} onClick={() => setShowSource(true)} />
+        <CopyButton text={code} label="Copy source" />
       </div>
     </div>
   )
@@ -693,6 +812,10 @@ function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number
 
 const INLINE_SYNTAX = /[\\`*_~[\]<>&!]|https?:\/\//
 
+/**
+ * Tables as the desktop draws them: a rounded bordered frame, a muted uppercase header, and
+ * hairlines between rows and columns. Long tables arrive as several slices of one frame.
+ */
 function TableBlock({
   block,
   columnWidth,
@@ -703,71 +826,113 @@ function TableBlock({
   onLink: (event: EventPayload) => void
 }) {
   const { reader, theme } = useUi()
+  const f = reader.fontSize
+  const bodySize = Math.round(f * 0.925 * 100) / 100
+  const headSize = Math.round(bodySize * 0.8 * 100) / 100
   const cellTheme = useMemo(
     () => ({
       ...reader.native,
-      metrics: { ...reader.native.metrics, mdBlockGap: 0 },
+      metrics: {
+        ...reader.native.metrics,
+        mdBlockGap: 0,
+        mdTextSize: bodySize,
+        mdLineHeight: Math.round(bodySize * reader.lineHeight * 10) / 10,
+      },
     }),
-    [reader.native],
+    [reader.native, reader.lineHeight, bodySize],
   )
-  const pad = Math.round(reader.fontSize * 0.5)
-  const widths = block.widths.map((share) => Math.floor(share * columnWidth))
-  const row = (cells: string[], header: boolean, key: number) => (
+  const headTheme = useMemo(
+    () => ({
+      ...cellTheme,
+      text: theme.mutedForeground,
+      metrics: {
+        ...cellTheme.metrics,
+        mdTextSize: headSize,
+        mdLineHeight: Math.round(headSize * 1.65),
+      },
+    }),
+    [cellTheme, theme.mutedForeground, headSize],
+  )
+  const first = block.header !== null
+  const last = !block.joinNext
+  const inner = columnWidth - 2
+  const widths = block.widths.map((share) => Math.floor(share * inner))
+  const row = (cells: string[], header: boolean, key: number, final: boolean) => (
     <div
       key={key}
       style={{
         display: 'flex',
-        borderBottomWidth: 1,
+        backgroundColor: header ? theme.muted : undefined,
+        borderBottomWidth: final ? 0 : 1,
         borderColor: header ? theme.border : theme.borderSubtle,
       }}
     >
-      {widths.map((width, column) => (
-        <div
-          key={column}
-          style={{
-            display: 'flex',
-            width,
-            minWidth: 0,
-            paddingLeft: pad,
-            paddingRight: pad,
-            paddingTop: pad * 0.75,
-            paddingBottom: pad * 0.75,
-            justifyContent:
-              block.align[column] === 'right'
-                ? 'flex-end'
-                : block.align[column] === 'center'
-                  ? 'center'
-                  : 'flex-start',
-          }}
-        >
-          {INLINE_SYNTAX.test(cells[column] ?? '') ? (
-            <markdown
-              source={header ? `**${cells[column]}**` : cells[column]}
-              theme={cellTheme}
-              onLinkClick={onLink}
-            />
-          ) : (
-            // Plain cells skip the markdown parser; most cells of a big table are plain.
-            <div
-              style={{
-                fontFamily: reader.contentFont,
-                fontSize: reader.fontSize,
-                lineHeight: Math.round(reader.fontSize * reader.lineHeight),
-                fontWeight: header ? 600 : 400,
-                color: theme.foreground,
-              }}
-            >
-              {cells[column] ?? ''}
-            </div>
-          )}
-        </div>
-      ))}
+      {widths.map((width, column) => {
+        const raw = cells[column] ?? ''
+        const text = header ? raw.replace(/\*\*/g, '').toUpperCase() : raw
+        return (
+          <div
+            key={column}
+            style={{
+              display: 'flex',
+              width,
+              minWidth: 0,
+              paddingLeft: 14,
+              paddingRight: 14,
+              paddingTop: 10,
+              paddingBottom: 10,
+              borderRightWidth: column < widths.length - 1 ? 1 : 0,
+              borderColor: theme.borderSubtle,
+              justifyContent:
+                block.align[column] === 'right'
+                  ? 'flex-end'
+                  : block.align[column] === 'center'
+                    ? 'center'
+                    : 'flex-start',
+            }}
+          >
+            {INLINE_SYNTAX.test(text) ? (
+              <markdown source={text} theme={header ? headTheme : cellTheme} onLinkClick={onLink} />
+            ) : (
+              // Plain cells skip the markdown parser; most cells of a big table are plain.
+              <div
+                style={{
+                  fontFamily: reader.contentFont,
+                  fontSize: header ? headSize : bodySize,
+                  lineHeight: Math.round((header ? headSize : bodySize) * 1.65),
+                  fontWeight: header ? 600 : 400,
+                  color: header ? theme.mutedForeground : theme.foreground,
+                }}
+              >
+                {text}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {block.header ? row(block.header, true, -1) : null}
-      {block.rows.map((cells, index) => row(cells, false, index))}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderTopWidth: first ? 1 : 0,
+        borderBottomWidth: last ? 1 : 0,
+        borderColor: theme.border,
+        borderTopLeftRadius: first ? 8 : 0,
+        borderTopRightRadius: first ? 8 : 0,
+        borderBottomLeftRadius: last ? 8 : 0,
+        borderBottomRightRadius: last ? 8 : 0,
+        overflow: 'hidden',
+      }}
+    >
+      {block.header ? row(block.header, true, -1, block.rows.length === 0 && last) : null}
+      {block.rows.map((cells, index) =>
+        row(cells, false, index, last && index === block.rows.length - 1),
+      )}
     </div>
   )
 }
@@ -791,22 +956,41 @@ function Alert({
 }) {
   const { reader, theme } = useUi()
   const color = theme.alerts[kind]
+  const f = reader.fontSize
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        borderLeftWidth: 3,
-        borderColor: color,
-        paddingLeft: 16,
-        paddingTop: 2,
-        paddingBottom: 2,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderLeftWidth: 4,
+        borderColor: theme.border,
+        backgroundColor: theme.muted,
+        paddingTop: f * 0.85,
+        paddingBottom: f * 0.85,
+        paddingLeft: f,
+        paddingRight: f,
       }}
     >
+      {/* GPUI draws one border colour; the accent stripe is painted over the left edge. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: -4,
+          top: -1,
+          bottom: -1,
+          width: 4,
+          borderTopLeftRadius: 8,
+          borderBottomLeftRadius: 8,
+          backgroundColor: color,
+        }}
+      />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Icon name="alert-circle" size={16} color={color} />
-        <Label color={color} weight={600} size={reader.fontSize * 0.9375}>
+        <Label color={color} weight={600} size={f * 0.9375}>
           {ALERT_TITLES[kind]}
         </Label>
       </div>
@@ -832,32 +1016,35 @@ function FindBar({
 }) {
   const { theme, scale } = useUi()
   const status = !query ? '' : total === 0 ? 'No results' : `${active + 1} of ${total}`
+  const small = scale.controlXsFont
   return (
+    // Docked to the reader's top-right corner, flush with the breadcrumb, as on desktop.
     <div
       style={{
         position: 'absolute',
-        top: 10,
-        right: 16,
+        top: 0,
+        right: 0,
         display: 'flex',
         alignItems: 'center',
-        gap: 4,
-        height: scale.buttonHeight + 12,
-        paddingLeft: 10,
-        paddingRight: 4,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: theme.border,
-        backgroundColor: theme.surfaceRaised,
+        gap: 6,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingTop: 8,
+        paddingBottom: 8,
+        borderBottomLeftRadius: 12,
+        borderLeftWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: withAlpha(theme.border, 0.5),
+        backgroundColor: withAlpha(theme.background, 0.9),
         pointerEvents: 'auto',
-        boxShadow: { offsetX: 0, offsetY: 6, blurRadius: 18, spreadRadius: 0, color: '#00000026' },
+        boxShadow: { offsetX: 0, offsetY: 4, blurRadius: 12, spreadRadius: -2, color: '#00000033' },
       }}
     >
-      <Icon name="search" size={14} />
       <input
         testId="find-input"
         autoFocus
         value={query}
-        placeholder="Find in document"
+        placeholder="Search…"
         theme={{ caret: theme.primary }}
         onChange={(event) => onQuery(event.value ?? '')}
         onSubmit={onNext}
@@ -866,20 +1053,48 @@ function FindBar({
           else if (event.key === 'enter' && event.modifiers?.shift) onPrevious()
         }}
         style={{
-          width: 200,
+          width: 176,
           height: scale.buttonHeight,
-          paddingLeft: 4,
-          fontSize: scale.controlFont + 1,
+          paddingLeft: 8,
+          paddingRight: 8,
+          borderRadius: 6,
+          borderWidth: 1,
+          borderColor: theme.border,
+          backgroundColor: withAlpha(theme.border, 0.3),
+          fontSize: scale.controlFont,
           color: theme.foreground,
           fontFamily: 'Inter Variable',
         }}
       />
-      <Label size={scale.controlFont} color={theme.mutedForeground} style={{ minWidth: 64 }}>
-        {status}
-      </Label>
-      <IconButton icon="chevron-up" label="Previous match" onClick={onPrevious} />
-      <IconButton icon="chevron-down" label="Next match" onClick={onNext} />
-      <IconButton icon="x" label="Close find" onClick={() => setOverlay(null)} />
+      <div style={{ display: 'flex', justifyContent: 'center', minWidth: 64 }}>
+        <Label size={small} color={theme.mutedForeground}>
+          {status}
+        </Label>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Kbd>↵</Kbd>
+        <Label size={small} color={theme.mutedForeground}>
+          next
+        </Label>
+      </div>
+      <IconButton
+        icon="chevron-up"
+        label="Previous match"
+        size={scale.buttonXsHeight}
+        onClick={onPrevious}
+      />
+      <IconButton
+        icon="chevron-down"
+        label="Next match"
+        size={scale.buttonXsHeight}
+        onClick={onNext}
+      />
+      <IconButton
+        icon="x"
+        label="Close find"
+        size={scale.buttonXsHeight}
+        onClick={() => setOverlay(null)}
+      />
     </div>
   )
 }

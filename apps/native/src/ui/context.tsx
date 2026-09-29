@@ -15,18 +15,19 @@ export const UI_FONT = 'Inter Variable'
 export const UI_MONO = 'Geist Mono'
 
 export const METRICS = {
-  titlebarHeight: 40,
+  titlebarHeight: 28,
   trafficLightInset: 14,
   trafficLightClearance: 80,
   sidebarWidth: 244,
   minMainWidthWithSidebar: 320,
-  chromeRowHeight: 44,
-  breadcrumbHeight: 36,
+  chromeRowHeight: 36,
+  breadcrumbHeight: 28,
   tabHeight: 28,
   tabMaxWidth: 200,
-  readerInset: 32,
+  /** Side padding of the reading frame. */
+  readerInset: 48,
   readerTopPadding: 32,
-  readerBottomPadding: 40,
+  readerBottomPadding: 32,
   radius: 8,
 }
 

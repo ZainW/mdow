@@ -25,6 +25,8 @@ export type BlockBody =
       copy: string
     }
   | { kind: 'alert'; alert: AlertKind; source: string }
+  /** A plain blockquote; `source` is its inner markdown. */
+  | { kind: 'quote'; source: string }
   | { kind: 'image'; src: string | null; alt: string; width: number; height: number }
   | { kind: 'rule' }
   | { kind: 'footnotes'; items: Footnote[] }
@@ -45,7 +47,7 @@ export const LIST_CHUNK_ITEMS = 12
 export const CHUNK_CHARS = 4000
 /** Code fences longer than this are cut into rows, preferring blank lines as seams. */
 export const CODE_CHUNK_LINES = 40
-/** Tables with more body rows than this are drawn by the reader in slices of this size. */
+/** Tables are drawn by the reader, in slices of this many body rows. */
 export const TABLE_CHUNK_ROWS = 24
 
 export interface Footnote {
@@ -159,7 +161,13 @@ function pushToken(ctx: BuildContext, token: Token) {
         })
         return
       }
-      break
+      const inner = quote.raw
+        .split('\n')
+        .map((line) => line.replace(/^\s*>\s?/, ''))
+        .join('\n')
+        .trim()
+      ctx.blocks.push({ kind: 'quote', id, source: inner, text: blockText(token) })
+      return
     }
     case 'paragraph': {
       const images = standaloneImages(token as Tokens.Paragraph)
@@ -187,14 +195,9 @@ function pushToken(ctx: BuildContext, token: Token) {
     case 'list':
       pushList(ctx, id, token as Tokens.List)
       return
-    case 'table': {
-      const table = token as Tokens.Table
-      if (table.rows.length > TABLE_CHUNK_ROWS) {
-        pushTable(ctx, id, table)
-        return
-      }
-      break
-    }
+    case 'table':
+      pushTable(ctx, id, token as Tokens.Table)
+      return
   }
   const source = token.raw.trimEnd()
   if (!source.trim()) return
@@ -285,17 +288,20 @@ function pushTable(ctx: BuildContext, id: string, table: Tokens.Table) {
   const header = table.header.map(cell)
   const rows = table.rows.map((row) => row.map(cell))
   const columns = Math.max(header.length, ...rows.map((row) => row.length))
-  // Weight columns by typical content length so a short id column doesn't take a fifth.
+  // Weight columns roughly like auto table layout: typical content width plus the cell's
+  // padding, and never narrower than the (smaller, uppercase) header label.
   const weights = Array.from({ length: columns }, (_, column) => {
-    const lengths = [header, ...rows].map((row) => plainLength(row[column] ?? ''))
+    const lengths = rows.map((row) => plainLength(row[column] ?? ''))
     const sorted = lengths.toSorted((a, b) => a - b)
     const typical = sorted[Math.floor(sorted.length * 0.9)] ?? 0
-    return Math.max(4, Math.min(60, typical)) + 4
+    const label = plainLength(header[column] ?? '') * 0.85
+    return Math.max(3, label, Math.min(60, typical)) + 4
   })
   const total = weights.reduce((sum, weight) => sum + weight, 0)
   const widths = weights.map((weight) => weight / total)
   const align = Array.from({ length: columns }, (_, column) => table.align[column] ?? null)
-  for (let start = 0; start < rows.length; start += TABLE_CHUNK_ROWS) {
+  // A header-only table still gets one (empty) slice.
+  for (let start = 0; start === 0 || start < rows.length; start += TABLE_CHUNK_ROWS) {
     const slice = rows.slice(start, start + TABLE_CHUNK_ROWS)
     const last = start + TABLE_CHUNK_ROWS >= rows.length
     ctx.blocks.push({

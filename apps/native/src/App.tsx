@@ -54,11 +54,11 @@ function Shell({ saveNow }: AppProps) {
     sidebarOpen && size.width >= METRICS.sidebarWidth + METRICS.minMainWidthWithSidebar
   const mainWidth = Math.max(0, size.width - (showSidebar ? METRICS.sidebarWidth : 0))
   const maxWidth = readerMaxWidth(prefs)
-  const columnWidth = Math.max(
-    0,
-    Math.min(maxWidth ?? Infinity, mainWidth - METRICS.readerInset * 2),
-  )
-  const readerInset = Math.max(METRICS.readerInset, Math.floor((mainWidth - columnWidth) / 2))
+  // The reading frame is centered (or left-aligned in wide mode) and carries 48px of padding on
+  // each side; the text column is what's left inside it.
+  const frame = Math.min(maxWidth ?? Infinity, mainWidth)
+  const columnWidth = Math.max(0, frame - METRICS.readerInset * 2)
+  const readerInset = Math.floor((mainWidth - frame) / 2) + METRICS.readerInset
 
   return (
     <div
@@ -90,7 +90,7 @@ function Shell({ saveNow }: AppProps) {
           }}
         >
           <TabBar />
-          <Breadcrumb tab={tab} />
+          {tab ? <Breadcrumb tab={tab} /> : null}
           <UpdateBanner beforeRestart={saveNow} />
           {tab?.reloadFailed ? <ReloadBanner /> : null}
           {!tab ? (
