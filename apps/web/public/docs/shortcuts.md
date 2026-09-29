@@ -9,7 +9,7 @@ order: 5
 
 Mdow is built for keyboard-first reading. Hold **⌘** (macOS) or **Ctrl** (Windows/Linux) to glance at a cheat sheet, or press **⌘/** / **Ctrl+/** for the full shortcuts dialog.
 
-![Mdow sidebar with folder tree and tabbed documents](/screenshots/sidebar-light.webp)
+![The Mdow command palette listing files in an open folder](/screenshots/palette-light.webp)
 
 ## Files
 

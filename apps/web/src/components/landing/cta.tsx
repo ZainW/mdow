@@ -1,11 +1,10 @@
 import { Link } from '@tanstack/react-router'
-import { GradientSection } from '~/components/gradient-section'
 import { DownloadButton } from '~/components/download-button'
+import { AppleIcon, GitHubIcon, LinuxIcon, WindowsIcon } from '~/components/icons'
+import { Logo } from '~/components/logo'
+import { btnPrimary, btnSecondary } from '~/lib/button-styles'
 import { downloadButtonLabel, type PlatformId } from '~/lib/download-links'
-import { btnPrimaryClass, btnSecondaryClass } from '~/lib/button-styles'
-import { cn } from '~/lib/utils'
-
-const GITHUB_URL = 'https://github.com/ZainW/mdow'
+import { GITHUB_URL } from '~/lib/site'
 
 interface LandingCtaProps {
   platform: PlatformId
@@ -14,37 +13,55 @@ interface LandingCtaProps {
 
 export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
   return (
-    <GradientSection innerClassName="text-center py-20 md:py-28">
-      <div className="mx-auto max-w-2xl">
-        <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl text-balance">
-          Ready to read markdown beautifully?
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-muted-foreground text-balance leading-relaxed">
-          Download Mdow and turn any folder of markdown into a calm reading experience.
-        </p>
+    <section className="px-5 pb-20 sm:px-6 md:pb-28">
+      <div className="surface-card relative mx-auto max-w-6xl overflow-hidden rounded-3xl px-6 py-16 text-center sm:py-20">
+        <div aria-hidden className="bg-paper absolute inset-0 -z-0 opacity-70" />
+        <div className="relative">
+          <Logo className="mx-auto size-14" alt="" />
+          <h2 className="font-display mx-auto mt-8 max-w-2xl text-4xl leading-[1.08] sm:text-5xl">
+            Open something worth reading.
+          </h2>
+          <p className="mx-auto mt-4 max-w-md text-lg leading-relaxed text-muted-foreground">
+            Free and open source. No account, no setup, just your files.
+          </p>
+          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {downloadUrl ? (
+              <DownloadButton
+                href={downloadUrl}
+                platform={platform}
+                size="lg"
+                className="w-full max-w-72 sm:w-auto"
+              >
+                {downloadButtonLabel(platform)}
+              </DownloadButton>
+            ) : (
+              <Link to="/download" className={btnPrimary('lg', 'w-full max-w-72 sm:w-auto')}>
+                Download for free
+              </Link>
+            )}
+            <a
+              href={GITHUB_URL}
+              className={btnSecondary('lg', 'w-full max-w-72 sm:w-auto')}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <GitHubIcon className="size-[17px]" />
+              Star on GitHub
+            </a>
+          </div>
+          <div className="mt-8 flex items-center justify-center gap-5 text-[13px] text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <AppleIcon className="size-3.5" /> macOS
+            </span>
+            <span className="flex items-center gap-1.5">
+              <WindowsIcon className="size-3.5" /> Windows
+            </span>
+            <span className="flex items-center gap-1.5">
+              <LinuxIcon className="size-3.5" /> Linux
+            </span>
+          </div>
+        </div>
       </div>
-      <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        {downloadUrl ? (
-          <DownloadButton href={downloadUrl} size="lg">
-            {downloadButtonLabel(platform)}
-          </DownloadButton>
-        ) : (
-          <Link to="/download" className={cn(btnPrimaryClass, 'h-12 px-8 text-sm font-medium')}>
-            Download for free
-          </Link>
-        )}
-        <a
-          href={GITHUB_URL}
-          className={cn(btnSecondaryClass, 'h-12 px-8 text-sm font-medium')}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          View on GitHub
-        </a>
-      </div>
-      <p className="mt-5 text-xs text-muted-foreground">
-        Available for macOS, Windows, and Linux · MIT licensed
-      </p>
-    </GradientSection>
+    </section>
   )
 }

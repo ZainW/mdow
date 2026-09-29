@@ -1,6 +1,11 @@
+import type { ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { NativeDownloadSection } from '../native-download-section'
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children: ReactNode }) => <a href="/docs/installation">{children}</a>,
+}))
 
 describe('NativeDownloadSection', () => {
   it('renders mac and linux GPUI beta downloads', () => {
@@ -11,12 +16,23 @@ describe('NativeDownloadSection', () => {
 
     expect(screen.getByRole('heading', { name: 'Mdow Native' })).toBeInTheDocument()
     expect(
-      screen.getByText('A GPUI beta for Apple Silicon Macs and x64 Linux.'),
+      screen.getByText(
+        'A GPUI beta for Apple Silicon Macs and x64 Linux. Runs alongside the regular Mdow app.',
+      ),
     ).toBeInTheDocument()
-    expect(screen.getByText('Runs alongside the regular Mdow app.')).toBeInTheDocument()
-    const downloads = screen.getAllByRole('link', { name: 'Download Mdow Native (.zip)' })
-    expect(downloads).toHaveLength(2)
-    expect(downloads[0]).toHaveAttribute('href', macUrl)
-    expect(downloads[1]).toHaveAttribute('href', linuxUrl)
+    expect(screen.getByRole('link', { name: 'Download macOS Mdow Native (.zip)' })).toHaveAttribute(
+      'href',
+      macUrl,
+    )
+    expect(screen.getByRole('link', { name: 'Download Linux Mdow Native (.zip)' })).toHaveAttribute(
+      'href',
+      linuxUrl,
+    )
+  })
+
+  it('omits the linux row when there is no linux build', () => {
+    render(<NativeDownloadSection macUrl="https://example.test/mac.zip" linuxUrl={null} />)
+
+    expect(screen.getAllByRole('link', { name: /Download .* Mdow Native/ })).toHaveLength(1)
   })
 })

@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { getDoc, getAllDocs, getDocBody } from '~/lib/content'
+import { getDoc, getAllDocs, getDocBody, getSearchEntries } from '~/lib/content'
 import { extractHeadings } from '~/lib/extract-headings'
 import { DocsLayout } from '~/components/docs-layout'
 import { DocsNav } from '~/components/docs-nav'
@@ -14,15 +14,19 @@ import { canonical, seo } from '~/lib/seo'
 const fetchDoc = createServerFn({ method: 'GET' })
   .validator((slug: string) => slug)
   .handler(async ({ data: slug }) => {
-    const [doc, allDocs] = await Promise.all([getDoc(slug), getAllDocs()])
-    if (!doc) throw new Error(`Doc not found: ${slug}`)
+    const [doc, allDocs, searchEntries] = await Promise.all([
+      getDoc(slug),
+      getAllDocs(),
+      getSearchEntries(),
+    ])
+    if (!doc) throw notFound()
     const headings = extractHeadings(doc.html).map((h) => ({
       id: h.id,
       text: h.text,
       level: h.level,
     }))
     const markdown = getDocBody(slug) ?? ''
-    return { doc, allDocs, headings, markdown }
+    return { doc, allDocs, searchEntries, headings, markdown }
   })
 
 export const Route = createFileRoute('/docs/$')({
@@ -44,19 +48,33 @@ export const Route = createFileRoute('/docs/$')({
 })
 
 function DocPage() {
-  const { doc, allDocs, headings, markdown } = Route.useLoaderData()
+  const { doc, allDocs, searchEntries, headings, markdown } = Route.useLoaderData()
   const articleRef = useRef<HTMLDivElement>(null)
   const codeBlocks = useCodeBlockCopy(articleRef, doc.meta.slug)
 
-  // Content is trusted — rendered from our own .md files by md4x server-side
   return (
-    <DocsLayout docs={allDocs} currentSlug={doc.meta.slug} headings={headings}>
-      <DocsCopyMarkdown markdown={markdown} slug={doc.meta.slug} />
-      <div ref={articleRef} dangerouslySetInnerHTML={{ __html: doc.html }} />
-      {codeBlocks.map((target, i) =>
-        createPortal(<CopyButton value={target.code} />, target.host, `copy-${i}`),
-      )}
-      <DocsNav docs={allDocs} currentSlug={doc.meta.slug} />
+    <DocsLayout
+      docs={allDocs}
+      searchEntries={searchEntries}
+      currentSlug={doc.meta.slug}
+      headings={headings}
+    >
+      <article className="mx-auto max-w-[44rem]">
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">{doc.meta.category}</p>
+          <DocsCopyMarkdown markdown={markdown} slug={doc.meta.slug} />
+        </div>
+        {/* Trusted: rendered from our own .md files by md4x on the server. */}
+        <div
+          ref={articleRef}
+          className="prose max-w-none"
+          dangerouslySetInnerHTML={{ __html: doc.html }}
+        />
+        {codeBlocks.map((target, i) =>
+          createPortal(<CopyButton value={target.code} />, target.host, `copy-${i}`),
+        )}
+        <DocsNav docs={allDocs} currentSlug={doc.meta.slug} />
+      </article>
     </DocsLayout>
   )
 }
