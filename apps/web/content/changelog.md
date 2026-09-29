@@ -5,9 +5,19 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.11.2
+## v1.12.0
 
 Latest release.
+
+- Mdow Native stays smooth on big documents: long lists, tables and code blocks draw only what's on screen, so a 3,000-item list or 1,500-row table scrolls at full frame rate instead of 4 fps
+- Mdow Native renders bold and heading weights correctly, and shapes text faster, with static font cuts
+- Mdow Native draws Mermaid diagrams, with Show source and Copy buttons
+- Mdow Native reads much more of HTML: page titles, inline SVG charts, Mermaid blocks, figures and details, plus an Open in Browser button
+- Mdow Native has an overlay scrollbar, smooth keyboard scrolling, End and outline jumps that land exactly, and an outline that follows your reading
+- Mdow Native matches the desktop app's design, shows a drop zone while you drag files over the window, and bundles its fonts on Linux
+- Opening a multi-megabyte document on desktop shows its first pages right away while the rest loads
+
+## v1.11.2
 
 - Mdow Native is rebuilt in React on gpuix and Bun, replacing the Rust GPUI beta; it keeps the same settings, recents, and open tabs
 - Mdow Native updates itself: a banner offers new versions, and Mdow → Check for Updates… checks on demand
