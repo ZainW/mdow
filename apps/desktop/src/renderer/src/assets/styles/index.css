@@ -825,6 +825,117 @@ html.theme-switching * {
   color: oklch(0.92 0 0);
 }
 
+/* Suggested edits, reviewed in the reader. Each change gets a bar in the margin; replaced text
+   sits above its replacement, and changed words are painted with highlights (no DOM edits). */
+:root {
+  --review-add: oklch(0.62 0.15 150);
+  --review-add-tint: oklch(0.62 0.15 150 / 0.07);
+  --review-add-mark: oklch(0.62 0.15 150 / 0.22);
+  --review-remove: oklch(0.6 0.19 25);
+  --review-remove-tint: oklch(0.6 0.19 25 / 0.06);
+  --review-remove-mark: oklch(0.6 0.19 25 / 0.2);
+}
+
+.dark {
+  --review-add: oklch(0.72 0.15 150);
+  --review-add-tint: oklch(0.72 0.15 150 / 0.08);
+  --review-add-mark: oklch(0.72 0.15 150 / 0.28);
+  --review-remove: oklch(0.7 0.17 25);
+  --review-remove-tint: oklch(0.7 0.17 25 / 0.07);
+  --review-remove-mark: oklch(0.7 0.17 25 / 0.26);
+}
+
+.markdown-body .md-change {
+  margin-block: 0 1em;
+  scroll-margin-block: 6rem;
+}
+
+.markdown-body .md-change-old,
+.markdown-body .md-change-new {
+  position: relative;
+  display: flow-root;
+  margin-inline: -0.875rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.375rem;
+}
+
+.markdown-body .md-change-old + .md-change-new {
+  margin-top: 0.25rem;
+}
+
+.markdown-body .md-change-old > :first-child,
+.markdown-body .md-change-new > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body .md-change-old > :last-child,
+.markdown-body .md-change-new > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .md-change-new {
+  background: var(--review-add-tint);
+  box-shadow: inset 3px 0 0 var(--review-add);
+}
+
+.markdown-body .md-change-old {
+  background: var(--review-remove-tint);
+  box-shadow: inset 3px 0 0 var(--review-remove);
+  color: var(--color-muted-foreground);
+}
+
+/* List items keep their bullets; the tint and edge sit just inside the list's indent. */
+.markdown-body li.md-change-old,
+.markdown-body li.md-change-new {
+  margin-inline: -0.5rem 0;
+  padding: 0.125rem 0.5rem;
+}
+
+/* A block removed outright is struck through; a replaced one only marks the words that went. */
+.markdown-body .md-change-struck,
+.markdown-body .md-change-removed .md-change-old {
+  text-decoration: line-through;
+  text-decoration-color: var(--review-remove);
+}
+
+/* The change the review bar just jumped to. */
+.markdown-body .md-change[data-review-active] .md-change-new {
+  background: oklch(from var(--review-add) l c h / 0.13);
+}
+
+.markdown-body .md-change[data-review-active] .md-change-old {
+  background: oklch(from var(--review-remove) l c h / 0.11);
+}
+
+::highlight(mdow-diff-inserted) {
+  background-color: var(--review-add-mark);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--review-add);
+  text-decoration-thickness: 1.5px;
+}
+
+::highlight(mdow-diff-removed) {
+  background-color: var(--review-remove-mark);
+  color: inherit;
+  text-decoration: line-through;
+  text-decoration-color: var(--review-remove);
+  text-decoration-thickness: 1.5px;
+}
+
+@keyframes review-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .review-bar {
+    animation: review-bar-in 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}
+
 /* @pierre/trees integration — map library CSS variables to sidebar tokens */
 .folder-tree-host {
   --trees-bg-override: transparent;

@@ -10,6 +10,7 @@ import { TabBar } from './components/TabBar'
 import { DocumentBreadcrumb } from './components/DocumentBreadcrumb'
 import { MarkdownView } from './components/MarkdownView'
 import { HtmlView } from './components/HtmlView'
+import { PendingReviewNotice } from './components/review/PendingReviewNotice'
 import { WelcomeView } from './components/WelcomeView'
 import { ErrorView } from './components/ErrorView'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -264,10 +265,14 @@ function MainApp(): React.JSX.Element {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <LazyCompanionShell>
             <Sidebar />
-            <main aria-label="Document" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <main
+              aria-label="Document"
+              className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+            >
               <TabBar />
               {activeTab && !splitView && <DocumentBreadcrumb tab={activeTab} />}
               <MainContent activeTab={activeTab} />
+              <PendingReviewNotice />
               <UpdateBanner />
             </main>
             <LazyCompanionPanel />

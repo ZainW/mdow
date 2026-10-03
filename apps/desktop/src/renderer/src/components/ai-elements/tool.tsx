@@ -3,42 +3,53 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@renderer/components/ui/collapsible'
-import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import type { CompanionToolState } from '../../../../shared/types'
 import {
-  CheckCircleIcon,
-  ChevronDownIcon,
-  CircleIcon,
-  ClockIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  CircleDashedIcon,
+  FileTextIcon,
+  GlobeIcon,
+  ListTodoIcon,
+  LoaderCircleIcon,
+  SearchIcon,
   WrenchIcon,
-  XCircleIcon,
+  XIcon,
 } from 'lucide-react'
-import type { ComponentProps, ReactNode } from 'react'
+import type { ComponentProps } from 'react'
+import { Shimmer } from './shimmer'
 
-const statusLabels: Record<CompanionToolState, string> = {
-  pending: 'Pending',
-  running: 'Running',
-  completed: 'Completed',
-  error: 'Error',
-  cancelled: 'Cancelled',
+function ToolIcon({ name, state }: { name: string; state: CompanionToolState }) {
+  const className = 'size-3.5 shrink-0'
+  if (state === 'running') {
+    return <LoaderCircleIcon className={cn(className, 'motion-safe:animate-spin')} aria-hidden />
+  }
+  if (state === 'pending') return <CircleDashedIcon className={className} aria-hidden />
+  if (state === 'error') return <XIcon className={cn(className, 'text-destructive')} aria-hidden />
+  if (state === 'cancelled') return <XIcon className={className} aria-hidden />
+  if (name.startsWith('Read')) return <FileTextIcon className={className} aria-hidden />
+  if (name.startsWith('Searched the web') || name.startsWith('Fetched')) {
+    return <GlobeIcon className={className} aria-hidden />
+  }
+  if (name.startsWith('Searched') || name.startsWith('Looked')) {
+    return <SearchIcon className={className} aria-hidden />
+  }
+  if (name.startsWith('Updated its plan')) return <ListTodoIcon className={className} aria-hidden />
+  if (state === 'completed') return <CheckIcon className={className} aria-hidden />
+  return <WrenchIcon className={className} aria-hidden />
 }
 
-const statusIcons: Record<CompanionToolState, ReactNode> = {
-  pending: <CircleIcon className="size-3.5 text-muted-foreground" />,
-  running: <ClockIcon className="size-3.5 text-amber-600 motion-safe:animate-pulse" />,
-  completed: <CheckCircleIcon className="size-3.5 text-emerald-600" />,
-  error: <XCircleIcon className="size-3.5 text-destructive" />,
-  cancelled: <XCircleIcon className="size-3.5 text-muted-foreground" />,
+const stateLabels: Record<CompanionToolState, string> = {
+  pending: 'starting',
+  running: 'running',
+  completed: 'done',
+  error: 'failed',
+  cancelled: 'stopped',
 }
 
 export function Tool({ className, ...props }: ComponentProps<typeof Collapsible>) {
-  return (
-    <Collapsible
-      className={cn('not-prose w-full border-b border-border-subtle', className)}
-      {...props}
-    />
-  )
+  return <Collapsible className={cn('not-prose group/tool w-full', className)} {...props} />
 }
 
 export function ToolHeader({
@@ -50,18 +61,25 @@ export function ToolHeader({
   name: string
   state: CompanionToolState
 }) {
+  const active = state === 'running' || state === 'pending'
   return (
     <CollapsibleTrigger
-      className={cn('flex w-full items-center gap-2 py-1.5 text-left text-xs', className)}
+      aria-label={`${name}, ${stateLabels[state]}`}
+      className={cn(
+        'flex w-full min-w-0 items-center gap-2 rounded-sm py-1 text-left text-xs text-muted-foreground transition-colors hover:text-foreground',
+        state === 'error' && 'text-destructive hover:text-destructive',
+        className,
+      )}
       {...props}
     >
-      <WrenchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-medium text-foreground">{name}</span>
-      <Badge variant="secondary" className="gap-1 py-0.5 pr-1.5 pl-0.5 font-normal">
-        {statusIcons[state]}
-        {statusLabels[state]}
-      </Badge>
-      <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <ToolIcon name={name} state={state} />
+      <span className="min-w-0 flex-1 truncate">
+        {active ? <Shimmer className="max-w-full truncate align-bottom">{name}</Shimmer> : name}
+      </span>
+      <ChevronRightIcon
+        className="size-3 shrink-0 opacity-0 transition-[opacity,rotate] group-hover/tool:opacity-100 group-data-[open]/tool:rotate-90 group-data-[open]/tool:opacity-100"
+        aria-hidden
+      />
     </CollapsibleTrigger>
   )
 }
@@ -69,35 +87,35 @@ export function ToolHeader({
 export function ToolContent({ className, ...props }: ComponentProps<typeof CollapsibleContent>) {
   return (
     <CollapsibleContent
-      className={cn('border-t border-border-subtle py-2 text-xs', className)}
+      className={cn('ml-1.5 border-l border-border-subtle py-1 pl-3.5 text-xs', className)}
       {...props}
     />
   )
 }
 
-export function ToolInput({ input }: { input?: string }) {
-  if (!input) return null
+function Detail({ label, text, error }: { label: string; text: string; error?: boolean }) {
   return (
-    <div className="mb-2">
-      <p className="mb-1 font-medium text-muted-foreground">Input</p>
-      <pre className="overflow-x-auto rounded-md bg-muted p-2 whitespace-pre-wrap">{input}</pre>
+    <div className="mb-2 last:mb-0">
+      <p className="mb-1 text-[11px] font-medium text-muted-foreground">{label}</p>
+      <pre
+        className={cn(
+          'max-h-48 overflow-auto rounded-md p-2 font-mono text-[11px] leading-4 whitespace-pre-wrap',
+          error ? 'bg-destructive/10 text-destructive' : 'bg-muted',
+        )}
+      >
+        {text}
+      </pre>
     </div>
   )
 }
 
+export function ToolInput({ input }: { input?: string }) {
+  if (!input) return null
+  return <Detail label="Input" text={input} />
+}
+
 export function ToolOutput({ output, error }: { output?: string; error?: string }) {
-  if (!output && !error) return null
-  return (
-    <div>
-      <p className="mb-1 font-medium text-muted-foreground">{error ? 'Error' : 'Output'}</p>
-      <pre
-        className={cn(
-          'overflow-x-auto rounded-md p-2 whitespace-pre-wrap',
-          error ? 'bg-destructive/10 text-destructive' : 'bg-muted',
-        )}
-      >
-        {error ?? output}
-      </pre>
-    </div>
-  )
+  if (error) return <Detail label="Error" text={error} error />
+  if (!output) return null
+  return <Detail label="Result" text={output} />
 }

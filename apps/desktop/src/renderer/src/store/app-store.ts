@@ -13,7 +13,7 @@ import { createCompanionSlice, type CompanionSlice } from './slices/companion-sl
 
 export type { Tab, FileError, ErrorType, SidebarMode }
 
-type AppStore = TabSlice & UiSlice & FolderSlice & SettingsSlice & CompanionSlice
+export type AppStore = TabSlice & UiSlice & FolderSlice & SettingsSlice & CompanionSlice
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createTabSlice(...args),

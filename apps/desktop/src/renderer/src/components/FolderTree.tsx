@@ -12,6 +12,7 @@ import { Separator } from './ui/separator'
 import { Input } from './ui/input'
 import { Loader2 } from 'lucide-react'
 import { cn, isMac } from '../lib/utils'
+import { usePendingReviewPaths } from '../hooks/usePendingReviews'
 
 type DirectoryHandle = ReturnType<FileTreeModel['getItem']> & { expand(): void }
 
@@ -101,6 +102,8 @@ function useStableFileTree(buildOptions: () => FileTreeOptions): FileTreeModel {
   return modelRef.current
 }
 
+const PENDING_REVIEW_COLOR = 'oklch(0.77 0.16 70)'
+
 export function FolderTree() {
   const folderTree = useAppStore((s) => s.folderTree)
   const folderTreeTruncated = useAppStore((s) => s.folderTreeTruncated)
@@ -138,13 +141,40 @@ export function FolderTree() {
 
   const lastSelectionRef = useRef<string | null>(null)
   const selectionHandlerRef = useRef<(selected: readonly string[]) => void>(() => {})
+  // Documents with a companion edit waiting for review get a dot, like an unsaved marker.
+  const pendingReviews = usePendingReviewPaths()
+  const pendingRelativeRef = useRef<ReadonlySet<string>>(new Set())
 
   const model = useStableFileTree(() => ({
     paths: filteredPaths,
     initialExpansion: 'closed',
     icons: fileTreeIcons,
     onSelectionChange: (selected) => selectionHandlerRef.current(selected),
+    renderRowDecoration: ({ item }) =>
+      pendingRelativeRef.current.has(item.path)
+        ? {
+            text: '●',
+            title: 'Suggested edit waiting for review',
+            parts: [{ text: '●', color: PENDING_REVIEW_COLOR }],
+          }
+        : null,
   }))
+
+  useEffect(() => {
+    const relative = new Set<string>()
+    if (normalizedRoot) {
+      for (const path of pendingReviews) {
+        const rel = toRelative(path, normalizedRoot)
+        if (rel) relative.add(rel)
+      }
+    }
+    const previous = pendingRelativeRef.current
+    if (relative.size === previous.size && [...relative].every((rel) => previous.has(rel))) return
+    pendingRelativeRef.current = relative
+    // The tree has no decoration refresh of its own; re-applying its (empty) composition
+    // re-renders the visible rows, which re-reads the decorations.
+    model.setComposition(undefined)
+  }, [pendingReviews, normalizedRoot, model])
 
   selectionHandlerRef.current = (selected) => {
     if (selected.length === 0) return

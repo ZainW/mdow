@@ -1,241 +1,232 @@
-import { mkdtemp, rm, writeFile } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BrowserWindow } from 'electron'
+import type { CompanionSendPayload, CompanionUpdate } from '../../shared/types'
+import type { OpencodeEvent } from './opencode-client'
 
-vi.mock('../store', () => ({
-  getCompanionSettings: vi.fn(() => ({
-    preferredProvider: null,
-    customCommand: '',
-    lastModel: null,
-  })),
-  saveCompanionSettings: vi.fn(),
+const settings = vi.hoisted(() => ({ lastModel: null as string | null }))
+const fake = vi.hoisted(() => ({
+  onEvent: null as ((event: OpencodeEvent) => void) | null,
+  client: null as Record<string, ReturnType<typeof vi.fn>> | null,
 }))
 
-vi.mock('./provider-detection', async () => {
-  const actual =
-    await vi.importActual<typeof import('./provider-detection')>('./provider-detection')
-  return {
-    ...actual,
-    detectCompanionProviders: vi.fn(() =>
-      Promise.resolve([
-        {
-          id: 'opencode' as const,
-          label: 'OpenCode',
-          commandDisplay: 'opencode acp',
-          availability: 'available' as const,
-        },
+vi.mock('../store', () => ({
+  getCompanionSettings: () => ({ ...settings }),
+  saveCompanionSettings: (next: { lastModel?: string | null }) => {
+    if (next.lastModel !== undefined) settings.lastModel = next.lastModel
+  },
+}))
+
+vi.mock('./opencode-binary', () => ({
+  detectOpencode: vi.fn(async () => ({
+    binary: { path: '/bin/opencode', version: '2.0.16' },
+    status: { availability: 'available', version: '2.0.16' },
+  })),
+}))
+
+vi.mock('./opencode-server', () => ({
+  startOpencodeServer: vi.fn(async () => ({
+    url: 'http://127.0.0.1:1',
+    password: 'pw',
+    exited: new Promise(() => undefined),
+    stop: vi.fn(),
+  })),
+}))
+
+vi.mock('./opencode-client', () => ({
+  OpencodeClient: vi.fn(function OpencodeClient() {
+    const client = {
+      listModels: vi.fn(async () => [
+        { id: 'claude-sonnet-5-5', providerID: 'opencode', name: 'Claude Sonnet 5.5' },
+        { id: 'inclusionai/ling', providerID: 'openrouter', name: 'Ling' },
       ]),
-    ),
-  }
+      listProviders: vi.fn(async () => [
+        { id: 'opencode', name: 'OpenCode Zen' },
+        { id: 'openrouter', name: 'OpenRouter' },
+      ]),
+      defaultModel: vi.fn(async () => null),
+      createSession: vi.fn(async () => ({ id: 'ses_1' })),
+      setInstructions: vi.fn(async () => undefined),
+      switchModel: vi.fn(async () => undefined),
+      prompt: vi.fn(async () => undefined),
+      interrupt: vi.fn(async () => undefined),
+      replyPermission: vi.fn(async () => undefined),
+      subscribe: vi.fn(
+        (_directory: string, onEvent: (event: OpencodeEvent) => void) =>
+          new Promise<void>(() => {
+            fake.onEvent = onEvent
+          }),
+      ),
+    }
+    fake.client = client
+    return client
+  }),
+}))
+
+const { CompanionService, composePrompt, parseModelValue, sessionDirectoryFor } =
+  await import('./service')
+
+function makeWindow() {
+  const sent: CompanionUpdate[] = []
+  const win = {
+    isDestroyed: () => false,
+    webContents: { send: (_channel: string, update: CompanionUpdate) => sent.push(update) },
+  } as unknown as BrowserWindow
+  return { win, sent }
+}
+
+const payload: CompanionSendPayload = {
+  text: 'Tighten the intro',
+  activePath: '/docs/guide/intro.md',
+  openFolderPath: '/docs',
+  tags: [{ kind: 'file', path: '/docs/notes.md', sourceId: 'tag:/docs/notes.md' }],
+}
+
+function emitEvent(type: string, data: Record<string, unknown>) {
+  fake.onEvent?.({ type, data: { sessionID: 'ses_1', ...data } })
+}
+
+describe('CompanionService', () => {
+  beforeEach(() => {
+    settings.lastModel = null
+    fake.onEvent = null
+    fake.client = null
+  })
+
+  it('opens a locked-down session in the folder and prompts with what the user is viewing', async () => {
+    const { win } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+
+    const client = fake.client!
+    expect(client.createSession).toHaveBeenCalledWith({
+      directory: '/docs',
+      model: null,
+      permissions: expect.arrayContaining([
+        { action: 'shell', resource: '*', effect: 'deny' },
+        { action: 'edit', resource: '*', effect: 'ask' },
+      ]),
+    })
+    expect(client.setInstructions).toHaveBeenCalledWith('ses_1', 'mdow', expect.any(String))
+    expect(client.prompt).toHaveBeenCalledWith(
+      'ses_1',
+      '<mdow-context>\nViewing: guide/intro.md\nAttached: notes.md\n</mdow-context>\n\nTighten the intro',
+    )
+  })
+
+  it('streams updates, waits for review, and finishes the turn', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+
+    emitEvent('session.text.delta', { delta: 'Here is a tighter intro.' })
+    emitEvent('session.tool.input.started', { id: 'call_1', name: 'edit' })
+    emitEvent('permission.asked', { id: 'per_1', action: 'edit', source: { id: 'call_1' } })
+    expect(sent).toContainEqual({ kind: 'delta', text: 'Here is a tighter intro.' })
+    expect(sent).toContainEqual(
+      expect.objectContaining({ kind: 'change', permissionId: 'per_1', status: 'pending' }),
+    )
+
+    await service.replyPermission('per_1', 'approve')
+    expect(fake.client!.replyPermission).toHaveBeenCalledWith('ses_1', 'per_1', 'once', undefined)
+    await expect(service.replyPermission('per_1', 'approve')).rejects.toThrow('no longer waiting')
+
+    emitEvent('session.execution.succeeded', {})
+    expect(sent.at(-1)).toMatchObject({ kind: 'done' })
+  })
+
+  it('declines shell requests without asking the user', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    emitEvent('permission.asked', { id: 'per_2', action: 'shell', resources: ['ls'] })
+    expect(fake.client!.replyPermission).toHaveBeenCalledWith(
+      'ses_1',
+      'per_2',
+      'reject',
+      expect.stringContaining('shell'),
+    )
+    expect(sent).toEqual([])
+  })
+
+  it('reports provider failures as errors', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    emitEvent('session.execution.failed', { error: { message: 'Sign in to OpenCode Go' } })
+    expect(sent.at(-1)).toEqual({ kind: 'error', message: 'Sign in to OpenCode Go' })
+  })
+
+  it('refuses a second message while one is running', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    await service.send(payload, win)
+    expect(fake.client!.prompt).toHaveBeenCalledTimes(1)
+    expect(sent.at(-1)).toMatchObject({ kind: 'warning' })
+  })
+
+  it('cancel interrupts the session and rejects pending reviews', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    emitEvent('session.tool.input.started', { id: 'call_1', name: 'edit' })
+    emitEvent('permission.asked', { id: 'per_1', action: 'edit', source: { id: 'call_1' } })
+
+    await service.cancel()
+    expect(fake.client!.interrupt).toHaveBeenCalledWith('ses_1')
+    expect(fake.client!.replyPermission).toHaveBeenCalledWith(
+      'ses_1',
+      'per_1',
+      'reject',
+      expect.any(String),
+    )
+    expect(sent.at(-1)).toMatchObject({ kind: 'cancelled' })
+  })
+
+  it('lists models grouped by provider and remembers the choice', async () => {
+    const { win } = makeWindow()
+    const service = new CompanionService(() => win)
+    const state = await service.getModels('/docs')
+    expect(state.options.map((option) => option.value)).toEqual([
+      'opencode/claude-sonnet-5-5',
+      'openrouter/inclusionai/ling',
+    ])
+    expect(state.currentValue).toBeNull()
+
+    await service.setModel('openrouter/inclusionai/ling')
+    expect(settings.lastModel).toBe('openrouter/inclusionai/ling')
+    expect((await service.getModels('/docs')).currentValue).toBe('openrouter/inclusionai/ling')
+    await expect(service.setModel('nope/model')).rejects.toThrow('not available')
+  })
+
+  it('starts a new OpenCode session after reset', async () => {
+    const { win } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    emitEvent('session.execution.succeeded', {})
+    await service.reset()
+    await service.send(payload, win)
+    expect(fake.client!.createSession).toHaveBeenCalledTimes(2)
+  })
 })
 
-import { CitationStream, CompanionService } from './service'
-import { detectCompanionProviders } from './provider-detection'
-import { saveCompanionSettings } from '../store'
-
-describe('Companion service', () => {
-  let dir: string
-
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe('companion helpers', () => {
+  it('splits model values on the first slash', () => {
+    expect(parseModelValue('openrouter/inclusionai/ling')).toEqual({
+      providerID: 'openrouter',
+      id: 'inclusionai/ling',
+    })
+    expect(parseModelValue('no-slash')).toBeNull()
   })
 
-  afterEach(async () => {
-    if (dir) await rm(dir, { recursive: true, force: true })
+  it('uses the open folder, else the document folder', () => {
+    expect(sessionDirectoryFor(payload)).toBe('/docs')
+    expect(sessionDirectoryFor({ ...payload, openFolderPath: null })).toBe('/docs/guide')
   })
 
-  it('reports detection via detectProviders', async () => {
-    const service = new CompanionService(() => null)
-    const providers = await service.detectProviders()
-    expect(detectCompanionProviders).toHaveBeenCalled()
-    expect(providers[0]?.id).toBe('opencode')
-  })
-
-  it('returns an error when no provider can start', async () => {
-    vi.mocked(detectCompanionProviders).mockResolvedValueOnce([
-      {
-        id: 'opencode',
-        label: 'OpenCode',
-        commandDisplay: 'opencode acp',
-        availability: 'missing',
-      },
-    ])
-    const service = new CompanionService(() => null)
-    const result = await service.startSession()
-    expect(result.ok).toBe(false)
-    expect(result.error).toMatch(/no companion provider/i)
-  })
-
-  it('extracts a citation split across streamed deltas without exposing its raw path', () => {
-    const stream = new CitationStream(['src:/docs/overview.md'])
-
-    const first = stream.consume('The launch date is October 14 (src:/docs/over')
-    const second = stream.consume('view.md).')
-    const final = stream.flush()
-
-    expect(first).toEqual({ text: 'The launch date is October 14 ', citationIds: [] })
-    expect(second).toEqual({ text: '.', citationIds: ['src:/docs/overview.md'] })
-    expect(final).toEqual({ text: '', citationIds: [] })
-  })
-
-  it('deduplicates repeated citations while preserving visible text', () => {
-    const stream = new CitationStream(['src:/docs/overview.md'])
-
-    const result = stream.consume(
-      'See src:/docs/overview.md and src:/docs/overview.md for launch details.',
+  it('leaves the prompt alone when there is no context', () => {
+    expect(composePrompt({ ...payload, activePath: null, tags: [] }, '/docs')).toBe(
+      'Tighten the intro',
     )
-
-    expect(result.text).toBe('See  and  for launch details.')
-    expect(result.citationIds).toEqual(['src:/docs/overview.md'])
-  })
-
-  it('emits a cancelled terminal state without a later completed state', async () => {
-    const sent: unknown[] = []
-    const cancel = vi.fn().mockRejectedValue(new Error('process already exited'))
-    const shutdown = vi.fn().mockResolvedValue(undefined)
-    const service = new CompanionService(
-      () =>
-        ({
-          isDestroyed: () => false,
-          webContents: {
-            send: (_channel: string, update: unknown) => sent.push(update),
-          },
-        }) as never,
-    )
-    Object.assign(service, {
-      client: { cancel, shutdown },
-      streamingMessageId: 'message-1',
-      activeRequestToken: Symbol('active-request'),
-    })
-
-    await expect(service.cancel()).resolves.toBeUndefined()
-    service.handleClientUpdate({
-      kind: 'delta',
-      text: 'late chunk',
-    })
-
-    expect(cancel).toHaveBeenCalledOnce()
-    expect(shutdown).toHaveBeenCalledOnce()
-    expect(sent).toContainEqual({ kind: 'cancelled', messageId: 'message-1' })
-    expect(sent).not.toContainEqual({ kind: 'delta', text: 'late chunk' })
-    expect(sent).not.toContainEqual({ kind: 'done', messageId: 'message-1' })
-  })
-
-  it('keeps a streaming response routed to the window that sent the prompt', () => {
-    const firstWindowUpdates: unknown[] = []
-    const focusedWindowUpdates: unknown[] = []
-    const firstWindow = {
-      isDestroyed: () => false,
-      webContents: {
-        send: (_channel: string, update: unknown) => firstWindowUpdates.push(update),
-      },
-    }
-    const focusedWindow = {
-      isDestroyed: () => false,
-      webContents: {
-        send: (_channel: string, update: unknown) => focusedWindowUpdates.push(update),
-      },
-    }
-    const service = new CompanionService(() => focusedWindow as never)
-    Object.assign(service, {
-      activeWindow: firstWindow,
-      activeRequestToken: Symbol('active-request'),
-    })
-
-    service.handleClientUpdate({
-      kind: 'delta',
-      text: 'same window',
-    })
-
-    expect(firstWindowUpdates).toContainEqual({ kind: 'delta', text: 'same window' })
-    expect(focusedWindowUpdates).toHaveLength(0)
-  })
-
-  it('rejects a second prompt while another request is being prepared', async () => {
-    const sent: unknown[] = []
-    const service = new CompanionService(
-      () =>
-        ({
-          isDestroyed: () => false,
-          webContents: {
-            send: (_channel: string, update: unknown) => sent.push(update),
-          },
-        }) as never,
-    )
-    Object.assign(service, { activeRequestToken: Symbol('active-request') })
-    vi.mocked(detectCompanionProviders).mockResolvedValueOnce([])
-
-    await service.send({
-      text: 'Second prompt',
-      activePath: null,
-      openFolderPath: null,
-      tags: [],
-    })
-
-    expect(sent).toContainEqual({
-      kind: 'warning',
-      message: 'Wait for the current response or cancel it first.',
-    })
-  })
-
-  it('reuses unchanged focused content by hash within the live provider session', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'mdow-service-'))
-    const active = join(dir, 'active.md')
-    await writeFile(active, `# Active\n${'important detail '.repeat(300)}`)
-    const prompts: string[] = []
-    const fakeClient = {
-      getSessionId: () => 'session-1',
-      prompt: async (prompt: string) => {
-        prompts.push(prompt)
-      },
-    }
-    const service = new CompanionService(() => null)
-    Object.assign(service, {
-      client: fakeClient,
-      activeProvider: 'opencode',
-      activeCwd: dir,
-    })
-    const payload = {
-      text: 'Summarize this',
-      activePath: active,
-      openFolderPath: dir,
-      tags: [],
-      providerId: 'opencode' as const,
-    }
-
-    await service.send(payload)
-    await service.send(payload)
-
-    expect(prompts[0]).toContain('important detail')
-    expect(prompts[1]).toContain('Content unchanged from earlier in this session')
-    expect(prompts[1]).not.toContain('important detail')
-  })
-
-  it('exposes live models and persists only the confirmed selection', async () => {
-    const selectedState = {
-      options: [
-        {
-          value: 'openai/gpt-5.4',
-          name: 'GPT-5.4',
-          provider: 'openai' as const,
-        },
-      ],
-      currentValue: 'openai/gpt-5.4',
-      stale: false,
-    }
-    const setModel = vi.fn().mockResolvedValue(selectedState)
-    const service = new CompanionService(() => null)
-    Object.assign(service, {
-      client: {
-        getModelState: () => selectedState,
-        setModel,
-      },
-    })
-
-    expect(service.getModels()).toEqual(selectedState)
-    await expect(service.setModel('openai/gpt-5.4')).resolves.toEqual(selectedState)
-    expect(setModel).toHaveBeenCalledWith('openai/gpt-5.4')
-    expect(saveCompanionSettings).toHaveBeenCalledWith({ lastModel: 'openai/gpt-5.4' })
   })
 })

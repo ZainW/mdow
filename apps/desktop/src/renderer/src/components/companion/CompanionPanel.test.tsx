@@ -1,81 +1,60 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubWindowApi } from '../../test/stubWindowApi'
 import { useAppStore } from '../../store/app-store'
 import { CompanionPanel, CompanionShell, CompanionWorkspace } from './CompanionPanel'
 
 const sendCompanionMessage = vi.fn(() => new Promise<void>(() => undefined))
+const replyCompanionPermission = vi.fn().mockResolvedValue(undefined)
+
+const models = {
+  options: [
+    {
+      value: 'opencode/claude-sonnet-5-5',
+      name: 'Claude Sonnet 5.5',
+      providerId: 'opencode',
+      providerName: 'OpenCode Zen',
+    },
+  ],
+  currentValue: 'opencode/claude-sonnet-5-5',
+  stale: false,
+}
 
 stubWindowApi(() => ({
-  detectCompanionProviders: vi.fn().mockResolvedValue([
-    {
-      id: 'opencode',
-      label: 'OpenCode',
-      commandDisplay: 'opencode acp',
-      availability: 'available',
-    },
-  ]),
-  getCompanionSettings: vi
-    .fn()
-    .mockResolvedValue({ preferredProvider: 'opencode', customCommand: '', lastModel: null }),
-  saveCompanionSettings: vi.fn().mockResolvedValue(undefined),
-  startCompanionSession: vi.fn().mockResolvedValue({ ok: true, providerId: 'opencode' }),
-  getCompanionModels: vi.fn().mockResolvedValue({
-    options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
-    currentValue: 'openai/gpt-5.4',
-    stale: false,
-  }),
-  setCompanionModel: vi.fn().mockResolvedValue({
-    options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
-    currentValue: 'openai/gpt-5.4',
-    stale: false,
-  }),
+  startCompanion: vi.fn().mockResolvedValue({ availability: 'available', version: '2.0.16' }),
+  getCompanionModels: vi.fn().mockResolvedValue(models),
+  setCompanionModel: vi.fn().mockResolvedValue(models),
   sendCompanionMessage,
+  replyCompanionPermission,
   cancelCompanion: vi.fn().mockResolvedValue(undefined),
+  resetCompanion: vi.fn().mockResolvedValue(undefined),
+  openExternal: vi.fn().mockResolvedValue(undefined),
+  saveAppState: vi.fn().mockResolvedValue(undefined),
 }))
 
 beforeEach(() => {
   sendCompanionMessage.mockClear()
+  replyCompanionPermission.mockClear()
   useAppStore.getState().resetCompanionConversation()
   useAppStore.setState({
     companionPresentation: 'drawer',
-    companionProviders: [
-      {
-        id: 'opencode',
-        label: 'OpenCode',
-        commandDisplay: 'opencode acp',
-        availability: 'available',
-      },
-    ],
-    companionPreferredProvider: 'opencode',
-    companionCustomCommand: '',
-    companionModelState: {
-      options: [{ value: 'openai/gpt-5.4', name: 'GPT-5.4', provider: 'openai' }],
-      currentValue: 'openai/gpt-5.4',
-      stale: false,
-    },
-    companionContextTrace: null,
+    companionStatus: { availability: 'available', version: '2.0.16' },
+    companionModelState: models,
     companionTags: [],
     folderTree: [
-      {
-        name: 'overview.md',
-        path: '/docs/overview.md',
-        isDirectory: false,
-      },
-      {
-        name: 'risks.md',
-        path: '/docs/risks.md',
-        isDirectory: false,
-      },
+      { name: 'overview.md', path: '/docs/overview.md', isDirectory: false },
+      { name: 'risks.md', path: '/docs/risks.md', isDirectory: false },
     ],
     openFolderPath: '/docs',
+    tabs: [],
+    activeTabId: null,
   })
 })
 
 describe('CompanionPanel', () => {
-  it('locks the composer immediately while the first request is pending', () => {
+  it('locks the composer while the first request is pending', () => {
     render(<CompanionPanel />)
-    const composer = screen.getByRole('textbox', { name: 'Ask about these docs' })
+    const composer = screen.getByRole('combobox', { name: 'Message the companion' })
 
     fireEvent.change(composer, { target: { value: 'When is launch?' } })
     fireEvent.keyDown(composer, { key: 'Enter' })
@@ -83,60 +62,102 @@ describe('CompanionPanel', () => {
     fireEvent.keyDown(composer, { key: 'Enter' })
 
     expect(sendCompanionMessage).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
+    expect(sendCompanionMessage).toHaveBeenCalledWith({
+      text: 'When is launch?',
+      activePath: null,
+      openFolderPath: '/docs',
+      tags: [],
+    })
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled()
   })
 
-  it('supports keyboard selection in the file mention listbox', () => {
+  it('sends a suggestion with one click', () => {
     render(<CompanionPanel />)
-    const composer = screen.getByRole('textbox', { name: 'Ask about these docs' })
+    fireEvent.click(screen.getByRole('button', { name: /what's in this folder/i }))
+    expect(sendCompanionMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Give me a quick tour of the documents in this folder.' }),
+    )
+  })
+
+  it('offers document suggestions for the viewed document', () => {
+    useAppStore.setState({
+      tabs: [{ id: 't1', path: '/docs/overview.md' } as never],
+      activeTabId: 't1',
+    })
+    render(<CompanionPanel />)
+    expect(screen.getByText('Ask about overview.md')).toBeVisible()
+    expect(screen.getByRole('button', { name: /fix spelling and grammar/i })).toBeVisible()
+  })
+
+  it('supports keyboard selection in the document mention list', () => {
+    render(<CompanionPanel />)
+    const composer = screen.getByRole('combobox', { name: 'Message the companion' })
 
     fireEvent.change(composer, { target: { value: '@r' } })
-    expect(screen.getByRole('listbox', { name: 'Document suggestions' })).toBeVisible()
-    fireEvent.keyDown(composer, { key: 'ArrowDown' })
+    expect(screen.getByRole('listbox', { name: 'Documents' })).toBeVisible()
     fireEvent.keyDown(composer, { key: 'Enter' })
 
-    expect(screen.getByText('@risks.md')).toBeVisible()
-    expect(screen.queryByRole('listbox', { name: 'Document suggestions' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove risks.md' })).toBeVisible()
+    expect(screen.queryByRole('listbox', { name: 'Documents' })).not.toBeInTheDocument()
   })
 
-  it('sends with an available provider when the saved provider is missing', async () => {
+  it('shows install steps when OpenCode is missing', () => {
     useAppStore.setState({
-      companionProviders: [
+      companionStatus: { availability: 'missing', detail: 'Install OpenCode 2' },
+    })
+    render(<CompanionPanel />)
+    expect(screen.getByRole('heading', { name: 'Connect OpenCode' })).toBeVisible()
+    expect(screen.getByText('opencode auth login')).toBeVisible()
+    expect(screen.queryByRole('combobox', { name: 'Message the companion' })).toBeNull()
+  })
+
+  it('asks for an upgrade when OpenCode 1 is installed', () => {
+    useAppStore.setState({ companionStatus: { availability: 'outdated', version: '1.18.0' } })
+    render(<CompanionPanel />)
+    expect(screen.getByRole('heading', { name: 'Update OpenCode' })).toBeVisible()
+    expect(screen.getByText('opencode upgrade')).toBeVisible()
+  })
+
+  it('reviews a proposed change from its card', () => {
+    useAppStore.setState({
+      companionStreaming: true,
+      companionMessages: [
         {
-          id: 'opencode',
-          label: 'OpenCode',
-          commandDisplay: 'opencode acp',
-          availability: 'available',
-        },
-        {
-          id: 'codex-acp',
-          label: 'Codex ACP',
-          commandDisplay: 'codex-acp',
-          availability: 'missing',
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+          status: 'streaming',
+          parts: [
+            {
+              kind: 'change',
+              toolCallId: 'call_1',
+              permissionId: 'per_1',
+              status: 'pending',
+              files: [
+                {
+                  path: '/docs/overview.md',
+                  displayPath: 'overview.md',
+                  patch: '@@ -3 +3 @@\n-Ship in Q4.\n+Ship in Q1.\n',
+                  additions: 1,
+                  deletions: 1,
+                  status: 'modified',
+                },
+              ],
+            },
+          ],
         },
       ],
-      companionPreferredProvider: 'codex-acp',
     })
-    vi.mocked(window.api.detectCompanionProviders).mockResolvedValueOnce(
-      useAppStore.getState().companionProviders,
-    )
-    vi.mocked(window.api.getCompanionSettings).mockResolvedValueOnce({
-      preferredProvider: 'codex-acp',
-      customCommand: '',
-      lastModel: null,
-    })
-
     render(<CompanionPanel />)
-    await waitFor(() => {
-      expect(useAppStore.getState().companionPreferredProvider).toBe('opencode')
-    })
-    const composer = screen.getByRole('textbox', { name: 'Ask about these docs' })
-    fireEvent.change(composer, { target: { value: 'Use the working provider' } })
-    fireEvent.keyDown(composer, { key: 'Enter' })
 
-    expect(sendCompanionMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: 'opencode' }),
-    )
+    const card = screen.getByRole('region', { name: 'Change to overview.md' })
+    expect(within(card).getByText('Ship in Q4.')).toBeVisible()
+    expect(within(card).getByText('Ship in Q1.')).toBeVisible()
+    fireEvent.click(within(card).getByRole('button', { name: 'Accept' }))
+
+    expect(replyCompanionPermission).toHaveBeenCalledWith('per_1', 'approve')
+    expect(within(card).queryByRole('button', { name: 'Accept' })).toBeNull()
+    expect(within(card).getByText('Applying')).toBeVisible()
   })
 
   it('uses an overlay on narrow windows instead of shrinking the document', () => {
@@ -148,38 +169,15 @@ describe('CompanionPanel', () => {
     )
   })
 
-  it('renders the expanded companion as a workspace instead of a dialog', () => {
+  it('renders the expanded companion as a workspace with the model picker', () => {
     useAppStore.setState({ companionPresentation: 'workspace' })
     render(<CompanionWorkspace />)
 
     expect(screen.getByRole('region', { name: 'AI companion workspace' })).toBeVisible()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Model: Claude Sonnet 5.5' })).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to document' }))
     expect(useAppStore.getState().companionPresentation).toBe('drawer')
-  })
-
-  it('integrates the model picker and compact context bar in workspace mode', () => {
-    useAppStore.setState({
-      companionPresentation: 'workspace',
-      companionContextTrace: {
-        focusedCount: 1,
-        attachedCount: 0,
-        searchedCount: 0,
-        readRangeCount: 0,
-        injectedBytes: 800,
-        estimatedTokens: 200,
-        retrievalMode: 'focused-only',
-        items: [{ path: '/docs/overview.md', reason: 'focused', bytes: 800 }],
-      },
-    })
-
-    render(<CompanionWorkspace />)
-
-    expect(screen.getByRole('combobox', { name: 'Model' })).toBeVisible()
-    expect(screen.getByText(/1 focused/)).toBeVisible()
-    expect(screen.getByText(/≈200 added/)).toBeVisible()
-    expect(screen.queryByText(/using .*more/i)).not.toBeInTheDocument()
   })
 
   it('replaces the reader shell while workspace mode is active', () => {
@@ -191,8 +189,6 @@ describe('CompanionPanel', () => {
     )
 
     expect(screen.getByRole('region', { name: 'AI companion workspace' })).toBeVisible()
-    expect(screen.queryByRole('main', { name: 'Test document' })).not.toBeInTheDocument()
-
     fireEvent.click(screen.getByRole('button', { name: 'Back to document' }))
     expect(screen.getByRole('main', { name: 'Test document' })).toBeVisible()
   })
@@ -211,9 +207,9 @@ describe('CompanionPanel', () => {
             {
               kind: 'tool',
               toolCallId: 'tool-1',
-              name: 'Search docs',
+              name: 'Searched for “launch”',
               state: 'running',
-              input: '{"query":"launch"}',
+              input: '{"pattern":"launch"}',
             },
           ],
         },
@@ -227,11 +223,10 @@ describe('CompanionPanel', () => {
       'aria-expanded',
       'false',
     )
-    expect(screen.getByRole('button', { name: /search docs/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /searched for “launch”/i })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     expect(screen.queryByText('Long private reasoning')).not.toBeInTheDocument()
-    expect(screen.queryByText('{"query":"launch"}')).not.toBeInTheDocument()
   })
 })

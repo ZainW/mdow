@@ -1,394 +1,388 @@
 import type { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
+import { dirname, relative, sep } from 'path'
 import { IPC } from '../../shared/types'
 import type {
+  CompanionModelOption,
   CompanionModelState,
-  CompanionProviderId,
+  CompanionPermissionDecision,
+  CompanionRuntimeStatus,
   CompanionSendPayload,
-  CompanionSettings,
-  CompanionStartResult,
   CompanionUpdate,
 } from '../../shared/types'
 import { getCompanionSettings, saveCompanionSettings } from '../store'
-import { AcpClient } from './acp-client'
+import { detectOpencode, type ResolvedOpencode } from './opencode-binary'
 import {
-  appendRetrievedContext,
-  buildCompanionContext,
-  formatContextPrompt,
-} from './context-builder'
-import { ContextLedger } from './context-ledger'
-import { resolveFffMcp } from './fff'
-import { detectCompanionProviders, resolveProviderCommand } from './provider-detection'
-import { retrieveMarkdownRanges, shouldRetrieve } from './retrieval'
+  OpencodeClient,
+  type OpencodeEvent,
+  type OpencodeModelRef,
+  type OpencodePermissionRule,
+  type OpencodeProviderInfo,
+} from './opencode-client'
+import { OpencodeTurnTranslator } from './opencode-events'
+import { startOpencodeServer, type OpencodeServerHandle } from './opencode-server'
 
-interface CitationStreamResult {
-  text: string
-  citationIds: string[]
+export const COMPANION_INSTRUCTIONS = `You are the writing companion inside Mdow, a calm reader for Markdown and HTML documents. The user is reading the documents in this folder and wants help understanding and improving them.
+
+- Answer questions about the documents. Read them with your tools instead of guessing, and mention documents by their path relative to the folder.
+- When the user asks for a change, make it with your edit or write tool right away. Mdow shows the user every change as a diff to approve or reject before it is written, so do not ask for confirmation first.
+- Keep edits focused. Preserve each document's voice, structure and formatting, whether it is Markdown or HTML.
+- Do not run shell commands, reach outside this folder, or create new files unless the user asks for one.
+- Reply concisely in Markdown.`
+
+// Shell commands and other folders are off limits; edits always come back to the user for review.
+const SESSION_PERMISSIONS: OpencodePermissionRule[] = [
+  { action: 'shell', resource: '*', effect: 'deny' },
+  { action: 'bash', resource: '*', effect: 'deny' },
+  { action: 'edit', resource: '*', effect: 'ask' },
+]
+
+const MODEL_WARMUP_ATTEMPTS = 8
+const MODEL_WARMUP_DELAY_MS = 500
+
+interface Runtime {
+  binary: ResolvedOpencode
+  server: OpencodeServerHandle
+  client: OpencodeClient
 }
 
-export class CitationStream {
-  private buffer = ''
-  private readonly sourceIds: string[]
-  private readonly emittedIds = new Set<string>()
+interface ActiveSession {
+  id: string
+  directory: string
+  translator: OpencodeTurnTranslator
+  events: AbortController
+}
 
-  constructor(sourceIds: Iterable<string>) {
-    this.sourceIds = [...new Set(sourceIds)].toSorted((a, b) => b.length - a.length)
-  }
+interface ActiveTurn {
+  messageId: string
+  window: BrowserWindow | null
+}
 
-  consume(text: string): CitationStreamResult {
-    this.buffer += text
-    const citationIds = this.removeKnownSourceIds()
-    this.buffer = this.removeEmptyCitationWrappers(this.buffer)
+export function parseModelValue(value: string): OpencodeModelRef | null {
+  const slash = value.indexOf('/')
+  if (slash <= 0 || slash === value.length - 1) return null
+  return { providerID: value.slice(0, slash), id: value.slice(slash + 1) }
+}
 
-    const carryLength = this.getCarryLength()
-    const visibleLength = this.buffer.length - carryLength
-    const visible = this.buffer.slice(0, visibleLength)
-    this.buffer = this.buffer.slice(visibleLength)
-    return { text: visible, citationIds }
-  }
+export function sessionDirectoryFor(payload: CompanionSendPayload): string {
+  if (payload.openFolderPath) return payload.openFolderPath
+  if (payload.activePath) return dirname(payload.activePath)
+  return homedir()
+}
 
-  flush(): CitationStreamResult {
-    const citationIds = this.removeKnownSourceIds()
-    const text = this.removeEmptyCitationWrappers(this.buffer)
-    this.buffer = ''
-    return { text, citationIds }
-  }
+function displayPath(directory: string, path: string): string {
+  const rel = relative(directory, path)
+  return rel && !rel.startsWith('..') && !rel.startsWith(sep) ? rel : path
+}
 
-  private removeKnownSourceIds(): string[] {
-    const citationIds: string[] = []
-    for (const sourceId of this.sourceIds) {
-      const withoutSourceId = this.buffer.replaceAll(sourceId, '')
-      if (withoutSourceId === this.buffer) continue
-      this.buffer = withoutSourceId
-      if (!this.emittedIds.has(sourceId)) {
-        this.emittedIds.add(sourceId)
-        citationIds.push(sourceId)
-      }
-    }
-    return citationIds
-  }
-
-  private removeEmptyCitationWrappers(text: string): string {
-    return text.replace(/\(\s*\)/g, '').replace(/\[\s*\]/g, '')
-  }
-
-  private getCarryLength(): number {
-    let carryLength = 0
-    for (const sourceId of this.sourceIds) {
-      const maxPrefixLength = Math.min(sourceId.length - 1, this.buffer.length)
-      for (let length = maxPrefixLength; length > carryLength; length -= 1) {
-        if (this.buffer.endsWith(sourceId.slice(0, length))) {
-          carryLength = length
-          break
-        }
-      }
-    }
-
-    const carryStart = this.buffer.length - carryLength
-    if (carryLength > 0 && /[([]/.test(this.buffer.charAt(carryStart - 1))) {
-      carryLength += 1
-    } else if (carryLength === 0 && /[([]$/.test(this.buffer)) {
-      carryLength = 1
-    }
-    return carryLength
-  }
+/** Prefixes the user's message with what they are looking at in Mdow. */
+export function composePrompt(payload: CompanionSendPayload, directory: string): string {
+  const lines: string[] = []
+  if (payload.activePath) lines.push(`Viewing: ${displayPath(directory, payload.activePath)}`)
+  const attached = payload.tags.map((tag) => displayPath(directory, tag.path))
+  if (attached.length) lines.push(`Attached: ${attached.join(', ')}`)
+  if (lines.length === 0) return payload.text
+  return `<mdow-context>\n${lines.join('\n')}\n</mdow-context>\n\n${payload.text}`
 }
 
 export class CompanionService {
-  private client: AcpClient | null = null
-  private activeProvider: CompanionProviderId | null = null
-  private lastSources = new Map<string, { path: string; headingId?: string; label: string }>()
-  private streamingMessageId: string | null = null
-  private citationStream = new CitationStream([])
-  private activeRequestToken: symbol | null = null
-  private activeWindow: BrowserWindow | null = null
-  private activeCwd: string | null = null
-  private fffConnected = false
-  private readonly contextLedger = new ContextLedger()
+  private runtime: Runtime | null = null
+  private runtimeStarting: Promise<Runtime> | null = null
+  private session: ActiveSession | null = null
+  private turn: ActiveTurn | null = null
+  private readonly pendingPermissions = new Set<string>()
+  private modelOptions: CompanionModelOption[] = []
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
-  private emit(update: CompanionUpdate, targetWindow?: BrowserWindow | null): void {
-    const win = targetWindow ?? this.activeWindow ?? this.getMainWindow()
+  private emit(update: CompanionUpdate): void {
+    const win = this.turn?.window ?? this.getMainWindow()
     if (!win || win.isDestroyed()) return
     win.webContents.send(IPC.COMPANION_UPDATE, update)
   }
 
-  async detectProviders() {
-    return detectCompanionProviders()
+  async getStatus(): Promise<CompanionRuntimeStatus> {
+    if (this.runtime) return { availability: 'available', version: this.runtime.binary.version }
+    return (await detectOpencode()).status
   }
 
-  getSettings(): CompanionSettings {
-    return getCompanionSettings()
+  async start(): Promise<CompanionRuntimeStatus> {
+    try {
+      const runtime = await this.ensureRuntime()
+      return { availability: 'available', version: runtime.binary.version }
+    } catch (error) {
+      const status = await this.getStatus()
+      if (status.availability !== 'available') return status
+      return {
+        availability: 'failed',
+        version: status.version,
+        detail: error instanceof Error ? error.message : 'OpenCode failed to start.',
+      }
+    }
   }
 
-  saveSettings(settings: Partial<CompanionSettings>): void {
-    saveCompanionSettings(settings)
+  private ensureRuntime(): Promise<Runtime> {
+    if (this.runtime) return Promise.resolve(this.runtime)
+    this.runtimeStarting ??= (async () => {
+      const { binary, status } = await detectOpencode()
+      if (!binary) throw new Error(status.detail ?? 'OpenCode is not available.')
+      const server = await startOpencodeServer(binary.path)
+      const runtime: Runtime = {
+        binary,
+        server,
+        client: new OpencodeClient(server.url, server.password),
+      }
+      void server.exited.then(() => this.handleServerExit(runtime))
+      this.runtime = runtime
+      return runtime
+    })().finally(() => {
+      this.runtimeStarting = null
+    })
+    return this.runtimeStarting
   }
 
-  getModels(): CompanionModelState {
-    return (
-      this.client?.getModelState() ?? {
+  private handleServerExit(runtime: Runtime): void {
+    if (this.runtime !== runtime) return
+    this.runtime = null
+    this.closeSession()
+    if (this.turn) {
+      this.emit({
+        kind: 'error',
+        message: 'OpenCode stopped unexpectedly. Send again to restart it.',
+      })
+      this.turn = null
+    }
+  }
+
+  async getModels(directory: string = homedir()): Promise<CompanionModelState> {
+    let runtime: Runtime
+    try {
+      runtime = await this.ensureRuntime()
+    } catch (error) {
+      return {
         options: [],
         currentValue: null,
         stale: true,
-        unavailableReason: 'Start Companion to load models',
+        unavailableReason: error instanceof Error ? error.message : 'OpenCode is not available.',
       }
+    }
+
+    // A fresh server loads the model catalog in the background, so the first answers can be empty.
+    let models = await runtime.client.listModels(directory)
+    // oxlint-disable-next-line eslint/no-await-in-loop -- polls until the catalog finishes loading
+    for (let attempt = 1; models.length === 0 && attempt < MODEL_WARMUP_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, MODEL_WARMUP_DELAY_MS))
+      models = await runtime.client.listModels(directory)
+    }
+    const providers = await runtime.client
+      .listProviders(directory)
+      .catch((): OpencodeProviderInfo[] => [])
+    const providerNames = new Map(
+      providers.map((provider) => [provider.id, provider.name ?? provider.id] as const),
     )
+
+    this.modelOptions = models
+      .filter((model) => model.status !== 'deprecated')
+      .map((model) => ({
+        value: `${model.providerID}/${model.id}`,
+        name: model.name ?? model.id,
+        providerId: model.providerID,
+        providerName: providerNames.get(model.providerID) ?? model.providerID,
+      }))
+      .toSorted(
+        (a, b) => a.providerName.localeCompare(b.providerName) || a.name.localeCompare(b.name),
+      )
+
+    const saved = getCompanionSettings().lastModel
+    let currentValue = saved && this.hasModel(saved) ? saved : null
+    if (!currentValue) {
+      const fallback = await runtime.client.defaultModel(directory).catch(() => null)
+      const value = fallback ? `${fallback.providerID}/${fallback.id}` : null
+      currentValue = value && this.hasModel(value) ? value : null
+    }
+
+    return {
+      options: this.modelOptions,
+      currentValue,
+      stale: false,
+      ...(this.modelOptions.length === 0
+        ? { unavailableReason: 'No models yet. Run `opencode auth login` to connect a provider.' }
+        : {}),
+    }
+  }
+
+  private hasModel(value: string): boolean {
+    return this.modelOptions.some((option) => option.value === value)
   }
 
   async setModel(value: string): Promise<CompanionModelState> {
-    if (!this.client) throw new Error('Start Companion to choose a model')
-    const state = await this.client.setModel(value)
-    if (state.currentValue) saveCompanionSettings({ lastModel: state.currentValue })
-    return state
+    const ref = parseModelValue(value)
+    if (!ref || !this.hasModel(value)) throw new Error(`Model is not available: ${value}`)
+    saveCompanionSettings({ lastModel: value })
+    if (this.session && this.runtime) {
+      await this.runtime.client.switchModel(this.session.id, ref)
+    }
+    return { options: this.modelOptions, currentValue: value, stale: false }
   }
 
-  async startSession(
-    providerId?: CompanionProviderId,
-    cwd = process.cwd(),
-  ): Promise<CompanionStartResult> {
-    const settings = getCompanionSettings()
-    const providers = await detectCompanionProviders()
-    const savedProviderAvailable = providers.some(
-      (provider) =>
-        provider.id === settings.preferredProvider && provider.availability === 'available',
-    )
-    const preferred =
-      providerId ??
-      (savedProviderAvailable ? settings.preferredProvider : null) ??
-      providers.find((p) => p.availability === 'available')?.id ??
-      null
+  private async ensureSession(runtime: Runtime, directory: string): Promise<ActiveSession> {
+    if (this.session?.directory === directory) return this.session
+    this.closeSession()
 
-    if (!preferred) {
-      return { ok: false, providerId: null, error: 'No companion provider available' }
-    }
-
-    const command = resolveProviderCommand(preferred, settings.customCommand)
-    if (!command) {
-      return { ok: false, providerId: preferred, error: 'Provider command is not configured' }
-    }
-
-    if (
-      this.client &&
-      this.activeProvider === preferred &&
-      this.activeCwd === cwd &&
-      this.client.getSessionId()
-    ) {
-      return { ok: true, providerId: preferred }
-    }
-
-    await this.shutdownClient()
-
-    const client = new AcpClient({
-      command: command.command,
-      args: command.args,
-      cwd,
-      onUpdate: (update) => this.handleClientUpdate(update),
+    const savedModel = getCompanionSettings().lastModel
+    const created = await runtime.client.createSession({
+      directory,
+      model: savedModel ? parseModelValue(savedModel) : null,
+      permissions: SESSION_PERMISSIONS,
     })
-
     try {
-      await client.start()
-      const fffServer = preferred === 'opencode' ? await resolveFffMcp() : null
-      await client.createSession(cwd, fffServer ? [fffServer] : [])
-      if (
-        settings.lastModel &&
-        client.getModelState().options.some((option) => option.value === settings.lastModel)
-      ) {
-        try {
-          await client.setModel(settings.lastModel)
-        } catch {
-          // A live agent may change available configuration between session setup and selection.
-        }
-      }
-      this.client = client
-      this.activeProvider = preferred
-      this.activeCwd = cwd
-      this.fffConnected = Boolean(fffServer)
-      this.contextLedger.clear()
-      return { ok: true, providerId: preferred }
-    } catch (err) {
-      await client.shutdown()
-      this.client = null
-      this.activeProvider = null
-      this.activeCwd = null
-      this.fffConnected = false
-      this.contextLedger.clear()
-      return {
-        ok: false,
-        providerId: preferred,
-        error: err instanceof Error ? err.message : 'Failed to start provider',
-      }
-    }
-  }
-
-  async send(
-    payload: CompanionSendPayload,
-    targetWindow: BrowserWindow | null = this.getMainWindow(),
-  ): Promise<void> {
-    if (this.activeRequestToken) {
-      this.emit(
-        {
-          kind: 'warning',
-          message: 'Wait for the current response or cancel it first.',
-        },
-        targetWindow,
-      )
-      return
+      await runtime.client.setInstructions(created.id, 'mdow', COMPANION_INSTRUCTIONS)
+    } catch {
+      // Older 2.x servers may lack session instructions; the permission rules still apply.
     }
 
-    const requestToken = Symbol('companion-request')
-    this.activeRequestToken = requestToken
-    this.activeWindow = targetWindow
-    let messageId: string | null = null
-
-    try {
-      const cwd = payload.openFolderPath ?? process.cwd()
-      const start = await this.startSession(payload.providerId, cwd)
-      if (!start.ok || !this.client) {
-        throw new Error(start.error ?? 'Companion provider failed to start')
-      }
-
-      let packet = await buildCompanionContext({
-        activePath: payload.activePath,
-        openFolderPath: payload.openFolderPath,
-        tags: payload.tags,
-        question: payload.text,
-        ledger: this.contextLedger,
-      })
-
-      if (shouldRetrieve(payload.text, payload.activePath, payload.tags)) {
-        const roots = [
-          ...payload.tags.filter((tag) => tag.kind === 'folder').map((tag) => tag.path),
-          ...(payload.openFolderPath ? [payload.openFolderPath] : []),
-        ]
-        const ranges = await retrieveMarkdownRanges({
-          question: payload.text,
-          roots,
-          excludedPaths: packet.sources.map((source) => source.path),
-        })
-        packet = appendRetrievedContext(
-          packet,
-          ranges,
-          this.fffConnected ? 'adaptive-fff' : 'adaptive-local',
-        )
-      }
-
-      this.lastSources.clear()
-      for (const source of packet.sources) {
-        this.lastSources.set(source.sourceId, {
-          path: source.path,
-          headingId: source.headingId,
-          label: source.path.split(/[/\\]/).pop() ?? source.path,
-        })
-      }
-
-      this.emit({
-        kind: 'context',
-        summary: packet.summary,
-        warnings: packet.warnings,
-        trace: packet.trace,
-      })
-
-      this.citationStream = new CitationStream(this.lastSources.keys())
-      messageId = randomUUID()
-      this.streamingMessageId = messageId
-      const prompt = formatContextPrompt(packet, payload.text)
-      await this.client.prompt(prompt)
-      if (this.activeRequestToken !== requestToken || this.streamingMessageId !== messageId) {
-        return
-      }
-      this.emitCitationResult(this.citationStream.flush())
-      this.emit({ kind: 'done', messageId })
-    } catch (err) {
-      if (this.activeRequestToken === requestToken) {
+    const session: ActiveSession = {
+      id: created.id,
+      directory,
+      translator: new OpencodeTurnTranslator(created.id, directory),
+      events: new AbortController(),
+    }
+    this.session = session
+    void runtime.client
+      .subscribe(directory, (event) => this.handleEvent(session, event), session.events.signal)
+      .catch((error: unknown) => {
+        if (this.session !== session || !this.turn) return
         this.emit({
           kind: 'error',
-          message: err instanceof Error ? err.message : 'Prompt failed',
+          message: error instanceof Error ? error.message : 'Lost connection to OpenCode.',
         })
-      }
-    } finally {
-      if (messageId && this.streamingMessageId === messageId) {
-        this.streamingMessageId = null
-      }
-      if (this.activeRequestToken === requestToken) {
-        this.activeRequestToken = null
-        this.activeWindow = null
-      }
+        this.turn = null
+      })
+    return session
+  }
+
+  private closeSession(): void {
+    this.session?.events.abort()
+    this.session = null
+    this.pendingPermissions.clear()
+  }
+
+  async send(payload: CompanionSendPayload, targetWindow: BrowserWindow | null): Promise<void> {
+    if (this.turn) {
+      this.emit({ kind: 'warning', message: 'Wait for the current response or stop it first.' })
+      return
     }
+    const turn: ActiveTurn = { messageId: randomUUID(), window: targetWindow }
+    this.turn = turn
+
+    try {
+      const runtime = await this.ensureRuntime()
+      const directory = sessionDirectoryFor(payload)
+      const session = await this.ensureSession(runtime, directory)
+      session.translator.beginTurn()
+      await runtime.client.prompt(session.id, composePrompt(payload, directory))
+    } catch (error) {
+      if (this.turn !== turn) return
+      this.emit({
+        kind: 'error',
+        message: error instanceof Error ? error.message : 'Could not reach OpenCode.',
+      })
+      this.turn = null
+    }
+  }
+
+  handleEvent(session: ActiveSession, event: OpencodeEvent): void {
+    if (this.session !== session) return
+    const result = session.translator.translate(event)
+
+    for (const update of result.updates) {
+      if (update.kind === 'change' && update.permissionId && update.status === 'pending') {
+        this.pendingPermissions.add(update.permissionId)
+      }
+      if (this.turn) this.emit(update)
+    }
+
+    if (result.autoReject && this.runtime) {
+      const { permissionId, reason } = result.autoReject
+      void this.runtime.client
+        .replyPermission(session.id, permissionId, 'reject', reason)
+        .catch(() => undefined)
+    }
+
+    if (result.finish && this.turn) {
+      const { messageId } = this.turn
+      if (result.finish.outcome === 'failed') {
+        this.emit({ kind: 'error', message: result.finish.error ?? 'OpenCode failed.' })
+      } else if (result.finish.outcome === 'interrupted') {
+        this.emit({ kind: 'cancelled', messageId })
+      } else {
+        this.emit({ kind: 'done', messageId })
+      }
+      this.turn = null
+      this.pendingPermissions.clear()
+    }
+  }
+
+  async replyPermission(
+    permissionId: string,
+    decision: CompanionPermissionDecision,
+  ): Promise<void> {
+    if (!this.session || !this.runtime || !this.pendingPermissions.has(permissionId)) {
+      throw new Error('This change is no longer waiting for review.')
+    }
+    this.pendingPermissions.delete(permissionId)
+    await this.runtime.client.replyPermission(
+      this.session.id,
+      permissionId,
+      decision === 'approve' ? 'once' : 'reject',
+      decision === 'reject' ? 'The user rejected this change.' : undefined,
+    )
   }
 
   async cancel(): Promise<void> {
-    const messageId = this.streamingMessageId
-    const targetWindow = this.activeWindow
-    const client = this.client
-    this.streamingMessageId = null
-    this.activeRequestToken = null
-    this.citationStream = new CitationStream([])
-    this.client = null
-    this.activeProvider = null
-    this.activeCwd = null
-    this.fffConnected = false
-    this.contextLedger.clear()
-    if (client) {
-      try {
-        await client.cancel()
-      } catch {
-        // The process may exit between the user's cancel action and the notification write.
-      } finally {
-        await client.shutdown()
+    const turn = this.turn
+    const session = this.session
+    const runtime = this.runtime
+    this.turn = null
+    if (session && runtime) {
+      const pending = [...this.pendingPermissions]
+      this.pendingPermissions.clear()
+      await Promise.allSettled([
+        runtime.client.interrupt(session.id),
+        ...pending.map((id) =>
+          runtime.client.replyPermission(
+            session.id,
+            id,
+            'reject',
+            'The user stopped the response.',
+          ),
+        ),
+      ])
+    }
+    if (turn) {
+      const win = turn.window ?? this.getMainWindow()
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(IPC.COMPANION_UPDATE, {
+          kind: 'cancelled',
+          messageId: turn.messageId,
+        } satisfies CompanionUpdate)
       }
     }
-    if (messageId) {
-      this.emit({ kind: 'cancelled', messageId }, targetWindow)
-    }
-    this.activeWindow = null
+  }
+
+  /** Starts a fresh conversation: the next message opens a new OpenCode session. */
+  async reset(): Promise<void> {
+    if (this.turn) await this.cancel()
+    this.closeSession()
   }
 
   async shutdown(): Promise<void> {
-    this.activeRequestToken = null
-    this.activeWindow = null
-    await this.shutdownClient()
-  }
-
-  private async shutdownClient(): Promise<void> {
-    const client = this.client
-    this.client = null
-    this.activeProvider = null
-    this.activeCwd = null
-    this.fffConnected = false
-    this.contextLedger.clear()
-    this.streamingMessageId = null
-    this.citationStream = new CitationStream([])
-    if (client) await client.shutdown()
-  }
-
-  handleClientUpdate(update: CompanionUpdate): void {
-    if (!this.activeRequestToken) return
-    if (update.kind === 'delta') {
-      this.emitCitationResult(this.citationStream.consume(update.text))
-      return
-    }
-    this.emit(update)
-  }
-
-  private emitCitationResult(result: CitationStreamResult): void {
-    if (result.text) {
-      this.emit({ kind: 'delta', text: result.text })
-    }
-    for (const sourceId of result.citationIds) {
-      const source = this.lastSources.get(sourceId)
-      if (!source) continue
-      this.emit({
-        kind: 'citation',
-        citation: {
-          sourceId,
-          path: source.path,
-          headingId: source.headingId,
-          label: source.label,
-        },
-      })
-    }
+    if (this.turn) await this.cancel()
+    this.closeSession()
+    const runtime = this.runtime
+    this.runtime = null
+    runtime?.server.stop()
   }
 }
 
@@ -397,4 +391,9 @@ let companionService: CompanionService | null = null
 export function getCompanionService(getMainWindow: () => BrowserWindow | null): CompanionService {
   companionService ??= new CompanionService(getMainWindow)
   return companionService
+}
+
+/** Stops the OpenCode server if the companion was ever used. */
+export async function shutdownCompanionService(): Promise<void> {
+  await companionService?.shutdown()
 }
