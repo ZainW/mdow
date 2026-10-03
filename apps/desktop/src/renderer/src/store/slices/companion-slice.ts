@@ -2,36 +2,37 @@ import type { StateCreator } from 'zustand'
 import type {
   CompanionCitation,
   CompanionContextTag,
-  CompanionContextTrace,
   CompanionMessage,
   CompanionModelState,
   CompanionPart,
-  CompanionProviderId,
-  CompanionProviderStatus,
+  CompanionPermissionDecision,
+  CompanionRuntimeStatus,
   CompanionUpdate,
 } from '../../../../shared/types'
 
 export type CompanionPresentation = 'closed' | 'drawer' | 'workspace'
 
+const STALE_MODELS: CompanionModelState = {
+  options: [],
+  currentValue: null,
+  stale: true,
+  unavailableReason: 'Starting OpenCode…',
+}
+
 export interface CompanionSlice {
   companionPresentation: CompanionPresentation
   companionMessages: CompanionMessage[]
   companionStreaming: boolean
-  companionProviders: CompanionProviderStatus[]
-  companionPreferredProvider: CompanionProviderId | null
-  companionCustomCommand: string
-  companionContextSummary: string
-  companionContextTrace: CompanionContextTrace | null
-  companionWarnings: string[]
+  /** null until the first status check finishes. */
+  companionStatus: CompanionRuntimeStatus | null
   companionModelState: CompanionModelState
   companionTags: CompanionContextTag[]
+  companionWarnings: string[]
   companionError: string | null
   setCompanionPresentation: (presentation: CompanionPresentation) => void
   toggleCompanion: () => void
-  setCompanionProviders: (providers: CompanionProviderStatus[]) => void
-  setCompanionPreferredProvider: (id: CompanionProviderId | null) => void
-  setCompanionCustomCommand: (command: string) => void
-  loadCompanionModels: () => Promise<void>
+  /** Checks for OpenCode, starts its server and loads the live model list. */
+  connectCompanion: (directory?: string | null) => Promise<void>
   selectCompanionModel: (value: string) => Promise<void>
   setCompanionTags: (tags: CompanionContextTag[]) => void
   addCompanionTag: (tag: CompanionContextTag) => void
@@ -39,6 +40,10 @@ export interface CompanionSlice {
   appendCompanionMessage: (message: CompanionMessage) => void
   beginCompanionRequest: () => void
   cancelCompanionRequest: () => void
+  reviewCompanionChange: (
+    permissionId: string,
+    decision: CompanionPermissionDecision,
+  ) => Promise<void>
   applyCompanionUpdate: (update: CompanionUpdate) => void
   clearCompanionError: () => void
   resetCompanionConversation: () => void
@@ -87,17 +92,20 @@ function upsertPart(parts: CompanionPart[], part: CompanionPart): CompanionPart[
     return [...parts, part]
   }
   if (part.kind === 'thinking') {
+    // Reasoning that resumes right after earlier reasoning reads as one block, not a stack of rows.
+    const last = parts.at(-1)
+    if (last?.kind === 'thinking' && last.done) {
+      return [
+        ...parts.slice(0, -1),
+        { kind: 'thinking', text: `${last.text}\n\n${part.text}`, done: part.done },
+      ]
+    }
     const idx = parts.findLastIndex((p) => p.kind === 'thinking')
     if (idx >= 0) {
       const existing = parts[idx]
-      if (existing.kind !== 'thinking') return [...parts, part]
-      if (existing.done) return [...parts, part]
+      if (existing.kind !== 'thinking' || existing.done) return [...parts, part]
       const next = [...parts]
-      next[idx] = {
-        kind: 'thinking',
-        text: existing.text + part.text,
-        done: part.done,
-      }
+      next[idx] = { kind: 'thinking', text: existing.text + part.text, done: part.done }
       return next
     }
     return [...parts, part]
@@ -105,15 +113,34 @@ function upsertPart(parts: CompanionPart[], part: CompanionPart): CompanionPart[
   if (part.kind === 'tool') {
     const idx = parts.findIndex((p) => p.kind === 'tool' && p.toolCallId === part.toolCallId)
     if (idx >= 0) {
-      const next = [...parts]
       const existing = parts[idx]
       if (existing.kind !== 'tool') return [...parts, part]
+      const next = [...parts]
       next[idx] = {
         ...existing,
         ...part,
         input: part.input ?? existing.input,
         output: part.output ?? existing.output,
         error: part.error ?? existing.error,
+      }
+      return next
+    }
+    return [...parts, part]
+  }
+  if (part.kind === 'change') {
+    const idx = parts.findIndex((p) => p.kind === 'change' && p.toolCallId === part.toolCallId)
+    if (idx >= 0) {
+      const existing = parts[idx]
+      if (existing.kind !== 'change') return [...parts, part]
+      const next = [...parts]
+      next[idx] = {
+        ...existing,
+        status: part.status,
+        // The review id only means something while the change waits for a decision.
+        permissionId:
+          part.status === 'pending' ? (part.permissionId ?? existing.permissionId) : undefined,
+        files: part.files.length > 0 ? part.files : existing.files,
+        error: part.error,
       }
       return next
     }
@@ -129,6 +156,32 @@ function textFromParts(parts: CompanionPart[]): string {
     .join('')
 }
 
+/** Settles parts left open when a turn ends early: reasoning closes, reviews expire. */
+function settleParts(parts: CompanionPart[]): CompanionPart[] {
+  return parts.map((part) => {
+    if (part.kind === 'thinking') return { ...part, done: true }
+    if (part.kind === 'change' && part.status === 'pending') {
+      return { ...part, status: 'rejected', permissionId: undefined }
+    }
+    if (part.kind === 'tool' && (part.state === 'pending' || part.state === 'running')) {
+      return { ...part, state: 'cancelled' }
+    }
+    return part
+  })
+}
+
+function endTurn(
+  messages: CompanionMessage[],
+  status: NonNullable<CompanionMessage['status']>,
+  messageId?: string,
+): CompanionMessage[] {
+  return messages.map((message) =>
+    message.id === messageId || message.status === 'streaming'
+      ? { ...message, status, parts: settleParts(message.parts) }
+      : message,
+  )
+}
+
 export const createCompanionSlice: StateCreator<CompanionSlice, [], [], CompanionSlice> = (
   set,
   get,
@@ -136,19 +189,10 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
   companionPresentation: 'closed',
   companionMessages: [],
   companionStreaming: false,
-  companionProviders: [],
-  companionPreferredProvider: null,
-  companionCustomCommand: '',
-  companionContextSummary: '',
-  companionContextTrace: null,
-  companionWarnings: [],
-  companionModelState: {
-    options: [],
-    currentValue: null,
-    stale: true,
-    unavailableReason: 'Start Companion to load models',
-  },
+  companionStatus: null,
+  companionModelState: STALE_MODELS,
   companionTags: [],
+  companionWarnings: [],
   companionError: null,
 
   setCompanionPresentation: (presentation) => set({ companionPresentation: presentation }),
@@ -156,39 +200,34 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     set((state) => ({
       companionPresentation: state.companionPresentation === 'closed' ? 'drawer' : 'closed',
     })),
-  setCompanionProviders: (providers) => set({ companionProviders: providers }),
-  setCompanionPreferredProvider: (id) => {
-    if (typeof window !== 'undefined' && window.api) {
-      void window.api.saveCompanionSettings({ preferredProvider: id })
-    }
-    set({ companionPreferredProvider: id })
-  },
-  setCompanionCustomCommand: (command) => set({ companionCustomCommand: command }),
-  loadCompanionModels: async () => {
+  connectCompanion: async (directory) => {
     try {
-      const start = await window.api.startCompanionSession(
-        get().companionPreferredProvider ?? undefined,
-      )
-      if (!start.ok) throw new Error(start.error ?? 'Failed to start Companion')
-      const modelState = await window.api.getCompanionModels()
+      const status = await window.api.startCompanion()
+      set({ companionStatus: status })
+      if (status.availability !== 'available') {
+        set({ companionModelState: { ...STALE_MODELS, unavailableReason: status.detail } })
+        return
+      }
+      const modelState = await window.api.getCompanionModels(directory ?? null)
       set({ companionModelState: modelState })
     } catch (error) {
       set({
-        companionModelState: {
-          options: [],
-          currentValue: null,
-          stale: true,
-          unavailableReason: error instanceof Error ? error.message : 'Could not load live models',
+        companionStatus: {
+          availability: 'failed',
+          detail: error instanceof Error ? error.message : 'Could not start OpenCode.',
         },
       })
     }
   },
   selectCompanionModel: async (value) => {
+    const previous = get().companionModelState
+    set({ companionModelState: { ...previous, currentValue: value } })
     try {
       const modelState = await window.api.setCompanionModel(value)
       set({ companionModelState: modelState, companionError: null })
     } catch (error) {
       set({
+        companionModelState: previous,
         companionError: error instanceof Error ? error.message : 'Could not change model',
       })
     }
@@ -232,18 +271,37 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     streamingAssistantId = null
     set((state) => ({
       companionStreaming: false,
-      companionMessages: state.companionMessages.map((message) =>
-        message.status === 'streaming'
-          ? {
-              ...message,
-              status: 'cancelled',
-              parts: message.parts.map((part) =>
-                part.kind === 'thinking' ? { ...part, done: true } : part,
-              ),
-            }
-          : message,
-      ),
+      companionMessages: endTurn(state.companionMessages, 'cancelled'),
     }))
+  },
+  reviewCompanionChange: async (permissionId, decision) => {
+    const change = get()
+      .companionMessages.flatMap((message) => message.parts)
+      .find(
+        (part): part is Extract<CompanionPart, { kind: 'change' }> =>
+          part.kind === 'change' && part.permissionId === permissionId,
+      )
+    const toolCallId = change?.toolCallId
+    if (!toolCallId) return
+    const markReviewed = (status: 'pending' | 'rejected', keepId: boolean) =>
+      set((state) => ({
+        companionMessages: state.companionMessages.map((message) => ({
+          ...message,
+          parts: message.parts.map((part) =>
+            part.kind === 'change' && part.toolCallId === toolCallId
+              ? { ...part, status, permissionId: keepId ? permissionId : undefined }
+              : part,
+          ),
+        })),
+      }))
+    // Hide the buttons right away; OpenCode confirms with applied or rejected events.
+    markReviewed(decision === 'reject' ? 'rejected' : 'pending', false)
+    try {
+      await window.api.replyCompanionPermission(permissionId, decision)
+    } catch (error) {
+      markReviewed('pending', true)
+      set({ companionError: error instanceof Error ? error.message : 'Could not send review' })
+    }
   },
   applyCompanionUpdate: (update) => {
     switch (update.kind) {
@@ -304,6 +362,26 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
           }
         })
         break
+      case 'change':
+        set((state) => {
+          const ensured = ensureAssistant(state.companionMessages)
+          return {
+            companionStreaming: true,
+            companionMessages: mapAssistant(ensured.messages, ensured.id, (m) => ({
+              ...m,
+              parts: upsertPart(m.parts, {
+                kind: 'change',
+                toolCallId: update.toolCallId,
+                permissionId: update.permissionId,
+                status: update.status,
+                files: update.files ?? [],
+                error: update.error,
+              }),
+              status: 'streaming',
+            })),
+          }
+        })
+        break
       case 'status':
         set((state) => {
           const ensured = ensureAssistant(state.companionMessages)
@@ -320,6 +398,7 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
           if (!streamingAssistantId) return state
           return {
             companionMessages: mapAssistant(state.companionMessages, streamingAssistantId, (m) => {
+              if (m.citations?.some((c) => c.sourceId === update.citation.sourceId)) return m
               const citations: CompanionCitation[] = [...(m.citations ?? []), update.citation]
               return { ...m, citations }
             }),
@@ -336,49 +415,22 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
         set((state) => ({
           companionStreaming: false,
           companionError: update.message,
-          companionMessages: state.companionMessages.map((m) =>
-            m.status === 'streaming' ? { ...m, status: 'error' } : m,
-          ),
+          companionMessages: endTurn(state.companionMessages, 'error'),
         }))
         break
       case 'done':
         streamingAssistantId = null
         set((state) => ({
           companionStreaming: false,
-          companionMessages: state.companionMessages.map((m) =>
-            m.id === update.messageId || m.status === 'streaming'
-              ? {
-                  ...m,
-                  status: 'complete',
-                  parts: m.parts.map((p) => (p.kind === 'thinking' ? { ...p, done: true } : p)),
-                }
-              : m,
-          ),
+          companionMessages: endTurn(state.companionMessages, 'complete', update.messageId),
         }))
         break
       case 'cancelled':
         streamingAssistantId = null
         set((state) => ({
           companionStreaming: false,
-          companionMessages: state.companionMessages.map((message) =>
-            message.id === update.messageId || message.status === 'streaming'
-              ? {
-                  ...message,
-                  status: 'cancelled',
-                  parts: message.parts.map((part) =>
-                    part.kind === 'thinking' ? { ...part, done: true } : part,
-                  ),
-                }
-              : message,
-          ),
+          companionMessages: endTurn(state.companionMessages, 'cancelled', update.messageId),
         }))
-        break
-      case 'context':
-        set({
-          companionContextSummary: update.summary,
-          companionContextTrace: update.trace,
-          companionWarnings: update.warnings,
-        })
         break
       default: {
         const exhaustive: never = update
@@ -392,10 +444,11 @@ export const createCompanionSlice: StateCreator<CompanionSlice, [], [], Companio
     set({
       companionMessages: [],
       companionStreaming: false,
-      companionContextSummary: '',
-      companionContextTrace: null,
       companionWarnings: [],
       companionError: null,
     })
+    if (typeof window !== 'undefined' && window.api?.resetCompanion) {
+      void window.api.resetCompanion()
+    }
   },
 })

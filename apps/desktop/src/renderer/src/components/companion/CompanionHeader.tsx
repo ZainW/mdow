@@ -1,8 +1,7 @@
-import { ArrowLeft, Expand, MessageSquare, X } from 'lucide-react'
+import { ArrowLeft, Expand, SquarePen, X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { useAppStore } from '../../store/app-store'
 import { Button } from '../ui/button'
-import { CompanionModelPicker } from './CompanionModelPicker'
 
 export function CompanionHeader({
   layout,
@@ -15,14 +14,15 @@ export function CompanionHeader({
   onExpand?: () => void
   onClose?: () => void
 }) {
-  const modelState = useAppStore((state) => state.companionModelState)
-  const selectModel = useAppStore((state) => state.selectCompanionModel)
+  const hasMessages = useAppStore((state) => state.companionMessages.length > 0)
+  const reset = useAppStore((state) => state.resetCompanionConversation)
+  const version = useAppStore((state) => state.companionStatus?.version)
 
   return (
     <header
       className={cn(
         'flex h-(--tabbar-height) shrink-0 items-center gap-1 border-b border-border-subtle',
-        layout === 'workspace' ? 'px-4' : 'px-2',
+        layout === 'workspace' ? 'px-4' : 'pr-2 pl-3',
       )}
     >
       {onBack && (
@@ -36,16 +36,32 @@ export function CompanionHeader({
           Back to document
         </Button>
       )}
-      <MessageSquare className="size-3.5 text-muted-foreground" aria-hidden />
-      <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Companion</h2>
-      <div className={cn('min-w-0', layout === 'drawer' ? 'max-w-36' : 'max-w-60')}>
-        <CompanionModelPicker
-          state={modelState}
-          onValueChange={(value) => void selectModel(value)}
-        />
-      </div>
+      <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
+        Companion
+        {version && (
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+            OpenCode {version}
+          </span>
+        )}
+      </h2>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        aria-label="New chat"
+        title="New chat"
+        disabled={!hasMessages}
+        onClick={reset}
+      >
+        <SquarePen />
+      </Button>
       {onExpand && (
-        <Button size="icon-xs" variant="ghost" aria-label="Expand companion" onClick={onExpand}>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label="Expand companion"
+          title="Expand"
+          onClick={onExpand}
+        >
           <Expand />
         </Button>
       )}

@@ -15,14 +15,14 @@ const mockWindow = vi.hoisted(() => ({
   webContents: { send: vi.fn() },
 }))
 const mockCompanionService = vi.hoisted(() => ({
-  detectProviders: vi.fn(),
-  getSettings: vi.fn(),
-  saveSettings: vi.fn(),
+  getStatus: vi.fn(),
+  start: vi.fn(),
   getModels: vi.fn(),
   setModel: vi.fn(),
-  startSession: vi.fn(),
   send: vi.fn(),
+  replyPermission: vi.fn(),
   cancel: vi.fn(),
+  reset: vi.fn(),
   shutdown: vi.fn(),
 }))
 const mockGetMainWindow = vi.hoisted(() => vi.fn(() => mockWindow))
@@ -187,31 +187,29 @@ describe('ipc handlers', () => {
   })
 
   describe('companion security and routing', () => {
-    it('does not accept a custom executable through generic renderer settings', async () => {
-      const handler = handlers.get('companion:save-settings')!
-      await handler({}, { preferredProvider: 'opencode', customCommand: '/bin/sh -c whoami' })
-
-      expect(mockCompanionService.saveSettings).toHaveBeenCalledWith({
-        preferredProvider: 'opencode',
-      })
-    })
-
-    it('does not persist companion commands through generic app state', async () => {
+    it('does not let generic app state overwrite the companion model', async () => {
       const handler = handlers.get('store:save-state')!
-      await handler({}, { wideMode: true, companionCustomCommand: '/bin/sh -c whoami' })
+      await handler({}, { wideMode: true, companionLastModel: 'evil/model' })
 
       expect(mockSaveAppState).toHaveBeenCalledWith({ wideMode: true })
     })
 
-    it('stores only an executable explicitly selected in the native dialog', async () => {
-      mockShowOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/bin/sh'] })
-      const handler = handlers.get('companion:choose-custom-executable')!
+    it('rejects malformed prompt payloads', async () => {
+      const handler = handlers.get('companion:send')!
+      await expect(handler({ sender: {} }, { text: '   ', tags: [] })).rejects.toThrow(
+        /invalid-payload/,
+      )
+      await expect(
+        handler({ sender: {} }, { text: 'Hi', activePath: 3, openFolderPath: null, tags: [] }),
+      ).rejects.toThrow(/invalid-payload/)
+      expect(mockCompanionService.send).not.toHaveBeenCalled()
+    })
 
-      await expect(handler({ sender: {} })).resolves.toBe('/bin/sh')
-      expect(mockCompanionService.saveSettings).toHaveBeenCalledWith({
-        preferredProvider: 'custom',
-        customCommand: '/bin/sh',
-      })
+    it('only forwards approve or reject permission replies', async () => {
+      const handler = handlers.get('companion:reply-permission')!
+      await handler({}, 'per_1', 'approve')
+      expect(mockCompanionService.replyPermission).toHaveBeenCalledWith('per_1', 'approve')
+      await expect(handler({}, 'per_1', 'always')).rejects.toThrow(/invalid-permission-reply/)
     })
 
     it('routes prompt updates back to the sending window', async () => {

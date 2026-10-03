@@ -1,108 +1,118 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import type { CompanionProviderId, CompanionProviderStatus } from '../../../../shared/types'
+import { LoaderCircle, Terminal } from 'lucide-react'
+import type { CompanionRuntimeStatus } from '../../../../shared/types'
 import { cn, isMac } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
-import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { CompanionComposer } from './CompanionComposer'
-import { CompanionContextBar } from './CompanionContextBar'
 import { CompanionHeader } from './CompanionHeader'
 import { CompanionMessages } from './CompanionMessages'
 
-export function selectAvailableProvider(
-  providers: CompanionProviderStatus[],
-  preferred: CompanionProviderId | null,
-): CompanionProviderId | null {
-  const preferredStatus = providers.find((provider) => provider.id === preferred)
-  if (preferredStatus?.availability === 'available') return preferredStatus.id
-  return providers.find((provider) => provider.availability === 'available')?.id ?? null
+const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash'
+
+function CommandLine({ command }: { command: string }) {
+  return (
+    <code className="flex items-center gap-2 rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] break-all text-foreground select-all">
+      <Terminal className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      {command}
+    </code>
+  )
 }
 
-function CompanionSetup({ providers }: { providers: CompanionProviderStatus[] }) {
-  const customCommand = useAppStore((state) => state.companionCustomCommand)
-  const setCustomCommand = useAppStore((state) => state.setCompanionCustomCommand)
-  const preferred = useAppStore((state) => state.companionPreferredProvider)
-  const setPreferred = useAppStore((state) => state.setCompanionPreferredProvider)
-  const loadModels = useAppStore((state) => state.loadCompanionModels)
-
-  const chooseCustomExecutable = async () => {
-    const executablePath = await window.api.chooseCompanionCustomExecutable()
-    if (!executablePath) return
-    setCustomCommand(executablePath)
-    setPreferred('custom')
-    const list = await window.api.detectCompanionProviders()
-    useAppStore.getState().setCompanionProviders(list)
-    await loadModels()
-  }
-
+function SetupMessage({
+  title,
+  children,
+  action,
+}: {
+  title: string
+  children: ReactNode
+  action?: ReactNode
+}) {
   return (
-    <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3 text-sm">
-      <p className="text-muted-foreground">
-        Connect a local ACP agent already on this computer. Mdow will not install packages for you.
-      </p>
-      <ul className="flex flex-col gap-2">
-        {providers.map((provider) => (
-          <li
-            key={provider.id}
-            className={cn(
-              'rounded-md border border-border-subtle p-2',
-              preferred === provider.id && 'border-primary/40 bg-muted/40',
-            )}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="font-medium text-foreground">{provider.label}</p>
-                <p className="text-xs text-muted-foreground">{provider.commandDisplay}</p>
-              </div>
-              <Badge variant={provider.availability === 'available' ? 'default' : 'secondary'}>
-                {provider.availability}
-              </Badge>
-            </div>
-            {provider.detail && (
-              <p className="mt-1 text-xs text-muted-foreground">{provider.detail}</p>
-            )}
-            {provider.availability === 'available' && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => {
-                  setPreferred(provider.id)
-                  void loadModels()
-                }}
-              >
-                Use {provider.label}
-              </Button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs font-medium text-muted-foreground">Custom ACP executable</p>
-        {customCommand && (
-          <p className="break-all rounded-md border border-border-subtle bg-muted/40 p-2 font-mono text-xs">
-            {customCommand}
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Choose one executable. Arguments and shell commands are not accepted.
-        </p>
-        <Button size="sm" variant="secondary" onClick={() => void chooseCustomExecutable()}>
-          Choose executable…
-        </Button>
-      </div>
+    <div className="flex flex-1 flex-col justify-center gap-3 overflow-y-auto px-5 py-6 text-sm">
+      <h3 className="font-medium text-foreground">{title}</h3>
+      <div className="flex flex-col gap-3 text-xs leading-5 text-muted-foreground">{children}</div>
+      {action}
+    </div>
+  )
+}
+
+function CompanionSetup({ status }: { status: CompanionRuntimeStatus | null }) {
+  const connect = useAppStore((state) => state.connectCompanion)
+  const openFolderPath = useAppStore((state) => state.openFolderPath)
+  const retry = (
+    <div className="flex gap-2">
+      <Button size="sm" variant="secondary" onClick={() => void connect(openFolderPath)}>
+        Check again
+      </Button>
       <Button
         size="sm"
         variant="ghost"
-        onClick={() => {
-          void window.api.detectCompanionProviders().then((list) => {
-            useAppStore.getState().setCompanionProviders(list)
-          })
-        }}
+        onClick={() => void window.api.openExternal('https://opencode.ai/docs')}
       >
-        Retry detection
+        OpenCode docs
       </Button>
     </div>
+  )
+
+  if (!status) {
+    return (
+      <output className="flex flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
+        <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
+        Starting OpenCode…
+      </output>
+    )
+  }
+
+  if (status.availability === 'missing') {
+    return (
+      <SetupMessage title="Connect OpenCode" action={retry}>
+        <p>
+          The companion runs on OpenCode, using the models and subscriptions you already use there.
+          Install OpenCode 2, then sign in to a provider:
+        </p>
+        <CommandLine command={INSTALL_COMMAND} />
+        <CommandLine command="opencode auth login" />
+      </SetupMessage>
+    )
+  }
+
+  if (status.availability === 'outdated') {
+    return (
+      <SetupMessage title="Update OpenCode" action={retry}>
+        <p>OpenCode {status.version} is installed, but the companion needs OpenCode 2 or newer.</p>
+        <CommandLine command="opencode upgrade" />
+      </SetupMessage>
+    )
+  }
+
+  return (
+    <SetupMessage title="OpenCode didn’t start" action={retry}>
+      <p>{status.detail ?? 'Something went wrong while starting OpenCode.'}</p>
+    </SetupMessage>
+  )
+}
+
+function NoModels({ reason }: { reason?: string }) {
+  const connect = useAppStore((state) => state.connectCompanion)
+  const openFolderPath = useAppStore((state) => state.openFolderPath)
+  return (
+    <SetupMessage
+      title="Connect a model provider"
+      action={
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-fit"
+          onClick={() => void connect(openFolderPath)}
+        >
+          Check again
+        </Button>
+      }
+    >
+      <p>{reason ?? 'OpenCode has no models available yet.'}</p>
+      <CommandLine command="opencode auth login" />
+    </SetupMessage>
   )
 }
 
@@ -117,11 +127,11 @@ function CompanionBody({
   onBack?: () => void
   onClose?: () => void
 }) {
-  const providers = useAppStore((state) => state.companionProviders)
-  const preferred = useAppStore((state) => state.companionPreferredProvider)
-  const trace = useAppStore((state) => state.companionContextTrace)
-  const warnings = useAppStore((state) => state.companionWarnings)
-  const providerId = selectAvailableProvider(providers, preferred)
+  const status = useAppStore((state) => state.companionStatus)
+  const modelState = useAppStore((state) => state.companionModelState)
+  const hasMessages = useAppStore((state) => state.companionMessages.length > 0)
+  const ready = status?.availability === 'available'
+  const noModels = ready && !modelState.stale && modelState.options.length === 0
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -132,37 +142,28 @@ function CompanionBody({
           layout === 'workspace' && 'mx-auto w-full max-w-3xl',
         )}
       >
-        {providerId ? (
+        {!ready ? (
+          <CompanionSetup status={status} />
+        ) : noModels && !hasMessages ? (
+          <NoModels reason={modelState.unavailableReason} />
+        ) : (
           <>
             <CompanionMessages />
-            <div className="shrink-0 border-t border-border-subtle">
-              <CompanionContextBar trace={trace} warnings={warnings} />
-              <CompanionComposer providerId={providerId} />
-            </div>
+            <CompanionComposer />
           </>
-        ) : (
-          <CompanionSetup providers={providers} />
         )}
       </div>
     </div>
   )
 }
 
-async function refreshCompanionMeta() {
-  const [providers, settings] = await Promise.all([
-    window.api.detectCompanionProviders(),
-    window.api.getCompanionSettings(),
-  ])
-  const preferredProvider = selectAvailableProvider(providers, settings.preferredProvider)
-  useAppStore.setState({
-    companionProviders: providers,
-    companionPreferredProvider: preferredProvider,
-    companionCustomCommand: settings.customCommand,
-  })
-  if (preferredProvider !== settings.preferredProvider) {
-    await window.api.saveCompanionSettings({ preferredProvider })
-  }
-  if (preferredProvider) await useAppStore.getState().loadCompanionModels()
+function useConnectWhenShown(visible: boolean) {
+  const openFolderPath = useAppStore((state) => state.openFolderPath)
+  useEffect(() => {
+    if (!visible) return
+    const { companionStatus, connectCompanion } = useAppStore.getState()
+    if (companionStatus?.availability !== 'available') void connectCompanion(openFolderPath)
+  }, [visible, openFolderPath])
 }
 
 export function CompanionPanel() {
@@ -173,9 +174,7 @@ export function CompanionPanel() {
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(open)
 
-  useEffect(() => {
-    if (open) void refreshCompanionMeta()
-  }, [open])
+  useConnectWhenShown(open)
 
   // Move focus into the drawer when the user opens it, and hand it back when it closes.
   // The initial mount is skipped so a restored session never steals focus on launch.
@@ -237,9 +236,7 @@ export function CompanionWorkspace() {
   const presentation = useAppStore((state) => state.companionPresentation)
   const setPresentation = useAppStore((state) => state.setCompanionPresentation)
 
-  useEffect(() => {
-    if (presentation === 'workspace') void refreshCompanionMeta()
-  }, [presentation])
+  useConnectWhenShown(presentation === 'workspace')
 
   if (presentation !== 'workspace') return null
 

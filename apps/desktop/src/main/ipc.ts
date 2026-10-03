@@ -1,7 +1,5 @@
-import { ipcMain, shell, BrowserWindow, nativeTheme, app, dialog } from 'electron'
-import { constants } from 'fs'
-import { access, stat } from 'fs/promises'
-import { isAbsolute } from 'path'
+import { ipcMain, shell, BrowserWindow, nativeTheme, app } from 'electron'
+import { stat } from 'fs/promises'
 import { openFileDialog, readFileContent, unwatchFile, setActiveFileWatch } from './file-service'
 import { openFolderDialog, scanFolder, watchFolder } from './folder-service'
 import { getRecents, addRecent, getAppState, saveAppState, setLastFolder } from './store'
@@ -12,14 +10,32 @@ import { registerAllowedFile, registerAllowedPath, isPathAllowed } from './allow
 import { rebuildMenu } from './menu'
 import { markRendererReady, takeLaunchFiles } from './launch-files'
 import { getCompanionService } from './companion/service'
-import type { CompanionProviderId, CompanionSendPayload, CompanionSettings } from '../shared/types'
+import type { CompanionPermissionDecision, CompanionSendPayload } from '../shared/types'
 
 type UpdaterModule = typeof import('./updater')
 
 let updaterModulePromise: Promise<UpdaterModule> | null = null
 
-function isCompanionProviderId(value: unknown): value is CompanionProviderId {
-  return value === 'opencode' || value === 'codex-acp' || value === 'custom'
+function isOptionalPath(path: unknown): boolean {
+  return path === null || typeof path === 'string'
+}
+
+function isSendPayload(value: unknown): value is CompanionSendPayload {
+  if (typeof value !== 'object' || value === null) return false
+  const payload = value as Record<string, unknown>
+  return (
+    typeof payload.text === 'string' &&
+    payload.text.trim().length > 0 &&
+    isOptionalPath(payload.activePath) &&
+    isOptionalPath(payload.openFolderPath) &&
+    Array.isArray(payload.tags) &&
+    payload.tags.every(
+      (tag: unknown) =>
+        typeof tag === 'object' &&
+        tag !== null &&
+        typeof (tag as Record<string, unknown>).path === 'string',
+    )
+  )
 }
 
 function loadUpdater(): Promise<UpdaterModule> {
@@ -205,11 +221,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return { ...getAppState(), launchFiles: takeLaunchFiles() }
   })
   ipcMain.handle('store:save-state', (_, state: Record<string, unknown>) => {
-    const {
-      companionCustomCommand: _customCommand,
-      companionPreferredProvider: _preferredProvider,
-      ...safeState
-    } = state
+    const { companionLastModel: _lastModel, ...safeState } = state
     saveAppState(safeState)
   })
 
@@ -287,65 +299,45 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     installUpdate()
   })
 
-  ipcMain.handle('companion:detect-providers', async () => {
-    return getCompanionService(getMainWindow).detectProviders()
-  })
+  ipcMain.handle('companion:get-status', () => getCompanionService(getMainWindow).getStatus())
 
-  ipcMain.handle('companion:get-settings', () => getCompanionService(getMainWindow).getSettings())
+  ipcMain.handle('companion:start', () => getCompanionService(getMainWindow).start())
 
-  ipcMain.handle('companion:save-settings', (_, settings: Partial<CompanionSettings>) => {
-    const preferredProvider =
-      settings.preferredProvider === null || isCompanionProviderId(settings.preferredProvider)
-        ? settings.preferredProvider
-        : undefined
-    if (preferredProvider !== undefined) {
-      getCompanionService(getMainWindow).saveSettings({ preferredProvider })
-    }
-  })
-
-  ipcMain.handle('companion:choose-custom-executable', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return null
-    const result = await dialog.showOpenDialog(win, {
-      title: 'Choose ACP executable',
-      properties: ['openFile'],
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const executablePath = result.filePaths[0]
-    if (!isAbsolute(executablePath)) throw new Error('invalid-executable')
-    const stats = await stat(executablePath)
-    if (!stats.isFile()) throw new Error('invalid-executable')
-    await access(executablePath, process.platform === 'win32' ? constants.F_OK : constants.X_OK)
-    getCompanionService(getMainWindow).saveSettings({
-      preferredProvider: 'custom',
-      customCommand: executablePath,
-    })
-    return executablePath
-  })
-
-  ipcMain.handle('companion:start-session', async (_, providerId?: CompanionProviderId) => {
-    return getCompanionService(getMainWindow).startSession(providerId)
-  })
-
-  ipcMain.handle('companion:get-models', () => {
-    return getCompanionService(getMainWindow).getModels()
+  ipcMain.handle('companion:get-models', (_, directory?: unknown) => {
+    const folder = typeof directory === 'string' && directory ? validatePath(directory) : undefined
+    return getCompanionService(getMainWindow).getModels(folder)
   })
 
   ipcMain.handle('companion:set-model', async (_, value: string) => {
-    if (typeof value !== 'string' || !/^[\w./:+-]{1,200}$/.test(value)) {
+    if (typeof value !== 'string' || !/^[\w./:@+-]{1,300}$/.test(value)) {
       throw new Error('invalid-model')
     }
     return getCompanionService(getMainWindow).setModel(value)
   })
 
-  ipcMain.handle('companion:send', async (event, payload: CompanionSendPayload) => {
+  ipcMain.handle('companion:send', async (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('no-window')
+    if (!isSendPayload(payload)) throw new Error('invalid-payload')
     await getCompanionService(getMainWindow).send(payload, win)
   })
 
+  ipcMain.handle(
+    'companion:reply-permission',
+    async (_, permissionId: unknown, decision: CompanionPermissionDecision) => {
+      if (typeof permissionId !== 'string' || (decision !== 'approve' && decision !== 'reject')) {
+        throw new Error('invalid-permission-reply')
+      }
+      await getCompanionService(getMainWindow).replyPermission(permissionId, decision)
+    },
+  )
+
   ipcMain.handle('companion:cancel', async () => {
     await getCompanionService(getMainWindow).cancel()
+  })
+
+  ipcMain.handle('companion:reset', async () => {
+    await getCompanionService(getMainWindow).reset()
   })
 
   ipcMain.handle('companion:shutdown', async () => {

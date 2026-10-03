@@ -6,6 +6,7 @@ import { useScrollRestoration } from '../hooks/useScrollRestoration'
 import { useHeadingObserver } from '../hooks/useHeadingObserver'
 import { useMermaidThemeSync } from '../hooks/useMermaidThemeSync'
 import { useContentClickHandlers } from '../hooks/useContentClickHandlers'
+import { useDocumentReview } from '../hooks/useDocumentReview'
 import { useAppStore, type Tab } from '../store/app-store'
 import {
   MARKDOWN_FONT_SIZE,
@@ -18,6 +19,8 @@ import { SearchBar } from './SearchBar'
 import { ZoomIndicator } from './ZoomIndicator'
 import { DocumentSkeleton } from './DocumentSkeleton'
 import { MarkdownContent } from './markdown/components'
+import { MarkdownReview, useReviewRender } from './review/MarkdownReview'
+import { ReviewBar } from './review/ReviewBar'
 import type { ReadingWidth } from '../../../shared/types'
 
 const READING_WIDTHS = {
@@ -62,6 +65,10 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
     retryKey,
     allowPreview: tab.scrollPosition === 0 && !tab.scrollAnchor,
   })
+
+  // A change the companion suggests for this document is reviewed right here, in place.
+  const review = useDocumentReview(tab.path, tab.content)
+  const reviewRender = useReviewRender(review)
 
   const { matchCount, currentIndex, next, prev, clear } = useDocumentSearch(
     contentRef,
@@ -130,7 +137,10 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
           aria-labelledby={`tab-${tab.id}`}
           aria-busy={isRendering}
           data-reading-column=""
-          className="markdown-body box-border w-full min-w-0 px-12 py-8 text-foreground"
+          className={cn(
+            'markdown-body box-border w-full min-w-0 px-12 py-8 text-foreground',
+            reviewRender && 'pb-28',
+          )}
           style={
             {
               maxWidth: wideMode ? undefined : READING_WIDTHS[readingWidth],
@@ -152,6 +162,8 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
                 Try again
               </button>
             </div>
+          ) : review && reviewRender ? (
+            <MarkdownReview key={review.toolCallId} rendered={reviewRender} docPath={tab.path} />
           ) : renderResult ? (
             // Keyed by tab, not render: a reload of the same file reconciles in place (sections
             // with unchanged content are skipped), while switching documents starts fresh.
@@ -168,6 +180,14 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
           ) : null}
         </div>
       </div>
+      {review && reviewRender && (
+        <ReviewBar
+          key={review.toolCallId}
+          review={review}
+          changeCount={reviewRender.changeCount}
+          containerRef={contentRef}
+        />
+      )}
       <ZoomIndicator />
     </div>
   )

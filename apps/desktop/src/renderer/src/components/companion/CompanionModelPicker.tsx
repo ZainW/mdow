@@ -1,10 +1,5 @@
 import { useMemo } from 'react'
-import { Cpu } from 'lucide-react'
-import type {
-  CompanionModelOption,
-  CompanionModelProvider,
-  CompanionModelState,
-} from '../../../../shared/types'
+import type { CompanionModelOption, CompanionModelState } from '../../../../shared/types'
 import { Button } from '../ui/button'
 import {
   Combobox,
@@ -18,14 +13,14 @@ import {
   ComboboxTrigger,
 } from '../ui/combobox'
 
-const GROUPS: Array<{ provider: CompanionModelProvider; label: string }> = [
-  { provider: 'openai', label: 'ChatGPT subscription' },
-  { provider: 'opencode', label: 'OpenCode Zen' },
-  { provider: 'opencode-go', label: 'OpenCode Go' },
-]
-
-function nameForValue(options: CompanionModelOption[], value: string | null): string {
-  return options.find((option) => option.value === value)?.name ?? 'Choose model'
+function groupByProvider(options: CompanionModelOption[]) {
+  const groups = new Map<string, { label: string; options: CompanionModelOption[] }>()
+  for (const option of options) {
+    const group = groups.get(option.providerId)
+    if (group) group.options.push(option)
+    else groups.set(option.providerId, { label: option.providerName, options: [option] })
+  }
+  return [...groups.entries()]
 }
 
 export function CompanionModelPicker({
@@ -42,7 +37,10 @@ export function CompanionModelPicker({
     () => new Map(state.options.map((option) => [option.value, option])),
     [state.options],
   )
+  const groups = useMemo(() => groupByProvider(state.options), [state.options])
   const unavailable = disabled || state.stale || state.options.length === 0
+  const current = state.currentValue ? byValue.get(state.currentValue) : undefined
+  const label = current?.name ?? (state.stale ? 'Loading models…' : 'Choose a model')
 
   return (
     <Combobox
@@ -51,48 +49,39 @@ export function CompanionModelPicker({
       onValueChange={(value) => {
         if (typeof value === 'string' && value !== state.currentValue) onValueChange(value)
       }}
-      itemToStringValue={(value) => byValue.get(value)?.name ?? value}
+      itemToStringValue={(value) => {
+        const option = byValue.get(value)
+        return option ? `${option.name} ${option.providerName}` : value
+      }}
       disabled={unavailable}
     >
       <ComboboxTrigger
-        aria-label="Model"
+        aria-label={`Model: ${label}`}
         render={
           <Button
             variant="ghost"
-            size="sm"
-            className="max-w-56 justify-start gap-1.5 px-2 text-xs font-normal text-muted-foreground"
-            title={unavailable ? state.unavailableReason : undefined}
+            size="xs"
+            className="max-w-full min-w-0 justify-start gap-1 px-1.5 font-normal text-muted-foreground"
+            title={unavailable ? state.unavailableReason : current?.providerName}
           />
         }
       >
-        <Cpu className="size-3.5" aria-hidden />
-        <span className="truncate">{nameForValue(state.options, state.currentValue)}</span>
+        <span className="truncate">{label}</span>
       </ComboboxTrigger>
       <ComboboxContent className="w-80">
-        <ComboboxInput aria-label="Search models" placeholder="Search live models…" />
-        <ComboboxEmpty>No matching live models.</ComboboxEmpty>
+        <ComboboxInput aria-label="Search models" placeholder="Search models…" />
+        <ComboboxEmpty>No matching models.</ComboboxEmpty>
         <ComboboxList>
-          {GROUPS.map((group) => {
-            const options = state.options.filter((option) => option.provider === group.provider)
-            if (options.length === 0) return null
-            return (
-              <ComboboxGroup key={group.provider}>
-                <ComboboxLabel>{group.label}</ComboboxLabel>
-                {options.map((option) => (
-                  <ComboboxItem key={option.value} value={option.value}>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{option.name}</span>
-                      {option.description && (
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {option.description}
-                        </span>
-                      )}
-                    </span>
-                  </ComboboxItem>
-                ))}
-              </ComboboxGroup>
-            )
-          })}
+          {groups.map(([providerId, group]) => (
+            <ComboboxGroup key={providerId}>
+              <ComboboxLabel>{group.label}</ComboboxLabel>
+              {group.options.map((option) => (
+                <ComboboxItem key={option.value} value={option.value}>
+                  <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                </ComboboxItem>
+              ))}
+            </ComboboxGroup>
+          ))}
         </ComboboxList>
       </ComboboxContent>
     </Combobox>

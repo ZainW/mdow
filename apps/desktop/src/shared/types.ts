@@ -27,31 +27,21 @@ export type InterfaceScale = 'compact' | 'comfortable' | 'large'
 export type ReadingWidth = 'standard' | 'comfortable' | 'wide'
 export type PaneId = 'primary' | 'secondary'
 
-export type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
+export type CompanionRuntimeAvailability = 'available' | 'missing' | 'outdated' | 'failed'
 
-export type CompanionProviderAvailability = 'available' | 'missing' | 'failed'
-
-export interface CompanionProviderStatus {
-  id: CompanionProviderId
-  label: string
-  commandDisplay: string
-  availability: CompanionProviderAvailability
+export interface CompanionRuntimeStatus {
+  availability: CompanionRuntimeAvailability
+  /** `opencode --version`, when the binary was found. */
+  version?: string
   detail?: string
 }
 
-export interface CompanionSettings {
-  preferredProvider: CompanionProviderId | null
-  customCommand: string
-  lastModel: string | null
-}
-
-export type CompanionModelProvider = 'openai' | 'opencode' | 'opencode-go'
-
 export interface CompanionModelOption {
+  /** `providerID/modelID`, the form OpenCode uses everywhere. */
   value: string
   name: string
-  description?: string
-  provider: CompanionModelProvider
+  providerId: string
+  providerName: string
 }
 
 export interface CompanionModelState {
@@ -80,6 +70,20 @@ export type CompanionMessageRole = 'user' | 'assistant' | 'system'
 
 export type CompanionToolState = 'pending' | 'running' | 'completed' | 'error' | 'cancelled'
 
+export interface CompanionFileChange {
+  /** Absolute path of the changed document. */
+  path: string
+  /** Path relative to the session folder, for display. */
+  displayPath: string
+  /** Unified diff, as OpenCode reports it. */
+  patch: string
+  additions: number
+  deletions: number
+  status: 'added' | 'modified' | 'deleted'
+}
+
+export type CompanionChangeStatus = 'pending' | 'applied' | 'rejected' | 'failed'
+
 export type CompanionPart =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string; done: boolean }
@@ -92,6 +96,16 @@ export type CompanionPart =
       output?: string
       error?: string
     }
+  | {
+      kind: 'change'
+      /** The tool call that proposed the change. */
+      toolCallId: string
+      /** Set while OpenCode waits for the user to approve the change. */
+      permissionId?: string
+      status: CompanionChangeStatus
+      files: CompanionFileChange[]
+      error?: string
+    }
   | { kind: 'status'; message: string }
 
 export interface CompanionMessage {
@@ -101,38 +115,6 @@ export interface CompanionMessage {
   parts: CompanionPart[]
   citations?: CompanionCitation[]
   status?: 'streaming' | 'complete' | 'error' | 'cancelled'
-}
-
-export interface CompanionContextSource {
-  sourceId: string
-  path: string
-  headingId?: string
-  excerpt: string
-  bytes: number
-}
-
-export interface CompanionContextTraceItem {
-  path: string
-  reason: 'focused' | 'attached' | 'retrieved'
-  bytes: number
-}
-
-export interface CompanionContextTrace {
-  focusedCount: number
-  attachedCount: number
-  searchedCount: number
-  readRangeCount: number
-  injectedBytes: number
-  estimatedTokens: number
-  retrievalMode: 'focused-only' | 'adaptive-local' | 'adaptive-fff'
-  items: CompanionContextTraceItem[]
-}
-
-export interface CompanionContextPacket {
-  sources: CompanionContextSource[]
-  warnings: string[]
-  summary: string
-  trace: CompanionContextTrace
 }
 
 export type CompanionUpdate =
@@ -148,32 +130,29 @@ export type CompanionUpdate =
       output?: string
       error?: string
     }
+  | {
+      kind: 'change'
+      toolCallId: string
+      permissionId?: string
+      status: CompanionChangeStatus
+      files?: CompanionFileChange[]
+      error?: string
+    }
   | { kind: 'status'; message: string }
   | { kind: 'citation'; citation: CompanionCitation }
   | { kind: 'warning'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'done'; messageId: string }
   | { kind: 'cancelled'; messageId: string }
-  | {
-      kind: 'context'
-      summary: string
-      warnings: string[]
-      trace: CompanionContextTrace
-    }
 
 export interface CompanionSendPayload {
   text: string
   activePath: string | null
   openFolderPath: string | null
   tags: CompanionContextTag[]
-  providerId?: CompanionProviderId
 }
 
-export interface CompanionStartResult {
-  ok: boolean
-  providerId: CompanionProviderId | null
-  error?: string
-}
+export type CompanionPermissionDecision = 'approve' | 'reject'
 
 export interface AppState {
   recents?: string[]
@@ -194,8 +173,6 @@ export interface AppState {
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
-  companionPreferredProvider: CompanionProviderId | null
-  companionCustomCommand: string
   companionLastModel: string | null
   /** Documents the OS asked the app to open before this window could receive them. */
   launchFiles?: string[]
@@ -277,15 +254,14 @@ export const IPC = {
   UPDATER_DOWNLOAD_PROGRESS: 'updater:download-progress',
   UPDATER_UPDATE_DOWNLOADED: 'updater:update-downloaded',
   UPDATER_ERROR: 'updater:error',
-  COMPANION_DETECT_PROVIDERS: 'companion:detect-providers',
-  COMPANION_GET_SETTINGS: 'companion:get-settings',
-  COMPANION_SAVE_SETTINGS: 'companion:save-settings',
-  COMPANION_CHOOSE_CUSTOM_EXECUTABLE: 'companion:choose-custom-executable',
-  COMPANION_START_SESSION: 'companion:start-session',
+  COMPANION_GET_STATUS: 'companion:get-status',
+  COMPANION_START: 'companion:start',
   COMPANION_GET_MODELS: 'companion:get-models',
   COMPANION_SET_MODEL: 'companion:set-model',
   COMPANION_SEND: 'companion:send',
   COMPANION_CANCEL: 'companion:cancel',
+  COMPANION_REPLY_PERMISSION: 'companion:reply-permission',
+  COMPANION_RESET: 'companion:reset',
   COMPANION_SHUTDOWN: 'companion:shutdown',
   COMPANION_UPDATE: 'companion:update',
 } as const

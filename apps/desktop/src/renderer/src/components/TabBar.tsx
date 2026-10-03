@@ -13,6 +13,38 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from './ui/context-menu'
+import { usePendingReviewPaths } from '../hooks/usePendingReviews'
+
+function CompanionToggle({
+  open,
+  needsReview,
+  onToggle,
+}: {
+  open: boolean
+  needsReview: boolean
+  onToggle: () => void
+}) {
+  const label = open ? 'Close companion' : 'Open companion'
+  return (
+    <Button
+      variant={open ? 'secondary' : 'ghost'}
+      size="icon-sm"
+      aria-label={needsReview ? `${label} — suggested edit waiting` : label}
+      title={needsReview ? 'Suggested edit waiting for review' : label}
+      aria-pressed={open}
+      onClick={onToggle}
+      className="relative text-muted-foreground hover:text-foreground"
+    >
+      <MessageSquare />
+      {needsReview && (
+        <span
+          className="absolute top-1 right-1 size-1.5 rounded-full bg-amber-500 ring-2 ring-background"
+          aria-hidden
+        />
+      )}
+    </Button>
+  )
+}
 
 export function TabBar() {
   const tabs = useAppStore((s) => s.tabs)
@@ -29,6 +61,7 @@ export function TabBar() {
   const setPaneTab = useAppStore((s) => s.setPaneTab)
   const companionOpen = useAppStore((s) => s.companionPresentation !== 'closed')
   const toggleCompanion = useAppStore((s) => s.toggleCompanion)
+  const pendingReviews = usePendingReviewPaths()
 
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -46,17 +79,11 @@ export function TabBar() {
   if (tabs.length === 0) {
     return (
       <div className="flex h-(--tabbar-height) shrink-0 items-center justify-end border-b border-border-subtle bg-background px-1.5">
-        <Button
-          variant={companionOpen ? 'secondary' : 'ghost'}
-          size="icon-sm"
-          aria-label={companionOpen ? 'Close companion' : 'Open companion'}
-          title={companionOpen ? 'Close companion' : 'Open companion'}
-          aria-pressed={companionOpen}
-          onClick={toggleCompanion}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <MessageSquare />
-        </Button>
+        <CompanionToggle
+          open={companionOpen}
+          needsReview={pendingReviews.size > 0}
+          onToggle={toggleCompanion}
+        />
       </div>
     )
   }
@@ -169,7 +196,7 @@ export function TabBar() {
                       type="button"
                       role="tab"
                       title={tab.path}
-                      aria-label={`${filename}${tab.error ? ' — error' : ''} — ${tab.path}`}
+                      aria-label={`${filename}${tab.error ? ' — error' : ''}${pendingReviews.has(tab.path) ? ' — suggested edit waiting' : ''} — ${tab.path}`}
                       aria-selected={isActive}
                       aria-controls={`tabpanel-${tab.id}`}
                       aria-setsize={tabs.length}
@@ -205,6 +232,12 @@ export function TabBar() {
                         />
                       )}
                       <span className="truncate">{filename}</span>
+                      {pendingReviews.has(tab.path) && (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                          title="Suggested edit waiting for review"
+                        />
+                      )}
                     </button>
                     <button
                       type="button"
@@ -260,17 +293,11 @@ export function TabBar() {
         })}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 border-l border-border-subtle px-1.5">
-        <Button
-          variant={companionOpen ? 'secondary' : 'ghost'}
-          size="icon-sm"
-          aria-label={companionOpen ? 'Close companion' : 'Open companion'}
-          title={companionOpen ? 'Close companion' : 'Open companion'}
-          aria-pressed={companionOpen}
-          onClick={toggleCompanion}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <MessageSquare />
-        </Button>
+        <CompanionToggle
+          open={companionOpen}
+          needsReview={pendingReviews.size > 0}
+          onToggle={toggleCompanion}
+        />
         <Button
           variant={splitView ? 'secondary' : 'ghost'}
           size="icon-sm"

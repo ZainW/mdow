@@ -3,12 +3,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AppState,
-  type CompanionProviderId,
-  type CompanionProviderStatus,
   type CompanionModelState,
+  type CompanionPermissionDecision,
+  type CompanionRuntimeStatus,
   type CompanionSendPayload,
-  type CompanionSettings,
-  type CompanionStartResult,
   type CompanionUpdate,
   type FileResult,
   type FolderOpenResult,
@@ -21,14 +19,12 @@ export type {
   CompanionCitation,
   CompanionContextTag,
   CompanionMessage,
+  CompanionFileChange,
   CompanionModelOption,
-  CompanionModelProvider,
   CompanionModelState,
-  CompanionProviderId,
-  CompanionProviderStatus,
+  CompanionPermissionDecision,
+  CompanionRuntimeStatus,
   CompanionSendPayload,
-  CompanionSettings,
-  CompanionStartResult,
   CompanionUpdate,
   ErrorType,
   FileError,
@@ -115,17 +111,17 @@ export interface ElectronAPI {
   onUpdateError: (callback: (message: string) => void) => Unsubscribe
   onMenuCheckForUpdates: (callback: () => void) => Unsubscribe
 
-  detectCompanionProviders: () => Promise<CompanionProviderStatus[]>
-  getCompanionSettings: () => Promise<CompanionSettings>
-  saveCompanionSettings: (
-    settings: Pick<Partial<CompanionSettings>, 'preferredProvider'>,
-  ) => Promise<void>
-  chooseCompanionCustomExecutable: () => Promise<string | null>
-  startCompanionSession: (providerId?: CompanionProviderId) => Promise<CompanionStartResult>
-  getCompanionModels: () => Promise<CompanionModelState>
+  getCompanionStatus: () => Promise<CompanionRuntimeStatus>
+  startCompanion: () => Promise<CompanionRuntimeStatus>
+  getCompanionModels: (directory?: string | null) => Promise<CompanionModelState>
   setCompanionModel: (value: string) => Promise<CompanionModelState>
   sendCompanionMessage: (payload: CompanionSendPayload) => Promise<void>
+  replyCompanionPermission: (
+    permissionId: string,
+    decision: CompanionPermissionDecision,
+  ) => Promise<void>
   cancelCompanion: () => Promise<void>
+  resetCompanion: () => Promise<void>
   shutdownCompanion: () => Promise<void>
   onCompanionUpdate: (callback: (update: CompanionUpdate) => void) => Unsubscribe
 }
@@ -181,16 +177,15 @@ const api: ElectronAPI = {
   onUpdateDownloaded: (callback) => createIpcListener(IPC.UPDATER_UPDATE_DOWNLOADED, callback),
   onUpdateError: (callback) => createIpcListener(IPC.UPDATER_ERROR, callback),
 
-  detectCompanionProviders: () => ipcRenderer.invoke(IPC.COMPANION_DETECT_PROVIDERS),
-  getCompanionSettings: () => ipcRenderer.invoke(IPC.COMPANION_GET_SETTINGS),
-  saveCompanionSettings: (settings) => ipcRenderer.invoke(IPC.COMPANION_SAVE_SETTINGS, settings),
-  chooseCompanionCustomExecutable: () => ipcRenderer.invoke(IPC.COMPANION_CHOOSE_CUSTOM_EXECUTABLE),
-  startCompanionSession: (providerId) =>
-    ipcRenderer.invoke(IPC.COMPANION_START_SESSION, providerId),
-  getCompanionModels: () => ipcRenderer.invoke(IPC.COMPANION_GET_MODELS),
+  getCompanionStatus: () => ipcRenderer.invoke(IPC.COMPANION_GET_STATUS),
+  startCompanion: () => ipcRenderer.invoke(IPC.COMPANION_START),
+  getCompanionModels: (directory) => ipcRenderer.invoke(IPC.COMPANION_GET_MODELS, directory),
   setCompanionModel: (value) => ipcRenderer.invoke(IPC.COMPANION_SET_MODEL, value),
   sendCompanionMessage: (payload) => ipcRenderer.invoke(IPC.COMPANION_SEND, payload),
+  replyCompanionPermission: (permissionId, decision) =>
+    ipcRenderer.invoke(IPC.COMPANION_REPLY_PERMISSION, permissionId, decision),
   cancelCompanion: () => ipcRenderer.invoke(IPC.COMPANION_CANCEL),
+  resetCompanion: () => ipcRenderer.invoke(IPC.COMPANION_RESET),
   shutdownCompanion: () => ipcRenderer.invoke(IPC.COMPANION_SHUTDOWN),
   onCompanionUpdate: (callback) => createIpcListener(IPC.COMPANION_UPDATE, callback),
 }

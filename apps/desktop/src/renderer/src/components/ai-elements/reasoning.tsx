@@ -42,7 +42,7 @@ export function Reasoning({
       <Collapsible
         open={isOpen}
         onOpenChange={setIsOpen}
-        className={cn('not-prose w-full border-y border-border-subtle', className)}
+        className={cn('not-prose w-full', className)}
         {...props}
       >
         {children}
@@ -60,7 +60,7 @@ export function ReasoningTrigger({
   return (
     <CollapsibleTrigger
       className={cn(
-        'flex w-full items-center gap-2 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground',
+        'flex w-full items-center gap-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:text-foreground',
         className,
       )}
       {...props}
@@ -68,10 +68,10 @@ export function ReasoningTrigger({
       <BrainIcon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 font-medium">
         {children ??
-          (isStreaming ? <Shimmer className="w-fit">Thinking</Shimmer> : 'Thought process')}
+          (isStreaming ? <Shimmer className="w-fit">Thinking</Shimmer> : 'Thought it through')}
       </span>
       <ChevronDownIcon
-        className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-180')}
+        className={cn('size-3 shrink-0 transition-transform', isOpen && 'rotate-180')}
       />
     </CollapsibleTrigger>
   )
@@ -85,7 +85,10 @@ export function ReasoningContent({
   const { isStreaming } = useReasoning()
   return (
     <CollapsibleContent
-      className={cn('border-t border-border-subtle py-2 text-xs text-muted-foreground', className)}
+      className={cn(
+        'ml-1.5 border-l border-border-subtle py-1 pl-3.5 text-xs text-muted-foreground',
+        className,
+      )}
       {...props}
     >
       <CompanionMarkdown text={children} streaming={isStreaming} />

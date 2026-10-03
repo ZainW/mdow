@@ -16,7 +16,6 @@ interface WindowBounds {
 type SidebarMode = 'recents' | 'folder' | 'outline'
 type InterfaceScale = 'compact' | 'comfortable' | 'large'
 type ReadingWidth = 'standard' | 'comfortable' | 'wide'
-type CompanionProviderId = 'opencode' | 'codex-acp' | 'custom'
 
 interface StoreSchema {
   recents: string[]
@@ -33,8 +32,6 @@ interface StoreSchema {
   interfaceScale: InterfaceScale
   readingWidth: ReadingWidth
   sidebarMode: SidebarMode
-  companionPreferredProvider: CompanionProviderId | null
-  companionCustomCommand: string
   companionLastModel: string | null
 }
 
@@ -53,8 +50,6 @@ const storeDefaults: StoreSchema = {
   interfaceScale: 'compact',
   readingWidth: 'standard',
   sidebarMode: 'recents',
-  companionPreferredProvider: null,
-  companionCustomCommand: '',
   companionLastModel: null,
 }
 
@@ -108,8 +103,6 @@ export function getAppState() {
     interfaceScale: appStore.get('interfaceScale'),
     readingWidth: appStore.get('readingWidth'),
     sidebarMode: appStore.get('sidebarMode'),
-    companionPreferredProvider: appStore.get('companionPreferredProvider'),
-    companionCustomCommand: appStore.get('companionCustomCommand'),
     companionLastModel: appStore.get('companionLastModel'),
   }
 }
@@ -134,33 +127,13 @@ export function saveAppState(state: Partial<StoreSchema>): void {
   if (state.sidebarMode !== undefined) appStore.set('sidebarMode', state.sidebarMode)
 }
 
-export function getCompanionSettings(): {
-  preferredProvider: CompanionProviderId | null
-  customCommand: string
-  lastModel: string | null
-} {
-  const appStore = getStore()
-  return {
-    preferredProvider: appStore.get('companionPreferredProvider'),
-    customCommand: appStore.get('companionCustomCommand'),
-    lastModel: appStore.get('companionLastModel'),
-  }
+export function getCompanionSettings(): { lastModel: string | null } {
+  return { lastModel: getStore().get('companionLastModel') }
 }
 
-export function saveCompanionSettings(settings: {
-  preferredProvider?: CompanionProviderId | null
-  customCommand?: string
-  lastModel?: string | null
-}): void {
-  const appStore = getStore()
-  if (settings.preferredProvider !== undefined) {
-    appStore.set('companionPreferredProvider', settings.preferredProvider)
-  }
-  if (settings.customCommand !== undefined) {
-    appStore.set('companionCustomCommand', settings.customCommand)
-  }
+export function saveCompanionSettings(settings: { lastModel?: string | null }): void {
   if (settings.lastModel !== undefined) {
-    appStore.set('companionLastModel', settings.lastModel)
+    getStore().set('companionLastModel', settings.lastModel)
   }
 }
 

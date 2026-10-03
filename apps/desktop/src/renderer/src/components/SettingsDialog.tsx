@@ -17,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { cn } from '@renderer/lib/utils'
 import { rovingTabIndex, useRovingFocus } from '../hooks/useRovingFocus'
 import { iconActiveProps } from '../lib/icons'
-import type { InterfaceScale, ReadingWidth, CompanionProviderId } from '../../../shared/types'
+import type { InterfaceScale, ReadingWidth } from '../../../shared/types'
 
 const DEFAULTS = {
   theme: 'system' as const,
@@ -27,12 +27,6 @@ const DEFAULTS = {
   readingWidth: 'standard' as const,
   autoUpdateEnabled: true,
 }
-
-const PROVIDER_OPTIONS = [
-  { value: 'opencode', label: 'OpenCode' },
-  { value: 'codex-acp', label: 'Codex ACP' },
-  { value: 'custom', label: 'Custom' },
-] as const satisfies readonly { value: CompanionProviderId; label: string }[]
 
 const THEME_OPTIONS = [
   { value: 'system', label: 'System', Icon: Monitor },
@@ -70,22 +64,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const setReadingWidth = useAppStore((s) => s.setReadingWidth)
   const autoUpdateEnabled = useAppStore((s) => s.autoUpdateEnabled)
   const setAutoUpdateEnabled = useAppStore((s) => s.setAutoUpdateEnabled)
-  const companionPreferredProvider = useAppStore((s) => s.companionPreferredProvider)
-  const setCompanionPreferredProvider = useAppStore((s) => s.setCompanionPreferredProvider)
-  const companionCustomCommand = useAppStore((s) => s.companionCustomCommand)
-  const setCompanionCustomCommand = useAppStore((s) => s.setCompanionCustomCommand)
+  const companionStatus = useAppStore((s) => s.companionStatus)
 
   const contentFamily = getContentFontFamily(contentFont)
   const codeFamily = getCodeFontFamily(codeFont)
-
-  const chooseCompanionExecutable = async () => {
-    const executablePath = await window.api.chooseCompanionCustomExecutable()
-    if (!executablePath) return
-    setCompanionCustomCommand(executablePath)
-    setCompanionPreferredProvider('custom')
-    const providers = await window.api.detectCompanionProviders()
-    useAppStore.getState().setCompanionProviders(providers)
-  }
 
   const handleResetDefaults = () => {
     setTheme(DEFAULTS.theme)
@@ -190,31 +172,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         <section className="space-y-2">
           <h3 className="text-sm font-medium">Companion</h3>
           <p className="text-xs text-muted-foreground">
-            Local ACP agents only. OpenCode Go is configured inside OpenCode, not here.
+            The companion runs on OpenCode 2 on this computer and uses the providers you have signed
+            in to there. Choose a model from the companion&apos;s message box.
           </p>
-          <PresetToggleGroup
-            groupLabel="Companion provider"
-            value={companionPreferredProvider ?? 'opencode'}
-            options={PROVIDER_OPTIONS}
-            onChange={(value) => setCompanionPreferredProvider(value)}
-          />
-          {companionPreferredProvider === 'custom' && (
-            <div className="space-y-1.5 text-xs">
-              <p className="text-muted-foreground">Custom ACP executable</p>
-              {companionCustomCommand && (
-                <p className="break-all rounded-md border border-border-subtle bg-muted/40 p-2 font-mono">
-                  {companionCustomCommand}
-                </p>
-              )}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => void chooseCompanionExecutable()}
-              >
-                Choose executable…
-              </Button>
-            </div>
+          {companionStatus && (
+            <p className="text-xs text-muted-foreground">
+              {companionStatus.availability === 'available'
+                ? `Connected to OpenCode ${companionStatus.version ?? ''}`.trim()
+                : (companionStatus.detail ?? 'OpenCode is not connected.')}
+            </p>
           )}
         </section>
 
