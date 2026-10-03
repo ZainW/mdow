@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyUnifiedPatch } from './apply-patch'
+import { applyUnifiedPatch, isPatchApplied } from './apply-patch'
 
 const doc = '# Plan\n\nWe ship in Q4.\n\n## Risks\n\n- Hiring\n'
 
@@ -36,5 +36,20 @@ describe('applyUnifiedPatch', () => {
 
   it('keeps Windows line endings', () => {
     expect(applyUnifiedPatch('a\r\nb\r\n', '@@ -2 +2 @@\n-b\n+c\n')).toBe('a\r\nc\r\n')
+  })
+})
+
+describe('isPatchApplied', () => {
+  it('recognises a context-free patch that already filled a file', () => {
+    const patch = '@@ -0,0 +1,2 @@\n+# New\n+Body\n'
+    expect(isPatchApplied('', patch)).toBe(false)
+    expect(applyUnifiedPatch('', patch)).toBe('# New\nBody\n')
+    expect(isPatchApplied('# New\nBody\n', patch)).toBe(true)
+  })
+
+  it('tells the old and new text of an ordinary edit apart', () => {
+    const patch = '@@ -3 +3 @@\n-We ship in Q4.\n+We ship in Q1.\n'
+    expect(isPatchApplied(doc, patch)).toBe(false)
+    expect(isPatchApplied(doc.replace('Q4', 'Q1'), patch)).toBe(true)
   })
 })

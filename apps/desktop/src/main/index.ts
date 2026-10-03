@@ -25,7 +25,7 @@ import { isDocumentPath, validateDocumentPath, validatePath } from './path-valid
 import { registerAllowedFile, isPathAllowed, clearAllowedPaths } from './allowed-paths'
 import { getDevelopmentUserDataPath } from './runtime-paths'
 import { isRendererReady, queueLaunchFile } from './launch-files'
-import { shutdownCompanionService } from './companion/service'
+import { stopCompanionServiceNow } from './companion/service'
 
 const windows = new Set<BrowserWindow>()
 const windowPaths = new Map<BrowserWindow, string>()
@@ -292,6 +292,6 @@ if (!gotTheLock) {
   app.on('before-quit', () => {
     unwatchAllFiles()
     unwatchFolder()
-    void shutdownCompanionService()
+    stopCompanionServiceNow()
   })
 }

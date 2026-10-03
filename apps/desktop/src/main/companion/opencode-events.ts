@@ -18,6 +18,8 @@ export interface TranslateResult {
   /** A permission Mdow declines on the user's behalf, such as running shell commands. */
   autoReject?: { permissionId: string; reason: string }
   finish?: TurnFinish
+  /** OpenCode began a run; the run's events and its finish belong to the newest prompt. */
+  started?: boolean
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -151,6 +153,8 @@ export class OpencodeTurnTranslator {
         return this.permissionAsked(data)
       case 'permission.replied':
         return this.permissionReplied(str(data.requestID), str(data.reply))
+      case 'session.execution.started':
+        return { updates: [], started: true }
       case 'session.execution.succeeded':
         return { updates: this.closeReasoning(), finish: { outcome: 'succeeded' } }
       case 'session.execution.failed': {

@@ -20,7 +20,7 @@ import {
   type OpencodePermissionRule,
   type OpencodeProviderInfo,
 } from './opencode-client'
-import { OpencodeTurnTranslator } from './opencode-events'
+import { OpencodeTurnTranslator, type TurnFinish } from './opencode-events'
 import { startOpencodeServer, type OpencodeServerHandle } from './opencode-server'
 
 export const COMPANION_INSTRUCTIONS = `You are the writing companion inside Mdow, a calm reader for Markdown and HTML documents. The user is reading the documents in this folder and wants help understanding and improving them.
@@ -57,7 +57,16 @@ interface ActiveSession {
 interface ActiveTurn {
   messageId: string
   window: BrowserWindow | null
+  /** When the prompt was sent, to tell this turn's finish from an earlier run's. */
+  promptedAt: number
+  /**
+   * Set once OpenCode starts the run for this prompt. Until then, events still arriving from
+   * a run the user stopped are ignored, so a late "interrupted" cannot end the new turn.
+   */
+  started: boolean
 }
+
+const EVENT_STREAM_TIMEOUT_MS = 10_000
 
 export function parseModelValue(value: string): OpencodeModelRef | null {
   const slash = value.indexOf('/')
@@ -230,10 +239,9 @@ export class CompanionService {
     if (this.session?.directory === directory) return this.session
     this.closeSession()
 
-    const savedModel = getCompanionSettings().lastModel
     const created = await runtime.client.createSession({
       directory,
-      model: savedModel ? parseModelValue(savedModel) : null,
+      model: await this.sessionModel(directory),
       permissions: SESSION_PERMISSIONS,
     })
     try {
@@ -249,17 +257,73 @@ export class CompanionService {
       events: new AbortController(),
     }
     this.session = session
+
+    // Prompting before the stream is open would lose the start of the response, so wait for it.
+    let markOpen = () => undefined as void
+    let failOpen = (_error: Error) => undefined as void
+    const opened = new Promise<void>((resolve, reject) => {
+      markOpen = resolve
+      failOpen = reject
+    })
+    const timer = setTimeout(
+      () => failOpen(new Error('OpenCode did not open its event stream.')),
+      EVENT_STREAM_TIMEOUT_MS,
+    )
     void runtime.client
-      .subscribe(directory, (event) => this.handleEvent(session, event), session.events.signal)
+      .subscribe(
+        directory,
+        (event) => this.handleEvent(session, event),
+        session.events.signal,
+        (reconnected) => {
+          markOpen()
+          if (reconnected) void this.reconcileTurn(session)
+        },
+      )
       .catch((error: unknown) => {
+        const failure = error instanceof Error ? error : new Error('Lost connection to OpenCode.')
+        failOpen(failure)
         if (this.session !== session || !this.turn) return
-        this.emit({
-          kind: 'error',
-          message: error instanceof Error ? error.message : 'Lost connection to OpenCode.',
-        })
+        this.emit({ kind: 'error', message: failure.message })
         this.turn = null
       })
+    try {
+      await opened
+    } catch (error) {
+      if (this.session === session) this.closeSession()
+      throw error
+    } finally {
+      clearTimeout(timer)
+    }
     return session
+  }
+
+  /** The saved model when OpenCode still offers it, otherwise OpenCode's own default. */
+  private async sessionModel(directory: string): Promise<OpencodeModelRef | null> {
+    const saved = getCompanionSettings().lastModel
+    if (!saved) return null
+    if (this.modelOptions.length === 0) await this.getModels(directory)
+    return this.hasModel(saved) ? parseModelValue(saved) : null
+  }
+
+  /**
+   * Events sent while the stream was reconnecting are not replayed. If the turn finished in
+   * that gap, read how it ended from the session instead of waiting forever.
+   */
+  private async reconcileTurn(session: ActiveSession): Promise<void> {
+    const turn = this.turn
+    if (!turn || !this.runtime || this.session !== session) return
+    let info
+    try {
+      info = await this.runtime.client.getSession(session.id)
+    } catch {
+      return
+    }
+    if (this.turn !== turn || !info.outcome || !info.time.idle) return
+    if (info.time.idle < turn.promptedAt) return
+    turn.started = true
+    this.finishTurn(
+      info.outcome === 'succeeded' ? { outcome: 'succeeded' } : { outcome: info.outcome },
+    )
   }
 
   private closeSession(): void {
@@ -273,14 +337,23 @@ export class CompanionService {
       this.emit({ kind: 'warning', message: 'Wait for the current response or stop it first.' })
       return
     }
-    const turn: ActiveTurn = { messageId: randomUUID(), window: targetWindow }
+    const turn: ActiveTurn = {
+      messageId: randomUUID(),
+      window: targetWindow,
+      promptedAt: Date.now(),
+      started: false,
+    }
     this.turn = turn
 
     try {
       const runtime = await this.ensureRuntime()
+      if (this.turn !== turn) return
       const directory = sessionDirectoryFor(payload)
       const session = await this.ensureSession(runtime, directory)
+      // Stopped while OpenCode was starting: nothing is waiting for a response any more.
+      if (this.turn !== turn) return
       session.translator.beginTurn()
+      turn.promptedAt = Date.now()
       await runtime.client.prompt(session.id, composePrompt(payload, directory))
     } catch (error) {
       if (this.turn !== turn) return
@@ -295,12 +368,15 @@ export class CompanionService {
   handleEvent(session: ActiveSession, event: OpencodeEvent): void {
     if (this.session !== session) return
     const result = session.translator.translate(event)
+    if (result.started && this.turn) this.turn.started = true
+    const live = this.turn?.started === true
 
     for (const update of result.updates) {
+      if (!live) continue
       if (update.kind === 'change' && update.permissionId && update.status === 'pending') {
         this.pendingPermissions.add(update.permissionId)
       }
-      if (this.turn) this.emit(update)
+      this.emit(update)
     }
 
     if (result.autoReject && this.runtime) {
@@ -310,18 +386,21 @@ export class CompanionService {
         .catch(() => undefined)
     }
 
-    if (result.finish && this.turn) {
-      const { messageId } = this.turn
-      if (result.finish.outcome === 'failed') {
-        this.emit({ kind: 'error', message: result.finish.error ?? 'OpenCode failed.' })
-      } else if (result.finish.outcome === 'interrupted') {
-        this.emit({ kind: 'cancelled', messageId })
-      } else {
-        this.emit({ kind: 'done', messageId })
-      }
-      this.turn = null
-      this.pendingPermissions.clear()
+    if (result.finish && live) this.finishTurn(result.finish)
+  }
+
+  private finishTurn(finish: TurnFinish): void {
+    if (!this.turn) return
+    const { messageId } = this.turn
+    if (finish.outcome === 'failed') {
+      this.emit({ kind: 'error', message: finish.error ?? 'OpenCode failed.' })
+    } else if (finish.outcome === 'interrupted') {
+      this.emit({ kind: 'cancelled', messageId })
+    } else {
+      this.emit({ kind: 'done', messageId })
     }
+    this.turn = null
+    this.pendingPermissions.clear()
   }
 
   async replyPermission(
@@ -377,6 +456,14 @@ export class CompanionService {
     this.closeSession()
   }
 
+  stopNow(): void {
+    this.turn = null
+    this.closeSession()
+    const runtime = this.runtime
+    this.runtime = null
+    runtime?.server.stop()
+  }
+
   async shutdown(): Promise<void> {
     if (this.turn) await this.cancel()
     this.closeSession()
@@ -393,7 +480,10 @@ export function getCompanionService(getMainWindow: () => BrowserWindow | null): 
   return companionService
 }
 
-/** Stops the OpenCode server if the companion was ever used. */
-export async function shutdownCompanionService(): Promise<void> {
-  await companionService?.shutdown()
+/**
+ * Stops the OpenCode server right away, for app quit: there is no time to wait for a running
+ * response to be interrupted, and the server takes its sessions down with it.
+ */
+export function stopCompanionServiceNow(): void {
+  companionService?.stopNow()
 }

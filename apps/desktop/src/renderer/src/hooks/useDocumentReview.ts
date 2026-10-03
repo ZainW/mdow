@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { CompanionChangeStatus, CompanionFileChange } from '../../../shared/types'
-import { applyUnifiedPatch } from '../lib/apply-patch'
+import { applyUnifiedPatch, isPatchApplied } from '../lib/apply-patch'
 import { useAppStore } from '../store/app-store'
 
 export interface DocumentReview {
@@ -39,6 +39,7 @@ export function useDocumentReview(path: string, content: string): DocumentReview
     if (!file) return null
     // A patch that no longer applies means the document already holds the new text (or was
     // edited elsewhere), so there is nothing left to review here.
+    if (isPatchApplied(content, file.patch)) return null
     const after = applyUnifiedPatch(content, file.patch)
     if (after === null || after === content) return null
     return {

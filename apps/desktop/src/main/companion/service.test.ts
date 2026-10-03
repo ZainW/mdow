@@ -6,6 +6,7 @@ import type { OpencodeEvent } from './opencode-client'
 const settings = vi.hoisted(() => ({ lastModel: null as string | null }))
 const fake = vi.hoisted(() => ({
   onEvent: null as ((event: OpencodeEvent) => void) | null,
+  onOpen: null as ((reconnected: boolean) => void) | null,
   client: null as Record<string, ReturnType<typeof vi.fn>> | null,
 }))
 
@@ -50,10 +51,18 @@ vi.mock('./opencode-client', () => ({
       prompt: vi.fn(async () => undefined),
       interrupt: vi.fn(async () => undefined),
       replyPermission: vi.fn(async () => undefined),
+      getSession: vi.fn(async () => ({ id: 'ses_1', time: { created: 0, updated: 0 } })),
       subscribe: vi.fn(
-        (_directory: string, onEvent: (event: OpencodeEvent) => void) =>
+        (
+          _directory: string,
+          onEvent: (event: OpencodeEvent) => void,
+          _signal: AbortSignal,
+          onOpen?: (reconnected: boolean) => void,
+        ) =>
           new Promise<void>(() => {
             fake.onEvent = onEvent
+            fake.onOpen = onOpen ?? null
+            onOpen?.(false)
           }),
       ),
     }
@@ -81,8 +90,14 @@ const payload: CompanionSendPayload = {
   tags: [{ kind: 'file', path: '/docs/notes.md', sourceId: 'tag:/docs/notes.md' }],
 }
 
-function emitEvent(type: string, data: Record<string, unknown>) {
+function emitEvent(type: string, data: Record<string, unknown> = {}) {
   fake.onEvent?.({ type, data: { sessionID: 'ses_1', ...data } })
+}
+
+/** Sends a message and lets OpenCode start the run for it, as the real server does. */
+async function sendAndStart(service: InstanceType<typeof CompanionService>, win: BrowserWindow) {
+  await service.send(payload, win)
+  emitEvent('session.execution.started')
 }
 
 describe('CompanionService', () => {
@@ -116,7 +131,7 @@ describe('CompanionService', () => {
   it('streams updates, waits for review, and finishes the turn', async () => {
     const { win, sent } = makeWindow()
     const service = new CompanionService(() => win)
-    await service.send(payload, win)
+    await sendAndStart(service, win)
 
     emitEvent('session.text.delta', { delta: 'Here is a tighter intro.' })
     emitEvent('session.tool.input.started', { id: 'call_1', name: 'edit' })
@@ -137,7 +152,7 @@ describe('CompanionService', () => {
   it('declines shell requests without asking the user', async () => {
     const { win, sent } = makeWindow()
     const service = new CompanionService(() => win)
-    await service.send(payload, win)
+    await sendAndStart(service, win)
     emitEvent('permission.asked', { id: 'per_2', action: 'shell', resources: ['ls'] })
     expect(fake.client!.replyPermission).toHaveBeenCalledWith(
       'ses_1',
@@ -151,7 +166,7 @@ describe('CompanionService', () => {
   it('reports provider failures as errors', async () => {
     const { win, sent } = makeWindow()
     const service = new CompanionService(() => win)
-    await service.send(payload, win)
+    await sendAndStart(service, win)
     emitEvent('session.execution.failed', { error: { message: 'Sign in to OpenCode Go' } })
     expect(sent.at(-1)).toEqual({ kind: 'error', message: 'Sign in to OpenCode Go' })
   })
@@ -168,7 +183,7 @@ describe('CompanionService', () => {
   it('cancel interrupts the session and rejects pending reviews', async () => {
     const { win, sent } = makeWindow()
     const service = new CompanionService(() => win)
-    await service.send(payload, win)
+    await sendAndStart(service, win)
     emitEvent('session.tool.input.started', { id: 'call_1', name: 'edit' })
     emitEvent('permission.asked', { id: 'per_1', action: 'edit', source: { id: 'call_1' } })
 
@@ -202,11 +217,76 @@ describe('CompanionService', () => {
   it('starts a new OpenCode session after reset', async () => {
     const { win } = makeWindow()
     const service = new CompanionService(() => win)
-    await service.send(payload, win)
+    await sendAndStart(service, win)
     emitEvent('session.execution.succeeded', {})
     await service.reset()
     await service.send(payload, win)
     expect(fake.client!.createSession).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('CompanionService turn lifecycle', () => {
+  beforeEach(() => {
+    settings.lastModel = null
+    fake.onEvent = null
+    fake.client = null
+  })
+
+  it('ignores a late finish from a run the user stopped', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await sendAndStart(service, win)
+    await service.cancel()
+
+    await service.send(payload, win)
+    emitEvent('session.execution.interrupted')
+    const cancelledCount = sent.filter((update) => update.kind === 'cancelled').length
+
+    emitEvent('session.execution.started')
+    emitEvent('session.text.delta', { delta: 'Fresh answer' })
+    emitEvent('session.execution.succeeded')
+    expect(sent.filter((update) => update.kind === 'cancelled')).toHaveLength(cancelledCount)
+    expect(sent).toContainEqual({ kind: 'delta', text: 'Fresh answer' })
+    expect(sent.at(-1)).toMatchObject({ kind: 'done' })
+  })
+
+  it('does not prompt when the user stopped while OpenCode was starting', async () => {
+    const { win } = makeWindow()
+    const service = new CompanionService(() => win)
+    const sending = service.send(payload, win)
+    await service.cancel()
+    await sending
+    expect(fake.client?.prompt ?? vi.fn()).not.toHaveBeenCalled()
+  })
+
+  it('finishes a turn that ended while the event stream was reconnecting', async () => {
+    const { win, sent } = makeWindow()
+    const service = new CompanionService(() => win)
+    await sendAndStart(service, win)
+    fake.client!.getSession.mockResolvedValueOnce({
+      id: 'ses_1',
+      outcome: 'succeeded',
+      time: { created: 0, updated: Date.now() + 1, idle: Date.now() + 1 },
+    })
+    fake.onOpen?.(true)
+    await vi.waitFor(() => expect(sent.at(-1)).toMatchObject({ kind: 'done' }))
+  })
+
+  it('falls back to the OpenCode default when the saved model is gone', async () => {
+    settings.lastModel = 'retired/model'
+    const { win } = makeWindow()
+    const service = new CompanionService(() => win)
+    await service.send(payload, win)
+    expect(fake.client!.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: null }),
+    )
+
+    settings.lastModel = 'opencode/claude-sonnet-5-5'
+    await service.reset()
+    await service.send(payload, win)
+    expect(fake.client!.createSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: { providerID: 'opencode', id: 'claude-sonnet-5-5' } }),
+    )
   })
 })
 

@@ -51,3 +51,23 @@ export function applyUnifiedPatch(text: string, patch: string): string | null {
   output.push(...lines.slice(cursor))
   return output.join(newline)
 }
+
+/**
+ * True when `text` already holds the patch's result: every hunk's new lines sit where the patch
+ * puts them. Needed for patches without context (filling an empty file), which would otherwise
+ * apply a second time to their own output.
+ */
+export function isPatchApplied(text: string, patch: string): boolean {
+  const hunks = parseUnifiedDiff(patch)
+  if (hunks.length === 0) return false
+  const lines = text.split(/\r?\n/)
+  return hunks.every((hunk) => {
+    const after = hunk.lines.filter((line) => line.kind !== 'remove').map((line) => line.text)
+    const before = hunk.lines.filter((line) => line.kind !== 'add').map((line) => line.text)
+    if (after.length === before.length && after.every((line, index) => line === before[index])) {
+      return false
+    }
+    const firstNew = hunk.lines.find((line) => line.newLine !== null)?.newLine ?? 1
+    return matchesAt(lines, after, firstNew - 1)
+  })
+}

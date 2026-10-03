@@ -24,6 +24,12 @@ export interface OpencodePermissionRule {
   effect: 'allow' | 'deny' | 'ask'
 }
 
+export interface OpencodeSessionInfo {
+  id: string
+  outcome?: 'succeeded' | 'failed' | 'interrupted'
+  time: { created: number; updated: number; idle?: number }
+}
+
 export interface OpencodeEvent {
   id?: string
   type: string
@@ -164,6 +170,15 @@ export class OpencodeClient {
     )
   }
 
+  /** Whether the session has finished its latest run, and how. */
+  async getSession(sessionId: string): Promise<OpencodeSessionInfo> {
+    const result = await this.request<{ data: OpencodeSessionInfo }>(
+      'GET',
+      `/api/session/${sessionId}`,
+    )
+    return result.data
+  }
+
   async switchModel(sessionId: string, model: OpencodeModelRef): Promise<void> {
     await this.request('POST', `/api/session/${sessionId}/model`, { model })
   }
@@ -198,8 +213,11 @@ export class OpencodeClient {
     directory: string,
     onEvent: (event: OpencodeEvent) => void,
     signal: AbortSignal,
+    /** Called each time the stream (re)connects; `reconnected` is false the first time. */
+    onOpen?: (reconnected: boolean) => void,
   ): Promise<void> {
     let attempt = 0
+    let opened = false
     while (!signal.aborted) {
       try {
         const response = await this.fetchImpl(
@@ -213,6 +231,8 @@ export class OpencodeClient {
           throw new OpencodeHttpError(response.status, 'OpenCode event stream unavailable')
         }
         attempt = 0
+        onOpen?.(opened)
+        opened = true
         const parse = createSseParser((data) => {
           const event = parseOpencodeEvent(data)
           if (event) onEvent(event)
