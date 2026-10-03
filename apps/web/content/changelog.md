@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.12.0
+## v1.13.0
 
 Latest release.
+
+- The desktop companion now runs on OpenCode 2 and uses the models you have signed in to there
+- Ask the companion to change a document: each suggested edit appears right in the reader, like tracked changes, with changed words marked and Accept or Decline
+- Edits waiting in another document show a dot on its tab and in the folder sidebar, plus a Review button that takes you there
+- The companion chat is redesigned: one-click suggestions, @-mention documents, links that open documents in Mdow, a model picker in the message box, and New chat
+- Every edit needs your approval, and the companion never runs shell commands
+
+## v1.12.0
 
 - Mdow Native stays smooth on big documents: long lists, tables and code blocks draw only what's on screen, so a 3,000-item list or 1,500-row table scrolls at full frame rate instead of 4 fps
 - Mdow Native renders bold and heading weights correctly, and shapes text faster, with static font cuts

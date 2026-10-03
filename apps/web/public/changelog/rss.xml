@@ -6,16 +6,26 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.13.0</title>
+      <link>https://mdow.wania.app/changelog#v1-13-0</link>
+      <guid isPermaLink="false">v1.13.0</guid>
+      <pubDate>Sat, 03 Oct 2026 22:31:14 GMT</pubDate>
+      <description>Latest release.
+
+- The desktop companion now runs on OpenCode 2 and uses the models you have signed in to there
+- Ask the companion to change a document: each suggested edit appears right in the reader, like tracked changes, with changed words marked and Accept or Decline
+- Edits waiting in another document show a dot on its tab and in the folder sidebar, plus a Review button that takes you there
+- The companion chat is redesigned: one-click suggestions, @-mention documents, links that open</description>
+    </item>
+    <item>
       <title>v1.12.0</title>
       <link>https://mdow.wania.app/changelog#v1-12-0</link>
       <guid isPermaLink="false">v1.12.0</guid>
       <pubDate>Tue, 29 Sep 2026 14:31:33 GMT</pubDate>
-      <description>Latest release.
-
-- Mdow Native stays smooth on big documents: long lists, tables and code blocks draw only what's on screen, so a 3,000-item list or 1,500-row table scrolls at full frame rate instead of 4 fps
+      <description>- Mdow Native stays smooth on big documents: long lists, tables and code blocks draw only what's on screen, so a 3,000-item list or 1,500-row table scrolls at full frame rate instead of 4 fps
 - Mdow Native renders bold and heading weights correctly, and shapes text faster, with static font cuts
 - Mdow Native draws Mermaid diagrams, with Show source and Copy buttons
-- Mdow Native reads much more of HTML: page titles, inline SVG charts, Mermaid blocks, figures and details, plus</description>
+- Mdow Native reads much more of HTML: page titles, inline SVG charts, Mermaid blocks, figures and details, plus an Open in Browser</description>
     </item>
     <item>
       <title>v1.11.2</title>
