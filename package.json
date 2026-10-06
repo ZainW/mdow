@@ -15,9 +15,14 @@
     "fmt": "turbo fmt",
     "fmt:check": "turbo fmt:check",
     "test": "turbo test",
-    "test:native-updater": "python3 script/test_native_updater.py"
+    "test:native-updater": "python3 script/test_native_updater.py",
+    "test:e2e": "e2e run"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^4.0.0",
+    "@e2e-dev/web": "^0.13.0",
+    "ai": "^7.0.0",
+    "e2e": "^0.18.0",
     "turbo": "^2.10.12"
   },
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"

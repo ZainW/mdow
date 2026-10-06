@@ -16,3 +16,5 @@ minimumReleaseAgeExclude:
   - md4x@0.0.29
   - miniflare@5.20260907.0-alpha
   - wrangler@4.129.1
+  - '@e2e-dev/web@0.13.0'
+  - e2e@0.18.0
