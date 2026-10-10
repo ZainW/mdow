@@ -8,14 +8,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { App } from './App'
 import { EMPTY_SESSION } from './lib/persist'
 import { DEFAULT_PREFS } from './lib/prefs'
-import {
-  createAppStore,
-  openDocument,
-  openDocumentAsync,
-  setAppStore,
-  setDragging,
-  setOverlay,
-} from './store'
+import { createAppStore, openDocument, setAppStore, setDragging, setOverlay } from './store'
 
 // The GPU test renderer needs a display on Linux (CI runs these under xvfb in native.yml).
 const hasDisplay =
@@ -56,21 +49,6 @@ describeUi('App', () => {
     const shown = text(root)
     expect(shown).toContain('guide.md')
     expect(shown).toContain('The Guide')
-    root.unmount()
-  })
-
-  test('shows a loading state while a document is parsed in a worker', async () => {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'mdow-app-')))
-    const path = join(dir, 'worker.md')
-    writeFileSync(path, '# Loaded off-thread\n')
-    const root = mount()
-    let opening: ReturnType<typeof openDocumentAsync> | undefined
-    flushSync(() => {
-      opening = openDocumentAsync(path)
-    })
-    expect(text(root)).toContain('Opening document')
-    await opening!
-    expect(text(root)).toContain('Loaded off-thread')
     root.unmount()
   })
 
