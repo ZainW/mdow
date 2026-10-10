@@ -64,9 +64,12 @@ describeUi('App', () => {
     const path = join(dir, 'worker.md')
     writeFileSync(path, '# Loaded off-thread\n')
     const root = mount()
-    const opening = openDocumentAsync(path)
+    let opening: ReturnType<typeof openDocumentAsync> | undefined
+    flushSync(() => {
+      opening = openDocumentAsync(path)
+    })
     expect(text(root)).toContain('Opening document')
-    await opening
+    await opening!
     expect(text(root)).toContain('Loaded off-thread')
     root.unmount()
   })
