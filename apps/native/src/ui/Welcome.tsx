@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import { openDocument, useApp } from '../store'
+import { openDocumentAsync, useApp } from '../store'
 import { UI_MONO, useUi } from './context'
 import { ICONS } from './icons'
 import { activateOnEnter, Button, Icon, Label, withAlpha } from './primitives'
@@ -215,8 +215,8 @@ function RecentColumn({ recents }: { recents: string[] }) {
             key={path}
             role="button"
             tabIndex={0}
-            onClick={() => openDocument(path)}
-            onKeyDown={activateOnEnter(() => openDocument(path))}
+            onClick={() => void openDocumentAsync(path)}
+            onKeyDown={activateOnEnter(() => void openDocumentAsync(path))}
             style={{
               display: 'flex',
               alignItems: 'center',

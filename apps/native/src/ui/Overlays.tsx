@@ -25,7 +25,14 @@ import type { Theme } from '../lib/theme'
 import { workspaceFiles } from '../lib/workspace'
 import { useEnter } from '../lib/motion'
 import { IS_MAC } from '../lib/platform'
-import { openDocument, setOverlay, setPrefs, useApp, zoomBy, type UpdateStatus } from '../store'
+import {
+  openDocumentAsync,
+  setOverlay,
+  setPrefs,
+  useApp,
+  zoomBy,
+  type UpdateStatus,
+} from '../store'
 import { UI_FONT, useUi } from './context'
 import type { IconName } from './icons'
 import { activateOnEnter, Button, Icon, Kbd, Label, withAlpha } from './primitives'
@@ -264,7 +271,7 @@ export function CommandPalette({ onCommand }: { onCommand: (command: CommandId) 
     if (!item) return
     setOverlay(null)
     if (item.kind === 'command') onCommand(item.spec.id)
-    else openDocument(item.path)
+    else void openDocumentAsync(item.path)
   }
 
   return (

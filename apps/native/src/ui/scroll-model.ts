@@ -32,8 +32,12 @@ export function estimateHeights(blocks: Block[], columnWidth: number, fontSize: 
         return fontSize + 1 + gap
       case 'table':
         return (block.rows.length + (block.header ? 1 : 0)) * (line + fontSize * 0.75) + gap
-      default:
-        return prose(block.text) + gap
+      case 'markdown':
+      case 'quote':
+      case 'alert':
+        return prose(block.source) + gap
+      case 'footnotes':
+        return prose(block.items.map((note) => `${note.marker} ${note.source}`).join('\n')) + gap
     }
   })
 }

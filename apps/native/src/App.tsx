@@ -3,11 +3,11 @@ import { useGpuixRequired, useWindowSize } from '@gpuix/react'
 import { followLink, promptOpenFile, promptOpenFolder, runCommand, setRenderer } from './actions'
 import { DOCUMENT_ERROR_COPY } from './lib/documents'
 import { readerMaxWidth } from './lib/prefs'
-import { openPaths, setDragging, setWindowSize, useApp } from './store'
+import { openPathsAsync, setDragging, setWindowSize, useApp } from './store'
 import { Breadcrumb, ReloadBanner, TabBar, Titlebar } from './ui/Chrome'
 import { METRICS, UI_FONT, UiProvider, useUi } from './ui/context'
 import { CommandPalette, Settings, Shortcuts } from './ui/Overlays'
-import { Button, EmptyState } from './ui/primitives'
+import { Button, EmptyState, Label } from './ui/primitives'
 import { Reader } from './ui/Reader'
 import { Sidebar } from './ui/Sidebar'
 import { UpdateBanner } from './ui/UpdateBanner'
@@ -46,7 +46,9 @@ function Shell({ saveNow }: AppProps) {
   }, [renderer])
 
   useEffect(() => {
-    const title = tab?.document.ok ? (tab.document.parsed.title ?? tab.path.split('/').pop()) : null
+    const title = tab?.document?.ok
+      ? (tab.document.parsed.title ?? tab.path.split('/').pop())
+      : null
     renderer.setWindowTitle?.(title ? `${title} — Mdow` : 'Mdow')
   }, [renderer, tab])
 
@@ -64,7 +66,7 @@ function Shell({ saveNow }: AppProps) {
     <div
       onFileDrop={(event) => {
         setDragging(false)
-        if (event.paths?.length) openPaths(event.paths)
+        if (event.paths?.length) openPathsAsync(event.paths)
       }}
       style={{
         display: 'flex',
@@ -98,6 +100,17 @@ function Shell({ saveNow }: AppProps) {
               onOpenFile={() => void promptOpenFile()}
               onOpenFolder={() => void promptOpenFolder()}
             />
+          ) : !tab.document ? (
+            <div
+              style={{
+                display: 'flex',
+                flexGrow: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Label color={theme.mutedForeground}>Opening document…</Label>
+            </div>
           ) : tab.document.ok ? (
             <Reader
               key={tab.path}
