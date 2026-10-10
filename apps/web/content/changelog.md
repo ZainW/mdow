@@ -5,9 +5,13 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.13.0
+## v1.13.1
 
 Latest release.
+
+- Mdow Native stays responsive while opening large Markdown files and uses less memory until search is needed
+
+## v1.13.0
 
 - The desktop companion now runs on OpenCode 2 and uses the models you have signed in to there
 - Ask the companion to change a document: each suggested edit appears right in the reader, like tracked changes, with changed words marked and Accept or Decline
