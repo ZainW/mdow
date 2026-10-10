@@ -6,7 +6,7 @@ import {
   type EventPayload,
   type PublicInstance,
 } from '@gpuix/react'
-import type { AlertKind, Block, ParsedDocument } from '../lib/markdown'
+import { searchableText, type AlertKind, type Block, type ParsedDocument } from '../lib/markdown'
 import {
   cachedMermaid,
   mermaidPalette,
@@ -57,10 +57,25 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
   const findOpen = useApp((state) => state.overlay === 'find')
   const [query, setQuery] = useState('')
   const activeQuery = findOpen ? query : ''
+  const searchTextCache = useRef(new Map<Block, string>())
+  useEffect(() => {
+    searchTextCache.current.clear()
+  }, [document])
+  useEffect(() => {
+    if (!findOpen) searchTextCache.current.clear()
+  }, [findOpen])
+  useEffect(() => () => searchTextCache.current.clear(), [])
   const perRow = useMemo(
     () =>
       activeQuery
-        ? blocks.map((block) => findRanges({ text: block.text, query: activeQuery }).length)
+        ? blocks.map((block) => {
+            let text = searchTextCache.current.get(block)
+            if (text === undefined) {
+              text = searchableText(block)
+              searchTextCache.current.set(block, text)
+            }
+            return findRanges({ text, query: activeQuery }).length
+          })
         : null,
     [blocks, activeQuery],
   )

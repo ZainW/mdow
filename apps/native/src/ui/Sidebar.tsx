@@ -4,7 +4,7 @@ import { useGpuixRequired, type PublicInstance } from '@gpuix/react'
 import type { OutlineEntry } from '../lib/markdown'
 import { LABELS, SIDEBAR_MODES, type SidebarMode } from '../lib/prefs'
 import { visibleRows, WORKSPACE_ERROR_COPY } from '../lib/workspace'
-import { openDocument, setOverlay, setPrefs, toggleDirectory, useApp } from '../store'
+import { openDocumentAsync, setOverlay, setPrefs, toggleDirectory, useApp } from '../store'
 import { METRICS, useUi } from './context'
 import { activateOnEnter, Button, EmptyState, Icon, Label, withAlpha } from './primitives'
 import { sendReader, useTopRow } from './reader-bus'
@@ -272,8 +272,8 @@ function Recents() {
               key={path}
               role="button"
               tabIndex={0}
-              onClick={() => openDocument(path)}
-              onKeyDown={activateOnEnter(() => openDocument(path))}
+              onClick={() => void openDocumentAsync(path)}
+              onKeyDown={activateOnEnter(() => void openDocumentAsync(path))}
               style={{
                 position: 'relative',
                 display: 'flex',
@@ -436,7 +436,9 @@ function FolderTree({ onOpenFolder }: { onOpenFolder: () => void }) {
               depth={row.depth}
               selected={row.path === activePath}
               onClick={() =>
-                row.kind === 'directory' ? toggleDirectory(row.path) : openDocument(row.path)
+                row.kind === 'directory'
+                  ? toggleDirectory(row.path)
+                  : void openDocumentAsync(row.path)
               }
             />
           ))}
@@ -448,7 +450,7 @@ function FolderTree({ onOpenFolder }: { onOpenFolder: () => void }) {
 
 function Outline() {
   const tab = useApp((state) => state.tabs.find((item) => item.path === state.activePath))
-  const outline = tab?.document.ok ? tab.document.parsed.outline : []
+  const outline = tab?.document?.ok ? tab.document.parsed.outline : []
   if (outline.length === 0) {
     return (
       <EmptyState

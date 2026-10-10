@@ -10,11 +10,11 @@ export type AlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution'
  * One reader row. A long list, table or code fence is split across several rows so no single row
  * costs more than a frame to lay out; `joinNext` marks a row whose continuation follows directly.
  */
-export type Block = BlockBody & { id: string; text: string; joinNext?: boolean }
+export type Block = BlockBody & { id: string; joinNext?: boolean }
 
 export type BlockBody =
   | { kind: 'markdown'; source: string }
-  | { kind: 'heading'; level: number; source: string; slug: string }
+  | { kind: 'heading'; level: number; source: string; slug: string; text: string }
   | {
       kind: 'code'
       language: string
@@ -41,6 +41,31 @@ export type BlockBody =
     }
 
 export type TableAlign = 'left' | 'center' | 'right'
+
+/** Plain search text is derived only when Find is open, not retained for every reader block. */
+export function searchableText(block: Block): string {
+  switch (block.kind) {
+    case 'markdown':
+    case 'quote':
+      return sourceText(block.source)
+    case 'heading':
+      return block.text
+    case 'code':
+      return block.code
+    case 'alert':
+      return block.source
+    case 'image':
+      return block.alt
+    case 'rule':
+      return ''
+    case 'footnotes':
+      return block.items.map((note) => `${note.marker} ${note.source}`).join('\n')
+    case 'table':
+      return [...(block.header ? [block.header] : []), ...block.rows]
+        .map((row) => row.map(inlineSearchText).join('\n'))
+        .join('\n')
+  }
+}
 
 /** A list is cut after this many items or characters, whichever comes first. */
 export const LIST_CHUNK_ITEMS = 12
@@ -85,7 +110,6 @@ export function parseMarkdown(markdown: string, filePath: string): ParsedDocumen
       kind: 'footnotes',
       id: `b${ctx.nextId++}`,
       items: footnotes,
-      text: footnotes.map((note) => `${note.marker} ${note.source}`).join('\n'),
     })
   }
 
@@ -146,7 +170,7 @@ function pushToken(ctx: BuildContext, token: Token) {
       return
     }
     case 'hr':
-      ctx.blocks.push({ kind: 'rule', id, text: '' })
+      ctx.blocks.push({ kind: 'rule', id })
       return
     case 'blockquote': {
       const quote = token as Tokens.Blockquote
@@ -157,7 +181,6 @@ function pushToken(ctx: BuildContext, token: Token) {
           id,
           alert: alert.kind,
           source: alert.body,
-          text: alert.body,
         })
         return
       }
@@ -166,7 +189,7 @@ function pushToken(ctx: BuildContext, token: Token) {
         .map((line) => line.replace(/^\s*>\s?/, ''))
         .join('\n')
         .trim()
-      ctx.blocks.push({ kind: 'quote', id, source: inner, text: blockText(token) })
+      ctx.blocks.push({ kind: 'quote', id, source: inner })
       return
     }
     case 'paragraph': {
@@ -201,14 +224,14 @@ function pushToken(ctx: BuildContext, token: Token) {
   }
   const source = token.raw.trimEnd()
   if (!source.trim()) return
-  ctx.blocks.push({ kind: 'markdown', id, source, text: blockText(token) })
+  ctx.blocks.push({ kind: 'markdown', id, source })
 }
 
 /** Mermaid is never split: the diagram needs the whole source. */
 function pushCode(ctx: BuildContext, id: string, language: string, code: string) {
   const lines = code.split('\n')
   if (language === 'mermaid' || lines.length <= CODE_CHUNK_LINES * 1.5) {
-    ctx.blocks.push({ kind: 'code', id, language, code, text: code, part: 'whole', copy: code })
+    ctx.blocks.push({ kind: 'code', id, language, code, part: 'whole', copy: code })
     return
   }
   const pieces: string[] = []
@@ -235,7 +258,6 @@ function pushCode(ctx: BuildContext, id: string, language: string, code: string)
       id: index === 0 ? id : `b${ctx.nextId++}`,
       language,
       code: piece,
-      text: piece,
       part: index === 0 ? 'first' : last ? 'last' : 'middle',
       copy: index === 0 ? code : '',
       joinNext: !last,
@@ -277,7 +299,6 @@ function pushList(ctx: BuildContext, id: string, list: Tokens.List) {
       kind: 'markdown',
       id: index === 0 ? id : `b${ctx.nextId++}`,
       source: taskMarkers(raw.trimEnd()),
-      text: items.map((item) => item.tokens.map(blockText).join('\n')).join('\n'),
       joinNext: !last,
     })
   })
@@ -311,12 +332,6 @@ function pushTable(ctx: BuildContext, id: string, table: Tokens.Table) {
       rows: slice,
       align,
       widths,
-      text: [
-        ...(start === 0 ? [table.header] : []),
-        ...table.rows.slice(start, start + TABLE_CHUNK_ROWS),
-      ]
-        .map((row) => row.map((value) => inlineText(value.tokens)).join('\n'))
-        .join('\n'),
       joinNext: !last,
     })
   }
@@ -337,7 +352,6 @@ function imageBlock(ctx: BuildContext, id: string, image: Tokens.Image): Block {
     alt: image.text,
     width: size?.width ?? 0,
     height: size?.height ?? 0,
-    text: image.text,
   }
 }
 
@@ -490,6 +504,14 @@ function blockText(token: Token): string {
       if ('tokens' in token && token.tokens) return inlineText(token.tokens)
       return 'text' in token ? String(token.text) : ''
   }
+}
+
+function sourceText(source: string): string {
+  return new Lexer({ gfm: true }).lex(source).map(blockText).join('\n')
+}
+
+function inlineSearchText(source: string): string {
+  return inlineText(new Lexer({ gfm: true }).inlineTokens(source))
 }
 
 function decodeEntities(text: string) {

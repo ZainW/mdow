@@ -22,11 +22,11 @@ import { FileWatcher, FolderWatcher } from './lib/watcher'
 import {
   createAppStore,
   openFolder,
-  openPaths,
+  openPathsAsync,
   persistedState,
-  reloadDocument,
+  reloadDocumentAsync,
   rescanWorkspace,
-  restoreTabs,
+  restoreTabsAsync,
   setAppStore,
   setDragging,
   setSystemScheme,
@@ -93,8 +93,8 @@ if (firstRun) {
     openFolder(initial.session.lastFolder, false)
   }
   const launchPaths = args.filter((arg) => !arg.startsWith('-'))
-  restoreTabs(initial.session.tabs, initial.session.activeTab)
-  if (launchPaths.length > 0) openPaths(launchPaths.map((path) => resolve(path)))
+  void restoreTabsAsync(initial.session.tabs, initial.session.activeTab)
+  if (launchPaths.length > 0) openPathsAsync(launchPaths.map((path) => resolve(path)))
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -104,7 +104,7 @@ function saveNow() {
   saveState(statePath, persistedState(store.getState()))
 }
 
-const fileWatcher = new FileWatcher((path) => reloadDocument(path))
+const fileWatcher = new FileWatcher((path) => void reloadDocumentAsync(path))
 const folderWatcher = new FolderWatcher(() => rescanWorkspace())
 let watchedFolder: string | null = null
 
@@ -162,7 +162,7 @@ function quit() {
 
 if (IS_MAC && firstRun) {
   handleOpenUrls((paths) => {
-    openPaths(paths)
+    openPathsAsync(paths)
     activateApp()
   })
 }

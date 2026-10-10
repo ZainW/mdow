@@ -10,6 +10,7 @@ import {
   createAppStore,
   cycleTab,
   openDocument,
+  openDocumentAsync,
   openPaths,
   reloadDocument,
   setAppStore,
@@ -41,6 +42,25 @@ describe('tabs', () => {
     expect(state().tabs.map((tab) => tab.path)).toEqual([a, b])
     expect(state().activePath).toBe(a)
     expect(state().recents).toEqual([b, a])
+  })
+
+  test('async opening publishes the document after it loads', async () => {
+    const path = file('async.md', '# Loaded off-thread\n')
+    const loading = openDocumentAsync(path)
+    expect(state().tabs[0]?.document).toBeNull()
+    const result = await loading
+    expect(result.ok).toBe(true)
+    expect(state().tabs[0]?.document).toEqual(result)
+    expect(state().recents).toEqual([path])
+  })
+
+  test('closing a tab while it loads does not add it back to recents', async () => {
+    const path = file('closed-while-loading.md', '# Open then close\n')
+    const loading = openDocumentAsync(path)
+    closeTab(path)
+    await loading
+    expect(state().tabs).toEqual([])
+    expect(state().recents).toEqual([])
   })
 
   test('new tabs open next to the active one', () => {
@@ -79,13 +99,13 @@ describe('tabs', () => {
     reloadDocument(a)
     const tab = state().tabs[0]!
     expect(tab.reloadFailed).toBe(true)
-    expect(tab.document.ok && tab.document.parsed.outline[0]?.text).toBe('One')
+    expect(tab.document?.ok && tab.document.parsed.outline[0]?.text).toBe('One')
     writeFileSync(a, '# Two\n')
     reloadDocument(a)
     const next = state().tabs[0]!
     expect(next.reloadFailed).toBe(false)
     expect(next.revision).toBe(1)
-    expect(next.document.ok && next.document.parsed.outline[0]?.text).toBe('Two')
+    expect(next.document?.ok && next.document.parsed.outline[0]?.text).toBe('Two')
   })
 
   test('folders open as the workspace', () => {

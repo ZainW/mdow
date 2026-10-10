@@ -7,6 +7,7 @@ import {
   LIST_CHUNK_ITEMS,
   parseHtml,
   parseMarkdown,
+  searchableText,
   slugify,
   stripFrontmatter,
   TABLE_CHUNK_ROWS,
@@ -38,6 +39,28 @@ describe('parseMarkdown', () => {
     expect(doc.outline.map((entry) => entry.slug)).toEqual(['intro', 'setup--use', 'setup--use-1'])
     expect(doc.slugs.get('setup--use-1')).toBe(2)
     expect(slugify('Émoji ✨ Title')).toBe('émoji--title')
+  })
+
+  test('defers plain-text search copies until they are requested', () => {
+    const doc = parseMarkdown('A **bold** &amp; useful.\n\n```js\nconst value = 2\n```\n', '/a.md')
+    const [paragraph, code] = doc.blocks
+    expect(Object.hasOwn(paragraph!, 'text')).toBe(false)
+    expect(Object.hasOwn(code!, 'text')).toBe(false)
+    expect(searchableText(paragraph!)).toBe('A bold & useful.')
+    expect(searchableText(code!)).toBe('const value = 2')
+  })
+
+  test('derives search text for quote, alert, image, and table blocks', () => {
+    const doc = parseMarkdown(
+      '> Quoted **words**\n\n> [!NOTE]\n> Alert body\n\n| Name | Value |\n|---|---|\n| **A** | &amp; |\n\n![Alt text](missing.png)\n',
+      '/a.md',
+    )
+    expect(doc.blocks.map(searchableText)).toEqual([
+      'Quoted words',
+      'Alert body',
+      'Name\nValue\nA\n&',
+      'Alt text',
+    ])
   })
 
   test('turns GitHub alerts into alert blocks', () => {
@@ -121,7 +144,7 @@ describe('parseMarkdown', () => {
   test('takes the HTML title when there is no frontmatter title', () => {
     const doc = parseHtml('<!DOCTYPE html><title>Report &amp; Notes</title><p>x</p>', '/a.html')
     expect(doc.title).toBe('Report & Notes')
-    expect(doc.blocks.map((block) => block.text)).toEqual(['x'])
+    expect(doc.blocks.map(searchableText)).toEqual(['x'])
   })
 })
 
@@ -135,9 +158,7 @@ describe('splitting large blocks into rows', () => {
     expect((blocks[1] as { source: string }).source.startsWith(`${LIST_CHUNK_ITEMS + 1}. `)).toBe(
       true,
     )
-    expect(blocks.map((block) => block.text).join('\n')).toContain(
-      `item ${LIST_CHUNK_ITEMS * 2 + 2}`,
-    )
+    expect(blocks.map(searchableText).join('\n')).toContain(`item ${LIST_CHUNK_ITEMS * 2 + 2}`)
   })
 
   test('slices of a list numbered all `1.` continue the count', () => {
@@ -205,7 +226,7 @@ describe('splitting large blocks into rows', () => {
     expect(first!.widths[1]!).toBeGreaterThan(first!.widths[0]!)
     expect(first!.align).toEqual(['right', null])
     expect(second!.rows[0]).toEqual([`${TABLE_CHUNK_ROWS}`, `row **${TABLE_CHUNK_ROWS}**`])
-    expect(second!.text).toContain(`row ${TABLE_CHUNK_ROWS}`)
+    expect(searchableText(second!)).toContain(`row ${TABLE_CHUNK_ROWS}`)
   })
 
   test('small tables are drawn by the reader too', () => {

@@ -15,7 +15,7 @@ import { createRenderer, flushSync, render } from '@gpuix/react'
 import { App } from '../src/App'
 import { EMPTY_SESSION } from '../src/lib/persist'
 import { DEFAULT_PREFS } from '../src/lib/prefs'
-import { closeTab, createAppStore, openDocument, setAppStore } from '../src/store'
+import { closeTab, createAppStore, openDocumentAsync, setAppStore } from '../src/store'
 import { sendReader } from '../src/ui/reader-bus'
 
 const argv = process.argv.slice(2)
@@ -77,6 +77,7 @@ function gaps(from: number) {
 interface Result {
   file: string
   openMs: number
+  openFrames: ReturnType<typeof stats> & { frames: number; over33: number }
   scroll: ReturnType<typeof stats> & { frames: number; over33: number; seconds: number }
   draw: { fps: number; p90: number; p99: number; max: number }
   tick: ReturnType<typeof stats>
@@ -90,10 +91,17 @@ await nextFrames(20)
 
 for (const file of files) {
   // Open: parse + commit + first paint.
+  const openTickStart = ticks.length
   const openStart = performance.now()
-  flushSync(() => openDocument(file))
+  await openDocumentAsync(file)
   await nextFrames(2)
   const openMs = performance.now() - openStart
+  const openFrameGaps = gaps(openTickStart - 1)
+  const openFrames = {
+    ...stats(openFrameGaps),
+    frames: openFrameGaps.length,
+    over33: openFrameGaps.filter((gap) => gap > 33.4).length,
+  }
   await sleep(300)
   if (shotsDir) renderer.captureScreenshot?.(join(shotsDir, `${basename(file)}-open.png`))
 
@@ -139,6 +147,7 @@ for (const file of files) {
   const result = {
     file: basename(file),
     openMs,
+    openFrames,
     scroll,
     draw: {
       fps: drawn / seconds,
@@ -153,7 +162,9 @@ for (const file of files) {
   }
   results.push(result)
   console.log(
-    `${result.file.padEnd(28)} open ${openMs.toFixed(0).padStart(5)}ms | ` +
+    `${result.file.padEnd(28)} open ${openMs.toFixed(0).padStart(5)}ms ` +
+      `ui gap p95 ${openFrames.p95.toFixed(1)} max ${openFrames.max.toFixed(0)}ms ` +
+      `>33ms ${openFrames.over33} | ` +
       `scroll fps ${(scroll.frames / seconds).toFixed(0).padStart(3)} ` +
       `gap p50 ${scroll.p50.toFixed(1)} p95 ${scroll.p95.toFixed(1)} p99 ${scroll.p99.toFixed(1)} ` +
       `max ${scroll.max.toFixed(0)}ms, >33ms ${scroll.over33} | ` +

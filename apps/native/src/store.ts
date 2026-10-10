@@ -4,6 +4,7 @@ import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { isSupportedDocument } from './lib/documents'
 import { loadDocument, type LoadedDocument } from './lib/document-loader'
+import { loadDocumentAsync } from './lib/document-worker-client'
 import { pushRecent, type PersistedState, type Session } from './lib/persist'
 import { clampZoom, ZOOM_STEP, type Prefs } from './lib/prefs'
 import { scanWorkspace, type ScanResult } from './lib/workspace'
@@ -11,7 +12,8 @@ import type { ColorScheme } from './lib/theme'
 
 export interface Tab {
   path: string
-  document: LoadedDocument
+  /** Null while an off-thread read and parse are in progress. */
+  document: LoadedDocument | null
   /** The last reload failed; `document` still holds the last good version. */
   reloadFailed: boolean
   /** Bumped on every successful reload so the reader can keep its scroll anchor. */
@@ -104,6 +106,33 @@ function canonical(path: string) {
   }
 }
 
+let nextDocumentLoadId = 0
+const pendingDocumentLoads = new Map<string, { id: number; promise: Promise<LoadedDocument> }>()
+
+function loadDocumentForTab(path: string, onLoaded: (document: LoadedDocument) => void) {
+  const id = nextDocumentLoadId++
+  const promise = loadDocumentAsync(path)
+    .then((document) => {
+      if (pendingDocumentLoads.get(path)?.id === id) onLoaded(document)
+      return document
+    })
+    .finally(() => {
+      if (pendingDocumentLoads.get(path)?.id === id) pendingDocumentLoads.delete(path)
+    })
+  pendingDocumentLoads.set(path, { id, promise })
+  return promise
+}
+
+function commitOpenedDocument(path: string, document: LoadedDocument) {
+  set((state) => {
+    if (!state.tabs.some((tab) => tab.path === path)) return state
+    return {
+      tabs: state.tabs.map((tab) => (tab.path === path ? { ...tab, document } : tab)),
+      recents: document.ok ? pushRecent(state.recents, path) : state.recents,
+    }
+  })
+}
+
 /** Open a document, or switch to its tab when it is already open. */
 export function openDocument(path: string) {
   const target = canonical(path)
@@ -127,6 +156,28 @@ export function openDocument(path: string) {
   })
 }
 
+/** Open a document without blocking the UI while its bytes and Markdown are parsed. */
+export function openDocumentAsync(path: string): Promise<LoadedDocument> {
+  const target = canonical(path)
+  const existing = get().tabs.find((tab) => tab.path === target)
+  if (existing) {
+    set({ activePath: target, overlay: null })
+    if (existing.document) return Promise.resolve(existing.document)
+    const pending = pendingDocumentLoads.get(target)
+    if (pending) return pending.promise
+    return loadDocumentForTab(target, (document) => commitOpenedDocument(target, document))
+  }
+
+  const tab: Tab = { path: target, document: null, reloadFailed: false, revision: 0 }
+  set((state) => {
+    const index = state.tabs.findIndex((item) => item.path === state.activePath)
+    const tabs = [...state.tabs]
+    tabs.splice(index === -1 ? tabs.length : index + 1, 0, tab)
+    return { tabs, activePath: target, overlay: null }
+  })
+  return loadDocumentForTab(target, (document) => commitOpenedDocument(target, document))
+}
+
 /** Folders open as the workspace; supported files open as tabs. */
 export function openPaths(paths: string[]) {
   for (const path of paths) {
@@ -139,12 +190,47 @@ export function openPaths(paths: string[]) {
   }
 }
 
+/** Folders open synchronously; each selected document parses in the background. */
+export function openPathsAsync(paths: string[]) {
+  for (const path of paths) {
+    let isDir = false
+    try {
+      isDir = statSync(path).isDirectory()
+    } catch {}
+    if (isDir) openFolder(path)
+    else void openDocumentAsync(path)
+  }
+}
+
 export function restoreTabs(paths: string[], active: string | null) {
   const tabs: Tab[] = paths
     .filter((path) => existsSync(path) && isSupportedDocument(path))
     .map((path) => ({ path, document: loadDocument(path), reloadFailed: false, revision: 0 }))
   const activePath = tabs.some((tab) => tab.path === active) ? active : (tabs[0]?.path ?? null)
   set({ tabs, activePath })
+}
+
+export function restoreTabsAsync(paths: string[], active: string | null) {
+  const restored = paths
+    .filter((path) => existsSync(path) && isSupportedDocument(path))
+    .map(canonical)
+  const tabs: Tab[] = restored.map((path) => ({
+    path,
+    document: null,
+    reloadFailed: false,
+    revision: 0,
+  }))
+  const activePath = restored.includes(active ?? '') ? canonical(active!) : (restored[0] ?? null)
+  set({ tabs, activePath })
+  return Promise.all(
+    restored.map((path) =>
+      loadDocumentForTab(path, (document) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.path === path ? { ...tab, document } : tab)),
+        }))
+      }),
+    ),
+  )
 }
 
 export function closeTab(path = get().activePath) {
@@ -183,10 +269,28 @@ export function reloadDocument(path: string) {
       if (next.ok)
         return { ...item, document: next, reloadFailed: false, revision: item.revision + 1 }
       // Keep the last good render and flag it, rather than swapping in an error screen.
-      if (item.document.ok) return { ...item, reloadFailed: true }
+      if (item.document?.ok) return { ...item, reloadFailed: true }
       return { ...item, document: next }
     }),
   }))
+}
+
+export function reloadDocumentAsync(path: string) {
+  const target = canonical(path)
+  const tab = get().tabs.find((item) => item.path === target)
+  if (!tab) return Promise.resolve()
+  return loadDocumentForTab(target, (next) => {
+    set((state) => ({
+      tabs: state.tabs.map((item) => {
+        if (item.path !== target) return item
+        if (next.ok)
+          return { ...item, document: next, reloadFailed: false, revision: item.revision + 1 }
+        // Keep the last good render and flag it, rather than swapping in an error screen.
+        if (item.document?.ok) return { ...item, reloadFailed: true }
+        return { ...item, document: next }
+      }),
+    }))
+  })
 }
 
 export function forgetRecent(path: string) {

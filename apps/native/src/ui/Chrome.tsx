@@ -144,7 +144,7 @@ function TabItem({ tab, active, separator }: { tab: Tab; active: boolean; separa
           }}
         />
       ) : null}
-      {tab.document.ok ? (
+      {tab.document?.ok || tab.document === null ? (
         <ChromeIcon name="file-text" size={14} color={theme.mutedForeground} />
       ) : (
         <Icon name="alert-circle" size={14} color={theme.destructive} />
@@ -184,7 +184,7 @@ function TabItem({ tab, active, separator }: { tab: Tab; active: boolean; separa
 export function Breadcrumb({ tab }: { tab: Tab }) {
   const { theme, scale } = useUi()
   const wideMode = useApp((state) => state.prefs.wideMode)
-  const title = tab.document.ok ? tab.document.parsed.title : null
+  const title = tab.document?.ok ? tab.document.parsed.title : null
   const segments = breadcrumbSegments(tab.path)
   const parents = segments.slice(0, -1)
   const file = segments.at(-1)

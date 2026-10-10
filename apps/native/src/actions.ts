@@ -9,9 +9,9 @@ import {
   appStore,
   closeTab,
   cycleTab,
-  openDocument,
   openFolder,
-  openPaths,
+  openDocumentAsync,
+  openPathsAsync,
   setOverlay,
   setPrefs,
   showSidebar,
@@ -30,7 +30,7 @@ export function setRenderer(next: NativeRenderer | null) {
 
 export async function promptOpenFile() {
   const paths = await renderer?.promptForPaths?.({ files: true, multiple: true, prompt: 'Open' })
-  if (paths) openPaths(paths)
+  if (paths) openPathsAsync(paths)
 }
 
 export async function promptOpenFolder() {
@@ -162,8 +162,10 @@ export function followLink(href: string, documentPath: string) {
     isDirectory = statSync(absolute).isDirectory()
   } catch {}
   if (!isDirectory && isSupportedDocument(absolute)) {
-    openDocument(absolute)
-    if (fragment) setTimeout(() => sendReader({ type: 'slug', slug: decodeFragment(fragment) }), 50)
+    void openDocumentAsync(absolute).then((document) => {
+      if (fragment && document.ok)
+        setTimeout(() => sendReader({ type: 'slug', slug: decodeFragment(fragment) }), 50)
+    })
   } else {
     void openExternal(absolute)
   }

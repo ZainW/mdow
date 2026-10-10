@@ -52,6 +52,7 @@ try {
       '--sourcemap',
       entry,
       // Workers are separate entrypoints in a compiled binary.
+      join(root, 'src/lib/document-worker.ts'),
       join(root, 'src/lib/mermaid-worker.ts'),
       '--outfile',
       outfile,
