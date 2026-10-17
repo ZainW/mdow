@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Mdow
+GenericName=Markdown Viewer
+Comment=A quiet markdown viewer
+Exec=@BINDIR@/mdow-linux %F
+Icon=com.zain.mdow.Linux
+Terminal=false
+Categories=Office;Viewer;GTK;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;mdx;reader;viewer;notes;docs;
+StartupNotify=true
+StartupWMClass=com.zain.mdow.Linux

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.zain.mdow.Linux</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Mdow</name>
+  <summary>A quiet markdown viewer</summary>
+  <description>
+    <p>
+      Mdow opens markdown and HTML documents in a calm, readable layout. This is the Linux
+      build, written natively for GTK 4 and libadwaita.
+    </p>
+    <ul>
+      <li>Tabs, a side-by-side split view, and a sidebar with recents, a folder tree and an outline</li>
+      <li>GitHub-flavored markdown: tables, task lists, alerts, footnotes and highlighted code</li>
+      <li>Mermaid diagrams drawn natively, without a browser engine</li>
+      <li>Live reload when a file changes on disk, find in document and a command palette</li>
+      <li>Light and dark themes, reading widths, fonts and zoom</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.zain.mdow.Linux.desktop</launchable>
+  <url type="homepage">https://mdow.wania.app</url>
+  <developer id="app.wania">
+    <name>Zain Wania</name>
+  </developer>
+  <provides>
+    <binary>mdow-linux</binary>
+    <mediatype>text/markdown</mediatype>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.15.0" date="2026-10-17" />
+  </releases>
+</component>
