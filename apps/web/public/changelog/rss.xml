@@ -6,13 +6,23 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.14.0</title>
+      <link>https://mdow.wania.app/changelog#v1-14-0</link>
+      <guid isPermaLink="false">v1.14.0</guid>
+      <pubDate>Sat, 17 Oct 2026 18:44:37 GMT</pubDate>
+      <description>Latest release.
+
+- Mermaid diagrams render with Pele: all diagrams in a document draw about 4× faster with far less CPU and memory
+- Diagrams follow the app theme, and switching between light and dark restyles them instantly instead of redrawing
+- Mdow Native draws every Mermaid diagram type, including pie, gantt, mindmap, timeline, git graph and charts, and shows where a broken diagram's error is
+- The desktop app ships about 2.5 MB less diagram code, and Mdow Native uses about 100 MB less</description>
+    </item>
+    <item>
       <title>v1.13.1</title>
       <link>https://mdow.wania.app/changelog#v1-13-1</link>
       <guid isPermaLink="false">v1.13.1</guid>
       <pubDate>Sat, 10 Oct 2026 11:54:41 GMT</pubDate>
-      <description>Latest release.
-
-- Mdow Native stays responsive while opening large Markdown files and uses less memory until search is needed</description>
+      <description>- Mdow Native stays responsive while opening large Markdown files and uses less memory until search is needed</description>
     </item>
     <item>
       <title>v1.13.0</title>

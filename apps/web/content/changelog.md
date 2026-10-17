@@ -5,9 +5,16 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.13.1
+## v1.14.0
 
 Latest release.
+
+- Mermaid diagrams render with Pele: all diagrams in a document draw about 4× faster with far less CPU and memory
+- Diagrams follow the app theme, and switching between light and dark restyles them instantly instead of redrawing
+- Mdow Native draws every Mermaid diagram type, including pie, gantt, mindmap, timeline, git graph and charts, and shows where a broken diagram's error is
+- The desktop app ships about 2.5 MB less diagram code, and Mdow Native uses about 100 MB less memory on diagram-heavy documents
+
+## v1.13.1
 
 - Mdow Native stays responsive while opening large Markdown files and uses less memory until search is needed
 
