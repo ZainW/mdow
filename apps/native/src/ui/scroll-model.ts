@@ -59,3 +59,48 @@ export function rowAt(sums: number[], y: number): [number, number] {
   }
   return [Math.max(0, low), Math.max(0, y - (sums[Math.max(0, low)] ?? 0))]
 }
+
+/**
+ * The reader mounts rows by estimated height rather than by count: one slice of a big table or
+ * code fence weighs as much as a page of prose, and a fixed count of them mounted every cell of a
+ * 1,500-row table. These are estimated pixels kept above the first visible row and in total.
+ */
+export const WINDOW_BEHIND = 2_500
+export const WINDOW_SPAN = 9_000
+/** The window moves once the viewport comes within this many pixels of either end of it. */
+export const WINDOW_EDGE = 1_500
+/** Never more rows than this, however short they are. */
+export const WINDOW_MAX_ROWS = 160
+
+/** First mounted row for a viewport whose first visible row is `row`. */
+export function windowStartFor(sums: number[], row: number): number {
+  const count = sums.length - 1
+  if (count <= 0) return 0
+  const target = Math.max(0, Math.min(row, count))
+  const [byHeight] = rowAt(sums, Math.max(0, sums[target]! - WINDOW_BEHIND))
+  // Short rows stop at the row cap, so keep most of the window ahead of the viewport.
+  return Math.min(count - 1, Math.max(byHeight, target - Math.floor(WINDOW_MAX_ROWS / 4)))
+}
+
+/** One past the last mounted row of a window starting at `start`. */
+export function windowEndFor(sums: number[], start: number): number {
+  const count = sums.length - 1
+  if (count <= 0) return 0
+  const [last] = rowAt(sums, sums[start]! + WINDOW_SPAN)
+  return Math.max(start + 1, Math.min(count, last + 1, start + WINDOW_MAX_ROWS))
+}
+
+/** Whether visible rows `first`…`last` sit near an edge of the mounted rows `start`…`end`. */
+export function needsRewindow(
+  sums: number[],
+  start: number,
+  end: number,
+  first: number,
+  last: number,
+): boolean {
+  const count = sums.length - 1
+  if (first < start || last >= end) return true
+  const nearTop = start > 0 && sums[first]! - sums[start]! < WINDOW_EDGE
+  const nearBottom = end < count && sums[end]! - sums[Math.min(count, last + 1)]! < WINDOW_EDGE
+  return nearTop || nearBottom
+}

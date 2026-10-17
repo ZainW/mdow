@@ -20,10 +20,15 @@ import { setOverlay, useApp } from '../store'
 import { METRICS, useUi } from './context'
 import { Icon, IconButton, Kbd, Label } from './primitives'
 import { onReaderCommand } from './reader-bus'
-import { estimateHeights, prefixSums } from './scroll-model'
-import { noteScroll, Scrollbar, type ScrollSource } from './Scrollbar'
+import {
+  estimateHeights,
+  needsRewindow,
+  prefixSums,
+  windowEndFor,
+  windowStartFor,
+} from './scroll-model'
+import { isScrolling, noteScroll, Scrollbar, type ScrollSource } from './Scrollbar'
 
-const WINDOW = 120
 const ESTIMATED_ROW = 64
 const LINE_STEP = 56
 const GLIDE_MS = 180
@@ -47,12 +52,16 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
   const { theme, reader } = useUi()
   const listRef = useRef<PublicInstance | null>(null)
   const blocks = document.blocks
+  const sums = useMemo(
+    () => prefixSums(estimateHeights(blocks, columnWidth, reader.fontSize)),
+    [blocks, columnWidth, reader.fontSize],
+  )
   const [start, setStart] = useState(() => {
     const saved = scrollMemory.get(path)
-    return saved ? Math.max(0, saved[0] - WINDOW / 4) : 0
+    return saved ? windowStartFor(sums, saved[0]) : 0
   })
   const windowStart = Math.min(start, Math.max(0, blocks.length - 1))
-  const end = Math.min(blocks.length, windowStart + WINDOW)
+  const end = windowEndFor(sums, windowStart)
 
   const findOpen = useApp((state) => state.overlay === 'find')
   const [query, setQuery] = useState('')
@@ -116,7 +125,7 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
       return
     }
     pendingScroll.current = [target, offset]
-    setStart(Math.max(0, Math.min(target - WINDOW / 4, blocks.length - (WINDOW * 3) / 4)))
+    setStart(windowStartFor(sums, target))
   }
   useEffect(() => {
     const pending = pendingScroll.current
@@ -169,10 +178,6 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
     [],
   )
 
-  const sums = useMemo(
-    () => prefixSums(estimateHeights(blocks, columnWidth, reader.fontSize)),
-    [blocks, columnWidth, reader.fontSize],
-  )
   const scrollSource: ScrollSource = {
     sums,
     anchor: () => {
@@ -309,8 +314,8 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
             onVisibleRange={(event) => {
               const first = Math.floor(event.startIndex ?? 0)
               const last = Math.ceil(event.endIndex ?? first)
-              if (first < windowStart + WINDOW / 8 || last > end - WINDOW / 8) {
-                const next = Math.max(0, first - WINDOW / 4)
+              if (needsRewindow(sums, windowStart, end, first, last)) {
+                const next = windowStartFor(sums, first)
                 if (next !== windowStart) setStart(next)
               }
             }}
@@ -650,8 +655,15 @@ function CodeBlock({
   const radius = 10
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      // Only the slice with the badge and Copy button has anything to show on hover.
+      onMouseEnter={
+        top
+          ? () => {
+              if (!isScrolling()) setHover(true)
+            }
+          : undefined
+      }
+      onMouseLeave={top ? () => setHover(false) : undefined}
       style={{
         position: 'relative',
         display: 'flex',
@@ -808,7 +820,9 @@ function MermaidBlock({ code, columnWidth }: { code: string; columnWidth: number
   const height = result ? Math.round(result.height * fit) : 160
   return (
     <div
-      onMouseEnter={() => setHover(true)}
+      onMouseEnter={() => {
+        if (!isScrolling()) setHover(true)
+      }}
       onMouseLeave={() => setHover(false)}
       style={{
         position: 'relative',

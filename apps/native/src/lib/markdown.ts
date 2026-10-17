@@ -1,8 +1,19 @@
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Lexer, type Token, type Tokens } from 'marked'
-import { htmlTitle, htmlToMarkdown } from './html'
 import { dataImageSize, imageSize } from './image-size'
+
+type HtmlModule = typeof import('./html')
+let htmlModule: HtmlModule | undefined
+/**
+ * node-html-parser takes tens of milliseconds to load, and the UI thread imports this module for
+ * search text, so it loads only when a document actually contains HTML.
+ */
+function html(): HtmlModule {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- require() is untyped; this is the module it loads.
+  htmlModule ??= require('./html') as HtmlModule
+  return htmlModule
+}
 
 export type AlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution'
 
@@ -129,9 +140,9 @@ export function parseMarkdown(markdown: string, filePath: string): ParsedDocumen
   return { title, blocks, outline, slugs }
 }
 
-export function parseHtml(html: string, filePath: string): ParsedDocument {
-  const parsed = parseMarkdown(htmlToMarkdown(html, dirname(filePath)), filePath)
-  return { ...parsed, title: parsed.title ?? htmlTitle(html) }
+export function parseHtml(source: string, filePath: string): ParsedDocument {
+  const parsed = parseMarkdown(html().htmlToMarkdown(source, dirname(filePath)), filePath)
+  return { ...parsed, title: parsed.title ?? html().htmlTitle(source) }
 }
 
 interface BuildContext {
@@ -206,7 +217,7 @@ function pushToken(ctx: BuildContext, token: Token) {
       // Raw HTML (README banners, <details>, centered images) goes through the same lenient
       // converter as .html files, so it reads as content instead of tags.
       if (ctx.depth < 2) {
-        const converted = htmlToMarkdown((token as Tokens.HTML).raw, ctx.baseDir)
+        const converted = html().htmlToMarkdown((token as Tokens.HTML).raw, ctx.baseDir)
         if (converted.trim()) {
           ctx.depth++
           pushTokens(ctx, new Lexer({ gfm: true }).lex(converted))

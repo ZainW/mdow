@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGpuixRequired, type PublicInstance } from '@gpuix/react'
 import { useUi } from './context'
 import { setTopRow } from './reader-bus'
@@ -11,8 +11,12 @@ const THUMB_MIN = 28
  * Every React commit makes the window re-measure the list's visible rows, which is expensive for
  * heavy rows like big tables, so the thumb is sampled at 25Hz rather than every frame. (Native
  * `motion` would smooth the steps, but live windows don't apply retargeted motion reliably.)
+ * A fast scroll moves the thumb in big steps either way, so it samples at half that rate.
  */
 const POLL_MS = 40
+const FAST_POLL_MS = 80
+/** Thumb travel per sample, in pixels, above which the scroll counts as fast. */
+const FAST_STEP = 3
 /** The thumb fades after this long without scrolling, like macOS overlay scrollbars. */
 const IDLE_MS = 1000
 const FADE_MS = 300
@@ -33,10 +37,21 @@ interface Thumb {
 
 type Listener = () => void
 const activity = new Set<Listener>()
+let lastScrollAt = Number.NEGATIVE_INFINITY
 
 /** Tell the scrollbar something scrolled, so it wakes and follows. */
 export function noteScroll() {
+  lastScrollAt = performance.now()
   for (const listener of activity) listener()
+}
+
+/**
+ * Whether the reader scrolled within the last moment. Rows sliding under a still pointer fire
+ * mouse-enter as they pass, and each hover commit costs the window a re-measure of the visible
+ * rows, so hover effects wait until the scroll settles (as browsers do).
+ */
+export function isScrolling(): boolean {
+  return performance.now() - lastScrollAt < 150
 }
 
 /**
@@ -78,9 +93,13 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
   useEffect(() => {
     let idleAt = 0
     let timer: ReturnType<typeof setTimeout> | null = null
+    let lastTop: number | null = null
     const tick = () => {
       const next = measure()
+      let step = 0
       if (next) {
+        step = lastTop === null ? 0 : Math.abs(next.top - lastTop)
+        lastTop = next.top
         setThumb((current) =>
           current &&
           current.top === next.top &&
@@ -93,7 +112,8 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
       const idle = performance.now() - idleAt
       // Quantized so the fade is a handful of commits, not one per poll.
       setFade(idle <= 0 ? 1 : Math.max(0, Math.round((1 - idle / FADE_MS) * 6) / 6))
-      timer = idle < FADE_MS ? setTimeout(tick, POLL_MS) : null
+      const delay = step > FAST_STEP ? FAST_POLL_MS : POLL_MS
+      timer = idle < FADE_MS ? setTimeout(tick, delay) : null
     }
     const wake = () => {
       idleAt = performance.now() + IDLE_MS
@@ -109,6 +129,24 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const active = hover || drag !== null
+  const trackHeight = thumb?.track ?? 0
+  const trackOpacity = active ? 1 : fade
+  // A new style object makes gpuix send it again, and every style it applies re-measures the
+  // reader's rows, so the track keeps one object until it actually changes.
+  const trackStyle = useMemo(
+    () => ({
+      position: 'absolute' as const,
+      top: TRACK_INSET,
+      right: 2,
+      width: TRACK_WIDTH,
+      height: trackHeight,
+      pointerEvents: 'auto' as const,
+      opacity: trackOpacity,
+    }),
+    [trackHeight, trackOpacity],
+  )
+
   if (!thumb || thumb.size === 0) return null
 
   const seekTo = (thumbTop: number) => {
@@ -123,7 +161,6 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
     noteScroll()
   }
 
-  const active = hover || drag !== null
   return (
     <>
       <div
@@ -144,15 +181,7 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
           }
           setDrag({ y: event.y ?? 0, top })
         }}
-        style={{
-          position: 'absolute',
-          top: TRACK_INSET,
-          right: 2,
-          width: TRACK_WIDTH,
-          height: thumb.track,
-          pointerEvents: 'auto',
-          opacity: active ? 1 : fade,
-        }}
+        style={trackStyle}
       >
         <div
           style={{

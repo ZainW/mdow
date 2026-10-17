@@ -50,6 +50,10 @@ try {
       '--compile',
       '--minify',
       '--sourcemap',
+      // React (and anything else keyed on NODE_ENV) ships its production build, not the slower
+      // development one with dev-only checks and warnings.
+      '--define',
+      'process.env.NODE_ENV="production"',
       entry,
       // Workers are separate entrypoints in a compiled binary.
       join(root, 'src/lib/document-worker.ts'),
