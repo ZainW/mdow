@@ -9,6 +9,7 @@ mod media;
 mod prefs;
 mod reader;
 mod render;
+mod segmented;
 mod sidebar;
 mod theme;
 mod welcome;
@@ -133,6 +134,7 @@ fn main() -> glib::ExitCode {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return glib::ExitCode::SUCCESS;
     }
+    fonts::register();
     let mut flags = gio::ApplicationFlags::HANDLES_OPEN;
     if std::env::var_os("MDOW_SCREENSHOT").is_some() {
         flags |= gio::ApplicationFlags::NON_UNIQUE;
@@ -145,7 +147,6 @@ fn main() -> glib::ExitCode {
             // Headless captures have no client acknowledging frames, so animations never finish.
             settings.set_gtk_enable_animations(false);
         }
-        fonts::register();
         highlight::preload();
         install_runtime_icons();
         window::set_accels(app);

@@ -1,0 +1,47 @@
+# Flatpak manifest for Mdow for Linux.
+#   flatpak-builder --user --install --install-deps-from=flathub build packaging/com.zain.mdow.Linux.yml
+# or `packaging/docker-flatpak.sh` for a .flatpak bundle. CI builds it on every linux-* tag.
+id: com.zain.mdow.Linux
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: mdow-linux
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Remote images in documents.
+  - --share=network
+  # A reader follows relative links and images, shows folder trees and watches files for
+  # changes, so it reads files where they are rather than through the document portal.
+  - --filesystem=host:ro
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/mdow-linux/cargo
+modules:
+  - name: mdow-linux
+    buildsystem: simple
+    build-options:
+      # Crates download at build time; a Flathub submission would vendor them instead.
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release --locked --manifest-path apps/native-linux/Cargo.toml
+      - install -Dm755 apps/native-linux/target/release/mdow-linux /app/bin/mdow-linux
+      - install -d /app/share/applications
+      - sed 's|@BINDIR@/||' apps/native-linux/data/com.zain.mdow.Linux.desktop.in > /app/share/applications/com.zain.mdow.Linux.desktop
+      - install -Dm644 apps/native-linux/data/com.zain.mdow.Linux.metainfo.xml /app/share/metainfo/com.zain.mdow.Linux.metainfo.xml
+      - install -Dm644 apps/native/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.Linux.svg
+    sources:
+      - type: dir
+        path: ..
+        dest: apps/native-linux
+        skip:
+          - target
+      - type: dir
+        path: ../../native/assets
+        dest: apps/native/assets

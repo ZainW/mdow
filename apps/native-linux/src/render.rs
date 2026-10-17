@@ -520,11 +520,19 @@ impl<'a> Builder<'a> {
         if let [image] = images {
             return self.image(image, false);
         }
-        let wrap = adw::WrapBox::new();
-        wrap.set_child_spacing(6);
-        wrap.set_line_spacing(6);
+        let wrap = gtk::FlowBox::new();
+        wrap.set_selection_mode(gtk::SelectionMode::None);
+        wrap.set_homogeneous(false);
+        wrap.set_column_spacing(6);
+        wrap.set_row_spacing(6);
+        wrap.set_max_children_per_line(64);
+        wrap.set_halign(gtk::Align::Start);
+        wrap.add_css_class("md-images");
         for image in images {
-            wrap.append(&self.image(image, true));
+            let child = gtk::FlowBoxChild::new();
+            child.set_child(Some(&self.image(image, true)));
+            child.set_can_focus(false);
+            wrap.insert(&child, -1);
         }
         wrap.upcast()
     }

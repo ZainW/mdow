@@ -11,10 +11,10 @@ design tokens (converted from OKLCH), fonts, layout and shortcuts.
 ## Requirements
 
 - Rust (stable, 2024 edition)
-- GTK ≥ 4.14, libadwaita ≥ 1.7, Pango ≥ 1.56, with development headers
+- GTK ≥ 4.14 and libadwaita ≥ 1.5, with development headers
   - Arch: `pacman -S gtk4 libadwaita`
-  - Fedora 42+: `dnf install gtk4-devel libadwaita-devel`
-  - Debian 13 / Ubuntu 25.04+: `apt install libgtk-4-dev libadwaita-1-dev`
+  - Fedora 40+: `dnf install gtk4-devel libadwaita-devel`
+  - Debian 13 / Ubuntu 24.04+: `apt install libgtk-4-dev libadwaita-1-dev`
 
 The fonts (Inter, Charter, Geist Mono, JetBrains Mono) are compiled in from
 `apps/native/assets/fonts` and registered for the app's process only.
@@ -54,6 +54,21 @@ the running window. To make Mdow the default markdown viewer:
   hold-Ctrl cheat sheet; and a zoom indicator.
 - **Behaviour**: live reload that keeps your place, session restore, drag and drop of files or
   a folder anywhere in the window, and links to other documents opening in a new tab.
+
+## Downloads and packaging
+
+`.github/workflows/linux.yml` builds an AppImage and a Flatpak bundle:
+
+- **Every push to `main` that touches the app** refreshes the
+  [`linux-latest`](https://github.com/ZainW/mdow/releases/tag/linux-latest) pre-release.
+- **A `linux-<version>` tag** (matching `version` in `Cargo.toml`) publishes a versioned
+  pre-release.
+- **Pull requests** build and test only.
+
+The AppImage is built on Ubuntu 24.04 and bundles GTK and libadwaita, so it runs on glibc 2.39+
+(Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch). The Flatpak runs on the GNOME 51 runtime on any
+distro. To build either locally with Docker, use `packaging/docker-appimage.sh` or
+`packaging/docker-flatpak.sh`; both write to `dist/native-linux/`.
 
 ## Not included
 

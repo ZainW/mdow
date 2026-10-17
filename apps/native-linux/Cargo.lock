@@ -803,7 +803,6 @@ dependencies = [
  "htmd",
  "libadwaita",
  "mermaid-rs-renderer",
- "pango",
  "resvg",
  "serde",
  "serde_json",

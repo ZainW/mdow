@@ -4,6 +4,7 @@
 
 use crate::files;
 use crate::prefs::{CodeFont, ContentFont, InterfaceScale, Prefs, ReadingWidth, ThemeMode};
+use crate::segmented::Segmented;
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use std::cell::RefCell;
@@ -306,33 +307,16 @@ fn segmented<T: Copy + 'static>(
     options: &[(T, &str, &str, Option<&str>)],
     current: &str,
     on_change: impl Fn(&str) + 'static,
-) -> adw::ToggleGroup {
-    let group = adw::ToggleGroup::new();
-    group.add_css_class("mdow-segmented");
-    group.set_homogeneous(true);
+) -> Segmented {
+    let group = Segmented::new("mdow-segmented");
     for (_, id, label, icon) in options {
-        let toggle = adw::Toggle::new();
-        toggle.set_name(Some(id));
         match icon {
-            Some(icon) => {
-                let b = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                b.set_halign(gtk::Align::Center);
-                let image = gtk::Image::from_icon_name(icon);
-                image.set_pixel_size(14);
-                b.append(&image);
-                b.append(&gtk::Label::new(Some(label)));
-                toggle.set_child(Some(&b));
-            }
-            None => toggle.set_label(Some(label)),
+            Some(icon) => group.add_icon_label(id, icon, label),
+            None => group.add_label(id, label),
         }
-        group.add(toggle);
     }
-    group.set_active_name(Some(current));
-    group.connect_active_name_notify(move |g| {
-        if let Some(name) = g.active_name() {
-            on_change(&name);
-        }
-    });
+    group.set_active_name(current);
+    group.connect_changed(on_change);
     group
 }
 
@@ -473,21 +457,21 @@ pub fn present_settings(parent: &impl IsA<gtk::Widget>, prefs: &Prefs) {
     ];
     let a = activate.clone();
     let theme = segmented(&theme_options, prefs.theme.id(), move |v| a("win.theme", v));
-    body.append(&field("Theme", &theme));
+    body.append(&field("Theme", theme.widget()));
 
     let scale_options: Vec<(InterfaceScale, &str, &str, Option<&str>)> =
         InterfaceScale::ALL.iter().map(|s| (*s, s.id(), s.label(), None)).collect();
     let a = activate.clone();
     let scale =
         segmented(&scale_options, prefs.interface_scale.id(), move |v| a("win.interface-scale", v));
-    body.append(&field("Interface scale", &scale));
+    body.append(&field("Interface scale", scale.widget()));
 
     let width_options: Vec<(ReadingWidth, &str, &str, Option<&str>)> =
         ReadingWidth::ALL.iter().map(|w| (*w, w.id(), w.label(), None)).collect();
     let a = activate.clone();
     let width =
         segmented(&width_options, prefs.reading_width.id(), move |v| a("win.reading-width", v));
-    body.append(&field("Reading width", &width));
+    body.append(&field("Reading width", width.widget()));
 
     let content_items: Vec<(&'static str, &'static str, String)> = ContentFont::ALL
         .iter()
@@ -531,9 +515,9 @@ pub fn present_settings(parent: &impl IsA<gtk::Widget>, prefs: &Prefs) {
         let (content_tiles, code_tiles) = (content_tiles.clone(), code_tiles.clone());
         reset.connect_clicked(move |_| {
             let _ = parent.activate_action("win.reset-appearance", None);
-            theme.set_active_name(Some(defaults.theme.id()));
-            scale.set_active_name(Some(defaults.interface_scale.id()));
-            width.set_active_name(Some(defaults.reading_width.id()));
+            theme.set_active_name(defaults.theme.id());
+            scale.set_active_name(defaults.interface_scale.id());
+            width.set_active_name(defaults.reading_width.id());
             for t in content_tiles.iter() {
                 if t.id == defaults.content_font.id() {
                     t.button.set_active(true);

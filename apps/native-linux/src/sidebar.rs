@@ -4,6 +4,7 @@
 use crate::doc::Heading;
 use crate::files::{self, Scan, TreeNode};
 use crate::prefs::SidebarMode;
+use crate::segmented::Segmented;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 use std::cell::{Cell, RefCell};
@@ -128,7 +129,7 @@ struct Outline {
 
 pub struct Sidebar {
     pub root: gtk::Box,
-    modes: adw::ToggleGroup,
+    modes: Segmented,
     stack: gtk::Stack,
     recents_box: gtk::ListBox,
     recents_stack: gtk::Stack,
@@ -144,33 +145,21 @@ impl Sidebar {
         root.add_css_class("mdow-sidebar");
 
         // Mode switcher, inside a header that also drags the window.
-        let modes = adw::ToggleGroup::new();
-        modes.add_css_class("mdow-mode-tabs");
-        modes.set_homogeneous(true);
-        modes.set_hexpand(true);
+        let modes = Segmented::new("mdow-mode-tabs");
+        modes.widget().set_hexpand(true);
         for mode in SidebarMode::ALL {
             let icon = match mode {
                 SidebarMode::Recents => "document-open-recent-symbolic",
                 SidebarMode::Folder => "folder-symbolic",
                 SidebarMode::Outline => "view-list-bullet-symbolic",
             };
-            let content = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-            content.set_halign(gtk::Align::Center);
-            let image = gtk::Image::from_icon_name(icon);
-            image.set_pixel_size(14);
-            content.append(&image);
-            content.append(&gtk::Label::new(Some(mode.label())));
-            let toggle = adw::Toggle::new();
-            toggle.set_name(Some(mode.id()));
-            toggle.set_child(Some(&content));
-            toggle.set_tooltip(mode.label());
-            modes.add(toggle);
+            modes.add_icon_label(mode.id(), icon, mode.label());
         }
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         header.add_css_class("mdow-sidebar-header");
         let start_controls = gtk::WindowControls::new(gtk::PackType::Start);
         header.append(&start_controls);
-        header.append(&modes);
+        header.append(modes.widget());
         let handle = gtk::WindowHandle::new();
         handle.set_child(Some(&header));
         root.append(&handle);
@@ -246,14 +235,12 @@ impl Sidebar {
         });
 
         let weak = Rc::downgrade(&sidebar);
-        sidebar.modes.connect_active_name_notify(move |group| {
+        sidebar.modes.connect_changed(move |name| {
             let Some(sidebar) = weak.upgrade() else { return };
             if sidebar.updating_mode.get() {
                 return;
             }
-            if let Some(name) = group.active_name() {
-                let _ = sidebar.root.activate_action("win.sidebar-mode", Some(&name.to_variant()));
-            }
+            let _ = sidebar.root.activate_action("win.sidebar-mode", Some(&name.to_variant()));
         });
         sidebar
     }
@@ -289,7 +276,8 @@ impl Sidebar {
         let opening = gtk::Revealer::new();
         let opening_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         opening_box.add_css_class("mdow-match-count");
-        let spinner = adw::Spinner::new();
+        let spinner = gtk::Spinner::new();
+        spinner.start();
         spinner.set_size_request(12, 12);
         opening_box.append(&spinner);
         opening_box.append(&gtk::Label::new(Some("Opening…")));
@@ -532,7 +520,7 @@ impl Sidebar {
 
     pub fn set_mode(&self, mode: SidebarMode) {
         self.updating_mode.set(true);
-        self.modes.set_active_name(Some(mode.id()));
+        self.modes.set_active_name(mode.id());
         self.updating_mode.set(false);
         self.stack.set_visible_child_name(mode.id());
     }

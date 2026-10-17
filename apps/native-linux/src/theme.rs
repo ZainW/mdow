@@ -368,11 +368,14 @@ pub fn stylesheet(p: &Palette, prefs: &Prefs) -> String {
     for (name, color) in named {
         let _ = writeln!(css, "@define-color {name} {};", color.css());
     }
-    css.push_str(":root {\n");
-    for (name, color) in named {
-        let _ = writeln!(css, "  --{}: {};", name.replace('_', "-"), color.css());
+    // GTK understands `:root` and custom properties from 4.16 on.
+    if gtk::minor_version() >= 16 {
+        css.push_str(":root {\n");
+        for (name, color) in named {
+            let _ = writeln!(css, "  --{}: {};", name.replace('_', "-"), color.css());
+        }
+        css.push_str("}\n");
     }
-    css.push_str("}\n");
 
     let bg = p.background.css();
     let fg = p.foreground.css();
@@ -413,9 +416,9 @@ window.mdow {{ background: {bg}; color: {fg}; }}
 .mdow-sidebar-header {{ padding: 8px 12px; border-bottom: 1px solid {border_subtle}; min-height: {tabbar_inner}px; }}
 .mdow-sidebar-footer {{ padding: 8px; border-top: 1px solid {border_subtle}; }}
 .mdow-mode-tabs {{ background: none; padding: 0; border-spacing: 2px; }}
-.mdow-mode-tabs > toggle {{ min-height: 28px; padding: 0 4px; border-radius: 6px; font-size: {sidebar_title}px; color: {muted_fg}; background: none; box-shadow: none; }}
-.mdow-mode-tabs > toggle:hover {{ background: {sidebar_hover}; color: {fg}; }}
-.mdow-mode-tabs > toggle:checked {{ background: {sidebar_accent}; color: {fg}; box-shadow: none; }}
+.mdow-mode-tabs > button {{ min-height: 28px; padding: 0 4px; border-radius: 6px; font-size: {sidebar_title}px; color: {muted_fg}; background: none; box-shadow: none; }}
+.mdow-mode-tabs > button:hover {{ background: {sidebar_hover}; color: {fg}; }}
+.mdow-mode-tabs > button:checked {{ background: {sidebar_accent}; color: {fg}; box-shadow: none; }}
 .mdow-mode-tabs separator {{ opacity: 0; min-width: 0; }}
 .mdow-group-label {{ font-size: 11px; font-weight: 500; color: {subtle}; padding: 8px 10px 4px 10px; }}
 .mdow-group-label .mdow-folder-name {{ font-weight: 400; opacity: 0.6; color: {muted_fg}; }}
@@ -576,6 +579,7 @@ window.mdow {{ background: {bg}; color: {fg}; }}
 .md-cell.md-cell-below {{ border-bottom: 1px solid {border_subtle}; }}
 .md-th.md-cell-right {{ border-right: 1px solid {border_subtle}; }}
 .md-image {{ border-radius: 8px; }}
+.md-images, .md-images > flowboxchild {{ padding: 0; background: none; }}
 .md-image-missing {{ color: {muted_fg}; font-size: {small:.1}px; padding: 8px 12px; border-radius: 8px; border: 1px dashed {border}; }}
 .md-mermaid-error {{ color: {destructive}; font-family: {code_font}; font-size: {code_size:.2}px; padding: 16px; background: {muted}; border-radius: 8px; }}
 .md-math {{ font-family: {code_font}; font-size: {code_size:.2}px; color: {fg}; }}
@@ -684,9 +688,9 @@ button.mdow-outline:hover {{ background: {muted}; }}
 .mdow-preview-title {{ font-weight: 600; font-size: {preview_title:.2}px; color: {fg}; }}
 .mdow-preview-text {{ font-size: {preview_text:.2}px; color: {fg_85}; }}
 .mdow-segmented {{ background: {muted}; border-radius: 6px; padding: 2px; }}
-.mdow-segmented > toggle {{ min-height: 24px; border-radius: 5px; font-size: {control_font}px; font-weight: 500; color: {muted_fg}; background: none; box-shadow: none; }}
-.mdow-segmented > toggle:hover {{ color: {fg}; }}
-.mdow-segmented > toggle:checked {{ background: {segment_on}; color: {fg}; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 0 0 1px {segment_ring}; }}
+.mdow-segmented > button {{ min-height: 24px; border-radius: 5px; font-size: {control_font}px; font-weight: 500; color: {muted_fg}; background: none; box-shadow: none; }}
+.mdow-segmented > button:hover {{ color: {fg}; }}
+.mdow-segmented > button:checked {{ background: {segment_on}; color: {fg}; box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 0 0 1px {segment_ring}; }}
 .mdow-segmented separator {{ opacity: 0; min-width: 0; }}
 button.mdow-tile {{ border-radius: 6px; border: 1px solid {border_subtle}; background: {bg}; padding: 6px; min-height: 0; box-shadow: none; }}
 button.mdow-tile > overlay > box {{ margin: 4px 2px; }}

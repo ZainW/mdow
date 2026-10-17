@@ -30,7 +30,7 @@ To target a specific workspace:
 - `pnpm run --filter desktop build:dist -- --mac`
 - `pnpm run --filter native start:hot` — run Mdow Native with hot reload (needs Bun)
 - `pnpm run package:native-mac` / `package:native-linux` — build the signed native bundles
-- `pnpm run dev:linux` / `test:linux` / `install:linux` — run, test, or install Mdow for Linux (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.7, Pango ≥ 1.56)
+- `pnpm run dev:linux` / `test:linux` / `install:linux` — run, test, or install Mdow for Linux (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.5); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/native-linux/packaging/`)
 
 Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 

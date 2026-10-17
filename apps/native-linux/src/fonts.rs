@@ -1,7 +1,8 @@
 //! The desktop app's fonts (Inter, Charter, Geist Mono, JetBrains Mono), compiled into the binary
-//! and registered with Pango for this process only. Nothing is installed into the user's home.
+//! and registered with fontconfig for this process only. Nothing is installed into the user's home.
 
-use gtk::prelude::*;
+use std::ffi::{CString, c_char, c_int, c_void};
+use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -61,15 +62,28 @@ pub fn dir() -> Option<PathBuf> {
     extract()
 }
 
-/// Register the bundled fonts with GTK's font map. Call once GTK is initialised.
+#[link(name = "fontconfig")]
+unsafe extern "C" {
+    fn FcConfigGetCurrent() -> *mut c_void;
+    fn FcConfigAppFontAddFile(config: *mut c_void, file: *const c_char) -> c_int;
+}
+
+/// Add the bundled fonts to fontconfig's application font set. Call before GTK starts, so the
+/// font map Pango builds already includes them. (Pango's own `add_font_file` needs Pango 1.56.)
 pub fn register() {
     let Some(dir) = extract() else { return };
-    let probe = gtk::Label::new(None);
-    let font_map = probe.pango_context().font_map();
-    let Some(font_map) = font_map else { return };
-    for (name, _) in FONTS {
-        if let Err(err) = font_map.add_font_file(dir.join(name)) {
-            eprintln!("mdow: could not load font {name}: {err}");
+    // SAFETY: fontconfig's current configuration is process-global and outlives this call; the
+    // path is a valid NUL-terminated string for the duration of the call.
+    unsafe {
+        let config = FcConfigGetCurrent();
+        if config.is_null() {
+            return;
+        }
+        for (name, _) in FONTS {
+            let Ok(path) = CString::new(dir.join(name).as_os_str().as_bytes()) else { continue };
+            if FcConfigAppFontAddFile(config, path.as_ptr()) == 0 {
+                eprintln!("mdow: could not load font {name}");
+            }
         }
     }
 }

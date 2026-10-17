@@ -7,9 +7,8 @@ license = "MIT"
 publish = false
 
 [dependencies]
-adw = { package = "libadwaita", version = "0.9", features = ["v1_7"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
-pango = { version = "0.22", features = ["v1_56"] }
 resvg = { version = "0.47", default-features = false, features = ["text", "raster-images"] }
 comrak = { version = "0.56", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["parsing", "regex-fancy"] }
