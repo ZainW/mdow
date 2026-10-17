@@ -20,7 +20,7 @@
     "@gpuix/native": "0.10.0",
     "@gpuix/react": "0.10.0",
     "image-size": "^2.0.2",
-    "marked": "^18.1.1",
+    "marked": "18.0.9",
     "node-html-parser": "^9.0.4",
     "pele": "^1.6.0",
     "react": "^19.3.1",
