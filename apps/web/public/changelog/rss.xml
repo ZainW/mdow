@@ -6,16 +6,27 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.15.0</title>
+      <link>https://mdow.wania.app/changelog#v1-15-0</link>
+      <guid isPermaLink="false">v1.15.0</guid>
+      <pubDate>Sat, 17 Oct 2026 20:53:03 GMT</pubDate>
+      <description>Latest release.
+
+- Mdow Native opens very large tables about twice as fast, with a much shorter pause on open, and uses about half the memory while they're open
+- Scrolling in Mdow Native does far less work: the scrollbar is drawn by the native renderer, and hovering over code blocks no longer interrupts a scroll
+- Mdow Native starts faster and ships React's production build
+- The Mdow Native scrollbar sits off the window edge like a macOS overlay scrollbar and is easier to see in dark mode
+-</description>
+    </item>
+    <item>
       <title>v1.14.0</title>
       <link>https://mdow.wania.app/changelog#v1-14-0</link>
       <guid isPermaLink="false">v1.14.0</guid>
       <pubDate>Sat, 17 Oct 2026 18:44:37 GMT</pubDate>
-      <description>Latest release.
-
-- Mermaid diagrams render with Pele: all diagrams in a document draw about 4× faster with far less CPU and memory
+      <description>- Mermaid diagrams render with Pele: all diagrams in a document draw about 4× faster with far less CPU and memory
 - Diagrams follow the app theme, and switching between light and dark restyles them instantly instead of redrawing
 - Mdow Native draws every Mermaid diagram type, including pie, gantt, mindmap, timeline, git graph and charts, and shows where a broken diagram's error is
-- The desktop app ships about 2.5 MB less diagram code, and Mdow Native uses about 100 MB less</description>
+- The desktop app ships about 2.5 MB less diagram code, and Mdow Native uses about 100 MB less memory on</description>
     </item>
     <item>
       <title>v1.13.1</title>

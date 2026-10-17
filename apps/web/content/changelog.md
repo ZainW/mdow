@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.14.0
+## v1.15.0
 
 Latest release.
+
+- Mdow Native opens very large tables about twice as fast, with a much shorter pause on open, and uses about half the memory while they're open
+- Scrolling in Mdow Native does far less work: the scrollbar is drawn by the native renderer, and hovering over code blocks no longer interrupts a scroll
+- Mdow Native starts faster and ships React's production build
+- The Mdow Native scrollbar sits off the window edge like a macOS overlay scrollbar and is easier to see in dark mode
+- Mdow Native runs on the latest gpuix renderer, which skips unchanged updates and paces frames to the display on macOS
+
+## v1.14.0
 
 - Mermaid diagrams render with Pele: all diagrams in a document draw about 4× faster with far less CPU and memory
 - Diagrams follow the app theme, and switching between light and dark restyles them instantly instead of redrawing
