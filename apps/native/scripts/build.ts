@@ -54,7 +54,8 @@ writeFileSync(
 try {
   const result = Bun.spawnSync(
     [
-      'bun',
+      // The Bun running this script compiles, so CI's pinned version is the one that ships.
+      process.execPath,
       'build',
       '--compile',
       '--minify',
