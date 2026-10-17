@@ -40,6 +40,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         if: matrix.platform == 'mac'
         with:
+          # Bun 1.4.3 binaries stop running once linuxdeploy patches them into the AppImage.
           bun-version: 1.4.2
 
       - run: pnpm install --frozen-lockfile
@@ -167,6 +168,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
+          # Bun 1.4.3 binaries stop running once linuxdeploy patches them into the AppImage.
           bun-version: 1.4.2
 
       - run: pnpm install --frozen-lockfile --filter native
@@ -281,6 +283,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
+          # Bun 1.4.3 binaries stop running once linuxdeploy patches them into the AppImage.
           bun-version: 1.4.2
 
       - run: pnpm install --frozen-lockfile --filter native

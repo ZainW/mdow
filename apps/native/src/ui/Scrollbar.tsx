@@ -1,17 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useGpuixRequired, type PublicInstance } from '@gpuix/react'
+import { withAlpha } from '../lib/theme'
 import { useUi } from './context'
 import { setTopRow } from './reader-bus'
 import { rowAt } from './scroll-model'
 
-const TRACK_WIDTH = 12
-const TRACK_INSET = 4
-const THUMB_MIN = 28
+const HIT_WIDTH = 12
+const THUMB_WIDTH = 6
+const THUMB_WIDTH_ACTIVE = 8
+const REST_ALPHA_LIGHT = 0.35
+const REST_ALPHA_DARK = 0.45
 /**
- * Every React commit makes the window re-measure the list's visible rows, which is expensive for
- * heavy rows like big tables, so the thumb is sampled at 25Hz rather than every frame. (Native
- * `motion` would smooth the steps, but live windows don't apply retargeted motion reliably.)
+ * gpuix paints the thumb at the list's own edge, so the list stops short of the window's right
+ * and bottom edges to keep the thumb off them, like macOS overlay scrollbars. The reader's paper
+ * runs under the margin, so it doesn't show.
  */
+const THUMB_INSET = { marginTop: 4, marginRight: 3, marginBottom: 4 }
+/** gpuix never draws a native thumb shorter than this. */
+const THUMB_MIN = 24
+/** How often the current section is re-read while something scrolls. Reading commits nothing. */
 const POLL_MS = 40
 /** The thumb fades after this long without scrolling, like macOS overlay scrollbars. */
 const IDLE_MS = 1000
@@ -25,71 +32,76 @@ export interface ScrollSource {
   seek: (row: number, offset: number) => void
 }
 
-interface Thumb {
-  top: number
-  size: number
-  track: number
-}
-
 type Listener = () => void
 const activity = new Set<Listener>()
+let lastScrollAt = Number.NEGATIVE_INFINITY
 
 /** Tell the scrollbar something scrolled, so it wakes and follows. */
 export function noteScroll() {
+  lastScrollAt = performance.now()
   for (const listener of activity) listener()
 }
 
 /**
- * An overlay scrollbar for the reader. The list only measures rows near the viewport, so the
- * thumb is placed on estimated row heights plus GPUI's exact offset inside the current row.
- * It polls the list only while something is scrolling and sleeps otherwise.
+ * Whether the reader scrolled within the last moment. Rows sliding under a still pointer fire
+ * mouse-enter as they pass, and each hover commit costs the window a re-measure of the visible
+ * rows, so hover effects wait until the scroll settles (as browsers do).
  */
-export function Scrollbar({ source }: { source: ScrollSource }) {
+export function isScrolling(): boolean {
+  return performance.now() - lastScrollAt < 150
+}
+
+interface Geometry {
+  top: number
+  size: number
+  track: number
+  total: number
+  viewport: number
+}
+
+/**
+ * The reader's overlay scrollbar. The list paints the thumb itself in every frame it scrolls, so
+ * scrolling commits nothing; this hook only commits when the thumb fades in or out, when the
+ * pointer hovers it (it widens), and while it is dragged. `listStyle` goes on the
+ * `<virtual-list>`, and `overlay` is the invisible strip that takes presses and drags.
+ */
+export function useOverlayScrollbar(source: ScrollSource): {
+  listStyle: { scrollbarColor: string; scrollbarWidth: number }
+  overlay: ReactNode
+} {
   const { theme } = useUi()
   const renderer = useGpuixRequired()
-  const trackRef = useRef<PublicInstance | null>(null)
-  const [thumb, setThumb] = useState<Thumb | null>(null)
+  const stripRef = useRef<PublicInstance | null>(null)
   const [fade, setFade] = useState(0)
+  const [scrollable, setScrollable] = useState(false)
   const [hover, setHover] = useState(false)
   const [drag, setDrag] = useState<{ y: number; top: number } | null>(null)
   const sourceRef = useRef(source)
   sourceRef.current = source
 
-  const measure = (): Thumb | null => {
+  // Thumb geometry on estimated row heights plus GPUI's exact offset inside the current row; the
+  // list draws its thumb from measured heights, so the two agree once rows near it are measured.
+  const geometry = (): Geometry | null => {
     const { anchor, sums } = sourceRef.current
     const at = anchor()
     const total = sums.at(-1) ?? 0
     if (!at || total <= 0) return null
     const [row, offset, viewport] = at
-    const track = Math.max(0, viewport - TRACK_INSET * 2)
     const y = row >= sums.length - 1 ? Math.max(0, total - viewport) : (sums[row] ?? 0) + offset
     // A heading counts as the current section once it reaches the top fifth of the view.
     setTopRow(Math.max(row, rowAt(sums, y + viewport * 0.2)[0]))
-    if (total <= viewport + 1) return { top: 0, size: 0, track }
-    // Whole pixels, so a slow thumb on a long document commits only when it visibly moves:
-    // every commit costs the window a layout pass.
-    const size = Math.round(Math.max(THUMB_MIN, (viewport / total) * track))
-    const top = Math.round(
-      Math.max(0, Math.min(track - size, (y / (total - viewport)) * (track - size))),
-    )
-    return { top, size, track }
+    if (total <= viewport + 1) return { top: 0, size: 0, track: viewport, total, viewport }
+    const size = Math.min(viewport, Math.max(THUMB_MIN, (viewport * viewport) / total))
+    const top = Math.max(0, Math.min(viewport - size, (y / (total - viewport)) * (viewport - size)))
+    return { top, size, track: viewport, total, viewport }
   }
 
   useEffect(() => {
     let idleAt = 0
     let timer: ReturnType<typeof setTimeout> | null = null
     const tick = () => {
-      const next = measure()
-      if (next) {
-        setThumb((current) =>
-          current &&
-          current.top === next.top &&
-          current.size === next.size &&
-          current.track === next.track
-            ? current
-            : next,
-        )
-      }
+      const next = geometry()
+      if (next) setScrollable(next.size > 0)
       const idle = performance.now() - idleAt
       // Quantized so the fade is a handful of commits, not one per poll.
       setFade(idle <= 0 ? 1 : Math.max(0, Math.round((1 - idle / FADE_MS) * 6) / 6))
@@ -105,67 +117,61 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
       activity.delete(wake)
       if (timer) clearTimeout(timer)
     }
-    // `measure` reads the latest source through a ref.
+    // `geometry` reads the latest source through a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (!thumb || thumb.size === 0) return null
+  const active = hover || drag !== null
+  // At rest the thumb is muted text, translucent, so it reads on paper and on near-black alike
+  // (the border colour all but vanished in dark mode).
+  const resting = theme.scheme === 'dark' ? REST_ALPHA_DARK : REST_ALPHA_LIGHT
+  const color = withAlpha(theme.mutedForeground, active ? 1 : resting * fade)
+  const width = active ? THUMB_WIDTH_ACTIVE : THUMB_WIDTH
+  const listStyle = useMemo(
+    () => ({ scrollbarColor: color, scrollbarWidth: width, ...THUMB_INSET }),
+    [color, width],
+  )
 
-  const seekTo = (thumbTop: number) => {
-    const { sums, anchor, seek } = sourceRef.current
-    const viewport = anchor()?.[2] ?? 0
-    const total = sums.at(-1) ?? 0
-    const room = Math.max(1, thumb.track - thumb.size)
+  const seekTo = (thumbTop: number, at: Geometry) => {
+    const { sums, seek } = sourceRef.current
+    const room = Math.max(1, at.track - at.size)
     const fraction = Math.max(0, Math.min(1, thumbTop / room))
-    setThumb({ ...thumb, top: Math.round(fraction * room) })
-    const [row, offset] = rowAt(sums, fraction * Math.max(0, total - viewport))
+    const [row, offset] = rowAt(sums, fraction * Math.max(0, at.total - at.viewport))
     seek(row, offset)
     noteScroll()
   }
 
-  const active = hover || drag !== null
-  return (
+  const overlay = scrollable ? (
     <>
       <div
-        ref={trackRef}
+        ref={stripRef}
         // Pointer-only: the keyboard already scrolls the reader, so this adds no a11y node.
         role="presentation"
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         onMouseDown={(event) => {
+          const at = geometry()
+          if (!at || at.size === 0) return
           // A press on the track jumps there; a press on the thumb starts a drag.
-          const id = trackRef.current?.id
+          const id = stripRef.current?.id
           const bounds = id === undefined ? null : renderer.getElementBounds?.(id)
           const local = (event.y ?? 0) - (bounds?.y ?? 0)
-          let top = thumb.top
-          if (local < thumb.top || local > thumb.top + thumb.size) {
-            top = local - thumb.size / 2
-            seekTo(top)
+          let top = at.top
+          if (local < at.top || local > at.top + at.size) {
+            top = local - at.size / 2
+            seekTo(top, at)
           }
           setDrag({ y: event.y ?? 0, top })
         }}
         style={{
           position: 'absolute',
-          top: TRACK_INSET,
-          right: 2,
-          width: TRACK_WIDTH,
-          height: thumb.track,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: HIT_WIDTH,
           pointerEvents: 'auto',
-          opacity: active ? 1 : fade,
         }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: thumb.top,
-            right: 2,
-            width: active ? 8 : 6,
-            height: thumb.size,
-            borderRadius: 4,
-            backgroundColor: active ? theme.mutedForeground : theme.border,
-          }}
-        />
-      </div>
+      />
       {drag ? (
         // Catch moves anywhere over the reader while dragging, so the thumb keeps following.
         <div
@@ -177,7 +183,8 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
               setDrag(null)
               return
             }
-            seekTo(drag.top + ((event.y ?? 0) - drag.y))
+            const at = geometry()
+            if (at) seekTo(drag.top + ((event.y ?? 0) - drag.y), at)
           }}
           onMouseUp={() => setDrag(null)}
           onMouseDownOutside={() => setDrag(null)}
@@ -192,5 +199,7 @@ export function Scrollbar({ source }: { source: ScrollSource }) {
         />
       ) : null}
     </>
-  )
+  ) : null
+
+  return { listStyle, overlay }
 }
