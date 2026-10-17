@@ -10,6 +10,7 @@ This is a pnpm monorepo managed by Turborepo.
 - `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
 - `apps/native/` — Mdow Native beta (macOS arm64, Linux x64): React on [gpuix](https://gpuix.dev) (Zed's GPUI), run and compiled with Bun
 - `apps/native-linux/` — Mdow for Linux: a Rust app on GTK 4 + libadwaita, no web view or cross-platform UI layer (not a pnpm workspace; built with Cargo)
+- `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit, using the system's own controls throughout (not a pnpm workspace; built with SwiftPM)
 - `packages/` — shared libraries (none yet)
 
 ## Build & Development
@@ -31,6 +32,7 @@ To target a specific workspace:
 - `pnpm run --filter native start:hot` — run Mdow Native with hot reload (needs Bun)
 - `pnpm run package:native-mac` / `package:native-linux` — build the signed native bundles
 - `pnpm run dev:linux` / `test:linux` / `install:linux` — run, test, or install Mdow for Linux (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.5); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/native-linux/packaging/`)
+- `pnpm run dev:mac` / `test:mac` / `install:mac` — run, test, or install Mdow for Mac (needs Xcode 26+ for Liquid Glass; macOS 15+ to run)
 
 Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 
@@ -52,6 +54,7 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - Website docs and changelog render with md4x
 - **Native** (`apps/native/`): gpuix renders the React tree with GPUI (no DOM, no webview). Markdown is split into blocks (`src/lib/markdown.ts`) and each block paints through gpuix's native `<markdown>`/`<code>` inside a windowed `<virtual-list>`. macOS menus, Finder open events and font registration go through the Objective-C runtime with `bun:ffi` (`src/lib/macos.ts`). Tests: `bun test` (headless GPU renderer).
 - **Linux** (`apps/native-linux/`): `doc.rs` parses markdown (comrak) or HTML (via htmd → markdown) into top-level rows; `reader.rs` shows them in a virtualized `GtkListView`, one row per block, built into native widgets by `render.rs`. Code is highlighted with syntect, Mermaid is laid out by mermaid-rs-renderer and rasterised with resvg. The design tokens in `theme.rs` are the desktop's OKLCH values, turned into a GTK stylesheet; window actions in `window.rs` mirror the desktop shortcuts. Rust style: `cargo fmt` (100 columns) and `cargo clippy`.
+- **Mac** (`apps/macos/`): `MdowKit` renders markdown (Apple's swift-markdown) into an `NSAttributedString` built from TextKit 1 parts: paragraph styles, `NSTextBlock` subclasses for code and quotes, `NSTextTable` for tables, attachments for images. The app target shows it in a read-only `NSTextView` (system find bar, selection, printing) inside native window tabs, an `NSSplitViewController` sidebar and a unified toolbar. Code is highlighted by a hand-written Swift scanner in Xcode's colours, Mermaid is laid out by Pele in JavaScriptCore and drawn as SVG, HTML files open in a `WKWebView` with JavaScript off. Swift style: 2-space indent, 100 columns.
 - Path alias: `@renderer/*` maps to `src/renderer/src/*` (within the desktop workspace)
 
 ## Key Patterns
