@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
-// Lays out Mermaid diagrams off the UI thread. The first diagram warms ELK for ~80ms and large
-// ones take longer; on the main thread that was a visible stall right after opening a document.
+// Lays out Mermaid diagrams off the UI thread. Pele is fast, but large diagrams still take a few
+// milliseconds that would land right as a document opens.
 import { renderMermaid, type MermaidPalette } from './mermaid'
 
 declare const self: Worker

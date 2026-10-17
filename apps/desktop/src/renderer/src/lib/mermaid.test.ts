@@ -1,82 +1,45 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { renderMermaidBlock } from './mermaid'
 
-const mermaidMock = vi.hoisted(() => ({
-  loadCount: 0,
-  initialize: vi.fn(),
-  render: vi.fn(),
-}))
-
-vi.mock('mermaid', () => {
-  mermaidMock.loadCount += 1
-  return {
-    default: {
-      initialize: mermaidMock.initialize,
-      render: mermaidMock.render,
-    },
-  }
-})
+function mount(id: string): HTMLElement {
+  const el = document.createElement('div')
+  el.id = id
+  document.body.append(el)
+  return el
+}
 
 beforeEach(() => {
-  vi.resetModules()
-  vi.clearAllMocks()
-  mermaidMock.loadCount = 0
-  mermaidMock.render.mockResolvedValue({ svg: '<svg width="100%"><text>ok</text></svg>' })
   document.body.replaceChildren()
 })
 
 describe('mermaid renderer', () => {
-  it('does not load Mermaid while only applying startup theme state', async () => {
-    const { initMermaid, updateMermaidTheme } = await import('./mermaid')
+  it('renders a diagram to inline SVG', async () => {
+    const el = mount('diagram-1')
 
-    initMermaid(false)
-    updateMermaidTheme(true)
+    await renderMermaidBlock({ id: 'diagram-1', code: 'flowchart TD\n  A --> B' })
 
-    expect(mermaidMock.loadCount).toBe(0)
-  })
-
-  it('loads Mermaid on demand when rendering diagram blocks', async () => {
-    const { initMermaid, renderMermaidBlocks } = await import('./mermaid')
-    const el = document.createElement('div')
-    el.id = 'diagram-1'
-    document.body.append(el)
-
-    initMermaid(false)
-    await renderMermaidBlocks([{ id: 'diagram-1', code: 'flowchart TD\n  A --> B' }])
-
-    expect(mermaidMock.loadCount).toBe(1)
-    expect(mermaidMock.initialize).toHaveBeenCalled()
-    expect(mermaidMock.initialize).toHaveBeenCalledWith(expect.objectContaining({ theme: 'base' }))
-    expect(mermaidMock.render).toHaveBeenCalledWith('diagram-1-svg', 'flowchart TD\n  A --> B')
-    expect(el.querySelector('svg')).toBeInTheDocument()
+    const svg = el.querySelector('svg')
+    expect(svg).toBeInTheDocument()
+    expect(svg).toHaveClass('pele')
     expect(el.querySelector('iframe')).toBeNull()
-    expect(el.querySelector('webview')).toBeNull()
-    expect(el.querySelector('svg')?.getAttribute('width')).toBeNull()
     expect(el.getAttribute('role')).toBe('img')
+    expect(el.getAttribute('aria-label')).toBe('Mermaid diagram')
   })
 
-  it('self-initializes when a block renders before startup initialization runs', async () => {
-    const { renderMermaidBlock } = await import('./mermaid')
-    const el = document.createElement('div')
-    el.id = 'diagram-race'
-    document.body.append(el)
+  it('shows the parse error with its location', async () => {
+    const el = mount('diagram-3')
 
-    await renderMermaidBlock({ id: 'diagram-race', code: 'flowchart TD\n  A --> B' })
+    await renderMermaidBlock({ id: 'diagram-3', code: 'flowchart TD\n  A -->\n  B -->> {oops' })
 
-    expect(mermaidMock.initialize).toHaveBeenCalled()
-    expect(mermaidMock.render).toHaveBeenCalledWith('diagram-race-svg', 'flowchart TD\n  A --> B')
-    expect(el.querySelector('svg')).toBeInTheDocument()
+    expect(el).toHaveClass('mermaid-error')
+    expect(el.querySelector('svg')).toBeNull()
+    expect(el.getAttribute('role')).toBeNull()
+    expect(el.textContent).toMatch(/^Mermaid diagram error: Parse error on line 3/)
   })
 
-  it('reuses cached SVG output for repeated renders', async () => {
-    const { initMermaid, renderMermaidBlock } = await import('./mermaid')
-    const el = document.createElement('div')
-    el.id = 'diagram-2'
-    document.body.append(el)
-
-    initMermaid(false)
-    await renderMermaidBlock({ id: 'diagram-2', code: 'flowchart TD\n  C --> D' })
-    await renderMermaidBlock({ id: 'diagram-2', code: 'flowchart TD\n  C --> D' })
-
-    expect(mermaidMock.render).toHaveBeenCalledTimes(1)
+  it('ignores blocks that are no longer in the document', async () => {
+    await expect(
+      renderMermaidBlock({ id: 'missing', code: 'flowchart TD\n  A --> B' }),
+    ).resolves.toBeUndefined()
   })
 })

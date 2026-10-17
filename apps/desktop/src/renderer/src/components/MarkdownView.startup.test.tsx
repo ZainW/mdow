@@ -15,9 +15,8 @@ vi.mock('../lib/markdown', () => ({
 }))
 
 vi.mock('../lib/mermaid', () => ({
-  initMermaid: vi.fn(),
+  preloadMermaid: vi.fn(),
   renderMermaidBlock: vi.fn(),
-  updateMermaidTheme: vi.fn(),
 }))
 
 vi.mock('../hooks/useDocumentSearch', () => ({
