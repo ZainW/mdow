@@ -40,7 +40,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         if: matrix.platform == 'mac'
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
 
       - run: pnpm install --frozen-lockfile
 
@@ -167,7 +167,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
 
       - run: pnpm install --frozen-lockfile --filter native
 
@@ -281,7 +281,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.3
 
       - run: pnpm install --frozen-lockfile --filter native
 

@@ -54,6 +54,10 @@ try {
       // development one with dev-only checks and warnings.
       '--define',
       'process.env.NODE_ENV="production"',
+      // Precompiled bytecode and a pre-resolved ESM module graph start the app ~7% faster.
+      // ESM is also what lets the entry's top-level await compile to bytecode.
+      '--bytecode',
+      '--format=esm',
       entry,
       // Workers are separate entrypoints in a compiled binary.
       join(root, 'src/lib/document-worker.ts'),
