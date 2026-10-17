@@ -1,169 +1,59 @@
-import { memoizeAsync } from './cache-storage'
-import {
-  getMermaidInitConfig,
-  resolveMermaidPaletteId,
-  type MermaidInitConfig,
-  type MermaidPaletteId,
-} from './mermaid-theme'
+// Mermaid diagrams render with Pele: synchronous, themed entirely by the `--pele-*` CSS variables in
+// markdown.css, so switching light/dark restyles diagrams without re-rendering them.
+type Pele = typeof import('pele/lazy')
 
-type MermaidApi = (typeof import('mermaid'))['default']
+const DIAGRAM_FONT = "'IBM Plex Mono', 'Geist Mono', ui-monospace, monospace"
+const DIAGRAM_FONT_SIZE = 13.5
 
-let mermaidInitialized = false
-let mermaidPromise: Promise<MermaidApi> | null = null
-let mermaidOptions: MermaidInitConfig = getMermaidInitConfig('light')
+let pelePromise: Promise<Pele> | null = null
 
-function ensureMermaidInitialized(paletteId: MermaidPaletteId): void {
-  if (mermaidInitialized) return
-  mermaidOptions = getMermaidInitConfig(paletteId)
-  mermaidInitialized = true
-}
-
-async function loadMermaid(): Promise<MermaidApi> {
-  mermaidPromise ??= import('mermaid').then((mod) => mod.default)
-  return mermaidPromise
+// `pele/lazy` keeps each diagram type in its own chunk, loaded the first time a document uses it.
+function loadPele(): Promise<Pele> {
+  pelePromise ??= import('pele/lazy')
+  return pelePromise
 }
 
 let preloadScheduled = false
 
-/** Loads Mermaid at the next idle moment, so the first diagram does not wait on the download. */
+/** Loads Pele at the next idle moment, so the first diagram does not wait on the download. */
 export function preloadMermaid(): void {
-  if (preloadScheduled || mermaidPromise) return
+  if (preloadScheduled || pelePromise) return
   preloadScheduled = true
-  const load = () => void loadMermaid()
+  const load = () => void loadPele()
   if ('requestIdleCallback' in globalThis) requestIdleCallback(load, { timeout: 2000 })
   else setTimeout(load, 1)
 }
 
-export function initMermaid(isDark?: boolean): void {
-  mermaidOptions = getMermaidInitConfig(resolveMermaidPaletteId(isDark))
-  mermaidInitialized = true
+function diagramFont(el: HTMLElement): { fontFamily: string; fontSize: number } {
+  const style = getComputedStyle(el)
+  const fontFamily = style.getPropertyValue('--md-diagram-font').trim() || DIAGRAM_FONT
+  const fontSize =
+    Number.parseFloat(style.getPropertyValue('--md-diagram-font-size')) || DIAGRAM_FONT_SIZE
+  return { fontFamily, fontSize }
 }
 
-export function updateMermaidTheme(isDark?: boolean): void {
-  mermaidOptions = getMermaidInitConfig(resolveMermaidPaletteId(isDark))
-  if (mermaidPromise) {
-    void mermaidPromise.then((mermaid) => mermaid.initialize(mermaidOptions))
-  }
-}
-
-function applySvgToElement(el: HTMLElement, svg: string): void {
-  el.className = 'mermaid mermaid-container'
-  el.innerHTML = svg
-  const svgEl = el.querySelector('svg')
-  if (svgEl) {
-    svgEl.style.background = 'transparent'
-    svgEl.style.backgroundColor = 'transparent'
-    svgEl.style.maxWidth = '100%'
-    svgEl.style.height = 'auto'
-    svgEl.style.width = 'auto'
-    const width = svgEl.getAttribute('width')
-    if (width === '100%' || width === '100') {
-      svgEl.removeAttribute('width')
-    }
-  }
-  el.setAttribute('role', 'img')
-  if (!el.getAttribute('aria-label')) {
-    el.setAttribute('aria-label', 'Mermaid diagram')
-  }
-}
-
-async function generateMermaidSvgUncached(
-  blockId: string,
-  code: string,
-  paletteId: MermaidPaletteId,
-): Promise<string> {
-  const mermaid = await loadMermaid()
-  const options = getMermaidInitConfig(paletteId)
-  mermaid.initialize(options)
-  const { svg } = await mermaid.render(`${blockId}-svg`, code)
-  return svg
-}
-
-const generateMermaidSvg = memoizeAsync(generateMermaidSvgUncached, {
-  maxEntries: 200,
-  getKey: (blockId, code, paletteId) => `${paletteId}\u0000${blockId}\u0000${code}`,
-})
-
-// Mermaid shares global state across render() calls and races when diagrams render
-// concurrently, so renders run one at a time. The queue always picks the waiting diagram nearest
-// the viewport, so the diagram the reader is looking at never waits behind ones they scrolled past.
-interface RenderJob {
-  el: HTMLElement
-  run: () => Promise<void>
-}
-
-const renderJobs: RenderJob[] = []
-let pumping = false
-
-function viewportDistance(el: HTMLElement): number {
-  if (!el.isConnected) return Number.POSITIVE_INFINITY
-  const viewport =
-    el.closest('[data-markdown-scroller]')?.getBoundingClientRect() ??
-    new DOMRect(0, 0, window.innerWidth, window.innerHeight)
-  const rect = el.getBoundingClientRect()
-  if (rect.bottom < viewport.top) return viewport.top - rect.bottom
-  if (rect.top > viewport.bottom) return rect.top - viewport.bottom
-  return 0
-}
-
-async function pumpRenderJobs(): Promise<void> {
-  if (pumping) return
-  pumping = true
-  try {
-    while (renderJobs.length > 0) {
-      let best = 0
-      let bestDistance = Number.POSITIVE_INFINITY
-      for (let i = 0; i < renderJobs.length; i++) {
-        const distance = viewportDistance(renderJobs[i].el)
-        if (distance < bestDistance) {
-          best = i
-          bestDistance = distance
-          if (distance === 0) break
-        }
-      }
-      const [job] = renderJobs.splice(best, 1)
-      // oxlint-disable-next-line no-await-in-loop -- Mermaid must render one diagram at a time.
-      await job.run()
-    }
-  } finally {
-    pumping = false
-  }
-}
-
-function enqueueRender<T>(el: HTMLElement, task: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    renderJobs.push({ el, run: () => task().then(resolve, reject) })
-    void pumpRenderJobs()
-  })
-}
-
-export async function renderMermaidBlock(
-  block: { id: string; code: string },
-  isDark?: boolean,
-): Promise<void> {
-  const paletteId = resolveMermaidPaletteId(isDark)
-  ensureMermaidInitialized(paletteId)
-
+export async function renderMermaidBlock(block: { id: string; code: string }): Promise<void> {
   const el = document.getElementById(block.id)
   if (!el) return
 
   try {
-    el.replaceChildren()
-    const svg = await enqueueRender(el, () => generateMermaidSvg(block.id, block.code, paletteId))
-    applySvgToElement(el, svg)
+    const { renderAsync } = await loadPele()
+    const { fontFamily, fontSize } = diagramFont(el)
+    const { svg } = await renderAsync(block.code, {
+      fontFamily,
+      fontFamilyMono: fontFamily,
+      fontSize,
+      idPrefix: `${block.id}-`,
+      // The reading column is narrow; keep the author's direction instead of flipping LR to TD.
+      autoDirection: false,
+    })
+    el.className = 'mermaid mermaid-container'
+    el.innerHTML = svg
+    el.setAttribute('role', 'img')
+    if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', 'Mermaid diagram')
   } catch (e) {
     el.className = 'mermaid-error'
     el.removeAttribute('role')
     el.textContent = `Mermaid diagram error: ${e instanceof Error ? e.message : String(e)}`
-    const errorSvg = document.getElementById(`d${block.id}-svg`)
-    if (errorSvg) errorSvg.remove()
   }
-}
-
-export async function renderMermaidBlocks(blocks: { id: string; code: string }[]): Promise<void> {
-  // Sequential: Mermaid races when multiple diagrams render concurrently.
-  await blocks.reduce(
-    (chain, block) => chain.then(() => renderMermaidBlock(block)),
-    Promise.resolve(),
-  )
 }

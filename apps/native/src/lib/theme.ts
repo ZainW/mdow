@@ -23,8 +23,8 @@ export interface Theme {
   findActive: string
   syntax: SyntaxTheme
   alerts: Record<AlertKind, string>
-  /** Mermaid "ink on paper" colours, from the desktop's --md-* tokens. */
-  diagram: { paper: string; paperWarm: string; ink: string; inkMuted: string; line: string }
+  /** Chart series for diagrams: the desktop's --chart-1…5, then --md-teal. */
+  chart: string[]
 }
 
 /** The same colour at `alpha` opacity. Theme colours are `hsl()` strings or hex. */
@@ -107,13 +107,7 @@ export const LIGHT: Theme = {
     warning: '#9a6700',
     caution: '#cf222e',
   },
-  diagram: {
-    paper: '#ffffff',
-    paperWarm: '#faf9f5',
-    ink: '#3b3b3b',
-    inkMuted: '#5e5e58',
-    line: '#d8d7d0',
-  },
+  chart: ['#cc6600', '#009a60', '#2f6dd3', '#ab72d3', '#ed7665', '#0f8080'],
 }
 
 export const DARK: Theme = {
@@ -142,13 +136,7 @@ export const DARK: Theme = {
     warning: '#d29922',
     caution: '#f85149',
   },
-  diagram: {
-    paper: '#141414',
-    paperWarm: '#1c1c1c',
-    ink: '#e4e4e4',
-    inkMuted: '#a6a6a6',
-    line: '#3d3d3d',
-  },
+  chart: ['#dfa11a', '#00aa6f', '#5f97f4', '#bb82e3', '#fe8674', '#5a9e98'],
 }
 
 export function themeFor(scheme: ColorScheme) {

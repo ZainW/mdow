@@ -16,3 +16,4 @@ minimumReleaseAgeExclude:
   - md4x@0.0.29
   - miniflare@5.20260907.0-alpha
   - wrangler@4.129.1
+  - pele@1.6.0

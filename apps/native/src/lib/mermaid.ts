@@ -1,14 +1,18 @@
-import { renderMermaidSVG, type RenderOptions } from 'beautiful-mermaid'
+import { render } from 'pele'
 import type { Theme } from './theme'
 
+/** Literal colours for Pele's `--pele-*` variables; GPUI's SVG rasterizer can't resolve CSS ones. */
 export interface MermaidPalette {
   bg: string
   fg: string
-  line: string
-  accent: string
   muted: string
+  line: string
   surface: string
+  surfaceAlt: string
   border: string
+  accent: string
+  critical: string
+  series: string[]
   font: string
 }
 
@@ -27,17 +31,20 @@ function splitKey(key: string): [MermaidPalette, string] {
   return [JSON.parse(key.slice(0, newline)) as MermaidPalette, key.slice(newline + 1)]
 }
 
-/** Ink on paper, like the desktop: warm node fills, hairline strokes, muted edges, mono labels. */
+/** The desktop's Pele mapping: nodes on the muted surface, edges and labels in muted ink. */
 export function mermaidPalette(theme: Theme, font: string): MermaidPalette {
-  const { paper, paperWarm, ink, inkMuted, line } = theme.diagram
+  const hex = (color: string) => toHex(parseColor(color) ?? [0, 0, 0, 255])
   return {
-    bg: paper,
-    fg: ink,
-    line: inkMuted,
-    accent: inkMuted,
-    muted: inkMuted,
-    surface: paperWarm,
-    border: line,
+    bg: hex(theme.background),
+    fg: hex(theme.foreground),
+    muted: hex(theme.mutedForeground),
+    line: hex(theme.mutedForeground),
+    surface: hex(theme.muted),
+    surfaceAlt: colorMix(`in srgb, ${theme.muted} 50%, ${theme.background}`) ?? hex(theme.muted),
+    border: hex(theme.border),
+    accent: hex(theme.primary),
+    critical: hex(theme.destructive),
+    series: [...theme.chart, theme.mutedForeground, theme.foreground].map(hex),
     font,
   }
 }
@@ -118,30 +125,36 @@ export function cachedMermaid(source: string, palette: MermaidPalette): MermaidR
   return cache.get(cacheKey(source, palette)) ?? null
 }
 
-/**
- * Lay out a Mermaid diagram and return it as an SVG data URL sized in CSS pixels.
- *
- * beautiful-mermaid themes through CSS custom properties and `color-mix()`, which GPUI's SVG
- * rasterizer does not evaluate, so every colour is resolved to a literal before it leaves here.
- */
+// Menlo advances 0.602em per glyph in every weight, so text widths need no font access.
+const graphemes = new Intl.Segmenter()
+const monoMeasurer = {
+  width: (text: string, size: number) => {
+    let count = 0
+    for (const _ of graphemes.segment(text)) count++
+    return count * size * 0.602
+  },
+}
+
+/** Lay out a Mermaid diagram with Pele and return it as an SVG data URL sized in CSS pixels. */
 export function renderMermaid(source: string, palette: MermaidPalette): MermaidResult {
   const key = cacheKey(source, palette)
   const hit = cache.get(key)
   if (hit) return hit
   let result: MermaidResult
   try {
-    const options: RenderOptions = { ...palette, transparent: true, padding: 16 }
-    // Square node corners become the desktop's 6px radius.
-    const svg = resolveCss(renderMermaidSVG(source.trim(), options)).replace(
-      /(<rect[^>]*?)rx="0" ry="0"/g,
-      '$1rx="6" ry="6"',
-    )
-    const width = Number(/<svg[^>]*\swidth="([\d.]+)"/.exec(svg)?.[1] ?? 0)
-    const height = Number(/<svg[^>]*\sheight="([\d.]+)"/.exec(svg)?.[1] ?? 0)
+    const { svg, width, height } = render(source.trim(), {
+      fontFamily: palette.font,
+      fontFamilyMono: palette.font,
+      fontSize: 14,
+      measurer: monoMeasurer,
+      autoDirection: false,
+      responsive: false,
+    })
     if (!width || !height) throw new Error('Diagram has no size')
+    const themed = resolveCss(svg, paletteVars(palette))
     result = {
       ok: true,
-      src: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
+      src: `data:image/svg+xml;base64,${Buffer.from(themed).toString('base64')}`,
       width,
       height,
     }
@@ -152,50 +165,61 @@ export function renderMermaid(source: string, palette: MermaidPalette): MermaidR
   return result
 }
 
-/** Inline every `var(--x)` and `color-mix()` so the SVG is plain SVG 1.1 paint. */
-export function resolveCss(svg: string): string {
-  const vars = new Map<string, string>()
-  const declare = (block: string) => {
-    for (const match of block.matchAll(/(--[\w-]+)\s*:\s*([^;]+);?/g)) {
-      vars.set(match[1]!, match[2]!.trim())
-    }
-  }
-  const rootStyle = /<svg[^>]*\sstyle="([^"]*)"/.exec(svg)?.[1]
-  if (rootStyle) declare(rootStyle)
-  for (const style of svg.matchAll(/<style>([\s\S]*?)<\/style>/g)) {
-    for (const rule of style[1]!.matchAll(/\{([^}]*)\}/g)) declare(rule[1]!)
+function paletteVars(palette: MermaidPalette): Map<string, string> {
+  const vars = new Map<string, string>([
+    ['--pele-bg', palette.bg],
+    ['--pele-fg', palette.fg],
+    ['--pele-muted', palette.muted],
+    ['--pele-line', palette.line],
+    ['--pele-surface', palette.surface],
+    ['--pele-surface-alt', palette.surfaceAlt],
+    ['--pele-border', palette.border],
+    ['--pele-accent', palette.accent],
+    ['--pele-critical', palette.critical],
+    ['--pele-error', palette.critical],
+    ['--pele-font', palette.font],
+    ['--pele-font-mono', palette.font],
+    ['--pele-radius', '6px'],
+  ])
+  palette.series.forEach((color, i) => vars.set(`--pele-series-${i + 1}`, color))
+  return vars
+}
+
+/**
+ * Inline every `var(--x)` so the SVG is plain SVG 1.1 paint: `vars` first, then the custom
+ * properties the root `<svg>` declares. CSS `rx` in a style becomes the `rx` attribute.
+ */
+export function resolveCss(svg: string, vars: Map<string, string> = new Map()): string {
+  const declared = new Map<string, string>()
+  const rootStyle = /<svg[^>]*\sstyle="([^"]*)"/.exec(svg)?.[1] ?? ''
+  for (const match of rootStyle.matchAll(/(--[\w-]+)\s*:\s*([^;]+);?/g)) {
+    declared.set(match[1]!, match[2]!.trim())
   }
 
   const resolve = (value: string, depth = 0): string => {
     if (depth > 8) return value
-    let out = value
     // Innermost var() first: its fallback may itself contain parentheses.
-    for (let guard = 0; guard < 32 && out.includes('var('); guard++) {
-      out = replaceCall(out, 'var', (inner) => {
-        const comma = topLevelComma(inner)
-        const name = (comma === -1 ? inner : inner.slice(0, comma)).trim()
-        const fallback = comma === -1 ? '' : inner.slice(comma + 1).trim()
-        const own = vars.get(name)
-        return resolve(own ?? fallback, depth + 1)
-      })
-    }
-    return replaceCall(out, 'color-mix', (inner) => colorMix(inner) ?? inner)
+    return replaceCall(value, 'var', (inner) => {
+      const comma = topLevelComma(inner)
+      const name = (comma === -1 ? inner : inner.slice(0, comma)).trim()
+      const fallback = comma === -1 ? '' : inner.slice(comma + 1).trim()
+      return resolve(vars.get(name) ?? declared.get(name) ?? fallback, depth + 1)
+    })
   }
 
   return svg
-    .replace(/@import[^\n]*\n/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/<style>([\s\S]*?)<\/style>/g, (_, css: string) => {
-      // Drop the custom-property rules and keep ordinary styling rules, resolved.
-      const kept = css
-        .replace(/--[\w-]+\s*:[^;]+;/g, '')
-        .replace(/[^{}]*\{\s*\}/g, '')
-        .trim()
-      return kept ? `<style>${resolve(kept)}</style>` : ''
+    .replace(/(<svg[^>]*\s)style="([^"]*)"/, (_, head: string, style: string) => {
+      const kept = style
+        .split(';')
+        .filter((declaration) => declaration.trim() && !declaration.trim().startsWith('--'))
+        .join(';')
+      return kept ? `${head}style="${resolve(kept)}"` : head
     })
-    .replace(/(<svg[^>]*\s)style="[^"]*"/, '$1')
-    .replace(/="([^"]*(?:var|color-mix)\([^"]*)"/g, (_, value: string) => `="${resolve(value)}"`)
-    .replace(/(style="[^"]*")/g, (attr) => resolve(attr))
+    .replace(
+      /\sstyle="rx:\s*([^";]+?)(?:px)?;?"/g,
+      (_, rx: string) => ` rx="${resolve(rx).replace(/px$/, '')}"`,
+    )
+    .replace(/="([^"]*var\([^"]*)"/g, (_, value: string) => `="${resolve(value)}"`)
 }
 
 function replaceCall(input: string, fn: string, map: (inner: string) => string): string {

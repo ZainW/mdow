@@ -4,7 +4,6 @@ import { useDocumentSearch } from '../hooks/useDocumentSearch'
 import { useMarkdownRender } from '../hooks/useMarkdownRender'
 import { useScrollRestoration } from '../hooks/useScrollRestoration'
 import { useHeadingObserver } from '../hooks/useHeadingObserver'
-import { useMermaidThemeSync } from '../hooks/useMermaidThemeSync'
 import { useContentClickHandlers } from '../hooks/useContentClickHandlers'
 import { useDocumentReview } from '../hooks/useDocumentReview'
 import { useAppStore, type Tab } from '../store/app-store'
@@ -76,7 +75,6 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
     renderVersion,
   )
 
-  useMermaidThemeSync(renderResult)
   useHeadingObserver({ scrollRef, contentRef, renderResult })
   useScrollRestoration({
     scrollRef,
