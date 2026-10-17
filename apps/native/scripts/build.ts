@@ -7,7 +7,7 @@
  *
  * Usage: bun scripts/build.ts [--outfile dist/mdow-native]
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 
@@ -27,8 +27,17 @@ if (!target) throw new Error(`gpuix has no prebuilt addon for ${process.platform
 const nativeRequire = createRequire(
   createRequire(join(root, 'package.json')).resolve('@gpuix/native'),
 )
-const addonPackage = dirname(nativeRequire.resolve(`@gpuix/native-${target}/package.json`))
-const addon = join(addonPackage, `gpuix-native.${target}.node`)
+// A source build of @gpuix/native carries the addon next to its index.js, which it loads first.
+const localAddon = join(
+  dirname(nativeRequire.resolve('@gpuix/native/package.json')),
+  `gpuix-native.${target}.node`,
+)
+const addon = existsSync(localAddon)
+  ? localAddon
+  : join(
+      dirname(nativeRequire.resolve(`@gpuix/native-${target}/package.json`)),
+      `gpuix-native.${target}.node`,
+    )
 
 const entry = join(root, 'dist', '.entry.ts')
 mkdirSync(dirname(entry), { recursive: true })

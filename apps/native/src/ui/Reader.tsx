@@ -27,7 +27,7 @@ import {
   windowEndFor,
   windowStartFor,
 } from './scroll-model'
-import { isScrolling, noteScroll, Scrollbar, type ScrollSource } from './Scrollbar'
+import { isScrolling, noteScroll, useOverlayScrollbar, type ScrollSource } from './Scrollbar'
 
 const ESTIMATED_ROW = 64
 const LINE_STEP = 56
@@ -187,6 +187,11 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
     },
     seek: (row, offset) => handlers.current.scrollToRow(row, offset),
   }
+  const scrollbar = useOverlayScrollbar(scrollSource)
+  const listStyle = useMemo(
+    () => ({ flexGrow: 1, minHeight: 0, ...scrollbar.listStyle }),
+    [scrollbar.listStyle],
+  )
 
   const rowOfMatch = (match: number) => {
     if (!perRow) return 0
@@ -319,13 +324,13 @@ export function Reader({ path, document, columnWidth, inset, onLink }: ReaderPro
                 if (next !== windowStart) setStart(next)
               }
             }}
-            style={{ flexGrow: 1, minHeight: 0 }}
+            style={listStyle}
           >
             {rows}
           </virtual-list>
         )}
       </div>
-      {blocks.length > 0 ? <Scrollbar source={scrollSource} /> : null}
+      {blocks.length > 0 ? scrollbar.overlay : null}
       {findOpen ? (
         <FindBar
           query={query}
