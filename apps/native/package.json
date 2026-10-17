@@ -17,8 +17,8 @@
     "bench:files": "bun scripts/bench.tsx"
   },
   "dependencies": {
-    "@gpuix/native": "0.10.0",
-    "@gpuix/react": "0.10.0",
+    "@gpuix/native": "https://github.com/ZainW/mdow/releases/download/gpuix-0.11.0-main.515df19/gpuix-native-0.11.0-main.515df19.tgz",
+    "@gpuix/react": "https://github.com/ZainW/mdow/releases/download/gpuix-0.11.0-main.515df19/gpuix-react-0.11.0-main.515df19.tgz",
     "image-size": "^2.0.2",
     "marked": "18.0.9",
     "node-html-parser": "^9.0.4",

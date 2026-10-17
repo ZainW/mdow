@@ -8,6 +8,14 @@ import { rowAt } from './scroll-model'
 const HIT_WIDTH = 12
 const THUMB_WIDTH = 6
 const THUMB_WIDTH_ACTIVE = 8
+const REST_ALPHA_LIGHT = 0.35
+const REST_ALPHA_DARK = 0.45
+/**
+ * gpuix paints the thumb at the list's own edge, so the list stops short of the window's right
+ * and bottom edges to keep the thumb off them, like macOS overlay scrollbars. The reader's paper
+ * runs under the margin, so it doesn't show.
+ */
+const THUMB_INSET = { marginTop: 4, marginRight: 3, marginBottom: 4 }
 /** gpuix never draws a native thumb shorter than this. */
 const THUMB_MIN = 24
 /** How often the current section is re-read while something scrolls. Reading commits nothing. */
@@ -114,11 +122,13 @@ export function useOverlayScrollbar(source: ScrollSource): {
   }, [])
 
   const active = hover || drag !== null
-  const opacity = active ? 1 : fade
-  const color = withAlpha(active ? theme.mutedForeground : theme.border, opacity)
+  // At rest the thumb is muted text, translucent, so it reads on paper and on near-black alike
+  // (the border colour all but vanished in dark mode).
+  const resting = theme.scheme === 'dark' ? REST_ALPHA_DARK : REST_ALPHA_LIGHT
+  const color = withAlpha(theme.mutedForeground, active ? 1 : resting * fade)
   const width = active ? THUMB_WIDTH_ACTIVE : THUMB_WIDTH
   const listStyle = useMemo(
-    () => ({ scrollbarColor: color, scrollbarWidth: width }),
+    () => ({ scrollbarColor: color, scrollbarWidth: width, ...THUMB_INSET }),
     [color, width],
   )
 
