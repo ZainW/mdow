@@ -454,7 +454,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
       cell.toolTip = node.url.abbreviatedPath
     case let recent as RecentItem:
       cell.textField?.stringValue = recent.url.lastPathComponent
-      cell.symbol = "clock"
+      cell.symbol = FileKind(url: recent.url) == .html ? "globe" : "doc.text"
       cell.toolTip = recent.url.abbreviatedPath
       cell.dimmed = !FileManager.default.fileExists(atPath: recent.url.path)
     default:
