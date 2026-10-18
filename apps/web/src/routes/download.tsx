@@ -10,33 +10,25 @@ import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
 import {
   detectPlatform,
   gpuiLinuxBetaDownloadUrl,
-  gpuiMacBetaDownloadUrl,
   GPUI_LINUX_BETA_DOWNLOAD_URL,
-  GPUI_MAC_BETA_DOWNLOAD_URL,
   platformLabel,
   type PlatformId,
 } from '~/lib/download-links'
-import {
-  fetchLatestMacAppRelease,
-  fetchLatestRelease,
-  MAC_APP_DOWNLOAD_URL,
-  type MacAppRelease,
-  type ReleaseInfo,
-} from '~/lib/github-releases'
+import { fetchLatestRelease, MAC_APP_DOWNLOAD_URL, type ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
 
 const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
   const ua = getRequestHeader('user-agent') || ''
   const os = detectPlatform(ua)
-  const [release, macApp] = await Promise.all([fetchLatestRelease(), fetchLatestMacAppRelease()])
+  const release = await fetchLatestRelease()
 
   setResponseHeader(
     'Cache-Control',
     release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
   )
 
-  return { os, release, macApp }
+  return { os, release }
 })
 
 export const Route = createFileRoute('/download')({
@@ -45,7 +37,7 @@ export const Route = createFileRoute('/download')({
     meta: seo({
       title: 'Download Mdow for Mac, Windows & Linux',
       description:
-        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes the new Mdow for Mac, built in Swift, and the Mdow Native beta.',
+        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes Mdow for Mac, built in Swift, and the Mdow Native beta for Linux.',
       path: '/download',
     }),
     links: [canonical('/download')],
@@ -105,10 +97,9 @@ function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
 }
 
 function DownloadPage() {
-  const { os, release, macApp } = Route.useLoaderData() as {
+  const { os, release } = Route.useLoaderData() as {
     os: PlatformId
     release: ReleaseInfo | null
-    macApp: MacAppRelease | null
   }
 
   const platforms = release ? buildPlatforms(release) : []
@@ -184,16 +175,18 @@ function DownloadPage() {
         </section>
       )}
 
-      <MacAppDownloadSection
-        download={{
-          url: macApp?.url ?? MAC_APP_DOWNLOAD_URL,
-          version: macApp?.version ?? null,
-          publishedAt: macApp?.publishedAt ?? null,
-        }}
-      />
+      {/* Releases before Mdow for Mac don't have it; without GitHub, the fixed link stands in. */}
+      {(!release || release.assets.mac.app) && (
+        <MacAppDownloadSection
+          download={{
+            url: release?.assets.mac.app?.url ?? MAC_APP_DOWNLOAD_URL,
+            version: release?.version ?? null,
+            publishedAt: release?.publishedAt ?? null,
+          }}
+        />
+      )}
 
       <NativeDownloadSection
-        macUrl={release ? gpuiMacBetaDownloadUrl(release) : GPUI_MAC_BETA_DOWNLOAD_URL}
         linuxUrl={release ? gpuiLinuxBetaDownloadUrl(release) : GPUI_LINUX_BETA_DOWNLOAD_URL}
       />
 

@@ -5,15 +5,6 @@ description: What's new in Mdow
 
 # Changelog
 
-## Mdow for Mac 0.1.0
-
-- Introducing Mdow for Mac, a preview of Mdow rebuilt in Swift on AppKit and TextKit, with no web view. Download it from the download page; it runs alongside the regular app
-- A calm look of its own: the document sits on a sheet of warm paper (or neutral ink in dark mode), set in Charter, with tabs in the header and a quiet sidebar for the outline, files and recents
-- Everything you read in Mdow renders natively: tables, task lists, alerts, footnotes, syntax-highlighted code, Mermaid diagrams and math, plus HTML files with JavaScript off
-- Quick Open (⌘K), a find bar that counts matches, split view, back and forward per tab, and live reload that keeps your place
-- The OpenCode companion comes along: ask about a document and approve every suggested edit as a diff
-- Signed, notarized and self-updating, for Apple Silicon Macs on macOS 15 or newer
-
 ## v1.15.1
 
 Latest release.

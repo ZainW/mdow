@@ -9,7 +9,7 @@ export interface MacAppDownload {
   publishedAt: string | null
 }
 
-/** Mdow for Mac: the Swift app, offered next to the regular downloads as a preview. */
+/** Mdow for Mac: the Swift app, offered next to the regular downloads. */
 export function MacAppDownloadSection({ download }: { download: MacAppDownload }) {
   const released =
     download.version && download.publishedAt
@@ -24,7 +24,7 @@ export function MacAppDownloadSection({ download }: { download: MacAppDownload }
               Mdow for Mac
             </h2>
             <span className="rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent">
-              New · Preview
+              New
             </span>
           </div>
           <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
@@ -36,7 +36,7 @@ export function MacAppDownloadSection({ download }: { download: MacAppDownload }
         <Link
           to="/docs/$"
           params={{ _splat: 'installation' }}
-          hash="mdow-for-mac-preview"
+          hash="mdow-for-mac"
           className="link-underline shrink-0 text-sm text-muted-foreground"
         >
           Install notes

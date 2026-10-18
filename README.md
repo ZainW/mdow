@@ -24,18 +24,20 @@ Download the latest release from the [Releases](https://github.com/ZainW/mdow/re
 | Platform          | Format                           |
 | ----------------- | -------------------------------- |
 | macOS             | `.dmg`, `.zip`                   |
-| macOS Native beta | `MdowNative-mac-beta.zip`        |
+| Mdow for Mac      | `Mdow-for-Mac-<version>.zip`     |
 | Linux Native beta | `MdowNative-linux-beta.AppImage` |
 | Windows           | `.exe` (NSIS installer)          |
 | Linux             | `.AppImage`                      |
 
-Mdow Native is a GPU-rendered beta for Apple Silicon Macs (macOS 14 or newer) and x64 Linux, built
-with React on [gpuix](https://gpuix.dev) and Bun. It installs as a separate app, runs alongside
-regular Mdow and updates itself. The Electron app remains the recommended stable build.
+Mdow for Mac is Mdow rebuilt in Swift on AppKit and TextKit, for Apple Silicon Macs on macOS 15 or
+newer (`apps/macos`). It installs as a separate app, runs alongside regular Mdow and updates itself.
+
+Mdow Native is a GPU-rendered beta for x64 Linux, built with React on [gpuix](https://gpuix.dev)
+and Bun. The Electron app remains the recommended stable build.
 
 ## Development
 
-This is a pnpm monorepo. The Electron app lives in `apps/desktop`, the website in `apps/web`, and Mdow Native in `apps/native`.
+This is a pnpm monorepo. The Electron app lives in `apps/desktop`, the website in `apps/web`, Mdow Native in `apps/native`, and Mdow for Mac in `apps/macos` (a SwiftPM package).
 
 ```sh
 # Install dependencies

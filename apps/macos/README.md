@@ -74,34 +74,25 @@ for tabs, and ⇧⌘O for Open Folder. Help › Keyboard Shortcuts lists them al
 ## Updates and releases
 
 The app updates itself with [Sparkle 2](https://sparkle-project.org) (`Sources/Mdow/App/Updater.swift`,
-Mdow › Check for Updates…). Its feed is
-`https://github.com/ZainW/mdow/releases/download/mac-latest/appcast.xml` (`SUFeedURL` in
-`Resources/Info.plist`), and updates are verified against `SUPublicEDKey`, the same EdDSA key
-pair Mdow Native uses (`apps/native/updater/sparkle-public-ed-key.txt`; the private half is the
-`SPARKLE_PRIVATE_ED_KEY` repo secret). Only builds signed with a Developer ID update: ad hoc
-and debug builds leave Sparkle off and the menu item disabled.
+Mdow › Check for Updates…). Its feed is `mdow-for-mac-appcast.xml` on the latest GitHub release
+(`SUFeedURL` in `Resources/Info.plist`), and updates are verified against `SUPublicEDKey`
+(`Resources/sparkle-public-ed-key.txt`; the private half is the `SPARKLE_PRIVATE_ED_KEY` repo
+secret). Only builds signed with a Developer ID update: ad hoc and debug builds leave Sparkle off
+and the menu item disabled.
 
 `bundle.sh` embeds `Sparkle.framework` (from SwiftPM's artifacts) in `Contents/Frameworks`,
 drops its XPC services (the app isn't sandboxed) and signs it inside out. With `SIGN_IDENTITY`
 set it signs with the hardened runtime and a secure timestamp, ready for notarization.
 
-The version lives in `VERSION` (`VERSION=… scripts/bundle.sh` overrides it); the build number is
-the commit count. To release:
-
-1. Bump `VERSION` (e.g. `0.2.0`) and commit it on `main`.
-2. Tag that commit `mac-0.2.0` and push the tag.
-
-`.github/workflows/macos.yml` then builds and tests, checks the tag matches `VERSION`, signs with
-the Developer ID (`CSC_LINK`, `CSC_KEY_PASSWORD`), notarizes and staples (`APPLE_ID`,
-`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), zips the app, and writes `appcast.xml` with
-Sparkle's `generate_appcast`, signed with `SPARKLE_PRIVATE_ED_KEY`. It publishes
-`Mdow-for-Mac-<version>.zip` on the `mac-<version>` pre-release, then uploads `appcast.xml` to the
-rolling `mac-latest` release (creating it the first time), which is what installed copies read,
-along with a copy of the zip named `Mdow-for-Mac.zip`. The website's download page links the
-newest `mac-<version>` zip, and falls back to that copy when it can't reach GitHub's API.
-
-When releasing, add a `## Mdow for Mac <version>` section to `apps/web/content/changelog.md` and
-run `pnpm run --filter web generate:static`.
+Mdow for Mac ships with every Mdow release, with the same version: `bundle.sh` reads it from
+`apps/desktop/package.json` (`VERSION=…` overrides it), and the build number is the commit count.
+Cut releases the usual way (bump the version, tag `vX.Y.Z`; see `.claude/skills/release`). The
+`mac-app` job in `.github/workflows/release.yml` then tests the app, signs it with the Developer
+ID (`CSC_LINK`, `CSC_KEY_PASSWORD`), notarizes and staples it (`APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), and uploads `Mdow-for-Mac-<version>.zip`, a copy
+named `Mdow-for-Mac.zip`, and `mdow-for-mac-appcast.xml` (written by Sparkle's `generate_appcast`
+and signed with `SPARKLE_PRIVATE_ED_KEY`) to the release. The release stays a draft until the
+feed is on it. `.github/workflows/macos.yml` builds and tests every pull request.
 
 ## Not included
 

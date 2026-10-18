@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "package:native-mac": "bash apps/native/scripts/package-mac.sh",
     "package:native-linux": "bash apps/native/scripts/package-linux.sh",
     "dev:linux": "cargo run --manifest-path apps/native-linux/Cargo.toml",
     "test:linux": "cargo test --manifest-path apps/native-linux/Cargo.toml",
@@ -17,8 +16,7 @@
     "lint": "turbo lint",
     "fmt": "turbo fmt",
     "fmt:check": "turbo fmt:check",
-    "test": "turbo test",
-    "test:native-updater": "bun apps/native/scripts/test-updater.ts"
+    "test": "turbo test"
   },
   "devDependencies": {
     "turbo": "^2.10.12"
