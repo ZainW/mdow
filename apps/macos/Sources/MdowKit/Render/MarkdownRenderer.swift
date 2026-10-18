@@ -59,10 +59,12 @@ public final class MarkdownRenderer {
   public static func render(
     _ source: MarkdownSource, style: ReaderStyle, baseURL: URL?, assets: RenderAssets = .none
   ) -> RenderedDocument {
-    let (body, footnotes) = Footnotes.extract(from: source.body)
+    // Math first, so footnote definitions keep their formulas and TeX can't look like a note.
+    let (withoutMath, math) = MathSpans.extract(from: source.body)
+    let (body, footnotes) = Footnotes.extract(from: withoutMath)
     let document = Document(parsing: body, options: [.disableSmartOpts])
     let renderer = MarkdownRenderer(
-      style: style, baseURL: baseURL, assets: assets, footnotes: footnotes)
+      style: style, baseURL: baseURL, assets: assets, footnotes: footnotes, math: math)
     renderer.renderBlocks(document.children, renderer.rootContext)
     renderer.renderFootnotes()
     return RenderedDocument(
@@ -100,6 +102,8 @@ public final class MarkdownRenderer {
   let baseURL: URL?
   let assets: RenderAssets
   let footnotes: Footnotes
+  /// The TeX behind each math placeholder in the parsed text.
+  let math: MathSpans
   let out = NSMutableAttributedString()
   var headings: [OutlineHeading] = []
   var firstTitle: String?
@@ -109,11 +113,15 @@ public final class MarkdownRenderer {
   private var marker: Marker?
   private var fonts: [FontKey: NSFont] = [:]
 
-  init(style: ReaderStyle, baseURL: URL?, assets: RenderAssets, footnotes: Footnotes) {
+  init(
+    style: ReaderStyle, baseURL: URL?, assets: RenderAssets, footnotes: Footnotes,
+    math: MathSpans = MathSpans()
+  ) {
     self.style = style
     self.baseURL = baseURL
     self.assets = assets
     self.footnotes = footnotes
+    self.math = math
   }
 
   var rootContext: Context { Context(spacing: style.blockSpacing) }
@@ -131,7 +139,7 @@ public final class MarkdownRenderer {
     case let paragraph as Paragraph:
       renderParagraph(paragraph, ctx)
     case let code as CodeBlock:
-      renderCode(code.code, info: code.language, ctx)
+      renderCode(math.restoringSource(code.code), info: code.language, ctx)
     case let quote as BlockQuote:
       renderQuote(quote, ctx)
     case let list as UnorderedList:
@@ -143,7 +151,7 @@ public final class MarkdownRenderer {
     case is ThematicBreak:
       renderRule(ctx)
     case let html as HTMLBlock:
-      renderHTMLBlock(html.rawHTML, ctx)
+      renderHTMLBlock(math.restoringSource(html.rawHTML), ctx)
     default:
       renderBlocks(markup.children, ctx)
     }
@@ -227,7 +235,7 @@ public final class MarkdownRenderer {
     let text = NSMutableAttributedString()
     renderInlines(heading.children, inline, into: text)
 
-    let title = heading.plainText.trimmingCharacters(in: .whitespaces)
+    let title = math.replacingWithTeX(heading.plainText).trimmingCharacters(in: .whitespaces)
     let anchor = slugger.next(title)
     if level == 1, firstTitle == nil, ctx.blocks.isEmpty { firstTitle = title }
     text.addAttribute(.mdowAnchor, value: anchor, range: NSRange(location: 0, length: text.length))
@@ -244,6 +252,7 @@ public final class MarkdownRenderer {
   func renderParagraph(_ paragraph: Paragraph, _ ctx: Context) {
     let text = NSMutableAttributedString()
     renderInlines(paragraph.children, baseInline(ctx), into: text, indent: ctx.indent)
+    if !math.spans.isEmpty, splitDisplayMath(text, ctx) { return }
     append(text, paragraphStyle(ctx))
   }
 
@@ -256,6 +265,7 @@ public final class MarkdownRenderer {
     let language = SyntaxHighlighter.language(for: info)
     let infoWord = info?.split(separator: " ").first.map { $0.lowercased() }
     if infoWord == "mermaid", renderDiagram(code, ctx) { return }
+    if infoWord == "math", renderDisplayMath(code, ctx) { return }
 
     let block = CodeTextBlock()
     block.setWidth(14, type: .absoluteValueType, for: .padding)
@@ -631,13 +641,14 @@ public final class MarkdownRenderer {
     // siblings between them.
     var htmlStack: [(String, Inline)] = []
     for child in children {
-      if let html = child as? InlineHTML {
-        let tag = HTMLSnippet.tag(html.rawHTML)
+      if let node = child as? InlineHTML {
+        let rawHTML = math.restoringSource(node.rawHTML)
+        let tag = HTMLSnippet.tag(rawHTML)
         switch tag.name {
         case "br":
           text.append(NSAttributedString(string: "\u{2028}", attributes: attributes(inline)))
         case "img":
-          if let image = HTMLSnippet.images(in: html.rawHTML).first {
+          if let image = HTMLSnippet.images(in: rawHTML).first {
             appendImage(
               source: image.src, alt: image.alt, width: image.width, height: image.height,
               inline: inline, indent: indent, into: text, link: inline.link)
@@ -653,7 +664,7 @@ public final class MarkdownRenderer {
           case "sup": inline.superscript = 1
           case "sub": inline.superscript = -1
           case "a":
-            if let href = HTMLSnippet.attribute("href", in: html.rawHTML) { inline.link = resolve(href) }
+            if let href = HTMLSnippet.attribute("href", in: rawHTML) { inline.link = resolve(href) }
           default: break
           }
         case let name?:
@@ -681,7 +692,8 @@ public final class MarkdownRenderer {
       text.append(NSAttributedString(string: "\u{2028}", attributes: attributes(inline)))
     case let code as InlineCode:
       inline.code = true
-      text.append(NSAttributedString(string: code.code, attributes: attributes(inline)))
+      text.append(
+        NSAttributedString(string: math.restoringSource(code.code), attributes: attributes(inline)))
     case let node as Emphasis:
       inline.italic = true
       renderInlines(node.children, inline, into: text, indent: indent)
@@ -696,11 +708,12 @@ public final class MarkdownRenderer {
       let start = text.length
       renderInlines(link.children, inline, into: text, indent: indent)
       if let destination = link.destination, text.length > start {
-        text.addAttribute(.toolTip, value: destination, range: NSRange(location: start, length: text.length - start))
+        text.addAttribute(.toolTip, value: math.restoringSource(destination), range: NSRange(location: start, length: text.length - start))
       }
     case let image as Markdown.Image:
       appendImage(
-        source: image.source ?? "", alt: image.plainText, width: nil, height: nil, inline: inline,
+        source: image.source ?? "", alt: math.replacingWithTeX(image.plainText), width: nil,
+        height: nil, inline: inline,
         indent: indent, into: text, link: inline.link)
     case let html as InlineHTML:
       // Only reached for HTML outside `renderInlines`, e.g. a lone tag.
@@ -713,6 +726,20 @@ public final class MarkdownRenderer {
   }
 
   func appendText(_ string: String, _ inline: Inline, into text: NSMutableAttributedString) {
+    guard !math.spans.isEmpty else {
+      appendPlainText(string, inline, into: text)
+      return
+    }
+    for piece in math.pieces(string) {
+      switch piece {
+      case .text(let run): appendPlainText(String(run), inline, into: text)
+      case .math(let index): appendMath(math.spans[index], inline, into: text)
+      }
+    }
+  }
+
+  /// Text, with footnote references.
+  func appendPlainText(_ string: String, _ inline: Inline, into text: NSMutableAttributedString) {
     guard !footnotes.notes.isEmpty, string.contains("[^") else {
       text.append(NSAttributedString(string: string, attributes: attributes(inline)))
       return
@@ -778,7 +805,7 @@ public final class MarkdownRenderer {
 
   /// Resolves a link or image path against the document's folder.
   func resolve(_ destination: String) -> URL? {
-    let destination = destination.trimmingCharacters(in: .whitespaces)
+    let destination = math.restoringSource(destination).trimmingCharacters(in: .whitespaces)
     if destination.hasPrefix("#") { return anchorURL(String(destination.dropFirst())) }
     if let url = URL(string: destination), url.scheme != nil { return url }
     // Already-encoded paths (e.g. `my%20file.md`) are decoded first so they aren't encoded twice.

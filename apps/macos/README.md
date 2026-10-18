@@ -39,6 +39,10 @@ macOS shows it in the compatibility look. `bundle.sh` fixes both.
   Speech, printing and Export as PDF all come from AppKit.
 - **Code**: a hand-written Swift highlighter for about 50 languages, in Xcode's default light and
   dark colours. Hovering a code block shows a copy button.
+- **Math**: `$…$`, ``$`…`$``, `$$…$$` and ` ```math ` blocks, following GitHub's rules, are
+  typeset natively by [SwiftMath](https://github.com/mgriebling/SwiftMath) (CoreText, Latin
+  Modern Math) and shown as attachments that follow light and dark. Formulas that don't parse
+  show their TeX. Each formula carries its source in `.mdowMathSource`.
 - **Mermaid**: laid out by [Pele](https://pele.run) in JavaScriptCore, then drawn as vector
   SVG through `NSImage`. No browser engine is involved.
 - **HTML files**: shown in a `WKWebView` with JavaScript turned off.
@@ -62,23 +66,23 @@ for tabs, and ⇧⌘O for Open Folder. Help › Keyboard Shortcuts lists them al
 ## Not included
 
 - The OpenCode companion and the auto-updater.
-- KaTeX math: TeX source is shown as written.
+- Some of MathJax's TeX: `\boxed`, `\xrightarrow`, `\overset`, `\substack` and colours.
 - Find in HTML files.
 - A split view inside one window. Use macOS window tiling instead.
 
 ## Layout
 
-| Path                         | What it does                                                   |
-| ---------------------------- | -------------------------------------------------------------- |
-| `Sources/MdowKit/Document`   | file kinds, frontmatter, footnotes, heading slugs              |
-| `Sources/MdowKit/Render`     | markdown → `NSAttributedString`, text blocks, styles, HTML bits |
-| `Sources/MdowKit/Highlight`  | syntax highlighter and Xcode-style code colours                |
-| `Sources/MdowKit/Files`      | folder scanning, file watching, fuzzy matching                 |
-| `Sources/Mdow/App`           | app delegate, menus, settings storage, images and diagrams     |
-| `Sources/Mdow/Window`        | window controller (tabs, toolbar, history), reader, text view  |
-| `Sources/Mdow/Sidebar`       | the source list                                                |
-| `Sources/Mdow/Panels`        | welcome screen, Settings, Quick Open, shortcuts (SwiftUI)      |
-| `Sources/Mdow/Reader`        | Mermaid through Pele                                           |
+| Path                        | What it does                                                    |
+| --------------------------- | --------------------------------------------------------------- |
+| `Sources/MdowKit/Document`  | file kinds, frontmatter, footnotes, heading slugs               |
+| `Sources/MdowKit/Render`    | markdown → `NSAttributedString`, text blocks, styles, HTML bits |
+| `Sources/MdowKit/Highlight` | syntax highlighter and Xcode-style code colours                 |
+| `Sources/MdowKit/Files`     | folder scanning, file watching, fuzzy matching                  |
+| `Sources/Mdow/App`          | app delegate, menus, settings storage, images and diagrams      |
+| `Sources/Mdow/Window`       | window controller (tabs, toolbar, history), reader, text view   |
+| `Sources/Mdow/Sidebar`      | the source list                                                 |
+| `Sources/Mdow/Panels`       | welcome screen, Settings, Quick Open, shortcuts (SwiftUI)       |
+| `Sources/Mdow/Reader`       | Mermaid through Pele                                            |
 
 Settings live in the `com.zain.mdow.Mac` user defaults.
 
