@@ -38,10 +38,7 @@ import AppKit
       }
     case "find":
       guard let controller else { return }
-      controller.window?.makeFirstResponder(controller.reader.textView)
-      let item = NSMenuItem()
-      item.tag = NSTextFinder.Action.showFindInterface.rawValue
-      controller.reader.textView.performTextFinderAction(item)
+      controller.reader.performFind(.showFindInterface)
       if !value.isEmpty, let field = NSApp.keyWindow?.firstResponder as? NSTextView {
         field.insertText(value, replacementRange: field.selectedRange())
       }
@@ -54,7 +51,7 @@ import AppKit
     case "split":
       controller?.toggleSplitView(nil)
     case "htmlfind":
-      controller?.reader.performHTMLFind(.showFindInterface)
+      controller?.reader.performFind(.showFindInterface)
     case "newtab":
       AppDelegate.shared.newTabAction(nil)
     case "open":

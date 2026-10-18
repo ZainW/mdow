@@ -36,7 +36,7 @@ final class CommandPalette: NSPanel {
     }
     current?.close()
     let palette = CommandPalette(items: controller.paletteItems())
-    let size = NSSize(width: 620, height: 420)
+    let size = NSSize(width: 640, height: 440)
     let frame = window.frame
     palette.setFrame(
       NSRect(
@@ -68,7 +68,8 @@ final class CommandPalette: NSPanel {
     }
     let hosting = NSHostingView(rootView: view)
     hosting.wantsLayer = true
-    hosting.layer?.cornerRadius = 18
+    hosting.layer?.cornerRadius = 14
+    hosting.layer?.cornerCurve = .continuous
     hosting.layer?.masksToBounds = true
     contentView = hosting
     setAccessibilityLabel("Quick Open")
@@ -119,42 +120,47 @@ private struct PaletteView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack(spacing: 10) {
+      HStack(spacing: 12) {
         Image(systemName: "magnifyingglass")
-          .font(.title2)
-          .foregroundStyle(.secondary)
-        TextField("Search headings, files and commands", text: $query)
-          .textFieldStyle(.plain)
-          .font(.title2)
-          .focused($focused)
-          .onSubmit { run() }
-          .onKeyPress(.downArrow) { move(1) }
-          .onKeyPress(.upArrow) { move(-1) }
-          .onKeyPress(.escape) {
-            finish(nil)
-            return .handled
-          }
+          .font(.system(size: 15, weight: .medium))
+          .foregroundStyle(Color.mdowTertiary)
+        TextField(
+          "", text: $query,
+          prompt: Text("Search headings, files and commands").foregroundStyle(Color.mdowTertiary)
+        )
+        .textFieldStyle(.plain)
+        .font(.mdowUI(16))
+        .foregroundStyle(Color.mdowText)
+        .focused($focused)
+        .onSubmit { run() }
+        .onKeyPress(.downArrow) { move(1) }
+        .onKeyPress(.upArrow) { move(-1) }
+        .onKeyPress(.escape) {
+          finish(nil)
+          return .handled
+        }
       }
       .padding(.horizontal, 18)
-      .padding(.vertical, 14)
-      Divider()
+      .frame(height: 54)
+      Rectangle().fill(Color.mdowLine).frame(height: 1)
       if flat.isEmpty {
-        Text("No Results")
-          .foregroundStyle(.secondary)
+        Text("Nothing matches “\(query)”")
+          .font(.mdowUI(13))
+          .foregroundStyle(Color.mdowSecondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollViewReader { proxy in
           ScrollView {
-            LazyVStack(alignment: .leading, spacing: 1) {
+            LazyVStack(alignment: .leading, spacing: 0) {
               let showsHeaders = query.trimmingCharacters(in: .whitespaces).isEmpty
               ForEach(results, id: \.0) { section, items in
                 if showsHeaders {
                   Text(section.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 2)
+                    .font(.mdowUI(11.5, .medium))
+                    .foregroundStyle(Color.mdowTertiary)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
                 }
                 ForEach(items) { item in
                   let index = flat.firstIndex { $0.id == item.id } ?? 0
@@ -174,9 +180,19 @@ private struct PaletteView: View {
           }
         }
       }
+      Rectangle().fill(Color.mdowLine).frame(height: 1)
+      HStack(spacing: 16) {
+        KeyHint(keys: "↑↓", label: "Move")
+        KeyHint(keys: "↵", label: "Open")
+        KeyHint(keys: "esc", label: "Close")
+        Spacer()
+      }
+      .padding(.horizontal, 16)
+      .frame(height: 34)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.regularMaterial)
+    .background(Color.mdowElevated)
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.mdowLine))
     .onAppear { focused = true }
     .onChange(of: query) { selected = 0 }
   }
@@ -202,27 +218,56 @@ private struct PaletteRow: View {
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: item.symbol)
-        .frame(width: 20)
-        .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+        .font(.system(size: 12.5))
+        .frame(width: 18)
+        .foregroundStyle(selected ? Color.mdowSecondary : Color.mdowTertiary)
       Text(item.title)
+        .font(.mdowUI(13.5))
+        .foregroundStyle(Color.mdowText)
         .lineLimit(1)
       if item.section != .commands, !item.detail.isEmpty {
         Text(item.detail)
+          .font(.mdowMono(11))
+          .foregroundStyle(Color.mdowTertiary)
           .lineLimit(1)
           .truncationMode(.head)
-          .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
       }
       Spacer(minLength: 8)
       if item.section == .commands, !item.detail.isEmpty {
         Text(item.detail)
-          .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
+          .font(.mdowMono(11))
+          .foregroundStyle(Color.mdowSecondary)
+          .padding(.horizontal, 6)
+          .frame(height: 20)
+          .background(Color.mdowWell, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+          .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.mdowLine))
       }
     }
-    .font(.body)
-    .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
     .padding(.horizontal, 10)
-    .frame(height: 30)
-    .background(selected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 8))
+    .frame(height: 34)
+    .background(
+      selected ? Color.mdowSelected : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     .contentShape(.rect)
+  }
+}
+
+/// A key and what it does, for the palette's footer.
+private struct KeyHint: View {
+  var keys: String
+  var label: String
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(keys)
+        .font(.mdowMono(10.5))
+        .foregroundStyle(Color.mdowSecondary)
+        .padding(.horizontal, 5)
+        .frame(minWidth: 20, minHeight: 18)
+        .background(Color.mdowWell, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Color.mdowLine))
+      Text(label)
+        .font(.mdowUI(11.5))
+        .foregroundStyle(Color.mdowTertiary)
+    }
   }
 }

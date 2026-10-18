@@ -175,7 +175,7 @@ private final class Engine: @unchecked Sendable {
 
 // MARK: - Palette
 
-/// Literal colours for Pele's `--pele-*` variables, tuned to the macOS system palette.
+/// Literal colours for Pele's `--pele-*` variables, from Mdow's paper and ink themes.
 private struct Palette {
   // AppKit's SVG renderer takes a single family name (no fallback lists, no `-apple-system`);
   // these are the system UI fonts' family names, and anything unknown falls back to Helvetica.
@@ -187,15 +187,15 @@ private struct Palette {
   let series: [String]
 
   static let light = Palette(
-    bg: "#ffffff", fg: "#1d1d1f", muted: "#6e6e73", line: "#8e8e93", surface: "#f2f2f7",
-    surfaceAlt: "#fafafa", border: "#d1d1d6", accent: "#007aff", critical: "#ff3b30",
-    series: ["#007aff", "#ff9500", "#34c759", "#ff3b30", "#30b0c7", "#ffcc00", "#af52de", "#a2845e"]
+    bg: "#fdfcf9", fg: "#1e1c19", muted: "#6b665e", line: "#9e998f", surface: "#f5f3ed",
+    surfaceAlt: "#faf8f3", border: "#ddd8cd", accent: "#b95a33", critical: "#c0403a",
+    series: ["#b95a33", "#2c6c8c", "#3c7a36", "#9e3f6c", "#86670f", "#6249b0", "#2d6ac0", "#8a7f72"]
   )
 
   static let dark = Palette(
-    bg: "#1e1e1e", fg: "#f5f5f7", muted: "#a1a1a6", line: "#8e8e93", surface: "#2c2c2e",
-    surfaceAlt: "#242426", border: "#3a3a3c", accent: "#0a84ff", critical: "#ff453a",
-    series: ["#0a84ff", "#ff9f0a", "#30d158", "#ff453a", "#40c8e0", "#ffd60a", "#bf5af2", "#ac8e68"]
+    bg: "#1b1b1b", fg: "#ececec", muted: "#a3a3a3", line: "#6e6e6e", surface: "#242424",
+    surfaceAlt: "#202020", border: "#383838", accent: "#e08a66", critical: "#ee7c70",
+    series: ["#e08a66", "#7cc4e4", "#a6d28f", "#e58ab4", "#e3c178", "#b9a5f5", "#74a6ee", "#a89f94"]
   )
 
   var variables: [String: String] {
@@ -203,7 +203,7 @@ private struct Palette {
       "--pele-bg": bg, "--pele-fg": fg, "--pele-muted": muted, "--pele-line": line,
       "--pele-surface": surface, "--pele-surface-alt": surfaceAlt, "--pele-border": border,
       "--pele-accent": accent, "--pele-critical": critical, "--pele-error": critical,
-      "--pele-font": Self.font, "--pele-font-mono": Self.monoFont, "--pele-radius": "6px",
+      "--pele-font": Self.font, "--pele-font-mono": Self.monoFont, "--pele-radius": "8px",
     ]
     for (index, color) in series.enumerated() { vars["--pele-series-\(index + 1)"] = color }
     return vars

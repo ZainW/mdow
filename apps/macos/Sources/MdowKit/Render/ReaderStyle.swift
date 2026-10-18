@@ -185,6 +185,14 @@ public enum ReaderColors {
     light: NSColor(srgbRed: 1, green: 0.85, blue: 0.35, alpha: 0.55),
     dark: NSColor(srgbRed: 0.95, green: 0.75, blue: 0.25, alpha: 0.35))
 
+  /// Every match while finding, and the one being shown.
+  public static let findMatch = dynamic(
+    light: NSColor(srgbRed: 1, green: 0.8, blue: 0.3, alpha: 0.35),
+    dark: NSColor(srgbRed: 1, green: 0.8, blue: 0.3, alpha: 0.22))
+  public static let findCurrent = dynamic(
+    light: NSColor(srgbRed: 1, green: 0.72, blue: 0.2, alpha: 0.85),
+    dark: NSColor(srgbRed: 1, green: 0.72, blue: 0.25, alpha: 0.6))
+
   public static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
     NSColor(name: nil) { appearance in
       appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

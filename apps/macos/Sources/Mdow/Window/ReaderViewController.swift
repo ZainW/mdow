@@ -46,8 +46,13 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     scrollView.documentView = textView
     scrollView.contentView.postsBoundsChangedNotifications = true
     scrollView.translatesAutoresizingMaskIntoConstraints = false
-    scrollView.findBarPosition = .aboveContent
     textView.delegate = self
+    textView.onFindAction = { [weak self] action in self?.performFind(action) }
+    findBar.isHidden = true
+    findBar.translatesAutoresizingMaskIntoConstraints = false
+    findBar.onSearch = { [weak self] query in self?.search(query) }
+    findBar.onStep = { [weak self] backwards in self?.step(backwards: backwards) }
+    findBar.onClose = { [weak self] in self?.hideFindBar() }
     textView.columnWidth = { Preferences.shared.columnWidth(available: $0) }
     textView.onOpenFiles = { [weak self] urls in
       guard let self else { return }
@@ -64,10 +69,12 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   // MARK: Modes
 
   private func install(_ content: NSView) {
-    for subview in view.subviews where subview !== content { subview.removeFromSuperview() }
+    for subview in view.subviews where subview !== content && subview !== findBar {
+      subview.removeFromSuperview()
+    }
     if content.superview !== view {
       content.translatesAutoresizingMaskIntoConstraints = false
-      view.addSubview(content)
+      view.addSubview(content, positioned: .below, relativeTo: findBar.superview === view ? findBar : nil)
       NSLayoutConstraint.activate([
         content.leadingAnchor.constraint(equalTo: view.leadingAnchor),
         content.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -75,6 +82,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
         content.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       ])
     }
+    if mode != .markdown, mode != .html { hideFindBar() }
   }
 
   func showWelcome() {
@@ -95,8 +103,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     headings = []
     webView = nil
     let hosting = NSHostingView(
-      rootView: ContentUnavailableView(title, systemImage: symbol, description: Text(message))
-        .frame(maxWidth: .infinity, maxHeight: .infinity))
+      rootView: MessageView(title: title, message: message, symbol: symbol))
     hostingView = hosting
     install(hosting)
   }
@@ -129,6 +136,8 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     suppressScrollTracking = false
     lastHeading = -1
     didScroll()
+    // A reload keeps the search going.
+    if !findBar.isHidden { search(findBar.query, from: findMatches.indices.contains(findIndex) ? findMatches[findIndex].location : nil) }
   }
 
   func showHTML(_ url: URL) {
@@ -147,26 +156,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     web.setAccessibilityLabel("Document")
     webView = web
 
-    let container = NSView()
-    web.translatesAutoresizingMaskIntoConstraints = false
-    htmlFindBar.translatesAutoresizingMaskIntoConstraints = false
-    htmlFindBar.isHidden = true
-    htmlFindBar.onFind = { [weak self] query, backwards in self?.findInHTML(query, backwards: backwards) }
-    htmlFindBar.onClose = { [weak self] in self?.hideHTMLFindBar() }
-    container.addSubview(web)
-    container.addSubview(htmlFindBar)
-    let findTop = htmlFindBar.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor)
-    NSLayoutConstraint.activate([
-      findTop,
-      htmlFindBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-      htmlFindBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-      web.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-      web.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-      web.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-    ])
-    htmlWebTop = web.topAnchor.constraint(equalTo: container.topAnchor)
-    htmlWebTop?.isActive = true
-    install(container)
+    install(web)
     web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
   }
 
@@ -193,8 +183,8 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     webView.evaluateJavaScript(
       HTMLDarkMode.script + "\nwindow.__mdowSetDark(\(on)) ?? false", in: nil, in: .defaultClient
     ) { [weak webView] result in
-      // WebKit fills the area under the toolbar with the page's own colour, sampled before the
-      // page was darkened; a fixed colour has to stand in. (A dynamic one blanks the page.)
+      // WebKit fills the overscroll area with the page's own colour, sampled before the page
+      // was darkened; a fixed colour has to stand in. (A dynamic one blanks the page.)
       let darkened = (try? result.get()) as? Bool == true
       webView?.underPageBackgroundColor = darkened ? HTMLDarkMode.background : nil
     }
@@ -204,70 +194,131 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     updateHTMLAppearance()
   }
 
-  // MARK: Find in HTML
+  // MARK: Find
 
-  private let htmlFindBar = HTMLFindBar()
+  private let findBar = FindBar()
   private var htmlURL: URL?
-  private var htmlWebTop: NSLayoutConstraint?
+  private var findMatches: [NSRange] = []
+  private var findIndex = -1
 
-  /// Find for HTML pages, which `NSTextFinder` can't search.
-  func performHTMLFind(_ action: NSTextFinder.Action) {
-    guard mode == .html else { return }
+  /// Find menu commands, for Markdown and HTML alike.
+  func performFind(_ action: NSTextFinder.Action) {
+    guard mode == .markdown || mode == .html else { return }
     switch action {
     case .showFindInterface:
-      showHTMLFindBar()
+      showFindBar()
     case .nextMatch, .previousMatch:
-      if htmlFindBar.isHidden { showHTMLFindBar() }
-      findInHTML(htmlFindBar.query, backwards: action == .previousMatch)
+      if findBar.isHidden { showFindBar() }
+      step(backwards: action == .previousMatch)
     case .setSearchString:
-      webView?.evaluateJavaScript(
-        "window.getSelection().toString()", in: nil, in: .defaultClient
-      ) { [weak self] result in
-        guard let self, case .success(let value) = result, let text = value as? String, !text.isEmpty
-        else { return }
-        self.htmlFindBar.query = text
+      if mode == .markdown {
+        let range = textView.selectedRange()
+        guard range.length > 0, let storage = textView.textStorage else { return }
+        findBar.query = (storage.string as NSString).substring(with: range)
+      } else {
+        webView?.evaluateJavaScript(
+          "window.getSelection().toString()", in: nil, in: .defaultClient
+        ) { [weak self] result in
+          guard let self, case .success(let value) = result, let text = value as? String, !text.isEmpty
+          else { return }
+          self.findBar.query = text
+        }
       }
     case .hideFindInterface:
-      hideHTMLFindBar()
+      hideFindBar()
     default:
       break
     }
   }
 
-  private func showHTMLFindBar() {
-    htmlFindBar.isHidden = false
-    if #available(macOS 26, *), let webView, let container = webView.superview {
-      // Moving a web view out from under the toolbar blanks it, so it stays put and is told
-      // what covers it instead.
-      container.layoutSubtreeIfNeeded()
-      webView.obscuredContentInsets = NSEdgeInsets(
-        top: container.safeAreaInsets.top + htmlFindBar.fittingSize.height, left: 0, bottom: 0, right: 0)
-    } else {
-      htmlWebTop?.isActive = false
-      htmlWebTop = webView?.topAnchor.constraint(equalTo: htmlFindBar.bottomAnchor)
-      htmlWebTop?.isActive = true
+  private func showFindBar() {
+    if findBar.superview !== view {
+      view.addSubview(findBar)
+      NSLayoutConstraint.activate([
+        findBar.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+        findBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+        findBar.widthAnchor.constraint(equalToConstant: 360),
+      ])
     }
-    htmlFindBar.focus()
+    let wasHidden = findBar.isHidden
+    findBar.isHidden = false
+    findBar.focus()
+    if wasHidden, !findBar.query.isEmpty { search(findBar.query) }
   }
 
-  private func hideHTMLFindBar() {
-    htmlFindBar.isHidden = true
-    if let webView, let container = webView.superview {
-      if #available(macOS 26, *) {
-        webView.obscuredContentInsets = NSEdgeInsets(
-          top: container.safeAreaInsets.top, left: 0, bottom: 0, right: 0)
-      } else {
-        htmlWebTop?.isActive = false
-        htmlWebTop = webView.topAnchor.constraint(equalTo: container.topAnchor)
-        htmlWebTop?.isActive = true
-      }
-      view.window?.makeFirstResponder(webView)
+  private func hideFindBar() {
+    guard !findBar.isHidden else { return }
+    let hadFocus = (view.window?.firstResponder as? NSView)?.isDescendant(of: findBar) == true
+    findBar.isHidden = true
+    clearHighlights()
+    findMatches = []
+    findIndex = -1
+    if hadFocus { view.window?.makeFirstResponder(mode == .html ? webView : textView) }
+  }
+
+  /// Finds every match in the document, starting at the reading position (or `location`).
+  private func search(_ query: String, from location: Int? = nil) {
+    if mode == .html {
+      findInHTML(query, backwards: false)
+      return
     }
+    clearHighlights()
+    findMatches = []
+    findIndex = -1
+    guard !query.isEmpty, let storage = textView.textStorage, let layout = textView.layoutManager else {
+      findBar.setResult(current: nil, total: nil)
+      return
+    }
+    let string = storage.string as NSString
+    var range = NSRange(location: 0, length: string.length)
+    while findMatches.count < 5000 {
+      let match = string.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: range)
+      guard match.location != NSNotFound, match.length > 0 else { break }
+      findMatches.append(match)
+      range = NSRange(location: NSMaxRange(match), length: string.length - NSMaxRange(match))
+    }
+    for match in findMatches {
+      layout.addTemporaryAttribute(.backgroundColor, value: ReaderColors.findMatch, forCharacterRange: match)
+    }
+    guard !findMatches.isEmpty else {
+      findBar.setResult(current: nil, total: 0)
+      return
+    }
+    let start = location ?? topCharacterIndex
+    showMatch(findMatches.firstIndex { $0.location >= start } ?? 0)
+  }
+
+  private func step(backwards: Bool) {
+    if mode == .html {
+      findInHTML(findBar.query, backwards: backwards)
+      return
+    }
+    guard !findMatches.isEmpty else { return }
+    let count = findMatches.count
+    showMatch(((findIndex + (backwards ? -1 : 1)) % count + count) % count)
+  }
+
+  private func showMatch(_ index: Int) {
+    guard let layout = textView.layoutManager else { return }
+    if findMatches.indices.contains(findIndex) {
+      layout.addTemporaryAttribute(
+        .backgroundColor, value: ReaderColors.findMatch, forCharacterRange: findMatches[findIndex])
+    }
+    findIndex = index
+    let match = findMatches[index]
+    layout.addTemporaryAttribute(.backgroundColor, value: ReaderColors.findCurrent, forCharacterRange: match)
+    scroll(toCharacter: match.location, animated: false, margin: scrollView.contentView.bounds.height * 0.3)
+    findBar.setResult(current: index + 1, total: findMatches.count)
+  }
+
+  private func clearHighlights() {
+    guard let layout = textView.layoutManager, let storage = textView.textStorage else { return }
+    layout.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
   }
 
   private func findInHTML(_ query: String, backwards: Bool) {
     guard let webView, !query.isEmpty else {
-      htmlFindBar.notFound = false
+      findBar.setResult(current: nil, total: nil)
       return
     }
     let configuration = WKFindConfiguration()
@@ -275,7 +326,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     configuration.caseSensitive = false
     configuration.wraps = true
     webView.find(query, configuration: configuration) { [weak self] result in
-      self?.htmlFindBar.notFound = !result.matchFound
+      self?.findBar.setResult(current: nil, total: result.matchFound ? nil : 0)
     }
   }
 
@@ -377,6 +428,16 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   }
 
   @objc private func didScroll() {
+    // Scrolling the reader decides whether it's held at the top; a resize moving the text
+    // doesn't (see `keepAtTop`).
+    if mode == .markdown {
+      // The text view settles its own scroll position shortly after reflowing.
+      if textView.frame.width == scrolledWidth, CACurrentMediaTime() - resizedAt > 0.3 {
+        pinnedToTop = isAtTop
+      } else {
+        keepAtTop()
+      }
+    }
     textView.refreshHover()
     guard !suppressScrollTracking, mode == .markdown else { return }
     let top = topCharacterIndex
@@ -407,25 +468,21 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   private var isAtTop: Bool {
     scrollView.contentView.bounds.minY <= -scrollView.contentInsets.top + 1
   }
-  private var wasAtTop = false
+  private var pinnedToTop = true
+  private var scrolledWidth: CGFloat = 0
+  private var resizedAt: CFTimeInterval = 0
 
-  // Narrowing the text view (e.g. opening a split) nudges it down by its inset; a document
-  // read from the top stays at the top.
-  override func viewWillLayout() {
-    super.viewWillLayout()
-    wasAtTop = mode == .markdown && isAtTop
+  /// Width changes (a sidebar sliding open, a split) reflow the text and nudge it; a document
+  /// read from the top stays at the top.
+  private func keepAtTop() {
+    if textView.frame.width != scrolledWidth { resizedAt = CACurrentMediaTime() }
+    scrolledWidth = textView.frame.width
+    guard mode == .markdown, pinnedToTop, !isAtTop else { return }
+    scrollView.contentView.scroll(to: NSPoint(x: 0, y: -scrollView.contentInsets.top))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
   }
-
-  override func viewDidLayout() {
-    super.viewDidLayout()
-    if wasAtTop, !isAtTop {
-      scrollView.contentView.scroll(to: NSPoint(x: 0, y: -scrollView.contentInsets.top))
-      scrollView.reflectScrolledClipView(scrollView.contentView)
-    }
-    wasAtTop = false
-  }
-
   @objc private func didResize() {
+    keepAtTop()
     let width = textView.currentColumnWidth
     if mode == .markdown, abs(width - lastColumnWidth) > 1 {
       lastColumnWidth = width

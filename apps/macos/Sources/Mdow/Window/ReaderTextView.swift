@@ -8,17 +8,18 @@ final class ReaderTextView: NSTextView {
   /// Returns the column width for the available width.
   var columnWidth: (CGFloat) -> CGFloat = { $0 }
   var onOpenFiles: (([URL]) -> Void)?
+  /// Find commands go to the reader's own find bar.
+  var onFindAction: ((NSTextFinder.Action) -> Void)?
   var minimumMargin: CGFloat = 32
 
   private var hovered: (block: CodeTextBlock, info: CodeBlockInfo, rect: NSRect)?
-  private lazy var copyButton: NSButton = {
-    let button = NSButton(
-      title: "Copy", image: NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)!,
-      target: self, action: #selector(copyHoveredCode))
-    button.bezelStyle = .accessoryBarAction
-    button.controlSize = .small
-    button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-    button.imagePosition = .imageLeading
+  private lazy var copyButton: ChromeButton = {
+    let button = ChromeButton(
+      symbol: "doc.on.doc", title: "Copy", style: .field, target: self, action: #selector(copyHoveredCode))
+    button.translatesAutoresizingMaskIntoConstraints = true
+    button.side = 24
+    button.symbolSize = 11
+    button.titleFont = Theme.ui(11.5, .medium)
     button.isHidden = true
     button.toolTip = "Copy code"
     addSubview(button)
@@ -47,8 +48,7 @@ final class ReaderTextView: NSTextView {
     isRichText = true
     importsGraphics = false
     allowsUndo = false
-    usesFindBar = true
-    isIncrementalSearchingEnabled = true
+    usesFindBar = false
     drawsBackground = true
     backgroundColor = Palette.paper
     selectedTextAttributes = [.backgroundColor: Palette.textSelection]
@@ -63,6 +63,16 @@ final class ReaderTextView: NSTextView {
     ]
     setAccessibilityLabel("Document")
     registerForDraggedTypes([.fileURL])
+  }
+
+  override func performTextFinderAction(_ sender: Any?) {
+    let tag = (sender as? NSValidatedUserInterfaceItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
+    onFindAction?(NSTextFinder.Action(rawValue: tag) ?? .showFindInterface)
+  }
+
+  override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+    if item.action == #selector(performTextFinderAction(_:)) { return onFindAction != nil }
+    return super.validateUserInterfaceItem(item)
   }
 
   // MARK: Column
@@ -157,10 +167,10 @@ final class ReaderTextView: NSTextView {
     next.block.hidesLabel = true
     setNeedsDisplay(next.rect)
     resetCopyButton()
-    copyButton.sizeToFit()
+    copyButton.setFrameSize(copyButton.intrinsicContentSize)
     let size = copyButton.frame.size
     copyButton.frame = NSRect(
-      x: next.rect.maxX - size.width - 6, y: next.rect.minY + 5, width: size.width, height: size.height)
+      x: next.rect.maxX - size.width - 8, y: next.rect.minY + 7, width: size.width, height: size.height)
     copyButton.isHidden = false
   }
 
@@ -168,11 +178,11 @@ final class ReaderTextView: NSTextView {
     guard let hovered else { return }
     copyToPasteboard(hovered.info.code)
     copyButton.title = "Copied"
-    copyButton.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
-    copyButton.sizeToFit()
+    copyButton.symbolName = "checkmark"
+    copyButton.setFrameSize(copyButton.intrinsicContentSize)
     let size = copyButton.frame.size
     copyButton.frame = NSRect(
-      x: hovered.rect.maxX - size.width - 6, y: hovered.rect.minY + 5, width: size.width, height: size.height)
+      x: hovered.rect.maxX - size.width - 8, y: hovered.rect.minY + 7, width: size.width, height: size.height)
     copyResetTask?.cancel()
     copyResetTask = Task { [weak self] in
       try? await Task.sleep(for: .seconds(1.6))
@@ -183,7 +193,8 @@ final class ReaderTextView: NSTextView {
 
   private func resetCopyButton() {
     copyButton.title = "Copy"
-    copyButton.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+    copyButton.symbolName = "doc.on.doc"
+    copyButton.setFrameSize(copyButton.intrinsicContentSize)
   }
 
   private func copyToPasteboard(_ string: String) {

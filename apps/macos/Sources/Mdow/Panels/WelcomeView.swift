@@ -2,72 +2,116 @@ import AppKit
 import MdowKit
 import SwiftUI
 
-/// What an empty window shows: open buttons and recent documents.
+/// What an empty tab shows: a greeting, open actions and recent documents.
 struct WelcomeView: View {
   var open: (URL) -> Void
   @State private var preferences = Preferences.shared
 
   var body: some View {
-    VStack(spacing: 0) {
-      Spacer(minLength: 40)
-      Image(nsImage: NSApp.applicationIconImage)
-        .resizable()
-        .frame(width: 112, height: 112)
-        .accessibilityHidden(true)
-      Text("Mdow")
-        .font(.system(size: 32, weight: .bold))
-        .padding(.top, 8)
-      Text("Open a Markdown file or a folder to start reading.")
-        .font(.title3)
-        .foregroundStyle(.secondary)
-        .padding(.top, 4)
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        Image(nsImage: NSApp.applicationIconImage)
+          .resizable()
+          .frame(width: 44, height: 44)
+          .accessibilityHidden(true)
+        Text(greeting)
+          .font(.custom("Charter", size: 34))
+          .foregroundStyle(Color.mdowText)
+          .padding(.top, 22)
+        Text("Open a Markdown file or a folder to start reading.")
+          .font(.mdowUI(14))
+          .foregroundStyle(Color.mdowSecondary)
+          .padding(.top, 6)
 
-      HStack(spacing: 12) {
-        Button {
-          NSApp.sendAction(#selector(DocumentWindowController.openDocument(_:)), to: nil, from: nil)
-        } label: {
-          Label("Open File…", systemImage: "doc")
-            .frame(minWidth: 110)
+        HStack(spacing: 10) {
+          ActionCard(symbol: "doc.text", title: "Open file", keys: "⌘O") {
+            NSApp.sendAction(#selector(DocumentWindowController.openDocument(_:)), to: nil, from: nil)
+          }
+          ActionCard(symbol: "folder", title: "Open folder", keys: "⇧⌘O") {
+            NSApp.sendAction(#selector(DocumentWindowController.openFolder(_:)), to: nil, from: nil)
+          }
         }
-        .buttonStyle(.borderedProminent)
-        Button {
-          NSApp.sendAction(#selector(DocumentWindowController.openFolder(_:)), to: nil, from: nil)
-        } label: {
-          Label("Open Folder…", systemImage: "folder")
-            .frame(minWidth: 110)
-        }
-      }
-      .controlSize(.large)
-      .padding(.top, 24)
+        .padding(.top, 28)
 
-      if !recents.isEmpty {
-        VStack(alignment: .leading, spacing: 6) {
+        if !recents.isEmpty {
           Text("Recent")
-            .font(.headline)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 10)
-          VStack(spacing: 2) {
+            .font(.mdowUI(12, .medium))
+            .foregroundStyle(Color.mdowTertiary)
+            .padding(.top, 36)
+            .padding(.bottom, 8)
+            .padding(.leading, 2)
+          VStack(spacing: 0) {
             ForEach(recents, id: \.self) { url in
               RecentRow(url: url) { open(url) }
             }
           }
+          .padding(4)
+          .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.mdowLine))
         }
-        .frame(width: 440)
-        .padding(.top, 36)
-      }
 
-      Spacer(minLength: 24)
-      Text("You can also drop files or a folder onto this window.")
-        .font(.callout)
-        .foregroundStyle(.tertiary)
-        .padding(.bottom, 24)
+        Text("Drop files or a folder anywhere in the window to open them.")
+          .font(.mdowUI(12))
+          .foregroundStyle(Color.mdowTertiary)
+          .padding(.top, 24)
+      }
+      .frame(maxWidth: 520, alignment: .leading)
+      .padding(.horizontal, 40)
+      .padding(.vertical, 64)
+      .frame(maxWidth: .infinity)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(nsColor: .textBackgroundColor))
+    .scrollBounceBehavior(.basedOnSize)
+    .background(Color.mdowPaper)
+  }
+
+  private var greeting: String {
+    switch Calendar.current.component(.hour, from: Date()) {
+    case 5..<12: "Good morning."
+    case 12..<18: "Good afternoon."
+    default: "Good evening."
+    }
   }
 
   private var recents: [URL] {
     Array(preferences.recents.filter { FileManager.default.fileExists(atPath: $0.path) }.prefix(6))
+  }
+}
+
+/// A large, quiet button: an icon, a title and its shortcut.
+private struct ActionCard: View {
+  var symbol: String
+  var title: String
+  var keys: String
+  var action: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: action) {
+      VStack(alignment: .leading, spacing: 18) {
+        Image(systemName: symbol)
+          .font(.system(size: 15, weight: .medium))
+          .foregroundStyle(Color.mdowAccent)
+        HStack {
+          Text(title)
+            .font(.mdowUI(13.5, .medium))
+            .foregroundStyle(Color.mdowText)
+          Spacer()
+          Text(keys)
+            .font(.mdowMono(11))
+            .foregroundStyle(Color.mdowTertiary)
+        }
+      }
+      .padding(14)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        hovering ? Color.mdowHover : Color.mdowElevated,
+        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+      )
+      .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.mdowLine))
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
+    .animation(.easeOut(duration: 0.12), value: hovering)
   }
 }
 
@@ -79,30 +123,62 @@ private struct RecentRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 10) {
-        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-          .resizable()
-          .frame(width: 28, height: 28)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(url.lastPathComponent)
-            .lineLimit(1)
-          Text(url.deletingLastPathComponent().abbreviatedPath)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        }
-        Spacer()
+        Image(systemName: FileKind(url: url) == .html ? "globe" : "doc.text")
+          .font(.system(size: 12))
+          .foregroundStyle(Color.mdowTertiary)
+          .frame(width: 16)
+        Text(url.lastPathComponent)
+          .font(.mdowUI(13, .medium))
+          .foregroundStyle(Color.mdowText)
+          .lineLimit(1)
+        Spacer(minLength: 16)
+        Text(url.deletingLastPathComponent().abbreviatedPath)
+          .font(.mdowMono(11))
+          .foregroundStyle(Color.mdowTertiary)
+          .lineLimit(1)
+          .truncationMode(.head)
       }
       .padding(.horizontal, 10)
-      .padding(.vertical, 5)
+      .frame(height: 34)
       .contentShape(.rect)
       .background(
-        hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
-        in: .rect(cornerRadius: 8))
+        hovering ? Color.mdowHover : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     .buttonStyle(.plain)
     .onHover { hovering = $0 }
     .help(url.path)
+  }
+}
+
+/// Why a document can't be shown.
+struct MessageView: View {
+  var title: String
+  var message: String
+  var symbol: String
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Image(systemName: symbol)
+        .font(.system(size: 18, weight: .medium))
+        .foregroundStyle(Color.mdowSecondary)
+        .frame(width: 44, height: 44)
+        .background(Color.mdowWell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.mdowLine))
+      Text(title)
+        .font(.custom("Charter", size: 22))
+        .foregroundStyle(Color.mdowText)
+        .multilineTextAlignment(.center)
+        .padding(.top, 18)
+      Text(message)
+        .font(.mdowUI(13))
+        .foregroundStyle(Color.mdowSecondary)
+        .multilineTextAlignment(.center)
+        .padding(.top, 6)
+    }
+    .frame(maxWidth: 420)
+    .padding(40)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.mdowPaper)
   }
 }
 

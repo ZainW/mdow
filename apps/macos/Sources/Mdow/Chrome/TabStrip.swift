@@ -23,6 +23,8 @@ final class TabStrip: NSView {
   private(set) var items: [TabStripItem] = []
   private(set) var selectedIndex = 0
   private var tabViews: [TabPill] = []
+  /// The tab being dragged, which moves under the pointer as the tabs reorder.
+  fileprivate var draggedIndex: Int?
   private lazy var addButton = ChromeButton(
     symbol: "plus", title: "New Tab", hint: "⌘T", target: self, action: #selector(newTab))
 
@@ -94,8 +96,11 @@ final class TabStrip: NSView {
     return min(max(Int((x / stride).rounded(.down)), 0), tabViews.count - 1)
   }
 
-  fileprivate func move(_ from: Int, to: Int) {
+  fileprivate func drag(toX x: CGFloat) {
+    guard let from = draggedIndex else { return }
+    let to = dropIndex(forX: x)
     guard from != to else { return }
+    draggedIndex = to
     delegate?.tabStrip(self, didMove: from, to: to)
   }
 }
@@ -174,21 +179,18 @@ private final class TabPill: NSView {
 
   override func mouseDown(with event: NSEvent) {
     dragStart = event.locationInWindow
+    strip?.draggedIndex = index
     strip?.select(index)
   }
 
   override func mouseDragged(with event: NSEvent) {
     guard let strip, let dragStart, abs(event.locationInWindow.x - dragStart.x) > 6 else { return }
-    let x = strip.convert(event.locationInWindow, from: nil).x
-    let target = strip.dropIndex(forX: x)
-    if target != index {
-      strip.move(index, to: target)
-      self.dragStart = event.locationInWindow
-    }
+    strip.drag(toX: strip.convert(event.locationInWindow, from: nil).x)
   }
 
   override func mouseUp(with event: NSEvent) {
     dragStart = nil
+    strip?.draggedIndex = nil
   }
 
   override func otherMouseUp(with event: NSEvent) {

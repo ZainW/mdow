@@ -1,15 +1,16 @@
 # Mdow for Mac
 
-Mdow, built the way Apple intends Mac apps to be built: Swift on AppKit and TextKit, using the
-system's own controls throughout. There's no web view for markdown, no custom theme and no
-cross-platform UI layer. It uses system fonts, semantic colours and the system's light and
-dark appearance, and on macOS 26 and later it gets Liquid Glass.
+Mdow in Swift, on AppKit and TextKit, with a look of its own rather than the stock Mac one:
+the document sits on a rounded sheet of paper inside a flat window, with tabs in the header,
+a quiet sidebar and one clay accent. Light mode is warm paper, dark mode neutral ink. Text is set
+in Charter, the interface in Inter and code in Geist Mono (both bundled, `Resources/Fonts`).
+There's no web view for markdown and no cross-platform UI layer; the chrome is drawn with AppKit
+views, and the colours live in one place (`Palette`, shared by the reader and the window).
 
 ## Requirements
 
 - macOS 15 or later to run
-- Xcode 26 or later to build (an older SDK builds too, but the app then runs in the
-  pre-Liquid Glass look)
+- Xcode 26 or later to build
 
 ## Run, test, install
 
@@ -26,8 +27,8 @@ Or in this folder: `swift build`, `swift test`, and `scripts/bundle.sh`, which w
 downloads Pele (pinned and checksummed) into `Resources/vendor/` with `scripts/fetch-pele.sh`.
 
 Run the bundle (`scripts/bundle.sh` or `run.sh`) rather than `swift run`. A bare SwiftPM binary
-has no Info.plist, and SwiftPM stamps it with the deployment target as its SDK version, so
-macOS shows it in the compatibility look. `bundle.sh` fixes both.
+has no Info.plist or bundled fonts, and SwiftPM stamps it with the deployment target as its SDK
+version, so macOS shows it in the compatibility look. `bundle.sh` fixes all three.
 
 ## What's in it
 
@@ -35,28 +36,31 @@ macOS shows it in the compatibility look. `bundle.sh` fixes both.
   with tables, task lists, alerts, footnotes, frontmatter titles, and the raw HTML that READMEs
   use (centred logos, badges, `<br>`, `<kbd>`, `<details>`). It renders to an `NSAttributedString`
   made of TextKit parts: `NSTextBlock` for code and quotes, `NSTextTable` for tables, and
-  attachments for images. This means selection, copy, **the system find bar**, Look Up, Services,
-  Speech, printing and Export as PDF all come from AppKit.
-- **Code**: a hand-written Swift highlighter for about 50 languages, in Xcode's default light and
-  dark colours. Hovering a code block shows a copy button.
+  attachments for images. This means selection, copy, Look Up, Services, Speech, printing and
+  Export as PDF all come from AppKit. Find (⌘F) is a small floating bar that highlights every
+  match and counts them, for markdown and HTML alike.
+- **Code**: a hand-written Swift highlighter for about 50 languages, in soft colours tuned to the
+  paper and ink themes. Hovering a code block shows a copy button.
 - **Math**: `$…$`, ``$`…`$``, `$$…$$` and ` ```math ` blocks, following GitHub's rules, are
   typeset natively by [SwiftMath](https://github.com/mgriebling/SwiftMath) (CoreText, Latin
   Modern Math) and shown as attachments that follow light and dark. Formulas that don't parse
   show their TeX. Each formula carries its source in `.mdowMathSource`.
 - **Mermaid**: laid out by [Pele](https://pele.run) in JavaScriptCore, then drawn as vector
-  SVG through `NSImage`. No browser engine is involved.
+  SVG through `NSImage`, in the same palette as the text. No browser engine is involved.
 - **HTML files**: shown in a `WKWebView` with JavaScript turned off.
 - **Windows**:
-  - Native window tabs (⌘T, the tab bar's +, Merge All Windows) and back/forward history per tab.
-  - A unified toolbar with Share.
-  - An `NSSplitViewController` sidebar showing the Outline (it follows your scroll position),
-    the Files in the folder (with a filter), or Recents.
+  - Tabs in the window's header (⌘T, ⌘W, ⌘1–⌘9, ⇧⌘[ and ⇧⌘], drag to reorder, middle-click to
+    close), each with its own folder, split view and back/forward history.
+  - A header with the sidebar, history, Quick Open, companion and ⋯ (Share, Open in Editor,
+    Export, Print) buttons. The window buttons sit in it; there's no system toolbar look.
+  - A sidebar showing the Outline (it follows your scroll position), the Files in the folder
+    (with a filter), or Recents, with Settings and a light/dark switch at the bottom.
   - Quick Open (⌘K) for headings, files and commands.
-  - The companion inspector (⌥⌘0, or the sparkles button): chat with OpenCode about the
+  - The companion (⌥⌘0, or the sparkle button): chat with OpenCode about the
     document and its folder. It runs a private `opencode serve` (OpenCode 2, found on PATH, the
     login shell's PATH or the usual install folders) and shows every edit as a diff to accept
     or decline; shell commands are declined automatically.
-  - A SwiftUI Settings window, and the proxy icon and path menu in the title.
+  - A Settings window and a Keyboard Shortcuts window in the same style.
 - **Behaviour**:
   - Live reload that keeps your place, and drag and drop onto the window or the Dock.
   - Links to other documents open in place (⌘-click for a new tab), and an Open Recent menu.
@@ -96,7 +100,7 @@ rolling `mac-latest` release (creating it the first time), which is what install
 
 ## Not included
 
-- The companion's inline review inside the document; edits are reviewed in the inspector.
+- The companion's inline review inside the document; edits are reviewed in the companion.
 - Some of MathJax's TeX: `\boxed`, `\xrightarrow`, `\overset`, `\substack` and colours.
 
 ## Layout
@@ -104,16 +108,17 @@ rolling `mac-latest` release (creating it the first time), which is what install
 | Path                         | What it does                                                   |
 | ---------------------------- | -------------------------------------------------------------- |
 | `Sources/MdowKit/Document`   | file kinds, frontmatter, footnotes, heading slugs              |
-| `Sources/MdowKit/Render`     | markdown → `NSAttributedString`, text blocks, styles, HTML bits |
-| `Sources/MdowKit/Highlight`  | syntax highlighter and Xcode-style code colours                |
+| `Sources/MdowKit/Render`     | markdown → `NSAttributedString`, text blocks, styles, palette  |
+| `Sources/MdowKit/Highlight`  | syntax highlighter and its colours                             |
 | `Sources/MdowKit/Files`      | folder scanning, file watching, fuzzy matching                 |
 | `Sources/MdowKit/Companion`  | OpenCode client, event translation, conversation state         |
 | `Sources/Mdow/App`           | app delegate, menus, settings storage, images and diagrams     |
-| `Sources/Mdow/Window`        | window controller (tabs, toolbar, history), reader, text view  |
-| `Sources/Mdow/Sidebar`       | the source list                                                |
+| `Sources/Mdow/Chrome`        | fonts, header, tab strip, buttons, document card, find bar     |
+| `Sources/Mdow/Window`        | window controller, tabs, panes and history, reader, text view  |
+| `Sources/Mdow/Sidebar`       | the sidebar                                                    |
 | `Sources/Mdow/Panels`        | welcome screen, Settings, Quick Open, shortcuts (SwiftUI)      |
 | `Sources/Mdow/Reader`        | Mermaid through Pele                                           |
-| `Sources/Mdow/Companion`     | the OpenCode server process, companion service and inspector   |
+| `Sources/Mdow/Companion`     | the OpenCode server process, companion service and panel       |
 
 Settings live in the `com.zain.mdow.Mac` user defaults.
 

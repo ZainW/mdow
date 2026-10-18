@@ -351,7 +351,6 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     header.backButton.isEnabled = activePane.canGoBack
     header.forwardButton.isEnabled = activePane.canGoForward
     header.companionButton.isOn = !companionItem.isCollapsed
-    header.sidebarButton.isOn = false
   }
 
   /// Keeps the card flush with open side panels and the tabs lined up with the card.
@@ -540,18 +539,10 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     CommandPalette.present(for: self, in: window)
   }
 
-  /// Find goes to the document even when the sidebar has focus, and HTML pages get their own
-  /// find bar since `NSTextFinder` can't search a web view.
+  /// Find goes to the document's find bar even when the sidebar has focus.
   @objc override func performTextFinderAction(_ sender: Any?) {
-    switch reader.mode {
-    case .markdown:
-      reader.textView.performTextFinderAction(sender)
-    case .html:
-      let tag = (sender as? NSValidatedUserInterfaceItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
-      reader.performHTMLFind(NSTextFinder.Action(rawValue: tag) ?? .showFindInterface)
-    default:
-      break
-    }
+    let tag = (sender as? NSValidatedUserInterfaceItem)?.tag ?? NSTextFinder.Action.showFindInterface.rawValue
+    reader.performFind(NSTextFinder.Action(rawValue: tag) ?? .showFindInterface)
   }
 
   @objc func printDocument(_ sender: Any?) {
@@ -789,10 +780,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
   }
 
   @objc private func findAction() {
-    if reader.mode == .markdown { window?.makeFirstResponder(reader.textView) }
-    let item = NSMenuItem()
-    item.tag = NSTextFinder.Action.showFindInterface.rawValue
-    performTextFinderAction(item)
+    reader.performFind(.showFindInterface)
   }
 }
 

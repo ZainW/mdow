@@ -1,7 +1,7 @@
 import AppKit
 
-/// Draws inline code backgrounds as rounded capsules that hug the text, instead of the
-/// rectangles AppKit fills across the whole line height.
+/// Draws inline code backgrounds and find highlights as rounded capsules that hug the text,
+/// instead of the rectangles AppKit fills across the whole line height.
 public final class ReaderLayoutManager: NSLayoutManager {
   private var drawingOrigin = NSPoint.zero
 
@@ -14,7 +14,10 @@ public final class ReaderLayoutManager: NSLayoutManager {
     _ rectArray: UnsafePointer<NSRect>, count rectCount: Int, forCharacterRange charRange: NSRange,
     color: NSColor
   ) {
-    guard color === ReaderColors.inlineCodeBackground, let storage = textStorage,
+    let rounded =
+      color === ReaderColors.inlineCodeBackground || color === ReaderColors.findMatch
+      || color === ReaderColors.findCurrent
+    guard rounded, let storage = textStorage,
       charRange.location < storage.length, let container = textContainers.first
     else {
       super.fillBackgroundRectArray(
