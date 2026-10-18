@@ -178,27 +178,34 @@ import UniformTypeIdentifiers
 
   @objc func showSettings(_ sender: Any?) {
     if settingsWindow == nil {
-      let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-      window.title = "Settings"
-      window.styleMask = [.titled, .closable]
-      window.isReleasedWhenClosed = false
-      window.identifier = .init("MdowSettings")
-      window.center()
-      settingsWindow = window
+      settingsWindow = makePanelWindow(SettingsView(), title: "Settings", identifier: "MdowSettings")
     }
     settingsWindow?.makeKeyAndOrderFront(nil)
   }
 
   @objc func showShortcuts(_ sender: Any?) {
     if shortcutsWindow == nil {
-      let window = NSWindow(contentViewController: NSHostingController(rootView: ShortcutsView()))
-      window.title = "Keyboard Shortcuts"
-      window.styleMask = [.titled, .closable]
-      window.isReleasedWhenClosed = false
-      window.center()
-      shortcutsWindow = window
+      shortcutsWindow = makePanelWindow(
+        ShortcutsView(), title: "Keyboard Shortcuts", identifier: "MdowShortcuts")
     }
     shortcutsWindow?.makeKeyAndOrderFront(nil)
+  }
+
+  /// A window for a SwiftUI panel: no visible title bar, the panel drawn edge to edge on the
+  /// chrome colour, sized to fit its content.
+  private func makePanelWindow(_ view: some View, title: String, identifier: String) -> NSWindow {
+    let hosting = NSHostingController(rootView: view)
+    hosting.sizingOptions = [.preferredContentSize]
+    let window = NSWindow(contentViewController: hosting)
+    window.title = title
+    window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.backgroundColor = Palette.chrome
+    window.isReleasedWhenClosed = false
+    window.identifier = .init(identifier)
+    window.center()
+    return window
   }
 
   @objc func openRecent(_ sender: NSMenuItem) {

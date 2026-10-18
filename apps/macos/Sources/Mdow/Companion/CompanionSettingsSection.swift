@@ -8,39 +8,68 @@ struct CompanionSettingsSection: View {
   private var runtime = CompanionRuntime.shared
 
   var body: some View {
-    Section {
-      LabeledContent("OpenCode") {
-        Text(statusText)
-          .foregroundStyle(.secondary)
-      }
-      if runtime.modelState.options.isEmpty {
-        LabeledContent("Default model") {
-          Text(preferences.companionModel ?? "OpenCode’s default")
-            .foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 0) {
+      CardHeading("OpenCode")
+      PanelCard {
+        SettingRow(title: "Status") {
+          HStack(spacing: 7) {
+            Circle()
+              .fill(runtime.isAvailable ? Color.mdowAccent : Color.mdowTertiary)
+              .frame(width: 6, height: 6)
+              .accessibilityHidden(true)
+            Text(statusText)
+              .font(.mdowUI(12.5))
+              .foregroundStyle(Color.mdowSecondary)
+              .multilineTextAlignment(.trailing)
+          }
+          .frame(maxWidth: 280, alignment: .trailing)
+          .accessibilityElement(children: .combine)
         }
-      } else {
-        Picker("Default model", selection: $preferences.companionModel) {
-          Text("OpenCode’s default").tag(String?.none)
-          Divider()
-          ForEach(providers, id: \.self) { provider in
-            Section(provider) {
-              ForEach(runtime.modelState.options.filter { $0.providerName == provider }) { option in
-                Text(option.name).tag(Optional(option.value))
-              }
-            }
+        CardDivider()
+        SettingRow(title: "Default model", detail: "New conversations start with this model.") {
+          if runtime.modelState.options.isEmpty {
+            Text(preferences.companionModel ?? "OpenCode’s default")
+              .font(.mdowMono(11.5))
+              .foregroundStyle(Color.mdowSecondary)
+          } else {
+            MenuPill(label: "Default model", value: modelName, choices: modelChoices)
           }
         }
       }
-    } header: {
-      Text("Companion")
-    } footer: {
       Text(
         "The companion runs on OpenCode 2 on this Mac and uses the providers you have signed in to there. You can also choose a model from the companion’s message box."
       )
-      .font(.caption)
-      .foregroundStyle(.secondary)
+      .font(.mdowUI(12))
+      .foregroundStyle(Color.mdowTertiary)
+      .lineSpacing(2)
       .fixedSize(horizontal: false, vertical: true)
+      .padding(.horizontal, 4)
+      .padding(.top, 10)
     }
+  }
+
+  private var modelName: String {
+    guard let value = preferences.companionModel else { return "OpenCode’s default" }
+    return runtime.modelState.options.first { $0.value == value }?.name ?? value
+  }
+
+  private func modelChoices() -> [MenuChoice] {
+    var choices = [
+      MenuChoice(title: "OpenCode’s default", isSelected: preferences.companionModel == nil) {
+        preferences.companionModel = nil
+      },
+      .separator,
+    ]
+    for provider in providers {
+      choices.append(.header(provider))
+      for option in runtime.modelState.options where option.providerName == provider {
+        choices.append(
+          MenuChoice(title: option.name, isSelected: preferences.companionModel == option.value) {
+            preferences.companionModel = option.value
+          })
+      }
+    }
+    return choices
   }
 
   private var providers: [String] {
