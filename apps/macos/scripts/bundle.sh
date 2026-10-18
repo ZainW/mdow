@@ -36,8 +36,14 @@ ditto Resources/Fonts "$APP/Contents/Resources/Fonts"
 MATH_BUNDLE="$APP/Contents/Resources/SwiftMath_SwiftMath.bundle"
 ditto "$(dirname "$BIN")/SwiftMath_SwiftMath.bundle" "$MATH_BUNDLE"
 rm -rf "$MATH_BUNDLE/Contents/_CodeSignature"
-find "$MATH_BUNDLE/Contents/Resources/mathFonts.bundle" \( -name '*.otf' -o -name '*.plist' \) \
-  ! -name 'latinmodern-math.*' -delete
+# Xcode versions lay the bundle out differently (flat or with Contents/Resources).
+MATH_FONTS="$(find "$MATH_BUNDLE" -type d -name mathFonts.bundle | head -1)"
+if [[ -z "$MATH_FONTS" ]]; then
+  echo "Missing mathFonts.bundle in $MATH_BUNDLE:" >&2
+  find "$MATH_BUNDLE" -maxdepth 3 >&2
+  exit 1
+fi
+find "$MATH_FONTS" \( -name '*.otf' -o -name '*.plist' \) ! -name 'latinmodern-math.*' -delete
 
 # Sparkle. The executable finds it through its @executable_path/../Frameworks rpath (set in
 # Package.swift). The app isn't sandboxed, so it doesn't need Sparkle's XPC services, and
