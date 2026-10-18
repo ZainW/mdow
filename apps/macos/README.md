@@ -96,7 +96,12 @@ the Developer ID (`CSC_LINK`, `CSC_KEY_PASSWORD`), notarizes and staples (`APPLE
 `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), zips the app, and writes `appcast.xml` with
 Sparkle's `generate_appcast`, signed with `SPARKLE_PRIVATE_ED_KEY`. It publishes
 `Mdow-for-Mac-<version>.zip` on the `mac-<version>` pre-release, then uploads `appcast.xml` to the
-rolling `mac-latest` release (creating it the first time), which is what installed copies read.
+rolling `mac-latest` release (creating it the first time), which is what installed copies read,
+along with a copy of the zip named `Mdow-for-Mac.zip`. The website's download page links the
+newest `mac-<version>` zip, and falls back to that copy when it can't reach GitHub's API.
+
+When releasing, add a `## Mdow for Mac <version>` section to `apps/web/content/changelog.md` and
+run `pnpm run --filter web generate:static`.
 
 ## Not included
 

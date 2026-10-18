@@ -15,6 +15,16 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
 
+### Mdow for Mac (preview)
+
+Mdow for Mac is Mdow rebuilt in Swift on AppKit and TextKit, with its own paper-and-ink look. It
+needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-for-Mac-<version>.zip` from
+the [download page](/download), unzip it, and move `Mdow for Mac.app` to Applications. It runs
+alongside the regular Mdow app and keeps its own settings.
+
+Releases are signed and notarized, and the app updates itself: it checks in the background, and
+you can check from **Mdow → Check for Updates…**.
+
 ### Mdow Native (beta)
 
 Mdow Native is a separate beta that renders with GPUI through [gpuix](https://gpuix.dev). On Apple

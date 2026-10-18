@@ -201,15 +201,17 @@ jobs:
               --notes "Mdow for Mac $VERSION. Download Mdow-for-Mac-$VERSION.zip, unzip it and move Mdow for Mac.app to Applications. It updates itself from then on."
           gh release upload "$TAG" "dist/release/Mdow-for-Mac-$VERSION.zip" dist/release/SHA256SUMS --clobber
 
-      - name: Update the Sparkle feed on mac-latest
+      # mac-latest also keeps the newest zip under a fixed name, for the website's download link.
+      - name: Update the Sparkle feed and download on mac-latest
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release view mac-latest >/dev/null 2>&1 \
             || gh release create mac-latest --prerelease --latest=false --target "$GITHUB_SHA" \
               --title "Mdow for Mac update feed" \
-              --notes "Holds appcast.xml, the Sparkle feed Mdow for Mac checks for updates. Downloads are on the versioned mac-<version> releases."
-          gh release upload mac-latest dist/release/appcast.xml --clobber
+              --notes "Holds appcast.xml, the Sparkle feed Mdow for Mac checks for updates, and Mdow-for-Mac.zip, the newest build. Each version also has its own mac-<version> release."
+          cp "dist/release/Mdow-for-Mac-$VERSION.zip" dist/release/Mdow-for-Mac.zip
+          gh release upload mac-latest dist/release/appcast.xml dist/release/Mdow-for-Mac.zip --clobber
           echo "Feed: https://github.com/$GH_REPO/releases/download/mac-latest/appcast.xml now offers $VERSION"
 
       - name: Clean up keychain

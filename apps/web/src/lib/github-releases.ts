@@ -22,6 +22,7 @@ interface GhAsset {
 interface GhRelease {
   tag_name: string
   name?: string
+  draft?: boolean
   published_at: string
   html_url: string
   assets: GhAsset[]
@@ -122,6 +123,48 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
     if (!res.ok) return null
     const json = (await res.json()) as GhRelease
     return parseRelease(json)
+  } catch {
+    return null
+  }
+}
+
+/** Mdow for Mac (the Swift app in apps/macos), released separately from `mac-<version>` tags. */
+export interface MacAppRelease {
+  version: string
+  publishedAt: string
+  htmlUrl: string
+  url: string
+}
+
+/** Always the newest Mdow for Mac zip; the release workflow keeps a copy on `mac-latest`. */
+export const MAC_APP_DOWNLOAD_URL = `https://github.com/${REPO}/releases/download/mac-latest/Mdow-for-Mac.zip`
+
+export function parseMacAppRelease(releases: GhRelease[]): MacAppRelease | null {
+  for (const release of releases) {
+    const version = /^mac-(\d[\w.-]*)$/.exec(release.tag_name)?.[1]
+    if (!version || release.draft) continue
+    const zip = release.assets?.find((asset) => asset.name === `Mdow-for-Mac-${version}.zip`)
+    if (!zip) continue
+    return {
+      version,
+      publishedAt: release.published_at,
+      htmlUrl: release.html_url,
+      url: zip.browser_download_url,
+    }
+  }
+  return null
+}
+
+export async function fetchLatestMacAppRelease(): Promise<MacAppRelease | null> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'mdow-website',
+      },
+    })
+    if (!res.ok) return null
+    return parseMacAppRelease((await res.json()) as GhRelease[])
   } catch {
     return null
   }

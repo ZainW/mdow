@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRelease } from './github-releases'
+import { parseMacAppRelease, parseRelease } from './github-releases'
 
 const sample = {
   tag_name: 'v1.2.3',
@@ -158,5 +158,43 @@ describe('parseRelease', () => {
     const result = parseRelease(sample)
     const allUrls = JSON.stringify(result)
     expect(allUrls).not.toContain('latest.yml')
+  })
+})
+
+describe('parseMacAppRelease', () => {
+  const macRelease = (tag: string, assets: string[], draft = false) => ({
+    tag_name: tag,
+    draft,
+    published_at: '2026-10-18T10:00:00Z',
+    html_url: `https://github.com/ZainW/mdow/releases/tag/${tag}`,
+    assets: assets.map((name) => asset(name, `https://example.test/${name}`)),
+  })
+
+  it('picks the newest mac-<version> release with its zip', () => {
+    const result = parseMacAppRelease([
+      sample,
+      macRelease('mac-latest', ['appcast.xml']),
+      macRelease('mac-0.2.0', ['Mdow-for-Mac-0.2.0.zip', 'SHA256SUMS']),
+      macRelease('mac-0.1.0', ['Mdow-for-Mac-0.1.0.zip']),
+    ])
+    expect(result).toEqual({
+      version: '0.2.0',
+      publishedAt: '2026-10-18T10:00:00Z',
+      htmlUrl: 'https://github.com/ZainW/mdow/releases/tag/mac-0.2.0',
+      url: 'https://example.test/Mdow-for-Mac-0.2.0.zip',
+    })
+  })
+
+  it('skips drafts and releases whose zip is still uploading', () => {
+    const result = parseMacAppRelease([
+      macRelease('mac-0.3.0', ['Mdow-for-Mac-0.3.0.zip'], true),
+      macRelease('mac-0.2.0', []),
+      macRelease('mac-0.1.0', ['Mdow-for-Mac-0.1.0.zip']),
+    ])
+    expect(result?.version).toBe('0.1.0')
+  })
+
+  it('returns null when there is no Mac release yet', () => {
+    expect(parseMacAppRelease([sample])).toBeNull()
   })
 })

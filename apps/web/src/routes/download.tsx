@@ -3,6 +3,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadButton, PlatformIcon } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
+import { MacAppDownloadSection } from '~/components/mac-app-download-section'
 import { NativeDownloadSection } from '~/components/native-download-section'
 import { PlatformDownloadRow, type DownloadFormat } from '~/components/platform-download-row'
 import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
@@ -15,21 +16,27 @@ import {
   platformLabel,
   type PlatformId,
 } from '~/lib/download-links'
-import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
+import {
+  fetchLatestMacAppRelease,
+  fetchLatestRelease,
+  MAC_APP_DOWNLOAD_URL,
+  type MacAppRelease,
+  type ReleaseInfo,
+} from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
 
 const loadDownloadData = createServerFn({ method: 'GET' }).handler(async () => {
   const ua = getRequestHeader('user-agent') || ''
   const os = detectPlatform(ua)
-  const release = await fetchLatestRelease()
+  const [release, macApp] = await Promise.all([fetchLatestRelease(), fetchLatestMacAppRelease()])
 
   setResponseHeader(
     'Cache-Control',
     release ? 'public, max-age=600, s-maxage=600' : 'public, max-age=30, s-maxage=30',
   )
 
-  return { os, release }
+  return { os, release, macApp }
 })
 
 export const Route = createFileRoute('/download')({
@@ -38,7 +45,7 @@ export const Route = createFileRoute('/download')({
     meta: seo({
       title: 'Download Mdow for Mac, Windows & Linux',
       description:
-        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes the Mdow Native beta for Apple Silicon and Linux.',
+        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes the new Mdow for Mac, built in Swift, and the Mdow Native beta.',
       path: '/download',
     }),
     links: [canonical('/download')],
@@ -98,9 +105,10 @@ function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
 }
 
 function DownloadPage() {
-  const { os, release } = Route.useLoaderData() as {
+  const { os, release, macApp } = Route.useLoaderData() as {
     os: PlatformId
     release: ReleaseInfo | null
+    macApp: MacAppRelease | null
   }
 
   const platforms = release ? buildPlatforms(release) : []
@@ -175,6 +183,14 @@ function DownloadPage() {
           </p>
         </section>
       )}
+
+      <MacAppDownloadSection
+        download={{
+          url: macApp?.url ?? MAC_APP_DOWNLOAD_URL,
+          version: macApp?.version ?? null,
+          publishedAt: macApp?.publishedAt ?? null,
+        }}
+      />
 
       <NativeDownloadSection
         macUrl={release ? gpuiMacBetaDownloadUrl(release) : GPUI_MAC_BETA_DOWNLOAD_URL}

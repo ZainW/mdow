@@ -6,6 +6,15 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>Mdow for Mac 0.1.0</title>
+      <link>https://mdow.wania.app/changelog#Mdow for Mac 0-1-0</link>
+      <guid isPermaLink="false">Mdow for Mac 0.1.0</guid>
+      <pubDate>Sun, 18 Oct 2026 16:35:16 GMT</pubDate>
+      <description>- Introducing Mdow for Mac, a preview of Mdow rebuilt in Swift on AppKit and TextKit, with no web view. Download it from the download page; it runs alongside the regular app
+- A calm look of its own: the document sits on a sheet of warm paper (or neutral ink in dark mode), set in Charter, with tabs in the header and a quiet sidebar for the outline, files and recents
+- Everything you read in Mdow renders natively: tables, task lists, alerts, footnotes, syntax-highlighted code, Mermaid diagrams</description>
+    </item>
+    <item>
       <title>v1.15.1</title>
       <link>https://mdow.wania.app/changelog#v1-15-1</link>
       <guid isPermaLink="false">v1.15.1</guid>
