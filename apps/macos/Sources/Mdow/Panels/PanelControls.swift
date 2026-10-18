@@ -5,10 +5,6 @@ import SwiftUI
 // Flat controls for the SwiftUI panels (Settings, Keyboard Shortcuts), drawn in Mdow's own
 // palette rather than the system's bezels.
 
-extension Color {
-  static let mdowStrongLine = Color(nsColor: Palette.strongLine)
-}
-
 extension Animation {
   /// The one animation the panels use: a short ease-out for hover and selection fades.
   static let mdowFade = Animation.easeOut(duration: 0.12)

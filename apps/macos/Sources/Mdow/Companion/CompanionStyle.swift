@@ -22,7 +22,6 @@ enum CompanionStyle {
 }
 
 extension Color {
-  static let mdowStrongLine = Color(nsColor: Palette.strongLine)
   /// Text and icons on an accent fill: white on the light theme's clay, ink on the dark one's.
   static let companionOnAccent = Color(
     nsColor: ReaderColors.dynamic(light: .white, dark: Palette.rgb(0x1B1B1B)))

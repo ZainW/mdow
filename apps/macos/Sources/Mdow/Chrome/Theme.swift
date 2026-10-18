@@ -67,6 +67,7 @@ extension Color {
   static let mdowSecondary = Color(nsColor: Palette.secondaryText)
   static let mdowTertiary = Color(nsColor: Palette.tertiaryText)
   static let mdowLine = Color(nsColor: Palette.line)
+  static let mdowStrongLine = Color(nsColor: Palette.strongLine)
   static let mdowHover = Color(nsColor: Palette.hover)
   static let mdowSelected = Color(nsColor: Palette.selected)
   static let mdowAccent = Color(nsColor: Palette.accent)

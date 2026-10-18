@@ -271,6 +271,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     guard sidebarTree !== tree else { return }
     sidebarTree = tree
     sidebar.setFolder(tree)
+    // The companion offers the folder's documents for @-mentions.
+    companion.documentContextChanged()
   }
 
   private func rescanFolder() {
