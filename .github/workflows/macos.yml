@@ -1,6 +1,9 @@
 name: Mac (AppKit)
 
-# Builds and tests Mdow for Mac (apps/macos), and uploads an ad hoc signed app for testing.
+# Builds and tests Mdow for Mac (apps/macos).
+#   - pull requests and pushes to main: build, test, upload an ad hoc signed app as an artifact
+#   - tags `mac-<version>`: also sign with the Developer ID, notarize, publish the versioned
+#     pre-release, and point the Sparkle feed (the `mac-latest` release's appcast.xml) at it
 'on':
   pull_request:
     paths:
@@ -8,6 +11,7 @@ name: Mac (AppKit)
       - '.github/workflows/macos.yml'
   push:
     branches: [main]
+    tags: ['mac-[0-9]*']
     paths:
       - 'apps/macos/**'
       - '.github/workflows/macos.yml'
@@ -46,3 +50,168 @@ jobs:
         with:
           name: mdow-for-mac
           path: apps/macos/dist/Mdow-for-Mac.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/mac-')
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: apps/macos
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # CFBundleVersion, which Sparkle compares, is the commit count.
+          fetch-depth: 0
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/macos/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
+
+      - name: Check the tag matches VERSION
+        id: version
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$GITHUB_REF_NAME" != "mac-$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match apps/macos/VERSION ($VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check the Sparkle key is configured
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          if [[ -z "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+            echo "::error::SPARKLE_PRIVATE_ED_KEY is not set; refusing to release without updates"
+            exit 1
+          fi
+
+      - name: Import Apple signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
+          P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/mac-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Using $IDENTITY"
+
+      - name: Build and sign
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash scripts/bundle.sh
+          codesign --verify --deep --strict --verbose=2 "dist/Mdow for Mac.app"
+          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow for Mac.app"
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "dist/Mdow for Mac.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "dist/Mdow for Mac.app"
+          xcrun stapler validate "dist/Mdow for Mac.app"
+          spctl --assess --type execute --verbose=2 "dist/Mdow for Mac.app"
+
+      - name: Zip and write the appcast
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          ZIP="Mdow-for-Mac-$VERSION.zip"
+          mkdir -p dist/release
+          ditto -c -k --keepParent "dist/Mdow for Mac.app" "dist/release/$ZIP"
+          (cd dist/release && shasum -a 256 "$ZIP" > SHA256SUMS)
+
+          # generate_appcast signs every archive in the folder, so give it only the new zip.
+          # Sparkle only needs the newest item; the zip itself lives on the versioned release.
+          FEED_DIR="$RUNNER_TEMP/appcast"
+          rm -rf "$FEED_DIR" && mkdir -p "$FEED_DIR"
+          cp "dist/release/$ZIP" "$FEED_DIR/"
+          printf '%s' "$SPARKLE_PRIVATE_ED_KEY" \
+            | .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME/" \
+              --link "https://github.com/$GH_REPO/releases/tag/$GITHUB_REF_NAME" \
+              --maximum-versions 1 \
+              --maximum-deltas 0 \
+              -o "$FEED_DIR/appcast.xml" \
+              "$FEED_DIR"
+          cp "$FEED_DIR/appcast.xml" dist/release/appcast.xml
+
+          grep -F "releases/download/$GITHUB_REF_NAME/$ZIP" dist/release/appcast.xml >/dev/null \
+            || { echo "::error::appcast.xml does not point at $ZIP"; exit 1; }
+          grep -F 'sparkle:edSignature' dist/release/appcast.xml >/dev/null \
+            || { echo "::error::appcast.xml is missing sparkle:edSignature"; exit 1; }
+          cat dist/release/appcast.xml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-for-mac-release
+          path: apps/macos/dist/release/
+          if-no-files-found: error
+
+      # The versioned release goes first so the feed never points at a missing download.
+      - name: Publish the versioned pre-release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --prerelease --latest=false --verify-tag \
+              --title "Mdow for Mac $VERSION (preview)" \
+              --notes "Mdow for Mac $VERSION. Download Mdow-for-Mac-$VERSION.zip, unzip it and move Mdow for Mac.app to Applications. It updates itself from then on."
+          gh release upload "$TAG" "dist/release/Mdow-for-Mac-$VERSION.zip" dist/release/SHA256SUMS --clobber
+
+      - name: Update the Sparkle feed on mac-latest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view mac-latest >/dev/null 2>&1 \
+            || gh release create mac-latest --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "Mdow for Mac update feed" \
+              --notes "Holds appcast.xml, the Sparkle feed Mdow for Mac checks for updates. Downloads are on the versioned mac-<version> releases."
+          gh release upload mac-latest dist/release/appcast.xml --clobber
+          echo "Feed: https://github.com/$GH_REPO/releases/download/mac-latest/appcast.xml now offers $VERSION"
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/mac-signing.keychain-db" 2>/dev/null || true
