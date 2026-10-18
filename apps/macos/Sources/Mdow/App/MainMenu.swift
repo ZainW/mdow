@@ -40,6 +40,9 @@ import MdowKit
     let name = "Mdow"
     let menu = NSMenu(title: name)
     menu.addItem(item("About \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""))
+    let update = item("Check for Updates…", #selector(Updater.checkForUpdates(_:)))
+    update.target = Updater.shared
+    menu.addItem(update)
     menu.addItem(.separator())
     menu.addItem(item("Settings…", #selector(AppDelegate.showSettings(_:)), ","))
     menu.addItem(.separator())

@@ -34,6 +34,12 @@
   <false/>
   <key>NSSupportsSuddenTermination</key>
   <false/>
+  <key>SUFeedURL</key>
+  <string>https://github.com/ZainW/mdow/releases/download/mac-latest/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>zlKJViuePMZtohOXzhZvrWdQ2iuLvEyGH3zli2WZ1cI=</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>

@@ -31,6 +31,7 @@ import UniformTypeIdentifiers
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     launched = true
+    Updater.shared.start()
     keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       self?.handleTabShortcut(event) == true ? nil : event
     }
