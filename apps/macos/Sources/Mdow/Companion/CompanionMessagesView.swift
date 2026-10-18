@@ -13,7 +13,7 @@ struct CompanionMessagesView: View {
       CompanionEmptyState(session: session, document: document)
     } else {
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 16) {
+        LazyVStack(alignment: .leading, spacing: 18) {
           ForEach(messages) { message in
             if message.role == .user {
               UserMessageView(message: message)
@@ -27,14 +27,21 @@ struct CompanionMessagesView: View {
             TurnErrorView(message: session.conversation.error) { session.send(lastUser.content) }
           }
           ForEach(Array(session.conversation.warnings.enumerated()), id: \.offset) { _, warning in
-            Label(warning, systemImage: "exclamationmark.triangle")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+              Image(systemName: "exclamationmark.triangle")
+              Text(warning).fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.mdowUI(11.5))
+            .foregroundStyle(Color.mdowTertiary)
           }
         }
-        .padding(14)
+        .padding(.leading, CompanionStyle.leading + 2)
+        .padding(.trailing, CompanionStyle.trailing + 2)
+        .padding(.top, 6)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
+      .scrollIndicators(.automatic)
       // Short conversations start at the top; long ones open at, and follow, the newest reply.
       .defaultScrollAnchor(.top, for: .alignment)
       .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -56,13 +63,13 @@ private func suggestions(for documentName: String?) -> [Suggestion] {
   if let name = documentName {
     return [
       Suggestion(
-        symbol: "list.bullet.rectangle", label: "Summarize this document",
+        symbol: "list.bullet", label: "Summarize this document",
         prompt: "Summarize \(name) in a few bullet points."),
       Suggestion(
         symbol: "lightbulb", label: "Explain the key ideas",
         prompt: "Explain the key ideas in \(name) as if I'm new to the topic."),
       Suggestion(
-        symbol: "textformat.abc.dottedunderline", label: "Fix spelling and grammar",
+        symbol: "text.badge.checkmark", label: "Fix spelling and grammar",
         prompt: "Fix spelling and grammar mistakes in \(name). Don't change the meaning or style."),
       Suggestion(
         symbol: "scissors", label: "Make it more concise",
@@ -86,35 +93,42 @@ private struct CompanionEmptyState: View {
   var body: some View {
     let documentName = document.documentURL?.lastPathComponent
     let scope = documentName ?? document.folderURL?.lastPathComponent
+    let items = suggestions(for: documentName)
     ScrollView {
-      VStack(spacing: 6) {
-        Image(systemName: "sparkles")
-          .font(.system(size: 22, weight: .regular))
-          .foregroundStyle(.secondary)
-          .frame(width: 44, height: 44)
-          .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 10))
-          .padding(.bottom, 6)
+      VStack(alignment: .leading, spacing: 0) {
+        Image(systemName: "sparkle")
+          .font(.system(size: 17, weight: .regular))
+          .foregroundStyle(Color.mdowAccent)
+          .padding(.bottom, 12)
+          .accessibilityHidden(true)
         Text(scope.map { "Ask about \($0)" } ?? "Ask about your documents")
-          .font(.headline)
-          .multilineTextAlignment(.center)
-        Text("Get answers, summaries and edits. Every change comes back as a diff for you to approve.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
+          .font(CompanionStyle.serif(22))
           .fixedSize(horizontal: false, vertical: true)
-          .frame(maxWidth: 260)
-        VStack(alignment: .leading, spacing: 2) {
-          ForEach(suggestions(for: documentName)) { suggestion in
-            SuggestionButton(suggestion: suggestion) { session.send(suggestion.prompt) }
+        Text("Get answers, summaries and edits. Every change comes back as a diff for you to approve.")
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowSecondary)
+          .lineSpacing(2)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.top, 6)
+        Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+          ForEach(Array(stride(from: 0, to: items.count, by: 2)), id: \.self) { start in
+            GridRow {
+              ForEach(items[start..<min(start + 2, items.count)]) { suggestion in
+                SuggestionButton(suggestion: suggestion) { session.send(suggestion.prompt) }
+              }
+            }
           }
         }
-        .frame(maxWidth: 280)
-        .padding(.top, 14)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 20)
       }
-      .padding(20)
-      .frame(maxWidth: .infinity)
+      .padding(.leading, CompanionStyle.leading + 2)
+      .padding(.trailing, CompanionStyle.trailing + 2)
+      .padding(.vertical, 20)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
     }
+    .scrollIndicators(.never)
   }
 }
 
@@ -125,21 +139,29 @@ private struct SuggestionButton: View {
 
   var body: some View {
     Button(action: action) {
-      Label {
-        Text(suggestion.label).foregroundStyle(.primary)
-      } icon: {
+      VStack(alignment: .leading, spacing: 8) {
         Image(systemName: suggestion.symbol)
-          .foregroundStyle(.secondary)
-          .frame(width: 18)
+          .font(.system(size: 11.5, weight: .medium))
+          .foregroundStyle(hovering ? Color.mdowAccent : Color.mdowTertiary)
+          .frame(height: 14)
+        Text(suggestion.label)
+          .font(.mdowUI(12.5, .medium))
+          .foregroundStyle(Color.mdowText)
+          .multilineTextAlignment(.leading)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 0)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
-      .contentShape(.rect)
-      .background(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 6))
+      .padding(.horizontal, 11)
+      .padding(.vertical, 10)
+      .frame(maxWidth: .infinity, minHeight: 68, maxHeight: .infinity, alignment: .topLeading)
+      .background(
+        hovering ? Color.mdowHover : .clear, in: .rect(cornerRadius: 10, style: .continuous))
+      .companionCard(radius: 10, fill: .mdowPaper, border: hovering ? .mdowStrongLine : .mdowLine)
+      .contentShape(.rect(cornerRadius: 10))
     }
     .buttonStyle(.plain)
     .onHover { hovering = $0 }
+    .accessibilityLabel(suggestion.label)
   }
 }
 
@@ -150,12 +172,15 @@ private struct UserMessageView: View {
 
   var body: some View {
     HStack {
-      Spacer(minLength: 32)
+      Spacer(minLength: 36)
       Text(message.content)
+        .font(.mdowUI(13))
+        .lineSpacing(2)
         .textSelection(.enabled)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(.quaternary.opacity(0.8), in: .rect(cornerRadius: 12))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .companionCard(radius: 14, fill: .mdowElevated)
     }
   }
 }
@@ -179,25 +204,28 @@ private struct AssistantMessageView: View {
         case .change(let change):
           ChangeCardView(change: change, openDocument: openDocument)
         case .status(let text):
-          Text(text).font(.caption).foregroundStyle(.secondary)
+          Text(text).font(.mdowUI(11.5)).foregroundStyle(Color.mdowTertiary)
         }
       }
       if streaming, isWaiting {
-        HStack(spacing: 6) {
-          ProgressView().controlSize(.mini)
+        HStack(spacing: 8) {
+          CompanionActivityDots()
           Text(message.parts.isEmpty ? "Thinking…" : "Working…")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .font(.mdowUI(12))
+        .foregroundStyle(Color.mdowSecondary)
+        .frame(height: 20)
       }
       if message.status == .cancelled {
-        Text("Stopped").font(.caption).foregroundStyle(.secondary)
+        Text("Stopped").font(.mdowUI(11.5)).foregroundStyle(Color.mdowTertiary)
       }
       if !message.citations.isEmpty {
         SourcesView(citations: message.citations, openDocument: openDocument)
       }
       if message.status == .complete, !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         CopyButton(text: message.content)
+          .padding(.leading, -5)
+          .padding(.top, -4)
           .opacity(hovering ? 1 : 0)
       }
     }
@@ -232,10 +260,9 @@ private struct CopyButton: View {
       }
     } label: {
       Image(systemName: copied ? "checkmark" : "doc.on.doc")
-        .foregroundStyle(copied ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+        .font(.system(size: 11, weight: .medium))
     }
-    .buttonStyle(.borderless)
-    .controlSize(.small)
+    .buttonStyle(CompanionIconButtonStyle(side: 24))
     .help(copied ? "Copied" : "Copy Response")
     .accessibilityLabel(copied ? "Copied" : "Copy Response")
   }
@@ -247,19 +274,23 @@ private struct TurnErrorView: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(.red)
+      Image(systemName: "exclamationmark.circle")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Color.companionRemoved)
       Text(message ?? "Something went wrong.")
-        .font(.callout)
+        .font(.mdowUI(12.5))
+        .lineSpacing(2)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       Button("Retry", action: retry)
-        .controlSize(.small)
+        .buttonStyle(CompanionPillButtonStyle(kind: .secondary))
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
     }
-    .padding(10)
-    .background(.red.opacity(0.08), in: .rect(cornerRadius: 8))
-    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.red.opacity(0.25)))
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .companionCard(
+      radius: 10, fill: .companionRemoved.opacity(0.07), border: .companionRemoved.opacity(0.25))
   }
 }
 
@@ -269,23 +300,41 @@ private struct SourcesView: View {
   @State private var expanded = false
 
   var body: some View {
-    DisclosureGroup(isExpanded: $expanded) {
-      VStack(alignment: .leading, spacing: 4) {
+    CompanionDisclosure(expanded: $expanded) {
+      VStack(alignment: .leading, spacing: 2) {
         ForEach(citations, id: \.sourceId) { citation in
-          Button {
-            openDocument(URL(fileURLWithPath: citation.path))
-          } label: {
-            Label(citation.label, systemImage: "doc.text")
-          }
-          .buttonStyle(.link)
-          .help(citation.path)
+          SourceLink(citation: citation) { openDocument(URL(fileURLWithPath: citation.path)) }
         }
       }
-      .padding(.top, 4)
     } label: {
       Text(citations.count == 1 ? "Used 1 source" : "Used \(citations.count) sources")
-        .foregroundStyle(.secondary)
+        .font(.mdowUI(11.5))
+        .foregroundStyle(Color.mdowTertiary)
     }
-    .font(.caption)
+  }
+}
+
+private struct SourceLink: View {
+  var citation: CompanionCitation
+  var open: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: 6) {
+        Image(systemName: "doc.text")
+          .font(.system(size: 10.5))
+          .foregroundStyle(Color.mdowTertiary)
+        Text(citation.label)
+          .font(.mdowMono(11))
+          .foregroundStyle(hovering ? Color.mdowAccent : Color.mdowSecondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
+    .help(citation.path)
   }
 }

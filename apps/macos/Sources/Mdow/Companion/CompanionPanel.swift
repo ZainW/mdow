@@ -15,7 +15,6 @@ struct CompanionPanel: View {
     let noModels = ready && !models.stale && models.options.isEmpty
     VStack(spacing: 0) {
       CompanionHeader(session: session, runtime: runtime)
-      Divider()
       if !ready {
         CompanionSetupView(status: runtime.status) { reconnect() }
       } else if noModels && session.conversation.messages.isEmpty {
@@ -33,6 +32,9 @@ struct CompanionPanel: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.mdowChrome)
+    .foregroundStyle(Color.mdowText)
+    .tint(.mdowAccent)
     .environment(session)
   }
 
@@ -48,15 +50,15 @@ private struct CompanionHeader: View {
   var runtime: CompanionRuntime
 
   var body: some View {
-    HStack(spacing: 6) {
-      VStack(alignment: .leading, spacing: 0) {
-        Text("Companion")
-          .font(.headline)
-        if let version = runtime.status?.version, runtime.isAvailable {
-          Text("OpenCode \(version)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+    HStack(spacing: 8) {
+      Text("Companion")
+        .font(.mdowUI(13, .semibold))
+      if let version = runtime.status?.version, runtime.isAvailable {
+        Text("OpenCode \(version)")
+          .font(.mdowMono(11))
+          .foregroundStyle(Color.mdowTertiary)
+          .lineLimit(1)
+          .offset(y: 0.5)
       }
       Spacer(minLength: 0)
       Button {
@@ -64,13 +66,14 @@ private struct CompanionHeader: View {
       } label: {
         Image(systemName: "square.and.pencil")
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(CompanionIconButtonStyle(side: 28))
       .help("New Chat")
       .accessibilityLabel("New Chat")
       .disabled(session.conversation.messages.isEmpty)
     }
-    .padding(.horizontal, 14)
-    .frame(height: 44)
+    .padding(.leading, CompanionStyle.leading + 2)
+    .padding(.trailing, CompanionStyle.trailing)
+    .frame(height: 40)
   }
 }
 
@@ -85,11 +88,11 @@ private struct CompanionSetupView: View {
   var body: some View {
     switch status?.availability {
     case nil:
-      VStack(spacing: 8) {
-        ProgressView().controlSize(.small)
+      HStack(spacing: 8) {
+        CompanionActivityDots()
         Text("Starting OpenCode…")
-          .font(.callout)
-          .foregroundStyle(.secondary)
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowSecondary)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     case .missing:
@@ -122,27 +125,34 @@ private struct SetupMessage: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 12) {
-        Text(title).font(.headline)
+      VStack(alignment: .leading, spacing: 10) {
+        Text(title)
+          .font(CompanionStyle.serif(19))
+          .padding(.bottom, 2)
         Text(message)
-          .font(.callout)
-          .foregroundStyle(.secondary)
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowSecondary)
+          .lineSpacing(2)
           .fixedSize(horizontal: false, vertical: true)
         ForEach(commands, id: \.self) { CommandLineView(command: $0) }
-        HStack {
+        HStack(spacing: 6) {
           Button("Check Again", action: retry)
+            .buttonStyle(CompanionPillButtonStyle(kind: .secondary))
           if showDocs {
             Button("OpenCode Docs") {
               NSWorkspace.shared.open(URL(string: "https://opencode.ai/docs")!)
             }
-            .buttonStyle(.link)
+            .buttonStyle(CompanionPillButtonStyle(kind: .quiet))
           }
         }
-        .controlSize(.small)
+        .padding(.top, 4)
       }
-      .padding(20)
+      .padding(.leading, CompanionStyle.leading + 2)
+      .padding(.trailing, CompanionStyle.trailing + 2)
+      .padding(.vertical, 16)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .scrollIndicators(.never)
     .frame(maxHeight: .infinity)
   }
 }
@@ -151,12 +161,11 @@ private struct CommandLineView: View {
   var command: String
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 6) {
-      Image(systemName: "terminal")
-        .foregroundStyle(.secondary)
-        .font(.caption)
+    HStack(spacing: 6) {
+      Text("$")
+        .foregroundStyle(Color.mdowTertiary)
       Text(command)
-        .font(.system(.caption, design: .monospaced))
+        .foregroundStyle(Color.mdowText)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
       Button {
@@ -165,12 +174,15 @@ private struct CommandLineView: View {
       } label: {
         Image(systemName: "doc.on.doc")
       }
-      .buttonStyle(.borderless)
-      .controlSize(.small)
+      .buttonStyle(CompanionIconButtonStyle(side: 22))
       .help("Copy")
+      .accessibilityLabel("Copy")
     }
-    .padding(8)
-    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+    .font(.mdowMono(11.5))
+    .padding(.leading, 10)
+    .padding(.trailing, 4)
+    .padding(.vertical, 4)
+    .companionCard(radius: 8)
   }
 }
 
@@ -194,13 +206,16 @@ private struct PendingReviewBar: View {
       }
     let elsewhere = first.map { $0.path != document.documentURL?.path && $0.status != .deleted } ?? false
     HStack(spacing: 8) {
-      Image(systemName: "sparkles")
-        .foregroundStyle(.secondary)
-      VStack(alignment: .leading, spacing: 0) {
-        Text("Suggested edit").font(.callout.weight(.medium))
+      Circle()
+        .fill(Color.mdowAccent)
+        .frame(width: 6, height: 6)
+        .padding(.leading, 2)
+      VStack(alignment: .leading, spacing: 1) {
+        Text("Suggested edit")
+          .font(.mdowUI(12.5, .medium))
         Text(label)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .font(.mdowMono(11))
+          .foregroundStyle(Color.mdowTertiary)
           .lineLimit(1)
           .truncationMode(.middle)
       }
@@ -208,22 +223,26 @@ private struct PendingReviewBar: View {
       Spacer(minLength: 4)
       if elsewhere, let first {
         Button("Show") { openDocument(URL(fileURLWithPath: first.path)) }
+          .buttonStyle(CompanionPillButtonStyle(kind: .quiet))
           .help("Open \(first.displayPath)")
       }
       if let permissionId = change.permissionId {
         Button("Decline") { session.review(permissionId, .reject) }
+          .buttonStyle(CompanionPillButtonStyle(kind: .secondary))
           .keyboardShortcut(session.composerFocused ? nil : KeyboardShortcut(.delete, modifiers: .command))
           .help("Decline (⌘⌫)")
         Button("Accept") { session.review(permissionId, .approve) }
+          .buttonStyle(CompanionPillButtonStyle(kind: .primary))
           .keyboardShortcut(.return, modifiers: .command)
-          .buttonStyle(.borderedProminent)
           .help("Accept (⌘↩)")
       }
     }
-    .controlSize(.small)
-    .padding(.horizontal, 12)
+    .padding(.leading, 10)
+    .padding(.trailing, 8)
     .padding(.vertical, 8)
-    .background(.bar)
-    .overlay(alignment: .top) { Divider() }
+    .companionCard(radius: 12, border: .mdowAccent.opacity(0.35))
+    .padding(.leading, CompanionStyle.leading)
+    .padding(.trailing, CompanionStyle.trailing)
+    .padding(.top, 6)
   }
 }

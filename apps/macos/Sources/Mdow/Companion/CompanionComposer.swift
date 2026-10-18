@@ -17,15 +17,18 @@ struct CompanionComposer: View {
     VStack(alignment: .leading, spacing: 0) {
       if mentionQuery != nil, !mentions.isEmpty {
         MentionList(results: mentions, selected: mentionIndex, root: document.folderURL) { pick($0) }
-          .padding(.horizontal, 10)
           .padding(.bottom, 6)
       }
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: 8) {
         if document.documentURL != nil || !session.conversation.tags.isEmpty {
           ContextChips(session: session, document: document)
         }
-        TextField(placeholder, text: $text, axis: .vertical)
+        TextField(
+          placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(Color.mdowTertiary),
+          axis: .vertical)
           .textFieldStyle(.plain)
+          .font(.mdowUI(13))
+          .lineSpacing(2)
           .lineLimit(1...8)
           .focused($focused)
           .onChange(of: focused) { _, value in session.composerFocused = value }
@@ -34,13 +37,14 @@ struct CompanionComposer: View {
             handleKey(press, mentions: mentions)
           }
           .accessibilityLabel("Message the companion")
-        HStack(spacing: 4) {
+          .padding(.horizontal, 2)
+        HStack(spacing: 2) {
           Button {
             startMention()
           } label: {
             Image(systemName: "at")
           }
-          .buttonStyle(.borderless)
+          .buttonStyle(CompanionIconButtonStyle(side: 26))
           .help("Mention a Document")
           .accessibilityLabel("Mention a Document")
           .disabled(document.documents.isEmpty)
@@ -50,10 +54,11 @@ struct CompanionComposer: View {
             Button {
               session.stop()
             } label: {
-              Image(systemName: "stop.fill")
-                .font(.system(size: 9, weight: .bold))
-                .frame(width: 22, height: 22)
-                .background(.quaternary, in: .circle)
+              RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.mdowPaper)
+                .frame(width: 8, height: 8)
+                .frame(width: 26, height: 26)
+                .background(Color.mdowText, in: .circle)
             }
             .buttonStyle(.plain)
             .help("Stop")
@@ -65,10 +70,10 @@ struct CompanionComposer: View {
               send()
             } label: {
               Image(systemName: "arrow.up")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(canSend ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                .frame(width: 22, height: 22)
-                .background(canSend ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary), in: .circle)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(canSend ? Color.companionOnAccent : Color.mdowTertiary)
+                .frame(width: 26, height: 26)
+                .background(canSend ? Color.mdowAccent : Color.mdowHover, in: .circle)
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
@@ -76,18 +81,24 @@ struct CompanionComposer: View {
             .accessibilityLabel("Send")
           }
         }
+        .padding(.horizontal, -4)
       }
-      .padding(10)
-      .background(.background, in: .rect(cornerRadius: 10))
+      .padding(.top, 10)
+      .padding(.horizontal, 10)
+      .padding(.bottom, 7)
+      .background(Color.mdowPaper, in: .rect(cornerRadius: Theme.cardRadius, style: .continuous))
       .overlay(
-        RoundedRectangle(cornerRadius: 10)
-          .strokeBorder(focused ? AnyShapeStyle(Color.accentColor.opacity(0.6)) : AnyShapeStyle(.separator))
+        RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
+          .strokeBorder(focused ? Color.mdowStrongLine : Color.mdowLine, lineWidth: 1)
       )
+      .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
       .contentShape(.rect)
       .onTapGesture { focused = true }
-      .padding([.horizontal, .bottom], 10)
-      .padding(.top, 8)
     }
+    .padding(.leading, CompanionStyle.leading)
+    .padding(.trailing, CompanionStyle.trailing)
+    .padding(.bottom, Theme.gutter)
+    .padding(.top, 8)
     .onReceive(NotificationCenter.default.publisher(for: .companionFocusComposer)) { note in
       if note.object as AnyObject? === session { focused = true }
     }
@@ -203,35 +214,20 @@ private struct MentionList: View {
   var pick: (URL) -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    VStack(alignment: .leading, spacing: 1) {
       ForEach(Array(results.enumerated()), id: \.element) { index, url in
-        Button {
-          pick(url)
-        } label: {
-          HStack(spacing: 6) {
-            Image(systemName: "doc.text").foregroundStyle(.secondary)
-            Text(url.lastPathComponent).lineLimit(1)
-            Spacer(minLength: 4)
-            Text(folder(of: url))
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-              .lineLimit(1)
-              .truncationMode(.head)
-          }
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .contentShape(.rect)
-          .background(
-            index == selected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 5))
-        }
-        .buttonStyle(.plain)
+        MentionRow(
+          name: url.lastPathComponent, folder: folder(of: url), selected: index == selected
+        ) { pick(url) }
       }
     }
-    .font(.callout)
     .padding(4)
-    .background(.regularMaterial, in: .rect(cornerRadius: 8))
-    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
-    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+    .background(Color.mdowElevated, in: .rect(cornerRadius: 10, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .strokeBorder(Color.mdowLine, lineWidth: 1)
+    )
+    .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
   }
 
   private func folder(of url: URL) -> String {
@@ -239,6 +235,42 @@ private struct MentionList: View {
     guard let root = root?.path else { return "" }
     if parent == root { return "" }
     return parent.hasPrefix(root + "/") ? String(parent.dropFirst(root.count + 1)) : parent
+  }
+}
+
+private struct MentionRow: View {
+  var name: String
+  var folder: String
+  var selected: Bool
+  var pick: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: pick) {
+      HStack(spacing: 7) {
+        Image(systemName: "doc.text")
+          .font(.system(size: 11))
+          .foregroundStyle(Color.mdowTertiary)
+        Text(name)
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowText)
+          .lineLimit(1)
+        Spacer(minLength: 4)
+        Text(folder)
+          .font(.mdowMono(10.5))
+          .foregroundStyle(Color.mdowTertiary)
+          .lineLimit(1)
+          .truncationMode(.head)
+      }
+      .padding(.horizontal, 8)
+      .frame(height: 26)
+      .contentShape(.rect)
+      .background(
+        selected ? Color.mdowSelected : hovering ? Color.mdowHover : .clear,
+        in: .rect(cornerRadius: 6))
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
   }
 }
 
@@ -264,6 +296,7 @@ private struct ContextChips: View {
   }
 }
 
+/// A document the message refers to, as a small mono pill.
 private struct Chip: View {
   var symbol: String
   var title: String
@@ -271,23 +304,31 @@ private struct Chip: View {
   var remove: (() -> Void)?
 
   var body: some View {
-    HStack(spacing: 3) {
-      Image(systemName: symbol).imageScale(.small)
+    HStack(spacing: 4) {
+      Image(systemName: symbol)
+        .font(.system(size: 9.5, weight: .medium))
+        .foregroundStyle(Color.mdowTertiary)
       Text(title).lineLimit(1).truncationMode(.middle)
       if let remove {
         Button(action: remove) {
-          Image(systemName: "xmark").imageScale(.small).font(.caption2.weight(.semibold))
+          Image(systemName: "xmark")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(Color.mdowTertiary)
+            .frame(width: 14, height: 14)
+            .contentShape(.rect)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .accessibilityLabel("Remove \(title)")
       }
     }
-    .font(.caption)
-    .foregroundStyle(secondary ? .secondary : .primary)
-    .padding(.horizontal, 6)
-    .padding(.vertical, 2)
+    .font(.mdowMono(11))
+    .foregroundStyle(secondary ? Color.mdowSecondary : Color.mdowText)
+    .padding(.leading, 7)
+    .padding(.trailing, remove == nil ? 8 : 3)
+    .frame(height: 20)
     .frame(maxWidth: 180)
-    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 5))
+    .background(Color.mdowHover, in: .capsule)
+    .overlay(Capsule().strokeBorder(Color.mdowLine, lineWidth: 1))
   }
 }
 
@@ -298,6 +339,7 @@ struct ModelPicker: View {
   var state: CompanionModelState
   var select: (String) -> Void
   @State private var presented = false
+  @State private var hovering = false
 
   var body: some View {
     let unavailable = state.stale || state.options.isEmpty
@@ -305,16 +347,25 @@ struct ModelPicker: View {
     Button {
       presented.toggle()
     } label: {
-      HStack(spacing: 3) {
+      HStack(spacing: 4) {
         Text(label).lineLimit(1).truncationMode(.tail)
-        Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 7.5, weight: .bold))
+          .foregroundStyle(Color.mdowTertiary)
       }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .contentShape(.rect)
+      .font(.mdowMono(11))
+      .foregroundStyle(hovering || presented ? Color.mdowText : Color.mdowSecondary)
+      .padding(.horizontal, 8)
+      .frame(height: 24)
+      .background(
+        presented ? Color.mdowSelected : hovering && !unavailable ? Color.mdowHover : .clear,
+        in: .capsule)
+      .contentShape(.capsule)
     }
-    .buttonStyle(.borderless)
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
     .disabled(unavailable)
+    .opacity(unavailable ? 0.6 : 1)
     .help(unavailable ? (state.unavailableReason ?? "") : (state.current?.providerName ?? "Choose a model"))
     .accessibilityLabel("Model: \(label)")
     .popover(isPresented: $presented, arrowEdge: .top) {
@@ -347,45 +398,85 @@ struct ModelList: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      TextField("Search models", text: $query)
-        .textFieldStyle(.roundedBorder)
-        .focused($searchFocused)
-        .padding(8)
-        .onSubmit {
-          if let first = groups.first?.options.first { select(first.value) }
-        }
-      Divider()
+      HStack(spacing: 7) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(Color.mdowTertiary)
+        TextField("Search models", text: $query)
+          .textFieldStyle(.plain)
+          .font(.mdowUI(12.5))
+          .focused($searchFocused)
+          .onSubmit {
+            if let first = groups.first?.options.first { select(first.value) }
+          }
+      }
+      .padding(.horizontal, 9)
+      .frame(height: 28)
+      .background(Color.mdowHover, in: .rect(cornerRadius: 7))
+      .padding(8)
+      Rectangle().fill(Color.mdowLine).frame(height: 1)
       let groups = groups
       if groups.isEmpty {
         Text("No matching models.")
-          .foregroundStyle(.secondary)
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowSecondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
-        List {
-          ForEach(groups, id: \.provider) { group in
-            Section(group.provider) {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 1) {
+            ForEach(groups, id: \.provider) { group in
+              Text(group.provider)
+                .font(.mdowUI(11, .medium))
+                .foregroundStyle(Color.mdowTertiary)
+                .padding(.horizontal, 8)
+                .padding(.top, 10)
+                .padding(.bottom, 3)
               ForEach(group.options) { option in
-                Button {
+                ModelRow(name: option.name, current: option.value == state.currentValue) {
                   select(option.value)
-                } label: {
-                  HStack {
-                    Text(option.name).lineLimit(1)
-                    Spacer()
-                    if option.value == state.currentValue {
-                      Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
-                    }
-                  }
-                  .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
               }
             }
           }
+          .padding(.horizontal, 6)
+          .padding(.bottom, 6)
         }
-        .listStyle(.sidebar)
       }
     }
     .frame(width: 300, height: 380)
+    .background(Color.mdowElevated)
     .onAppear { searchFocused = true }
   }
 }
+
+private struct ModelRow: View {
+  var name: String
+  var current: Bool
+  var pick: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: pick) {
+      HStack {
+        Text(name)
+          .font(.mdowUI(12.5))
+          .foregroundStyle(Color.mdowText)
+          .lineLimit(1)
+        Spacer()
+        if current {
+          Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(Color.mdowAccent)
+        }
+      }
+      .padding(.horizontal, 8)
+      .frame(height: 26)
+      .contentShape(.rect)
+      .background(hovering ? Color.mdowHover : .clear, in: .rect(cornerRadius: 6))
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
+    .accessibilityAddTraits(current ? .isSelected : [])
+  }
+}
+
