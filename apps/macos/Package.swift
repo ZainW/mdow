@@ -11,12 +11,16 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.9.0"),
     .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+    .package(url: "https://github.com/mgriebling/SwiftMath", from: "1.7.3"),
   ],
   targets: [
     // Parsing, rendering to attributed strings, highlighting and files. No windows.
     .target(
       name: "MdowKit",
-      dependencies: [.product(name: "Markdown", package: "swift-markdown")]
+      dependencies: [
+        .product(name: "Markdown", package: "swift-markdown"),
+        .product(name: "SwiftMath", package: "SwiftMath"),
+      ]
     ),
     // The AppKit app.
     .executableTarget(
