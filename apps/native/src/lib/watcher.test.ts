@@ -6,6 +6,12 @@ import { DEBOUNCE_MS, FileWatcher } from './watcher'
 
 const settle = () => Bun.sleep(DEBOUNCE_MS * 3)
 
+/** Waits for the first change (FSEvents can be slow on a busy machine), then for any stragglers. */
+async function settleAfterChange(changes: string[]) {
+  for (let waited = 0; changes.length === 0 && waited < 3000; waited += 50) await Bun.sleep(50)
+  await settle()
+}
+
 describe('FileWatcher', () => {
   test('coalesces bursts of writes into one reload', async () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'mdow-watch-')))
@@ -18,7 +24,7 @@ describe('FileWatcher', () => {
     await Bun.sleep(300)
     changes.length = 0
     for (let i = 0; i < 5; i++) writeFileSync(file, `v${i}`)
-    await settle()
+    await settleAfterChange(changes)
     watcher.close()
     expect(changes).toEqual([file])
   })
