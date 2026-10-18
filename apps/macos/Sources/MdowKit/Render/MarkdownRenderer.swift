@@ -366,10 +366,10 @@ public final class MarkdownRenderer {
     flushMarker(ctx)
     let alert = alertKind(quote)
     let block = QuoteTextBlock()
-    block.setWidth(16, type: .absoluteValueType, for: .padding, edge: .minX)
-    block.setWidth(alert == nil ? 2 : 10, type: .absoluteValueType, for: .padding, edge: .minY)
-    block.setWidth(alert == nil ? 2 : 10, type: .absoluteValueType, for: .padding, edge: .maxY)
-    block.setWidth(alert == nil ? 0 : 12, type: .absoluteValueType, for: .padding, edge: .maxX)
+    block.setWidth(alert == nil ? 16 : 14, type: .absoluteValueType, for: .padding, edge: .minX)
+    block.setWidth(alert == nil ? 2 : 11, type: .absoluteValueType, for: .padding, edge: .minY)
+    block.setWidth(alert == nil ? 2 : 11, type: .absoluteValueType, for: .padding, edge: .maxY)
+    block.setWidth(alert == nil ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .maxX)
     block.setWidth(style.blockSpacing, type: .absoluteValueType, for: .margin, edge: .maxY)
     block.setWidth(ctx.indent, type: .absoluteValueType, for: .margin, edge: .minX)
 
@@ -380,9 +380,10 @@ public final class MarkdownRenderer {
     let start = out.length
 
     if let alert {
-      block.barColor = alert.color
+      block.barColor = ReaderColors.dynamic(
+        light: alert.color.withAlphaComponent(0.22), dark: alert.color.withAlphaComponent(0.3))
       block.fillColor = ReaderColors.dynamic(
-        light: alert.color.withAlphaComponent(0.06), dark: alert.color.withAlphaComponent(0.1))
+        light: alert.color.withAlphaComponent(0.07), dark: alert.color.withAlphaComponent(0.12))
       let title = NSMutableAttributedString()
       if let symbol = NSImage(systemSymbolName: alert.symbol, accessibilityDescription: nil) {
         let config = NSImage.SymbolConfiguration(pointSize: style.bodySize, weight: .semibold)
@@ -515,13 +516,21 @@ public final class MarkdownRenderer {
         let block = NSTextTableBlock(
           table: textTable, startingRow: rowIndex, rowSpan: max(Int(cell.rowspan), 1),
           startingColumn: column, columnSpan: span)
-        block.setWidth(1, type: .absoluteValueType, for: .border)
-        block.setBorderColor(ReaderColors.tableBorder)
-        block.setWidth(6, type: .absoluteValueType, for: .padding, edge: .minY)
-        block.setWidth(6, type: .absoluteValueType, for: .padding, edge: .maxY)
-        block.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minX)
-        block.setWidth(10, type: .absoluteValueType, for: .padding, edge: .maxX)
-        if row.header { block.backgroundColor = ReaderColors.tableHeader }
+        // Rules between rows only, with the outer columns flush with the text around them.
+        let isLastRow = rowIndex == rows.count - 1
+        if !isLastRow {
+          block.setWidth(row.header ? 1 : 0.5, type: .absoluteValueType, for: .border, edge: .maxY)
+          block.setBorderColor(row.header ? ReaderColors.tableBorder : ReaderColors.separator)
+        }
+        if isLastRow {
+          block.setWidth(style.blockSpacing, type: .absoluteValueType, for: .margin, edge: .maxY)
+        }
+        block.setWidth(7, type: .absoluteValueType, for: .padding, edge: .minY)
+        block.setWidth(7, type: .absoluteValueType, for: .padding, edge: .maxY)
+        // 2pt rather than 0 at the edges leaves room for inline code's rounded background.
+        block.setWidth(column == 0 ? 2 : 10, type: .absoluteValueType, for: .padding, edge: .minX)
+        block.setWidth(
+          column + span >= columns ? 2 : 10, type: .absoluteValueType, for: .padding, edge: .maxX)
 
         var inline = baseInline(ctx)
         if row.header { inline.weight = .semibold }

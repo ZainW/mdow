@@ -31,7 +31,7 @@ import Testing
         image: { url in NSImage(contentsOf: url).map(AssetState.ready) ?? .failed },
         diagram: { _ in .failed }))
     let storage = NSTextStorage(attributedString: rendered.text)
-    let layout = NSLayoutManager()
+    let layout = ReaderLayoutManager()
     storage.addLayoutManager(layout)
     let container = NSTextContainer(size: NSSize(width: 720, height: CGFloat.greatestFiniteMagnitude))
     container.lineFragmentPadding = 0

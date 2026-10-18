@@ -333,20 +333,24 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
   }
 
   func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+    // Headings have no icons, so their text starts where the icons would.
+    let isHeading = item is HeadingNode
+    let identifier = NSUserInterfaceItemIdentifier(isHeading ? "heading" : "cell")
     let cell =
-      outlineView.makeView(withIdentifier: .init("cell"), owner: self) as? NSTableCellView ?? makeCell()
+      outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
+      ?? makeCell(identifier, icon: !isHeading)
     let text = cell.textField!
-    let image = cell.imageView!
     text.font = .systemFont(ofSize: NSFont.systemFontSize)
     text.textColor = .labelColor
-    image.contentTintColor = nil
     cell.toolTip = nil
-    switch item {
-    case let node as HeadingNode:
+    if let node = item as? HeadingNode {
       text.stringValue = node.heading.title
       if node.heading.level == 1 { text.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold) }
-      image.image = nil
-      image.isHidden = true
+      return cell
+    }
+    let image = cell.imageView!
+    image.contentTintColor = nil
+    switch item {
     case let node as FolderNode:
       text.stringValue = node.name
       image.isHidden = false
@@ -372,9 +376,22 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     return cell
   }
 
-  private func makeCell() -> NSTableCellView {
+  private func makeCell(_ identifier: NSUserInterfaceItemIdentifier, icon: Bool) -> NSTableCellView {
     let cell = NSTableCellView()
-    cell.identifier = .init("cell")
+    cell.identifier = identifier
+    guard icon else {
+      let text = NSTextField(labelWithString: "")
+      text.translatesAutoresizingMaskIntoConstraints = false
+      text.lineBreakMode = .byTruncatingTail
+      cell.addSubview(text)
+      cell.textField = text
+      NSLayoutConstraint.activate([
+        text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+        text.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
+        text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+      ])
+      return cell
+    }
     let image = NSImageView()
     image.translatesAutoresizingMaskIntoConstraints = false
     image.symbolConfiguration = .init(scale: .medium)

@@ -161,8 +161,8 @@ struct ShortcutsView: View {
         Section(group.title) {
           ForEach(group.items) { item in
             LabeledContent(item.title) {
+              // Menus show key equivalents in the system font, so this does too.
               Text(item.keys)
-                .font(.body.monospaced())
                 .foregroundStyle(.secondary)
             }
           }

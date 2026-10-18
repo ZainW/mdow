@@ -28,7 +28,7 @@ final class ReaderTextView: NSTextView {
 
   static func make() -> ReaderTextView {
     let storage = NSTextStorage()
-    let layout = NSLayoutManager()
+    let layout = ReaderLayoutManager()
     layout.allowsNonContiguousLayout = true
     layout.usesFontLeading = true
     storage.addLayoutManager(layout)

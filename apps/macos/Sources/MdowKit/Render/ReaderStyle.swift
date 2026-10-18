@@ -170,8 +170,6 @@ public enum ReaderColors {
     light: NSColor(white: 0, alpha: 0.07), dark: NSColor(white: 1, alpha: 0.08))
   public static let inlineCodeBackground = dynamic(
     light: NSColor(white: 0, alpha: 0.055), dark: NSColor(white: 1, alpha: 0.1))
-  public static let tableHeader = dynamic(
-    light: NSColor(white: 0, alpha: 0.035), dark: NSColor(white: 1, alpha: 0.05))
   public static let tableBorder = dynamic(
     light: NSColor(white: 0, alpha: 0.12), dark: NSColor(white: 1, alpha: 0.14))
   public static let quoteBar = dynamic(

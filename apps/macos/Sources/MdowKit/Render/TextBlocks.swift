@@ -52,9 +52,11 @@ public final class CodeTextBlock: NSTextBlock {
   }
 }
 
-/// A block quote or GitHub alert: a rounded bar down the leading edge.
+/// A block quote, drawn as a rounded bar down the leading edge, or a GitHub alert, drawn as a
+/// tinted card like the asides in Apple's documentation.
 public final class QuoteTextBlock: NSTextBlock {
   public var barColor: NSColor = ReaderColors.quoteBar
+  /// Set for alerts: the card's fill, with `barColor` as its border.
   public var fillColor: NSColor?
 
   public override init() {
@@ -75,8 +77,13 @@ public final class QuoteTextBlock: NSTextBlock {
   ) {
     let rect = contentFrame(of: self, frameRect)
     if let fillColor {
+      let card = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
       fillColor.setFill()
-      NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+      card.fill()
+      barColor.setStroke()
+      card.lineWidth = 1
+      card.stroke()
+      return
     }
     barColor.setFill()
     let bar = NSRect(x: rect.minX, y: rect.minY, width: 3, height: rect.height)

@@ -23,6 +23,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
 
   let textView = ReaderTextView.make()
   private let scrollView = NSScrollView()
+
   private var webView: WKWebView?
   private var hostingView: NSView?
   private var lastColumnWidth: CGFloat = 0
@@ -235,18 +236,31 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
 
   private func showHTMLFindBar() {
     htmlFindBar.isHidden = false
-    htmlWebTop?.isActive = false
-    htmlWebTop = webView?.topAnchor.constraint(equalTo: htmlFindBar.bottomAnchor)
-    htmlWebTop?.isActive = true
+    if #available(macOS 26, *), let webView, let container = webView.superview {
+      // Moving a web view out from under the toolbar blanks it, so it stays put and is told
+      // what covers it instead.
+      container.layoutSubtreeIfNeeded()
+      webView.obscuredContentInsets = NSEdgeInsets(
+        top: container.safeAreaInsets.top + htmlFindBar.fittingSize.height, left: 0, bottom: 0, right: 0)
+    } else {
+      htmlWebTop?.isActive = false
+      htmlWebTop = webView?.topAnchor.constraint(equalTo: htmlFindBar.bottomAnchor)
+      htmlWebTop?.isActive = true
+    }
     htmlFindBar.focus()
   }
 
   private func hideHTMLFindBar() {
     htmlFindBar.isHidden = true
-    htmlWebTop?.isActive = false
     if let webView, let container = webView.superview {
-      htmlWebTop = webView.topAnchor.constraint(equalTo: container.topAnchor)
-      htmlWebTop?.isActive = true
+      if #available(macOS 26, *) {
+        webView.obscuredContentInsets = NSEdgeInsets(
+          top: container.safeAreaInsets.top, left: 0, bottom: 0, right: 0)
+      } else {
+        htmlWebTop?.isActive = false
+        htmlWebTop = webView.topAnchor.constraint(equalTo: container.topAnchor)
+        htmlWebTop?.isActive = true
+      }
       view.window?.makeFirstResponder(webView)
     }
   }
@@ -388,6 +402,27 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   func refreshHeadingTracking() {
     lastHeading = -1
     didScroll()
+  }
+
+  private var isAtTop: Bool {
+    scrollView.contentView.bounds.minY <= -scrollView.contentInsets.top + 1
+  }
+  private var wasAtTop = false
+
+  // Narrowing the text view (e.g. opening a split) nudges it down by its inset; a document
+  // read from the top stays at the top.
+  override func viewWillLayout() {
+    super.viewWillLayout()
+    wasAtTop = mode == .markdown && isAtTop
+  }
+
+  override func viewDidLayout() {
+    super.viewDidLayout()
+    if wasAtTop, !isAtTop {
+      scrollView.contentView.scroll(to: NSPoint(x: 0, y: -scrollView.contentInsets.top))
+      scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+    wasAtTop = false
   }
 
   @objc private func didResize() {
