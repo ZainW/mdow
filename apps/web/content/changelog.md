@@ -5,9 +5,19 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.15.1
+## v1.16.0
 
 Latest release.
+
+- Introducing Mdow for Mac: Mdow rebuilt in Swift on AppKit and TextKit, with no web view. Get it from the download page; it runs alongside the regular app
+- A calm look of its own: the document sits on a sheet of warm paper (or neutral ink in dark mode), set in Charter, with tabs in the header and a quiet sidebar for the outline, files and recents
+- Tables, task lists, alerts, footnotes, syntax-highlighted code, Mermaid diagrams and math render natively, and HTML files open with JavaScript off
+- Quick Open (⌘K), a find bar that counts matches, split view, back and forward per tab, and live reload that keeps your place
+- The OpenCode companion comes along: ask about a document and approve every suggested edit as a diff
+- Signed, notarized and self-updating, for Apple Silicon Macs on macOS 15 or newer
+- Mdow Native for Mac is retired in favour of Mdow for Mac; Mdow Native carries on for Linux
+
+## v1.15.1
 
 - Mdow Native for Linux no longer needs libfuse2 installed to run its AppImage
 - Mdow Native runs on Bun 1.4.3 on macOS and Linux
