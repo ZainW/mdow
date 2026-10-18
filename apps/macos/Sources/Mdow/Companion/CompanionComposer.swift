@@ -415,8 +415,8 @@ struct ModelList: View {
       .background(Color.mdowHover, in: .rect(cornerRadius: 7))
       .padding(8)
       Rectangle().fill(Color.mdowLine).frame(height: 1)
-      let groups = groups
-      if groups.isEmpty {
+      let shown = groups
+      if shown.isEmpty {
         Text("No matching models.")
           .font(.mdowUI(12.5))
           .foregroundStyle(Color.mdowSecondary)
@@ -424,7 +424,7 @@ struct ModelList: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 1) {
-            ForEach(groups, id: \.provider) { group in
+            ForEach(shown, id: \.provider) { group in
               Text(group.provider)
                 .font(.mdowUI(11, .medium))
                 .foregroundStyle(Color.mdowTertiary)
