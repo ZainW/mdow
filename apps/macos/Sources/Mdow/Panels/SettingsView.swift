@@ -404,9 +404,8 @@ struct ShortcutsView: View {
     Group(
       title: "Tabs",
       items: [
-        .init("Next / previous tab", "⌃⇥", "⌃⇧⇥"),
+        .init("Next / previous tab", "⇧⌘]", "⇧⌘["),
         .init("Go to tab", "⌘1", "⌘9", joiner: "–"),
-        .init("Show all tabs", "⇧⌘\\"),
         .init("Split view", "⌘\\"),
       ]),
   ]
