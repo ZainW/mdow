@@ -14,7 +14,9 @@ private func contentFrame(of block: NSTextBlock, _ frame: NSRect) -> NSRect {
 /// A fenced code block: a rounded, softly filled card with the language in the corner.
 public final class CodeTextBlock: NSTextBlock {
   public var label: String?
-  public var labelFont = NSFont.systemFont(ofSize: 10.5, weight: .medium)
+  public var labelFont =
+    BundledFont.font(family: "Geist Mono", size: 10.5, weight: .medium)
+    ?? NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium)
   /// Set while the pointer is over the block, so the label makes room for the copy button.
   public var hidesLabel = false
 
@@ -35,7 +37,7 @@ public final class CodeTextBlock: NSTextBlock {
     layoutManager: NSLayoutManager
   ) {
     let rect = contentFrame(of: self, frameRect)
-    let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+    let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
     ReaderColors.codeBackground.setFill()
     path.fill()
     ReaderColors.codeBorder.setStroke()
@@ -47,16 +49,16 @@ public final class CodeTextBlock: NSTextBlock {
       .font: labelFont, .foregroundColor: ReaderColors.tertiary,
     ]
     let size = (label as NSString).size(withAttributes: attributes)
-    let origin = NSPoint(x: rect.maxX - size.width - 10, y: rect.minY + 6)
+    let origin = NSPoint(x: rect.maxX - size.width - 12, y: rect.minY + 8)
     (label as NSString).draw(at: origin, withAttributes: attributes)
   }
 }
 
 /// A block quote, drawn as a rounded bar down the leading edge, or a GitHub alert, drawn as a
-/// tinted card like the asides in Apple's documentation.
+/// faintly tinted card with the bar in the alert's colour.
 public final class QuoteTextBlock: NSTextBlock {
   public var barColor: NSColor = ReaderColors.quoteBar
-  /// Set for alerts: the card's fill, with `barColor` as its border.
+  /// Set for alerts: the card's fill.
   public var fillColor: NSColor?
 
   public override init() {
@@ -77,12 +79,14 @@ public final class QuoteTextBlock: NSTextBlock {
   ) {
     let rect = contentFrame(of: self, frameRect)
     if let fillColor {
-      let card = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
+      let card = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
       fillColor.setFill()
       card.fill()
-      barColor.setStroke()
-      card.lineWidth = 1
-      card.stroke()
+      NSGraphicsContext.saveGraphicsState()
+      card.addClip()
+      barColor.setFill()
+      NSRect(x: rect.minX, y: rect.minY, width: 3, height: rect.height).fill()
+      NSGraphicsContext.restoreGraphicsState()
       return
     }
     barColor.setFill()

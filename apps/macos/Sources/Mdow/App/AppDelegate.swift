@@ -26,7 +26,9 @@ import UniformTypeIdentifiers
   func applicationWillFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = MainMenu.build(recentsDelegate: self)
     NSApp.appearance = Preferences.shared.appearance.appearance
-    NSWindow.allowsAutomaticWindowTabbing = true
+    // Tabs live in the window's own header.
+    NSWindow.allowsAutomaticWindowTabbing = false
+    Theme.registerFonts()
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -93,21 +95,16 @@ import UniformTypeIdentifiers
     if let last = controllers.dropLast().last?.window, let window = controller.window {
       window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: last.frame.minX, y: last.frame.maxY)))
     }
-    controller.window?.tabbingMode = .disallowed
     controller.showWindow(nil)
-    controller.window?.tabbingMode = .automatic
     return controller
   }
 
   @discardableResult
   func newTab(from source: DocumentWindowController?) -> DocumentWindowController {
-    guard let host = (source ?? keyController)?.window else { return newWindow() }
-    let controller = makeController()
-    if let window = controller.window {
-      host.addTabbedWindow(window, ordered: .above)
-      window.makeKeyAndOrderFront(nil)
-    }
-    return controller
+    guard let host = source ?? keyController else { return newWindow() }
+    host.addTab()
+    host.window?.makeKeyAndOrderFront(nil)
+    return host
   }
 
   /// Opens files and folders: an empty window is reused, a document that's already open is
@@ -116,6 +113,7 @@ import UniformTypeIdentifiers
     for url in urls {
       let url = url.standardizedFileURL
       if let existing = controllers.first(where: { $0.openURLs.contains(url) }) {
+        _ = existing.reveal(url)
         existing.window?.makeKeyAndOrderFront(nil)
         continue
       }
@@ -133,6 +131,7 @@ import UniformTypeIdentifiers
 
   func openInNewTab(_ url: URL, from source: DocumentWindowController) {
     if let existing = controllers.first(where: { $0.openURLs.contains(url.standardizedFileURL) }) {
+      _ = existing.reveal(url.standardizedFileURL)
       existing.window?.makeKeyAndOrderFront(nil)
       return
     }
@@ -143,14 +142,11 @@ import UniformTypeIdentifiers
   private func handleTabShortcut(_ event: NSEvent) -> Bool {
     guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
       let characters = event.charactersIgnoringModifiers, let number = Int(characters),
-      (1...9).contains(number), let window = NSApp.keyWindow,
-      window.windowController is DocumentWindowController,
-      let windows = window.tabGroup?.windows, windows.count > 1
+      (1...9).contains(number),
+      let controller = NSApp.keyWindow?.windowController as? DocumentWindowController,
+      controller.tabs.count > 1
     else { return false }
-    let target = number == 9 ? windows.last : (number <= windows.count ? windows[number - 1] : nil)
-    guard let target else { return true }
-    window.tabGroup?.selectedWindow = target
-    target.makeKeyAndOrderFront(nil)
+    controller.selectTab(at: number == 9 ? controller.tabs.count - 1 : number - 1)
     return true
   }
 

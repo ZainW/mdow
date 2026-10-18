@@ -29,6 +29,8 @@ xcrun vtool -set-build-version macos 15.0 "$SDK_VERSION" -replace -output "$APP/
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/vendor/pele.global.js "$APP/Contents/Resources/pele.global.js"
+# Inter for the interface and Geist Mono for code, registered at launch (Theme.registerFonts).
+ditto Resources/Fonts "$APP/Contents/Resources/Fonts"
 # SwiftMath finds its fonts through Bundle.module, which looks in Contents/Resources. Only the
 # Latin Modern font is used, so the other ten are left out.
 MATH_BUNDLE="$APP/Contents/Resources/SwiftMath_SwiftMath.bundle"

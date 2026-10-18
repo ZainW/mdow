@@ -42,7 +42,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     scrollView.hasHorizontalScroller = false
     scrollView.autohidesScrollers = true
     scrollView.drawsBackground = true
-    scrollView.backgroundColor = .textBackgroundColor
+    scrollView.backgroundColor = Palette.paper
     scrollView.documentView = textView
     scrollView.contentView.postsBoundsChangedNotifications = true
     scrollView.translatesAutoresizingMaskIntoConstraints = false

@@ -333,13 +333,14 @@ public final class MarkdownRenderer {
 
     var title: String { rawValue.capitalized }
 
+    /// The desktop app's alert colours.
     var color: NSColor {
       switch self {
-      case .note: .systemBlue
-      case .tip: .systemGreen
-      case .important: .systemPurple
-      case .warning: .systemOrange
-      case .caution: .systemRed
+      case .note: Palette.pair(0x2D6AC0, 0x74A6EE)
+      case .tip: Palette.pair(0x2B8150, 0x68BD88)
+      case .important: Palette.pair(0x7A4CC0, 0xAE8CEE)
+      case .warning: Palette.pair(0x9A6512, 0xE2A852)
+      case .caution: Palette.pair(0xC0403A, 0xEE7C70)
       }
     }
 
@@ -366,10 +367,10 @@ public final class MarkdownRenderer {
     flushMarker(ctx)
     let alert = alertKind(quote)
     let block = QuoteTextBlock()
-    block.setWidth(alert == nil ? 16 : 14, type: .absoluteValueType, for: .padding, edge: .minX)
-    block.setWidth(alert == nil ? 2 : 11, type: .absoluteValueType, for: .padding, edge: .minY)
-    block.setWidth(alert == nil ? 2 : 11, type: .absoluteValueType, for: .padding, edge: .maxY)
-    block.setWidth(alert == nil ? 0 : 14, type: .absoluteValueType, for: .padding, edge: .maxX)
+    block.setWidth(alert == nil ? 18 : 18, type: .absoluteValueType, for: .padding, edge: .minX)
+    block.setWidth(alert == nil ? 2 : 12, type: .absoluteValueType, for: .padding, edge: .minY)
+    block.setWidth(alert == nil ? 2 : 12, type: .absoluteValueType, for: .padding, edge: .maxY)
+    block.setWidth(alert == nil ? 0 : 16, type: .absoluteValueType, for: .padding, edge: .maxX)
     block.setWidth(style.blockSpacing, type: .absoluteValueType, for: .margin, edge: .maxY)
     block.setWidth(ctx.indent, type: .absoluteValueType, for: .margin, edge: .minX)
 
@@ -380,13 +381,12 @@ public final class MarkdownRenderer {
     let start = out.length
 
     if let alert {
-      block.barColor = ReaderColors.dynamic(
-        light: alert.color.withAlphaComponent(0.22), dark: alert.color.withAlphaComponent(0.3))
+      block.barColor = alert.color
       block.fillColor = ReaderColors.dynamic(
-        light: alert.color.withAlphaComponent(0.07), dark: alert.color.withAlphaComponent(0.12))
+        light: alert.color.withAlphaComponent(0.06), dark: alert.color.withAlphaComponent(0.09))
       let title = NSMutableAttributedString()
       if let symbol = NSImage(systemSymbolName: alert.symbol, accessibilityDescription: nil) {
-        let config = NSImage.SymbolConfiguration(pointSize: style.bodySize, weight: .semibold)
+        let config = NSImage.SymbolConfiguration(pointSize: style.bodySize * 0.9, weight: .semibold)
           .applying(.init(paletteColors: [alert.color]))
         let attachment = NSTextAttachment()
         attachment.image = symbol.withSymbolConfiguration(config)
@@ -396,7 +396,10 @@ public final class MarkdownRenderer {
       title.append(
         NSAttributedString(
           string: alert.title,
-          attributes: [.font: style.body(.semibold), .foregroundColor: alert.color]))
+          attributes: [
+            .font: style.code(size: (style.bodySize * 0.78).rounded(), weight: .semibold),
+            .foregroundColor: alert.color, .kern: 0.2,
+          ]))
       append(title, paragraphStyle(inner, spacing: 4))
 
       for (index, child) in quote.children.enumerated() {
@@ -480,7 +483,7 @@ public final class MarkdownRenderer {
     let name = checked ? "checkmark.square.fill" : "square"
     guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: checked ? "Done" : "To do")
     else { return NSAttributedString(string: checked ? "☑" : "☐") }
-    let color: NSColor = checked ? .controlAccentColor : ReaderColors.tertiary
+    let color: NSColor = checked ? Palette.accent : ReaderColors.tertiary
     let config = NSImage.SymbolConfiguration(pointSize: style.bodySize * 0.95, weight: .regular)
       .applying(.init(paletteColors: [checked ? .white : color, color]))
     let attachment = NSTextAttachment()

@@ -3,91 +3,112 @@ import MdowKit
 import UniformTypeIdentifiers
 import WebKit
 
-/// One window (or tab): a sidebar and one document pane, or two side by side in split view.
-/// Each pane keeps its own back/forward history, like Finder or Safari.
-final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate,
-  NSMenuItemValidation, NSToolbarItemValidation, NSSharingServicePickerToolbarItemDelegate,
-  DocumentPaneDelegate, SidebarDelegate
+/// One window: a sidebar, the selected tab's document on a card, and the companion. Each tab
+/// has one document pane, or two side by side in split view, and each pane keeps its own
+/// back/forward history, like Finder or Safari.
+final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation,
+  DocumentPaneDelegate, SidebarDelegate, TabStripDelegate
 {
   private let split = NSSplitViewController()
-  private let paneSplit = NSSplitViewController()
   private let sidebar = SidebarViewController()
   private var sidebarItem: NSSplitViewItem!
+  private let cardHost = CardViewController()
+  private(set) lazy var header = HeaderView(target: self)
   let companion = CompanionViewController()
   private(set) var companionItem: NSSplitViewItem!
 
-  private(set) var panes: [DocumentPane] = []
-  /// The pane the sidebar, title and menu commands follow: the one last clicked.
-  private(set) var activePane: DocumentPane!
-  /// A folder the user opened; without one, the sidebar shows the document's own folder.
-  private(set) var openedFolder: URL?
-  private var scannedFolder: URL?
-  private(set) var folderTree: FolderNode?
+  private(set) var tabs: [DocumentTab] = []
+  /// The selected tab.
+  private(set) var tab: DocumentTab!
+  /// The folder tree the sidebar is showing, which may belong to another tab.
+  private weak var sidebarTree: FolderNode?
   private var appearanceObservation: NSKeyValueObservation?
   private var clickMonitor: Any?
 
+  var panes: [DocumentPane] { tab.panes }
+  /// The pane the sidebar, title and menu commands follow.
+  var activePane: DocumentPane { tab.activePane }
+  var openedFolder: URL? { tab.openedFolder }
+  var folderTree: FolderNode? { tab.folderTree }
   var reader: ReaderViewController { activePane.reader }
   var fileURL: URL? { activePane.fileURL }
-  var isEmpty: Bool { panes.count == 1 && activePane.fileURL == nil }
-  /// Every document showing in this window.
-  var openURLs: [URL] { panes.compactMap(\.fileURL) }
+  var isEmpty: Bool { tab.isEmpty }
+  /// Every document showing in this window, in any tab.
+  var openURLs: [URL] { tabs.flatMap(\.openURLs) }
 
   init() {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 1080, height: 760),
+      contentRect: NSRect(x: 0, y: 0, width: 1120, height: 780),
       styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
       backing: .buffered, defer: false)
-    window.minSize = NSSize(width: 520, height: 360)
-    window.tabbingIdentifier = "MdowDocument"
-    window.tabbingMode = .automatic
-    window.toolbarStyle = .unified
-    window.titleVisibility = .visible
+    window.minSize = NSSize(width: 560, height: 380)
+    window.tabbingMode = .disallowed
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.titlebarSeparatorStyle = .none
+    window.backgroundColor = Palette.chrome
+    // An empty toolbar makes the title bar as tall as the header, which centres the window
+    // buttons in it; the header itself is an ordinary view underneath.
+    window.toolbar = NSToolbar(identifier: "MdowHeader")
+    window.toolbarStyle = .unifiedCompact
     window.isRestorable = true
     window.restorationClass = WindowRestoration.self
     window.identifier = .init("MdowDocumentWindow")
     super.init(window: window)
 
-    let pane = makePane()
-    panes = [pane]
-    activePane = pane
+    tab = DocumentTab(pane: makePane())
+    tabs = [tab]
 
     sidebar.delegate = self
-    sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+    sidebarItem = NSSplitViewItem(viewController: sidebar)
     sidebarItem.minimumThickness = 200
     sidebarItem.maximumThickness = 420
     sidebarItem.preferredThicknessFraction = 0.2
     sidebarItem.canCollapse = true
-    sidebarItem.allowsFullHeightLayout = true
+    sidebarItem.holdingPriority = .init(260)
 
-    paneSplit.splitView.isVertical = true
-    paneSplit.splitView.dividerStyle = .thin
-    let paneItem = NSSplitViewItem(viewController: pane.reader)
-    paneItem.minimumThickness = 300
-    paneSplit.addSplitViewItem(paneItem)
-
-    let contentItem = NSSplitViewItem(viewController: paneSplit)
+    let splitView = ChromeSplitView()
+    splitView.isVertical = true
+    split.splitView = splitView
+    let contentItem = NSSplitViewItem(viewController: cardHost)
     contentItem.minimumThickness = 320
     split.addSplitViewItem(sidebarItem)
     split.addSplitViewItem(contentItem)
     companionItem = companion.makeSplitItem(context: self)
     split.addSplitViewItem(companionItem)
-    split.splitView.autosaveName = "MdowSidebar"
-    window.contentViewController = split
-    window.setContentSize(NSSize(width: 1080, height: 760))
+    split.splitView.autosaveName = "MdowWindowSplit"
+    cardHost.show(tab.paneSplit)
 
-    let toolbar = NSToolbar(identifier: "MdowDocumentToolbar")
-    toolbar.delegate = self
-    toolbar.displayMode = .iconOnly
-    toolbar.allowsUserCustomization = true
-    toolbar.autosavesConfiguration = true
-    window.toolbar = toolbar
+    let root = NSViewController()
+    root.view = FilledView(fill: Palette.chrome)
+    root.addChild(split)
+    header.translatesAutoresizingMaskIntoConstraints = false
+    split.view.translatesAutoresizingMaskIntoConstraints = false
+    root.view.addSubview(split.view)
+    root.view.addSubview(header)
+    NSLayoutConstraint.activate([
+      header.topAnchor.constraint(equalTo: root.view.topAnchor),
+      header.leadingAnchor.constraint(equalTo: root.view.leadingAnchor),
+      header.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+      header.heightAnchor.constraint(equalToConstant: Theme.headerHeight),
+      split.view.topAnchor.constraint(equalTo: header.bottomAnchor),
+      split.view.leadingAnchor.constraint(equalTo: root.view.leadingAnchor),
+      split.view.trailingAnchor.constraint(equalTo: root.view.trailingAnchor),
+      split.view.bottomAnchor.constraint(equalTo: root.view.bottomAnchor),
+    ])
+    header.tabs.delegate = self
+    window.contentViewController = root
+    window.setContentSize(NSSize(width: 1120, height: 780))
     window.delegate = self
 
     if !window.setFrameUsingName("MdowDocument") { window.center() }
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(splitDidResize), name: NSSplitView.didResizeSubviewsNotification,
+      object: split.splitView)
     updateTitle()
 
     appearanceObservation = window.observe(\.effectiveAppearance) { [weak self] _, _ in
-      MainActor.assumeIsolated { self?.panes.forEach { $0.appearanceChanged() } }
+      MainActor.assumeIsolated { self?.tabs.forEach { $0.panes.forEach { $0.appearanceChanged() } } }
     }
     // A click in a pane makes it the one the sidebar and commands follow.
     clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
@@ -114,15 +135,90 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
   }
 
   private func setActive(_ pane: DocumentPane) {
-    guard activePane !== pane else { return }
-    activePane = pane
-    sidebar.setCurrentFile(pane.fileURL)
-    sidebar.setHeadings(pane.headings)
-    pane.reader.refreshHeadingTracking()
+    guard activePane !== pane, tab.panes.contains(where: { $0 === pane }) else { return }
+    tab.activePane = pane
+    followActivePane()
+  }
+
+  /// Points the sidebar, title and header at the active pane, e.g. after switching tabs.
+  private func followActivePane() {
+    sidebar.setCurrentFile(activePane.fileURL)
+    sidebar.setHeadings(reader.mode == .markdown ? activePane.headings : [])
+    reader.refreshHeadingTracking()
     updateFolder()
     updateTitle()
-    window?.toolbar?.validateVisibleItems()
   }
+
+  // MARK: Tabs
+
+  /// Adds an empty tab after the selected one and selects it.
+  @discardableResult
+  func addTab() -> DocumentTab {
+    let new = DocumentTab(pane: makePane())
+    let index = (tabs.firstIndex { $0 === tab } ?? tabs.count - 1) + 1
+    tabs.insert(new, at: index)
+    select(new)
+    window?.invalidateRestorableState()
+    return new
+  }
+
+  func select(_ new: DocumentTab) {
+    guard new !== tab || cardHost.content !== new.paneSplit else { return }
+    tab = new
+    cardHost.show(new.paneSplit)
+    followActivePane()
+    if reader.mode == .markdown { window?.makeFirstResponder(reader.textView) }
+    window?.invalidateRestorableState()
+  }
+
+  func selectTab(at index: Int) {
+    if tabs.indices.contains(index) { select(tabs[index]) }
+  }
+
+  /// Selects the tab showing `url`, if there is one.
+  func reveal(_ url: URL) -> Bool {
+    guard let match = tabs.first(where: { $0.openURLs.contains(url) }) else { return false }
+    select(match)
+    if let pane = match.panes.first(where: { $0.fileURL == url }) { setActive(pane) }
+    return true
+  }
+
+  func closeTab(_ closing: DocumentTab) {
+    guard tabs.count > 1 else {
+      window?.performClose(nil)
+      return
+    }
+    guard let index = tabs.firstIndex(where: { $0 === closing }) else { return }
+    closing.close()
+    tabs.remove(at: index)
+    if closing === tab { select(tabs[min(index, tabs.count - 1)]) } else { updateTitle() }
+    window?.invalidateRestorableState()
+  }
+
+  @objc func closeTabAction(_ sender: Any?) { closeTab(tab) }
+
+  @objc func selectNextTab(_ sender: Any?) { stepTab(1) }
+  @objc func selectPreviousTab(_ sender: Any?) { stepTab(-1) }
+
+  private func stepTab(_ step: Int) {
+    guard let index = tabs.firstIndex(where: { $0 === tab }), tabs.count > 1 else { return }
+    select(tabs[(index + step + tabs.count) % tabs.count])
+  }
+
+  func tabStrip(_ strip: TabStrip, didSelect index: Int) { selectTab(at: index) }
+
+  func tabStrip(_ strip: TabStrip, didClose index: Int) {
+    if tabs.indices.contains(index) { closeTab(tabs[index]) }
+  }
+
+  func tabStrip(_ strip: TabStrip, didMove from: Int, to: Int) {
+    guard tabs.indices.contains(from), tabs.indices.contains(to) else { return }
+    tabs.insert(tabs.remove(at: from), at: to)
+    updateChrome()
+    window?.invalidateRestorableState()
+  }
+
+  func tabStripNewTab(_ strip: TabStrip) { addTab() }
 
   // MARK: Opening
 
@@ -132,11 +228,11 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
   }
 
   func openFolder(at url: URL) {
-    openedFolder = url.standardizedFileURL
+    tab.openedFolder = url.standardizedFileURL
     window?.invalidateRestorableState()
     updateFolder { [weak self] tree in
       guard let self else { return }
-      // An empty window opens the folder's README.
+      // An empty tab opens the folder's README.
       if self.fileURL == nil, let readme = tree.children.first(where: {
         !$0.isFolder && $0.url.deletingPathExtension().lastPathComponent.lowercased() == "readme"
       }) {
@@ -144,31 +240,41 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
       }
     }
     sidebar.setMode(.files)
-    if sidebarItem.isCollapsed { sidebarItem.animator().isCollapsed = false }
+    if sidebarItem.isCollapsed { toggleSidebarPanel(nil) }
     updateTitle()
   }
 
+  /// Scans the selected tab's folder for the sidebar, unless it already has.
   private func updateFolder(then completion: ((FolderNode) -> Void)? = nil) {
-    guard let folder = openedFolder ?? fileURL?.deletingLastPathComponent() else {
+    let tab = self.tab!
+    guard let folder = tab.sidebarFolder else {
+      sidebarTree = nil
       sidebar.setFolder(nil)
       return
     }
-    if folder == scannedFolder, let folderTree {
-      completion?(folderTree)
+    if folder == tab.scannedFolder, let tree = tab.folderTree {
+      showInSidebar(tree)
+      completion?(tree)
       return
     }
-    scannedFolder = folder
+    tab.scannedFolder = folder
     Task {
       let tree = await Task.detached(priority: .userInitiated) { FolderNode.scan(folder) }.value
-      guard folder == self.scannedFolder else { return }
-      self.folderTree = tree
-      self.sidebar.setFolder(tree)
+      guard folder == tab.scannedFolder else { return }
+      tab.folderTree = tree
+      if tab === self.tab { self.showInSidebar(tree) }
       completion?(tree)
     }
   }
 
+  private func showInSidebar(_ tree: FolderNode) {
+    guard sidebarTree !== tree else { return }
+    sidebarTree = tree
+    sidebar.setFolder(tree)
+  }
+
   private func rescanFolder() {
-    scannedFolder = nil
+    tab.scannedFolder = nil
     updateFolder()
   }
 
@@ -176,7 +282,10 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
 
   func paneDidChangeDocument(_ pane: DocumentPane) {
     window?.invalidateRestorableState()
-    guard pane === activePane else { return }
+    guard pane === activePane else {
+      updateChrome()
+      return
+    }
     sidebar.setCurrentFile(pane.fileURL)
     if pane.reader.mode != .markdown { sidebar.setHeadings([]) }
     updateFolder()
@@ -212,26 +321,48 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     AppDelegate.shared.open(urls, from: self)
   }
 
-  // MARK: Title
+  // MARK: Title and header
 
   private func updateTitle() {
     guard let window else { return }
     if let fileURL {
       window.title = FileManager.default.displayName(atPath: fileURL.path)
-      window.subtitle = fileURL.deletingLastPathComponent().abbreviatedPath
       window.representedURL = fileURL
     } else if let openedFolder {
       window.title = openedFolder.lastPathComponent
-      window.subtitle = ""
       window.representedURL = openedFolder
     } else {
       window.title = "Mdow"
-      window.subtitle = ""
       window.representedURL = nil
     }
-    window.tab.title = window.title
     companion.documentContextChanged()
-    window.tab.toolTip = activePane.rendered?.title
+    updateChrome()
+  }
+
+  /// Refreshes the tabs and the header's buttons.
+  func updateChrome() {
+    let pending = Set(companion.pendingReviewPaths)
+    let items = tabs.map { tab in
+      var item = tab.stripItem
+      item.badge = tab.openURLs.contains { pending.contains($0.path) }
+      return item
+    }
+    header.tabs.update(items: items, selectedIndex: tabs.firstIndex { $0 === tab } ?? 0)
+    header.backButton.isEnabled = activePane.canGoBack
+    header.forwardButton.isEnabled = activePane.canGoForward
+    header.companionButton.isOn = !companionItem.isCollapsed
+    header.sidebarButton.isOn = false
+  }
+
+  /// Keeps the card flush with open side panels and the tabs lined up with the card.
+  @objc private func splitDidResize() {
+    cardHost.setInsets(
+      leading: sidebarItem.isCollapsed ? Theme.gutter : 0,
+      trailing: companionItem.isCollapsed ? Theme.gutter : 0)
+    cardHost.view.layoutSubtreeIfNeeded()
+    let card = cardHost.card.convert(cardHost.card.bounds, to: nil)
+    header.contentLeading = sidebarItem.isCollapsed ? 0 : card.minX
+    updateChrome()
   }
 
   // MARK: Sidebar callbacks
@@ -282,10 +413,6 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
   }
 
-  @objc override func newWindowForTab(_ sender: Any?) {
-    AppDelegate.shared.newTab(from: self)
-  }
-
   @objc func reloadDocument(_ sender: Any?) {
     rescanFolder()
     activePane.reload()
@@ -330,10 +457,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
       return
     }
     let pane = makePane()
-    panes.append(pane)
-    let item = NSSplitViewItem(viewController: pane.reader)
-    item.minimumThickness = 300
-    paneSplit.addSplitViewItem(item)
+    tab.add(pane)
     if let url = panes[0].fileURL {
       pane.open(url, addToHistory: false, restoring: panes[0].reader.topCharacterIndex)
     }
@@ -342,13 +466,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
   }
 
   private func closePane(_ pane: DocumentPane) {
-    guard panes.count > 1, let index = panes.firstIndex(where: { $0 === pane }) else { return }
-    pane.close()
-    panes.remove(at: index)
-    if let item = paneSplit.splitViewItems.first(where: { $0.viewController === pane.reader }) {
-      paneSplit.removeSplitViewItem(item)
-    }
-    setActive(panes[0])
+    guard panes.count > 1 else { return }
+    tab.remove(pane)
+    followActivePane()
     window?.invalidateRestorableState()
   }
 
@@ -367,9 +487,52 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
   @objc func showRecents(_ sender: Any?) { showSidebar(.recents) }
 
   private func showSidebar(_ mode: SidebarMode) {
-    if sidebarItem.isCollapsed { sidebarItem.animator().isCollapsed = false }
+    if sidebarItem.isCollapsed { toggleSidebarPanel(nil) }
     sidebar.setMode(mode)
     sidebar.focus()
+  }
+
+  /// View › Show Sidebar (⌃⌘S) and the header's sidebar button.
+  @objc func toggleSidebarPanel(_ sender: Any?) {
+    let collapse = !sidebarItem.isCollapsed
+    if collapse, let responder = window?.firstResponder as? NSView, responder.isDescendant(of: sidebar.view) {
+      window?.makeFirstResponder(reader.mode == .markdown ? reader.textView : nil)
+    }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.2
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      sidebarItem.animator().isCollapsed = collapse
+    }
+  }
+
+  /// The header's ⋯ button: document actions that don't need a button of their own.
+  @objc func showMoreMenu(_ sender: Any?) {
+    let menu = NSMenu()
+    func add(_ title: String, _ action: Selector, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command, symbol: String) {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+      item.keyEquivalentModifierMask = modifiers
+      item.target = self
+      item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+      menu.addItem(item)
+    }
+    add("Open in Editor", #selector(openWithDefaultEditor(_:)), "e", [.command, .shift], symbol: "square.and.pencil")
+    add("Show in Finder", #selector(showInFinder(_:)), "r", [.command, .option], symbol: "folder")
+    add("Copy Path", #selector(copyDocumentPath(_:)), "c", [.command, .option], symbol: "doc.on.clipboard")
+    add("Share…", #selector(shareDocument(_:)), symbol: "square.and.arrow.up")
+    menu.addItem(.separator())
+    add("Split View", #selector(toggleSplitView(_:)), "\\", symbol: "rectangle.split.2x1")
+    add("Reload", #selector(reloadDocument(_:)), "r", symbol: "arrow.clockwise")
+    menu.addItem(.separator())
+    add("Export as PDF…", #selector(exportAsPDF(_:)), symbol: "doc.richtext")
+    add("Print…", #selector(printDocument(_:)), "p", symbol: "printer")
+    let button = header.moreButton
+    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+  }
+
+  @objc func shareDocument(_ sender: Any?) {
+    guard let fileURL else { return }
+    let button = header.moreButton
+    NSSharingServicePicker(items: [fileURL]).show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
   }
 
   @objc func quickOpen(_ sender: Any?) {
@@ -476,82 +639,21 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     case #selector(toggleCompanion(_:)):
       item.title = companionItem.isCollapsed ? "Show Companion" : "Hide Companion"
       return true
+    case #selector(toggleSidebarPanel(_:)):
+      item.title = sidebarItem.isCollapsed ? "Show Sidebar" : "Hide Sidebar"
+      return true
+    case #selector(shareDocument(_:)):
+      return fileURL != nil
+    case #selector(selectNextTab(_:)), #selector(selectPreviousTab(_:)):
+      return tabs.count > 1
     default: return true
     }
-  }
-
-  func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-    switch item.action {
-    case #selector(goBack(_:)): activePane.canGoBack
-    case #selector(goForward(_:)): activePane.canGoForward
-    default: true
-    }
-  }
-
-  // MARK: Toolbar
-
-  private static let backItem = NSToolbarItem.Identifier("back")
-  private static let forwardItem = NSToolbarItem.Identifier("forward")
-  private static let quickOpenItem = NSToolbarItem.Identifier("quickOpen")
-  private static let shareItem = NSToolbarItem.Identifier("share")
-
-  func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-    [.toggleSidebar, .sidebarTrackingSeparator, Self.backItem, Self.forwardItem, .flexibleSpace,
-     Self.quickOpenItem, Self.shareItem, .inspectorTrackingSeparator, .flexibleSpace,
-     CompanionViewController.toolbarItemIdentifier]
-  }
-
-  func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-    toolbarDefaultItemIdentifiers(toolbar) + [.space, .flexibleSpace]
-  }
-
-  func toolbar(
-    _ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
-    willBeInsertedIntoToolbar flag: Bool
-  ) -> NSToolbarItem? {
-    func button(_ label: String, _ symbol: String, _ action: Selector) -> NSToolbarItem {
-      let item = NSToolbarItem(itemIdentifier: identifier)
-      item.label = label
-      item.paletteLabel = label
-      item.toolTip = label
-      item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-      item.isBordered = true
-      item.target = self
-      item.action = action
-      return item
-    }
-    switch identifier {
-    case Self.backItem:
-      let item = button("Back", "chevron.left", #selector(goBack(_:)))
-      item.isNavigational = true
-      return item
-    case Self.forwardItem:
-      let item = button("Forward", "chevron.right", #selector(goForward(_:)))
-      item.isNavigational = true
-      return item
-    case Self.quickOpenItem:
-      return button("Quick Open", "magnifyingglass", #selector(quickOpen(_:)))
-    case CompanionViewController.toolbarItemIdentifier:
-      return companion.makeToolbarItem(target: self, action: #selector(toggleCompanion(_:)))
-    case Self.shareItem:
-      let item = NSSharingServicePickerToolbarItem(itemIdentifier: identifier)
-      item.delegate = self
-      item.label = "Share"
-      item.toolTip = "Share"
-      return item
-    default:
-      return nil
-    }
-  }
-
-  func items(for pickerToolbarItem: NSSharingServicePickerToolbarItem) -> [Any] {
-    fileURL.map { [$0] } ?? []
   }
 
   // MARK: Window
 
   func windowWillClose(_ notification: Notification) {
-    panes.forEach { $0.close() }
+    tabs.forEach { $0.close() }
     if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
     clickMonitor = nil
     AppDelegate.shared.controllerClosed(self)
@@ -565,6 +667,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     window?.saveFrame(usingName: "MdowDocument")
   }
 
+  func windowWillEnterFullScreen(_ notification: Notification) { header.isFullScreen = true }
+  func windowDidExitFullScreen(_ notification: Notification) { header.isFullScreen = false }
+
   func windowDidBecomeKey(_ notification: Notification) {
     if reader.mode == .markdown, window?.firstResponder === window {
       window?.makeFirstResponder(reader.textView)
@@ -573,27 +678,40 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
 
   // MARK: State restoration
 
+  private struct TabState: Codable {
+    var folder: String?
+    var files: [String]
+    var locations: [Int]
+    var active: Int
+  }
+
   func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
-    state.encode(openedFolder?.path as NSString?, forKey: "folder")
-    state.encode(panes.map { ($0.fileURL?.path ?? "") as NSString } as NSArray, forKey: "files")
-    state.encode(panes.map { NSNumber(value: $0.reader.topCharacterIndex) } as NSArray, forKey: "locations")
-    state.encode(panes.firstIndex { $0 === activePane } ?? 0, forKey: "active")
+    let states = tabs.map { tab in
+      TabState(
+        folder: tab.openedFolder?.path, files: tab.panes.map { $0.fileURL?.path ?? "" },
+        locations: tab.panes.map { $0.reader.topCharacterIndex },
+        active: tab.panes.firstIndex { $0 === tab.activePane } ?? 0)
+    }
+    if let data = try? JSONEncoder().encode(states) { state.encode(data as NSData, forKey: "tabs") }
+    state.encode(tabs.firstIndex { $0 === tab } ?? 0, forKey: "selectedTab")
   }
 
   func window(_ window: NSWindow, didDecodeRestorableState state: NSCoder) {
-    if let folder = state.decodeObject(of: NSString.self, forKey: "folder") as String? {
-      openedFolder = URL(fileURLWithPath: folder)
+    guard let data = state.decodeObject(of: NSData.self, forKey: "tabs") as Data?,
+      let states = try? JSONDecoder().decode([TabState].self, from: data), !states.isEmpty
+    else { return }
+    for (index, saved) in states.enumerated() {
+      if index > 0 { addTab() }
+      if let folder = saved.folder { tab.openedFolder = URL(fileURLWithPath: folder) }
+      if saved.files.count > 1 { toggleSplitView(nil) }
+      for (paneIndex, file) in saved.files.prefix(panes.count).enumerated() where !file.isEmpty {
+        let location = paneIndex < saved.locations.count ? saved.locations[paneIndex] : 0
+        panes[paneIndex].open(URL(fileURLWithPath: file), addToHistory: false, restoring: location)
+      }
+      if panes.indices.contains(saved.active) { setActive(panes[saved.active]) }
       updateFolder()
     }
-    let files = state.decodeArrayOfObjects(ofClass: NSString.self, forKey: "files") ?? []
-    let locations = state.decodeArrayOfObjects(ofClass: NSNumber.self, forKey: "locations") ?? []
-    if files.count > 1 { toggleSplitView(nil) }
-    for (index, file) in files.prefix(panes.count).enumerated() where file.length > 0 {
-      let location = index < locations.count ? locations[index].intValue : 0
-      panes[index].open(URL(fileURLWithPath: file as String), addToHistory: false, restoring: location)
-    }
-    let active = state.decodeInteger(forKey: "active")
-    if panes.indices.contains(active) { setActive(panes[active]) }
+    selectTab(at: state.decodeInteger(forKey: "selectedTab"))
     updateTitle()
   }
 
@@ -610,7 +728,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
           symbol: "number"
         ) { [weak self] in self?.reader.scroll(toHeading: index) })
     }
-    let root = openedFolder ?? scannedFolder
+    let root = openedFolder ?? tab.scannedFolder
     for url in folderTree?.allFiles.prefix(5000) ?? [] where url != fileURL {
       var detail = url.deletingLastPathComponent().path
       if let root, detail.hasPrefix(root.path) {
@@ -638,8 +756,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     command("Open File…", "doc", "⌘O", #selector(openDocument(_:)))
     command("Open Folder…", "folder", "⇧⌘O", #selector(openFolder(_:)))
     command("New Tab", "plus.square.on.square", "⌘T", #selector(AppDelegate.newTabAction(_:)))
+    command("Close Tab", "xmark.square", "⌘W", #selector(closeTabAction(_:)))
     command("Find in Document", "text.magnifyingglass", "⌘F", #selector(findAction))
-    command("Toggle Sidebar", "sidebar.left", "⌃⌘S", #selector(NSSplitViewController.toggleSidebar(_:)))
+    command("Toggle Sidebar", "sidebar.left", "⌃⌘S", #selector(toggleSidebarPanel(_:)))
     command("Toggle Split View", "rectangle.split.2x1", "⌘\\", #selector(toggleSplitView(_:)))
     command("Show Outline", "list.bullet.indent", "⌃⌘1", #selector(showOutline(_:)))
     command("Show Files", "folder", "⌃⌘2", #selector(showFiles(_:)))

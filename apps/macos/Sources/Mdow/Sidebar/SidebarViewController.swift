@@ -36,19 +36,23 @@ private final class RecentItem {
   init(_ url: URL) { self.url = url }
 }
 
-/// The source list on the left: the document's outline, the folder's files, or recents.
+/// The sidebar: the document's outline, the folder's files, or recents, as a flat list on the
+/// window's own background.
 final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate,
-  NSMenuDelegate, NSSearchFieldDelegate
+  NSMenuDelegate, NSTextFieldDelegate
 {
   weak var delegate: SidebarDelegate?
 
   private(set) var mode: SidebarMode = Preferences.shared.sidebarMode
-  private let modeControl = NSSegmentedControl()
-  private let outlineView = NSOutlineView()
+  private var modeButtons: [ChromeButton] = []
+  private let outlineView = SidebarOutlineView()
   private let scrollView = NSScrollView()
-  private let filterField = NSSearchField()
+  private let titleLabel = NSTextField(labelWithString: "")
+  private let filterBox = FilledView(fill: Palette.hover)
+  private let filterField = NSTextField()
   private let emptyLabel = NSTextField(wrappingLabelWithString: "")
-  private let emptyButton = NSButton()
+  private lazy var emptyButton = ChromeButton(
+    symbol: "folder", title: "Open Folder…", style: .field, target: self, action: #selector(emptyButtonClicked))
   private lazy var emptyStack = NSStackView(views: [emptyLabel, emptyButton])
   private var filterHeight: NSLayoutConstraint?
 
@@ -61,33 +65,43 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
   private var programmaticSelection = false
 
   override func loadView() {
-    let root = NSView()
+    let root = FilledView(fill: Palette.chrome)
     view = root
 
-    modeControl.segmentCount = SidebarMode.allCases.count
-    modeControl.trackingMode = .selectOne
-    modeControl.segmentDistribution = .fillEqually
-    for (index, mode) in SidebarMode.allCases.enumerated() {
-      modeControl.setImage(
-        NSImage(systemSymbolName: mode.symbol, accessibilityDescription: mode.displayName), forSegment: index)
-      modeControl.setToolTip(mode.displayName, forSegment: index)
-      modeControl.setWidth(0, forSegment: index)
+    let modeBar = NSStackView()
+    modeBar.orientation = .horizontal
+    modeBar.spacing = 2
+    modeBar.translatesAutoresizingMaskIntoConstraints = false
+    for mode in SidebarMode.allCases {
+      let button = ChromeButton(
+        symbol: nil, title: mode.displayName, style: .text, target: self, action: #selector(modeButtonClicked(_:)))
+      button.titleFont = Theme.ui(12.5, .medium)
+      button.toolTip = "\(mode.displayName)  ⌃⌘\(SidebarMode.allCases.firstIndex(of: mode)! + 1)"
+      button.tag = SidebarMode.allCases.firstIndex(of: mode)!
+      modeButtons.append(button)
+      modeBar.addArrangedSubview(button)
     }
-    modeControl.setAccessibilityLabel("Sidebar content")
-    modeControl.target = self
-    modeControl.action = #selector(modeControlChanged)
-    modeControl.translatesAutoresizingMaskIntoConstraints = false
+    modeBar.setAccessibilityRole(.radioGroup)
+    modeBar.setAccessibilityLabel("Sidebar content")
+
+    titleLabel.font = Theme.ui(11.5, .medium)
+    titleLabel.textColor = Palette.tertiaryText
+    titleLabel.lineBreakMode = .byTruncatingMiddle
+    titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
     let column = NSTableColumn(identifier: .init("main"))
     column.resizingMask = .autoresizingMask
     outlineView.addTableColumn(column)
     outlineView.outlineTableColumn = column
     outlineView.headerView = nil
-    outlineView.style = .sourceList
-    outlineView.rowSizeStyle = .default
+    outlineView.style = .plain
+    outlineView.backgroundColor = .clear
+    outlineView.rowHeight = 28
+    outlineView.intercellSpacing = NSSize(width: 0, height: 1)
     outlineView.floatsGroupRows = false
     outlineView.autoresizesOutlineColumn = false
-    outlineView.indentationPerLevel = 12
+    outlineView.indentationPerLevel = 14
+    outlineView.focusRingType = .none
     outlineView.dataSource = self
     outlineView.delegate = self
     outlineView.target = self
@@ -99,48 +113,83 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     scrollView.documentView = outlineView
     scrollView.hasVerticalScroller = true
     scrollView.autohidesScrollers = true
+    scrollView.scrollerStyle = .overlay
     scrollView.drawsBackground = false
     scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-    filterField.placeholderString = "Filter"
-    filterField.controlSize = .regular
+    filterBox.wantsLayer = true
+    filterBox.layer?.cornerRadius = 7
+    filterBox.translatesAutoresizingMaskIntoConstraints = false
+    let filterIcon = NSImageView(
+      image: NSImage(systemSymbolName: "line.3.horizontal.decrease", accessibilityDescription: nil)!)
+    filterIcon.symbolConfiguration = .init(pointSize: 11, weight: .medium)
+    filterIcon.contentTintColor = Palette.tertiaryText
+    filterIcon.translatesAutoresizingMaskIntoConstraints = false
+    filterField.placeholderAttributedString = NSAttributedString(
+      string: "Filter files",
+      attributes: [.font: Theme.ui(12.5), .foregroundColor: Palette.tertiaryText])
+    filterField.font = Theme.ui(12.5)
+    filterField.textColor = Palette.text
+    filterField.isBordered = false
+    filterField.drawsBackground = false
+    filterField.focusRingType = .none
     filterField.delegate = self
-    filterField.sendsSearchStringImmediately = true
+    filterField.cell?.sendsActionOnEndEditing = false
+    filterField.setAccessibilityLabel("Filter files")
     filterField.translatesAutoresizingMaskIntoConstraints = false
+    filterBox.addSubview(filterIcon)
+    filterBox.addSubview(filterField)
 
     emptyLabel.alignment = .center
-    emptyLabel.textColor = .secondaryLabelColor
-    emptyLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
-    emptyButton.bezelStyle = .push
-    emptyButton.target = self
-    emptyButton.action = #selector(emptyButtonClicked)
+    emptyLabel.textColor = Palette.secondaryText
+    emptyLabel.font = Theme.ui(12.5)
     emptyStack.orientation = .vertical
-    emptyStack.spacing = 10
+    emptyStack.spacing = 12
     emptyStack.translatesAutoresizingMaskIntoConstraints = false
 
-    root.addSubview(scrollView)
-    root.addSubview(modeControl)
-    root.addSubview(filterField)
-    root.addSubview(emptyStack)
-    let filterHeight = filterField.heightAnchor.constraint(equalToConstant: 0)
+    let settings = ChromeButton(
+      symbol: "gearshape", title: "Settings", style: .text, hint: "⌘,", target: nil,
+      action: #selector(AppDelegate.showSettings(_:)))
+    settings.titleFont = Theme.ui(12.5, .medium)
+    settings.symbolSize = 13
+    let appearance = ChromeButton(
+      symbol: "circle.lefthalf.filled", title: "Switch Appearance", target: self,
+      action: #selector(cycleAppearance))
+    appearance.symbolSize = 13
+
+    for view: NSView in [modeBar, titleLabel, filterBox, scrollView, emptyStack, settings, appearance] {
+      root.addSubview(view)
+    }
+    let filterHeight = filterBox.heightAnchor.constraint(equalToConstant: 0)
     self.filterHeight = filterHeight
     NSLayoutConstraint.activate([
-      modeControl.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: 4),
-      modeControl.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
-      modeControl.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-      scrollView.topAnchor.constraint(equalTo: modeControl.bottomAnchor, constant: 8),
+      modeBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
+      modeBar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
+      modeBar.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -8),
+      filterBox.topAnchor.constraint(equalTo: modeBar.bottomAnchor, constant: 10),
+      filterBox.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10),
+      filterBox.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
+      filterIcon.leadingAnchor.constraint(equalTo: filterBox.leadingAnchor, constant: 9),
+      filterIcon.centerYAnchor.constraint(equalTo: filterBox.centerYAnchor),
+      filterField.leadingAnchor.constraint(equalTo: filterIcon.trailingAnchor, constant: 7),
+      filterField.trailingAnchor.constraint(equalTo: filterBox.trailingAnchor, constant: -8),
+      filterField.centerYAnchor.constraint(equalTo: filterBox.centerYAnchor),
+      titleLabel.topAnchor.constraint(equalTo: filterBox.bottomAnchor, constant: 10),
+      titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
+      titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -16),
+      scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
       scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
       scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-      scrollView.bottomAnchor.constraint(equalTo: filterField.topAnchor, constant: -8),
-      filterField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10),
-      filterField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
-      filterField.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
+      scrollView.bottomAnchor.constraint(equalTo: settings.topAnchor, constant: -6),
+      settings.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
+      settings.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+      appearance.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
+      appearance.centerYAnchor.constraint(equalTo: settings.centerYAnchor),
       emptyStack.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
-      emptyStack.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor, constant: -20),
-      emptyStack.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -32),
+      emptyStack.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor, constant: -30),
+      emptyStack.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -40),
     ])
-    scrollView.automaticallyAdjustsContentInsets = false
-    scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    filterHeight.isActive = true
 
     NotificationCenter.default.addObserver(
       self, selector: #selector(recentsChanged), name: .recentsChanged, object: nil)
@@ -148,26 +197,43 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     applyMode()
   }
 
+  @objc private func cycleAppearance() {
+    let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    Preferences.shared.appearance = dark ? .light : .dark
+  }
+
   // MARK: Mode
 
   func setMode(_ mode: SidebarMode) {
-    guard mode != self.mode || modeControl.selectedSegment < 0 else { return }
+    guard mode != self.mode else { return }
     self.mode = mode
     Preferences.shared.sidebarMode = mode
     applyMode()
     delegate?.sidebarModeChanged(self)
   }
 
-  @objc private func modeControlChanged() {
-    setMode(SidebarMode.allCases[modeControl.selectedSegment])
+  @objc private func modeButtonClicked(_ sender: ChromeButton) {
+    setMode(SidebarMode.allCases[sender.tag])
   }
 
   private func applyMode() {
-    modeControl.selectedSegment = SidebarMode.allCases.firstIndex(of: mode) ?? 0
+    for (index, button) in modeButtons.enumerated() {
+      button.isOn = SidebarMode.allCases[index] == mode
+      button.setAccessibilityValue(button.isOn)
+    }
     let showsFilter = mode == .files && folder != nil
-    filterField.isHidden = !showsFilter
-    filterHeight?.isActive = !showsFilter
+    filterBox.isHidden = !showsFilter
+    filterHeight?.constant = showsFilter ? 28 : 0
+    updateTitle()
     reload()
+  }
+
+  private func updateTitle() {
+    switch mode {
+    case .outline: titleLabel.stringValue = headingRoots.isEmpty ? "" : "On this page"
+    case .files: titleLabel.stringValue = folder?.url.lastPathComponent ?? ""
+    case .recents: titleLabel.stringValue = recents.isEmpty ? "" : "Recently opened"
+    }
   }
 
   private func reload() {
@@ -195,16 +261,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     var button: String?
     switch mode {
     case .outline:
-      if headingRoots.isEmpty { message = currentFile == nil ? "No Document" : "No Headings" }
+      if headingRoots.isEmpty {
+        message = currentFile == nil ? "Open a document to see its outline." : "This document has no headings."
+      }
     case .files:
       if folder == nil {
-        message = "No Folder Open"
+        message = "Open a folder to browse its documents."
         button = "Open Folder…"
       } else if shownFolder == nil || shownFolder?.children.isEmpty == true {
-        message = filterField.stringValue.isEmpty ? "No Markdown Files" : "No Matches"
+        message = filterField.stringValue.isEmpty ? "No Markdown files here." : "Nothing matches."
       }
     case .recents:
-      if recents.isEmpty { message = "No Recent Documents" }
+      if recents.isEmpty { message = "Documents you open show up here." }
     }
     emptyStack.isHidden = message == nil
     emptyLabel.stringValue = message ?? ""
@@ -229,7 +297,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
     walk(headingRoots)
     headingNodes = flat.sorted { $0.index < $1.index }
-    if mode == .outline { reload() }
+    if mode == .outline {
+      updateTitle()
+      reload()
+    }
   }
 
   func setCurrentHeading(_ index: Int?) {
@@ -257,6 +328,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
   func setFolder(_ folder: FolderNode?) {
     self.folder = folder
+    _ = view
     applyFilter()
     if mode == .files { applyMode() }
   }
@@ -268,6 +340,23 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
   private func applyFilter() {
     shownFolder = folder?.filtered(filterField.stringValue)
+  }
+
+  func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+    // Escape clears the filter; arrows move into the list.
+    if selector == #selector(cancelOperation(_:)), !filterField.stringValue.isEmpty {
+      filterField.stringValue = ""
+      controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+      return true
+    }
+    if selector == #selector(moveDown(_:)) {
+      view.window?.makeFirstResponder(outlineView)
+      if outlineView.selectedRow < 0, outlineView.numberOfRows > 0 {
+        outlineView.selectRowIndexes([0], byExtendingSelection: false)
+      }
+      return true
+    }
+    return false
   }
 
   func controlTextDidChange(_ notification: Notification) {
@@ -301,7 +390,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
   @objc private func recentsChanged() {
     reloadRecentsList()
-    if mode == .recents { reload() }
+    if mode == .recents {
+      updateTitle()
+      reload()
+    }
   }
 
   private func reloadRecentsList() {
@@ -332,87 +424,42 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     return false
   }
 
+  func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+    SidebarRowView()
+  }
+
   func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
     // Headings have no icons, so their text starts where the icons would.
     let isHeading = item is HeadingNode
     let identifier = NSUserInterfaceItemIdentifier(isHeading ? "heading" : "cell")
     let cell =
-      outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView
-      ?? makeCell(identifier, icon: !isHeading)
-    let text = cell.textField!
-    text.font = .systemFont(ofSize: NSFont.systemFontSize)
-    text.textColor = .labelColor
+      outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarCell
+      ?? SidebarCell(identifier: identifier, icon: !isHeading)
     cell.toolTip = nil
+    cell.dimmed = false
     if let node = item as? HeadingNode {
-      text.stringValue = node.heading.title
-      if node.heading.level == 1 { text.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold) }
+      cell.textField?.stringValue = node.heading.title
+      cell.prominent = node.heading.level == 1
       return cell
     }
-    let image = cell.imageView!
-    image.contentTintColor = nil
+    cell.prominent = false
     switch item {
     case let node as FolderNode:
-      text.stringValue = node.name
-      image.isHidden = false
+      cell.textField?.stringValue = node.name
       if node.isFolder {
-        image.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "Folder")
-        image.contentTintColor = .controlAccentColor
+        cell.symbol = "folder"
       } else {
-        let symbol = FileKind(url: node.url) == .html ? "globe" : "doc.text"
-        image.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        image.contentTintColor = .secondaryLabelColor
+        cell.symbol = FileKind(url: node.url) == .html ? "globe" : "doc.text"
       }
       cell.toolTip = node.url.abbreviatedPath
     case let recent as RecentItem:
-      text.stringValue = recent.url.lastPathComponent
-      image.isHidden = false
-      image.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
-      image.contentTintColor = .secondaryLabelColor
+      cell.textField?.stringValue = recent.url.lastPathComponent
+      cell.symbol = "clock"
       cell.toolTip = recent.url.abbreviatedPath
-      if !FileManager.default.fileExists(atPath: recent.url.path) { text.textColor = .tertiaryLabelColor }
+      cell.dimmed = !FileManager.default.fileExists(atPath: recent.url.path)
     default:
       break
     }
-    return cell
-  }
-
-  private func makeCell(_ identifier: NSUserInterfaceItemIdentifier, icon: Bool) -> NSTableCellView {
-    let cell = NSTableCellView()
-    cell.identifier = identifier
-    guard icon else {
-      let text = NSTextField(labelWithString: "")
-      text.translatesAutoresizingMaskIntoConstraints = false
-      text.lineBreakMode = .byTruncatingTail
-      cell.addSubview(text)
-      cell.textField = text
-      NSLayoutConstraint.activate([
-        text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-        text.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
-        text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-      ])
-      return cell
-    }
-    let image = NSImageView()
-    image.translatesAutoresizingMaskIntoConstraints = false
-    image.symbolConfiguration = .init(scale: .medium)
-    let text = NSTextField(labelWithString: "")
-    text.translatesAutoresizingMaskIntoConstraints = false
-    text.lineBreakMode = .byTruncatingTail
-    text.cell?.truncatesLastVisibleLine = true
-    cell.addSubview(image)
-    cell.addSubview(text)
-    cell.imageView = image
-    cell.textField = text
-    let leading = text.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6)
-    leading.priority = .defaultHigh
-    NSLayoutConstraint.activate([
-      image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-      image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-      image.widthAnchor.constraint(equalToConstant: 18),
-      leading,
-      text.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
-      text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-    ])
     return cell
   }
 
@@ -523,5 +570,135 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
   /// Focus the list, e.g. after switching modes from the keyboard.
   func focus() {
     view.window?.makeFirstResponder(outlineView)
+  }
+}
+
+/// The sidebar list. Rows are drawn by `SidebarRowView`, so the system's own selection is off.
+private final class SidebarOutlineView: NSOutlineView {
+  override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+    // Disclosure chevrons sit a little in from the edge, inside the row's rounded highlight.
+    super.frameOfOutlineCell(atRow: row).offsetBy(dx: 8, dy: 0)
+  }
+
+  override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+    var frame = super.frameOfCell(atColumn: column, row: row)
+    frame.origin.x += 8
+    frame.size.width -= 16
+    return frame
+  }
+}
+
+/// A sidebar row: a rounded pill when selected, a fainter one under the pointer.
+private final class SidebarRowView: NSTableRowView {
+  private var hovering = false
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    trackingAreas.forEach(removeTrackingArea)
+    addTrackingArea(
+      NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    hovering = true
+    needsDisplay = true
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    hovering = false
+    needsDisplay = true
+  }
+
+  private var pill: NSBezierPath {
+    NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 0), xRadius: 7, yRadius: 7)
+  }
+
+  override func drawBackground(in dirtyRect: NSRect) {
+    guard hovering, !isSelected else { return }
+    Palette.hover.setFill()
+    pill.fill()
+  }
+
+  override func drawSelection(in dirtyRect: NSRect) {
+    Palette.selected.setFill()
+    pill.fill()
+  }
+
+  override var isEmphasized: Bool {
+    get { false }
+    set {}
+  }
+
+  override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+
+  override var isSelected: Bool {
+    didSet {
+      for case let cell as SidebarCell in subviews { cell.selected = isSelected }
+    }
+  }
+}
+
+/// A row's content: an optional icon and a title, in the chrome's font and colours.
+private final class SidebarCell: NSTableCellView {
+  private let icon = NSImageView()
+  private let hasIcon: Bool
+
+  var symbol: String? {
+    didSet {
+      guard symbol != oldValue else { return }
+      icon.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+    }
+  }
+  var selected = false { didSet { updateColors() } }
+  var dimmed = false { didSet { updateColors() } }
+  /// Top-level headings read a little stronger than the ones under them.
+  var prominent = false { didSet { updateColors() } }
+
+  init(identifier: NSUserInterfaceItemIdentifier, icon hasIcon: Bool) {
+    self.hasIcon = hasIcon
+    super.init(frame: .zero)
+    self.identifier = identifier
+    let text = NSTextField(labelWithString: "")
+    text.font = Theme.ui(13)
+    text.lineBreakMode = .byTruncatingTail
+    text.cell?.truncatesLastVisibleLine = true
+    text.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(text)
+    textField = text
+    if hasIcon {
+      icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+      icon.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(icon)
+      NSLayoutConstraint.activate([
+        icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+        icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+        icon.widthAnchor.constraint(equalToConstant: 16),
+        text.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
+      ])
+    } else {
+      text.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6).isActive = true
+    }
+    NSLayoutConstraint.activate([
+      text.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
+      text.centerYAnchor.constraint(equalTo: centerYAnchor),
+    ])
+    updateColors()
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  // The row draws the selection; text keeps its own colours on it.
+  override var backgroundStyle: NSView.BackgroundStyle {
+    get { .normal }
+    set {}
+  }
+
+  private func updateColors() {
+    let text: NSColor =
+      dimmed ? Palette.tertiaryText
+      : selected || (prominent && !hasIcon) ? Palette.text
+      : hasIcon ? Palette.text : Palette.secondaryText
+    textField?.textColor = text
+    icon.contentTintColor = selected ? Palette.secondaryText : Palette.tertiaryText
   }
 }

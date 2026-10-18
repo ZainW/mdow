@@ -9,7 +9,7 @@ extension DocumentWindowController: CompanionDocumentContext {
 
   func companionOpenDocument(_ url: URL) { open(url) }
 
-  /// View › Show Companion (⌥⌘0) and the toolbar's sparkles button.
+  /// View › Show Companion (⌥⌘0) and the header's sparkle button.
   @objc func toggleCompanion(_ sender: Any?) {
     let show = companionItem.isCollapsed
     if !show, let responder = window?.firstResponder as? NSView,
@@ -17,10 +17,13 @@ extension DocumentWindowController: CompanionDocumentContext {
     {
       window?.makeFirstResponder(reader.mode == .markdown ? reader.textView : nil)
     }
-    NSAnimationContext.runAnimationGroup { _ in
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.2
+      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
       companionItem.animator().isCollapsed = !show
     } completionHandler: {
       MainActor.assumeIsolated {
+        self.updateChrome()
         if show { self.companion.focusComposer() }
       }
     }

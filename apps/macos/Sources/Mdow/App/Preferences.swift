@@ -57,7 +57,7 @@ extension Notification.Name {
 final class Preferences {
   static let shared = Preferences()
 
-  static let defaultTextSize: Double = 15
+  static let defaultTextSize: Double = 16
   static let zoomSteps: [Double] = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
 
   @ObservationIgnored private let defaults = UserDefaults.standard
@@ -92,8 +92,8 @@ final class Preferences {
     }
     let defaults = UserDefaults.standard
     appearance = value("appearance", AppearanceMode.system)
-    bodyFont = value("bodyFont", BodyFont.system)
-    codeFont = value("codeFont", CodeFont.sfMono)
+    bodyFont = value("bodyFont", BodyFont.charter)
+    codeFont = value("codeFont", CodeFont.geistMono)
     lineSpacing = value("lineSpacing", LineSpacing.standard)
     readingWidth = value("readingWidth", ReadingWidth.standard)
     sidebarMode = value("sidebarMode", SidebarMode.outline)
@@ -130,8 +130,8 @@ final class Preferences {
   }
 
   func resetReading() {
-    bodyFont = .system
-    codeFont = .sfMono
+    bodyFont = .charter
+    codeFont = .geistMono
     lineSpacing = .standard
     readingWidth = .standard
     textSize = Self.defaultTextSize

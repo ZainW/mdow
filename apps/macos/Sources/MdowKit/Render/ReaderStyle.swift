@@ -1,12 +1,13 @@
 import AppKit
 
 public enum BodyFont: String, CaseIterable, Sendable, Identifiable {
-  case system, newYork, charter, georgia, avenir
+  case charter, inter, system, newYork, georgia, avenir
 
   public var id: String { rawValue }
 
   public var displayName: String {
     switch self {
+    case .inter: "Inter"
     case .system: "San Francisco"
     case .newYork: "New York"
     case .charter: "Charter"
@@ -17,6 +18,9 @@ public enum BodyFont: String, CaseIterable, Sendable, Identifiable {
 
   public func font(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
     switch self {
+    case .inter:
+      return BundledFont.font(family: "Inter Variable", size: size, weight: weight)
+        ?? NSFont.systemFont(ofSize: size, weight: weight)
     case .system:
       return NSFont.systemFont(ofSize: size, weight: weight)
     case .newYork:
@@ -43,12 +47,13 @@ public enum BodyFont: String, CaseIterable, Sendable, Identifiable {
 }
 
 public enum CodeFont: String, CaseIterable, Sendable, Identifiable {
-  case sfMono, menlo, monaco
+  case geistMono, sfMono, menlo, monaco
 
   public var id: String { rawValue }
 
   public var displayName: String {
     switch self {
+    case .geistMono: "Geist Mono"
     case .sfMono: "SF Mono"
     case .menlo: "Menlo"
     case .monaco: "Monaco"
@@ -57,6 +62,9 @@ public enum CodeFont: String, CaseIterable, Sendable, Identifiable {
 
   public func font(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
     switch self {
+    case .geistMono:
+      return BundledFont.font(family: "Geist Mono", size: size, weight: weight)
+        ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     case .sfMono:
       return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     case .menlo, .monaco:
@@ -120,11 +128,11 @@ public enum ReadingWidth: String, CaseIterable, Sendable, Identifiable {
 
 /// Everything the renderer needs to know about how a document should look.
 public struct ReaderStyle: Sendable, Equatable {
-  public var bodyFont: BodyFont = .system
-  public var codeFont: CodeFont = .sfMono
+  public var bodyFont: BodyFont = .charter
+  public var codeFont: CodeFont = .geistMono
   public var lineSpacing: LineSpacing = .standard
   /// Body text size in points, zoom included.
-  public var fontSize: CGFloat = 15
+  public var fontSize: CGFloat = 16
   /// The widest an image or diagram may be drawn.
   public var maxContentWidth: CGFloat = 720
 
@@ -145,36 +153,37 @@ public struct ReaderStyle: Sendable, Equatable {
   func headingSize(_ level: Int) -> CGFloat {
     let scale: CGFloat =
       switch level {
-      case 1: 1.9
-      case 2: 1.5
-      case 3: 1.25
-      case 4: 1.1
+      case 1: 2.0
+      case 2: 1.45
+      case 3: 1.2
+      case 4: 1.06
       default: 1.0
       }
     return (fontSize * scale).rounded()
   }
 }
 
-/// Colours used by the reader. All are dynamic, so a rendered document follows the
-/// window's appearance without being rebuilt.
+/// Colours used by the reader, drawn from `Palette`. All are dynamic, so a rendered document
+/// follows the window's appearance without being rebuilt.
 public enum ReaderColors {
-  public static let text = NSColor.labelColor
-  public static let secondary = NSColor.secondaryLabelColor
-  public static let tertiary = NSColor.tertiaryLabelColor
-  public static let separator = NSColor.separatorColor
-  public static let link = NSColor.linkColor
+  public static let text = Palette.text
+  public static let secondary = Palette.secondaryText
+  public static let tertiary = Palette.tertiaryText
+  public static let separator = Palette.line
+  public static let link = Palette.accent
 
-  public static let codeBackground = dynamic(
-    light: NSColor(white: 0, alpha: 0.04), dark: NSColor(white: 1, alpha: 0.06))
-  public static let codeBorder = dynamic(
-    light: NSColor(white: 0, alpha: 0.07), dark: NSColor(white: 1, alpha: 0.08))
+  public static let codeBackground = Palette.well
+  public static let codeBorder = Palette.line
   public static let inlineCodeBackground = dynamic(
-    light: NSColor(white: 0, alpha: 0.055), dark: NSColor(white: 1, alpha: 0.1))
-  public static let tableBorder = dynamic(
-    light: NSColor(white: 0, alpha: 0.12), dark: NSColor(white: 1, alpha: 0.14))
+    light: NSColor(srgbRed: 0.24, green: 0.18, blue: 0.12, alpha: 0.07),
+    dark: NSColor(white: 1, alpha: 0.08))
+  public static let tableBorder = Palette.strongLine
   public static let quoteBar = dynamic(
-    light: NSColor(white: 0, alpha: 0.14), dark: NSColor(white: 1, alpha: 0.2))
-  public static let mark = NSColor.findHighlightColor.withAlphaComponent(0.5)
+    light: NSColor(srgbRed: 0.24, green: 0.18, blue: 0.12, alpha: 0.18),
+    dark: NSColor(white: 1, alpha: 0.18))
+  public static let mark = dynamic(
+    light: NSColor(srgbRed: 1, green: 0.85, blue: 0.35, alpha: 0.55),
+    dark: NSColor(srgbRed: 0.95, green: 0.75, blue: 0.25, alpha: 0.35))
 
   public static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
     NSColor(name: nil) { appearance in

@@ -27,9 +27,8 @@ final class CompanionDocumentState {
   var documents: [URL] = []
 }
 
-/// The companion inspector: a trailing split view item hosting the SwiftUI panel.
+/// The companion: a trailing split view item hosting the SwiftUI panel.
 final class CompanionViewController: NSViewController {
-  static let toolbarItemIdentifier = NSToolbarItem.Identifier("companion")
 
   let session = CompanionSession()
   let document = CompanionDocumentState()
@@ -54,10 +53,10 @@ final class CompanionViewController: NSViewController {
     view.setAccessibilityLabel("Companion")
   }
 
-  /// A trailing inspector item for `context`'s split view, collapsed until the user opens it.
+  /// A trailing item for `context`'s split view, collapsed until the user opens it.
   func makeSplitItem(context: CompanionDocumentContext) -> NSSplitViewItem {
     self.context = context
-    let item = NSSplitViewItem(inspectorWithViewController: self)
+    let item = NSSplitViewItem(viewController: self)
     item.minimumThickness = 300
     item.maximumThickness = 560
     item.preferredThicknessFraction = 0.3
@@ -67,18 +66,6 @@ final class CompanionViewController: NSViewController {
     collapseObservation = item.observe(\.isCollapsed, options: [.new]) { [weak self] item, _ in
       MainActor.assumeIsolated { self?.updateVisibility() }
     }
-    return item
-  }
-
-  func makeToolbarItem(target: AnyObject, action: Selector) -> NSToolbarItem {
-    let item = NSToolbarItem(itemIdentifier: Self.toolbarItemIdentifier)
-    item.label = "Companion"
-    item.paletteLabel = "Companion"
-    item.toolTip = "Show or hide the companion"
-    item.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Companion")
-    item.isBordered = true
-    item.target = target
-    item.action = action
     return item
   }
 

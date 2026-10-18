@@ -28,7 +28,7 @@ import AppKit
       switch value {
       case "files": controller?.showFiles(nil)
       case "recents": controller?.showRecents(nil)
-      case "hide": NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+      case "hide": controller?.toggleSidebarPanel(nil)
       default: controller?.showOutline(nil)
       }
     case "palette":

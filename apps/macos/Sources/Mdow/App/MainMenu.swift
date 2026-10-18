@@ -1,8 +1,8 @@
 import AppKit
 import MdowKit
 
-/// The menu bar. Standard items use AppKit's own actions so the system can extend them (tab
-/// items, Writing Tools, dictation, full screen).
+/// The menu bar. Standard items use AppKit's own actions so the system can extend them (Writing
+/// Tools, dictation, full screen).
 @MainActor enum MainMenu {
   static func build(recentsDelegate: NSMenuDelegate) -> NSMenu {
     let main = NSMenu()
@@ -72,7 +72,8 @@ import MdowKit
     recent.submenu = recentMenu
     menu.addItem(recent)
     menu.addItem(.separator())
-    menu.addItem(item("Close", #selector(NSWindow.performClose(_:)), "w"))
+    menu.addItem(item("Close Tab", #selector(DocumentWindowController.closeTabAction(_:)), "w"))
+    menu.addItem(item("Close Window", #selector(NSWindow.performClose(_:)), "w", [.command, .shift]))
     menu.addItem(item("Reload", #selector(DocumentWindowController.reloadDocument(_:)), "r"))
     menu.addItem(.separator())
     menu.addItem(item("Show in Finder", #selector(DocumentWindowController.showInFinder(_:)), "r", [.command, .option]))
@@ -116,7 +117,7 @@ import MdowKit
 
   private static func viewMenu() -> NSMenu {
     let menu = NSMenu(title: "View")
-    menu.addItem(item("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]))
+    menu.addItem(item("Show Sidebar", #selector(DocumentWindowController.toggleSidebarPanel(_:)), "s", [.command, .control]))
     menu.addItem(item("Outline", #selector(DocumentWindowController.showOutline(_:)), "1", [.command, .control]))
     menu.addItem(item("Files", #selector(DocumentWindowController.showFiles(_:)), "2", [.command, .control]))
     menu.addItem(item("Recents", #selector(DocumentWindowController.showRecents(_:)), "3", [.command, .control]))
@@ -162,6 +163,19 @@ import MdowKit
     let menu = NSMenu(title: "Window")
     menu.addItem(item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"))
     menu.addItem(item("Zoom", #selector(NSWindow.performZoom(_:))))
+    menu.addItem(.separator())
+    menu.addItem(item("Show Previous Tab", #selector(DocumentWindowController.selectPreviousTab(_:)), "[", [.command, .shift]))
+    menu.addItem(item("Show Next Tab", #selector(DocumentWindowController.selectNextTab(_:)), "]", [.command, .shift]))
+    for (title, action, modifiers) in [
+      ("Show Previous Tab", #selector(DocumentWindowController.selectPreviousTab(_:)), NSEvent.ModifierFlags([.control, .shift])),
+      ("Show Next Tab", #selector(DocumentWindowController.selectNextTab(_:)), NSEvent.ModifierFlags.control),
+    ] {
+      // ⌃⇥ and ⌃⇧⇥ as well, like browsers.
+      let alternate = item(title, action, "\t", modifiers)
+      alternate.isHidden = true
+      alternate.allowsKeyEquivalentWhenHidden = true
+      menu.addItem(alternate)
+    }
     menu.addItem(.separator())
     menu.addItem(item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
     return menu

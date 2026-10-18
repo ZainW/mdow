@@ -50,14 +50,15 @@ final class ReaderTextView: NSTextView {
     usesFindBar = true
     isIncrementalSearchingEnabled = true
     drawsBackground = true
-    backgroundColor = .textBackgroundColor
+    backgroundColor = Palette.paper
+    selectedTextAttributes = [.backgroundColor: Palette.textSelection]
     isVerticallyResizable = true
     isHorizontallyResizable = false
     autoresizingMask = [.width]
     maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     displaysLinkToolTips = false
     linkTextAttributes = [
-      .foregroundColor: NSColor.linkColor,
+      .foregroundColor: Palette.accent,
       .cursor: NSCursor.pointingHand,
     ]
     setAccessibilityLabel("Document")
