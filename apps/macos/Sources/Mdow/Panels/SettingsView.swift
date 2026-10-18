@@ -61,6 +61,7 @@ struct SettingsView: View {
       Section("Documents") {
         Toggle("Open documents in tabs", isOn: $preferences.openInTabs)
         Toggle("Reload documents when they change on disk", isOn: $preferences.reloadOnChange)
+        Toggle("Darken HTML pages in Dark Mode", isOn: $preferences.darkenHTML)
       }
 
       Section {
@@ -150,6 +151,7 @@ struct ShortcutsView: View {
         .init(title: "Next / previous tab", keys: "⌃⇥  ⌃⇧⇥"),
         .init(title: "Go to tab", keys: "⌘1 – ⌘9"),
         .init(title: "Show all tabs", keys: "⇧⌘\\"),
+        .init(title: "Split view", keys: "⌘\\"),
       ]),
   ]
 

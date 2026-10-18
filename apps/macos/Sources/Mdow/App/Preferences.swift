@@ -77,6 +77,7 @@ final class Preferences {
   var zoom: Double { didSet { store(zoom, "zoom"); styleChanged() } }
   var openInTabs: Bool { didSet { store(openInTabs, "openInTabs") } }
   var reloadOnChange: Bool { didSet { store(reloadOnChange, "reloadOnChange") } }
+  var darkenHTML: Bool { didSet { store(darkenHTML, "darkenHTML"); styleChanged() } }
   var sidebarMode: SidebarMode { didSet { store(sidebarMode.rawValue, "sidebarMode") } }
   private(set) var recents: [URL] = []
 
@@ -98,6 +99,7 @@ final class Preferences {
     zoom = defaults.object(forKey: "zoom") as? Double ?? 1
     openInTabs = defaults.object(forKey: "openInTabs") as? Bool ?? true
     reloadOnChange = defaults.object(forKey: "reloadOnChange") as? Bool ?? true
+    darkenHTML = defaults.object(forKey: "darkenHTML") as? Bool ?? true
     recents = (defaults.stringArray(forKey: "recents") ?? []).map { URL(fileURLWithPath: $0) }
   }
 

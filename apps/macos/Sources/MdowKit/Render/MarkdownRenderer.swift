@@ -285,7 +285,7 @@ public final class MarkdownRenderer {
     let paragraph = NSMutableParagraphStyle()
     paragraph.textBlocks = ctx.blocks + [block]
     paragraph.lineHeightMultiple = 1.18
-    paragraph.lineBreakMode = .byCharWrapping
+    paragraph.lineBreakMode = .byWordWrapping
     let whole = NSRange(location: 0, length: text.length)
     text.addAttribute(.paragraphStyle, value: paragraph, range: whole)
     text.addAttribute(.mdowCodeBlock, value: CodeBlockInfo(code: code, language: language), range: whole)

@@ -118,6 +118,8 @@ import MdowKit
     menu.addItem(item("Files", #selector(DocumentWindowController.showFiles(_:)), "2", [.command, .control]))
     menu.addItem(item("Recents", #selector(DocumentWindowController.showRecents(_:)), "3", [.command, .control]))
     menu.addItem(.separator())
+    menu.addItem(item("Split View", #selector(DocumentWindowController.toggleSplitView(_:)), "\\"))
+    menu.addItem(.separator())
     menu.addItem(item("Actual Size", #selector(DocumentWindowController.actualSize(_:)), "0"))
     menu.addItem(item("Zoom In", #selector(DocumentWindowController.zoomIn(_:)), "+"))
     let zoomInAlternate = item("Zoom In", #selector(DocumentWindowController.zoomIn(_:)), "=")

@@ -51,6 +51,10 @@ import AppKit
       AppDelegate.shared.showSettings(nil)
     case "shortcuts":
       AppDelegate.shared.showShortcuts(nil)
+    case "split":
+      controller?.toggleSplitView(nil)
+    case "htmlfind":
+      controller?.reader.performHTMLFind(.showFindInterface)
     case "newtab":
       AppDelegate.shared.newTabAction(nil)
     case "open":

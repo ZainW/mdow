@@ -114,7 +114,7 @@ import UniformTypeIdentifiers
   func open(_ urls: [URL], from source: DocumentWindowController?) {
     for url in urls {
       let url = url.standardizedFileURL
-      if let existing = controllers.first(where: { $0.fileURL == url }) {
+      if let existing = controllers.first(where: { $0.openURLs.contains(url) }) {
         existing.window?.makeKeyAndOrderFront(nil)
         continue
       }
@@ -131,7 +131,7 @@ import UniformTypeIdentifiers
   }
 
   func openInNewTab(_ url: URL, from source: DocumentWindowController) {
-    if let existing = controllers.first(where: { $0.fileURL == url.standardizedFileURL }) {
+    if let existing = controllers.first(where: { $0.openURLs.contains(url.standardizedFileURL) }) {
       existing.window?.makeKeyAndOrderFront(nil)
       return
     }

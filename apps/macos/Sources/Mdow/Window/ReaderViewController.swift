@@ -134,8 +134,9 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     mode = .html
     headings = []
     hostingView = nil
+    htmlURL = url
     let configuration = WKWebViewConfiguration()
-    // Pages are shown, never run.
+    // Pages are shown, never run. Mdow's own scripts run in a separate world.
     configuration.defaultWebpagePreferences.allowsContentJavaScript = false
     configuration.websiteDataStore = .nonPersistent()
     let web = WKWebView(frame: view.bounds, configuration: configuration)
@@ -144,12 +145,124 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     web.pageZoom = Preferences.shared.zoom
     web.setAccessibilityLabel("Document")
     webView = web
-    install(web)
+
+    let container = NSView()
+    web.translatesAutoresizingMaskIntoConstraints = false
+    htmlFindBar.translatesAutoresizingMaskIntoConstraints = false
+    htmlFindBar.isHidden = true
+    htmlFindBar.onFind = { [weak self] query, backwards in self?.findInHTML(query, backwards: backwards) }
+    htmlFindBar.onClose = { [weak self] in self?.hideHTMLFindBar() }
+    container.addSubview(web)
+    container.addSubview(htmlFindBar)
+    let findTop = htmlFindBar.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor)
+    NSLayoutConstraint.activate([
+      findTop,
+      htmlFindBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      htmlFindBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      web.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      web.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      web.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+    ])
+    htmlWebTop = web.topAnchor.constraint(equalTo: container.topAnchor)
+    htmlWebTop?.isActive = true
+    install(container)
     web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+  }
+
+  func reloadHTML() {
+    guard mode == .html, let webView, let htmlURL else { return }
+    webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
   }
 
   func applyZoomToHTML() {
     webView?.pageZoom = Preferences.shared.zoom
+  }
+
+  /// The window's appearance, which updates before its views' when the appearance changes.
+  var isDark: Bool {
+    (view.window?.effectiveAppearance ?? view.effectiveAppearance)
+      .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+  }
+
+  /// Pages that don't support dark mode are darkened in it, unless that's turned off.
+  func updateHTMLAppearance() {
+    guard let webView else { return }
+    let on = isDark && Preferences.shared.darkenHTML
+    // User scripts don't run with page JavaScript off, so this is evaluated directly.
+    webView.evaluateJavaScript(
+      HTMLDarkMode.script + "\nwindow.__mdowSetDark(\(on)) ?? false", in: nil, in: .defaultClient
+    ) { [weak webView] result in
+      // WebKit fills the area under the toolbar with the page's own colour, sampled before the
+      // page was darkened; a fixed colour has to stand in. (A dynamic one blanks the page.)
+      let darkened = (try? result.get()) as? Bool == true
+      webView?.underPageBackgroundColor = darkened ? HTMLDarkMode.background : nil
+    }
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    updateHTMLAppearance()
+  }
+
+  // MARK: Find in HTML
+
+  private let htmlFindBar = HTMLFindBar()
+  private var htmlURL: URL?
+  private var htmlWebTop: NSLayoutConstraint?
+
+  /// Find for HTML pages, which `NSTextFinder` can't search.
+  func performHTMLFind(_ action: NSTextFinder.Action) {
+    guard mode == .html else { return }
+    switch action {
+    case .showFindInterface:
+      showHTMLFindBar()
+    case .nextMatch, .previousMatch:
+      if htmlFindBar.isHidden { showHTMLFindBar() }
+      findInHTML(htmlFindBar.query, backwards: action == .previousMatch)
+    case .setSearchString:
+      webView?.evaluateJavaScript(
+        "window.getSelection().toString()", in: nil, in: .defaultClient
+      ) { [weak self] result in
+        guard let self, case .success(let value) = result, let text = value as? String, !text.isEmpty
+        else { return }
+        self.htmlFindBar.query = text
+      }
+    case .hideFindInterface:
+      hideHTMLFindBar()
+    default:
+      break
+    }
+  }
+
+  private func showHTMLFindBar() {
+    htmlFindBar.isHidden = false
+    htmlWebTop?.isActive = false
+    htmlWebTop = webView?.topAnchor.constraint(equalTo: htmlFindBar.bottomAnchor)
+    htmlWebTop?.isActive = true
+    htmlFindBar.focus()
+  }
+
+  private func hideHTMLFindBar() {
+    htmlFindBar.isHidden = true
+    htmlWebTop?.isActive = false
+    if let webView, let container = webView.superview {
+      htmlWebTop = webView.topAnchor.constraint(equalTo: container.topAnchor)
+      htmlWebTop?.isActive = true
+      view.window?.makeFirstResponder(webView)
+    }
+  }
+
+  private func findInHTML(_ query: String, backwards: Bool) {
+    guard let webView, !query.isEmpty else {
+      htmlFindBar.notFound = false
+      return
+    }
+    let configuration = WKFindConfiguration()
+    configuration.backwards = backwards
+    configuration.caseSensitive = false
+    configuration.wraps = true
+    webView.find(query, configuration: configuration) { [weak self] result in
+      self?.htmlFindBar.notFound = !result.matchFound
+    }
   }
 
   /// Something that can be printed: the document laid out for paper, light, and without the
@@ -185,9 +298,10 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     if visible.minY <= -scrollView.contentInsets.top + 1 { return 0 }
     let y = visible.minY + scrollView.contentInsets.top - textView.textContainerOrigin.y + 2
     if y <= 0 { return 0 }
-    let rect = NSRect(x: 0, y: y, width: container.size.width, height: 1)
-    let glyphs = layoutManager.glyphRange(forBoundingRect: rect, in: container)
-    return min(layoutManager.characterIndexForGlyph(at: glyphs.location), storage.length - 1)
+    // The glyph under a point; `glyphRange(forBoundingRect:)` would answer with the start of
+    // whatever code block or table contains it.
+    let glyph = layoutManager.glyphIndex(for: NSPoint(x: container.size.width / 2, y: y), in: container)
+    return min(layoutManager.characterIndexForGlyph(at: glyph), storage.length - 1)
   }
 
   func scroll(toCharacter location: Int, animated: Bool, margin: CGFloat = 14) {
@@ -208,6 +322,11 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
         context.duration = 0.3
         context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         scrollView.contentView.animator().setBoundsOrigin(target)
+      } completionHandler: { [weak self] in
+        MainActor.assumeIsolated {
+          self?.scrollView.reflectScrolledClipView(self!.scrollView.contentView)
+          self?.refreshHeadingTracking()
+        }
       }
     } else {
       scrollView.contentView.scroll(to: target)
@@ -255,9 +374,9 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     {
       let y = scrollView.contentView.bounds.minY + scrollView.contentInsets.top + lookahead
         - textView.textContainerOrigin.y
-      let rect = NSRect(x: 0, y: max(y, 0), width: container.size.width, height: 1)
-      let glyphs = layoutManager.glyphRange(forBoundingRect: rect, in: container)
-      let probe = max(top, layoutManager.characterIndexForGlyph(at: glyphs.location))
+      let glyph = layoutManager.glyphIndex(
+        for: NSPoint(x: container.size.width / 2, y: max(y, 0)), in: container)
+      let probe = max(top, layoutManager.characterIndexForGlyph(at: glyph))
       current = headings.lastIndex { $0.location <= probe }
     }
     if current != lastHeading {
