@@ -1,14 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { AppleIcon, LinuxIcon } from './icons'
+import { LinuxIcon } from './icons'
 import { PlatformDownloadRow } from './platform-download-row'
 
-export function NativeDownloadSection({
-  macUrl,
-  linuxUrl,
-}: {
-  macUrl: string
-  linuxUrl?: string | null
-}) {
+export function NativeDownloadSection({ linuxUrl }: { linuxUrl: string }) {
   return (
     <section className="mt-16" aria-labelledby="native-heading">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -22,8 +16,8 @@ export function NativeDownloadSection({
             </span>
           </div>
           <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-            A GPU-rendered beta for Apple Silicon Macs and x64 Linux, built with gpuix. Runs
-            alongside the regular Mdow app.
+            A GPU-rendered beta for x64 Linux, built with gpuix. Runs alongside the regular Mdow
+            app.
           </p>
         </div>
         <Link
@@ -37,19 +31,11 @@ export function NativeDownloadSection({
       </div>
       <div className="surface-card mt-6 divide-y divide-border-subtle overflow-hidden rounded-2xl">
         <PlatformDownloadRow
-          icon={<AppleIcon className="size-5" />}
-          platform="macOS"
-          description="Apple Silicon · macOS 14 or newer"
-          formats={[{ label: 'Mdow Native', detail: '.zip', url: macUrl }]}
+          icon={<LinuxIcon className="size-5" />}
+          platform="Linux"
+          description="x64 · make the AppImage executable and run it"
+          formats={[{ label: 'Mdow Native', detail: '.AppImage', url: linuxUrl }]}
         />
-        {linuxUrl ? (
-          <PlatformDownloadRow
-            icon={<LinuxIcon className="size-5" />}
-            platform="Linux"
-            description="x64 · make the AppImage executable and run it"
-            formats={[{ label: 'Mdow Native', detail: '.AppImage', url: linuxUrl }]}
-          />
-        ) : null}
       </div>
     </section>
   )

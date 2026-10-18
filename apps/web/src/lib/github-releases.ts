@@ -8,7 +8,7 @@ export interface ReleaseInfo {
   publishedAt: string
   htmlUrl: string
   assets: {
-    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; gpuiBeta: ReleaseAsset | null }
+    mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; app: ReleaseAsset | null }
     windows: { exe: string | null }
     linux: { appImage: string | null; gpuiBeta: ReleaseAsset | null }
   }
@@ -28,8 +28,9 @@ interface GhRelease {
 }
 
 const REPO = 'ZainW/mdow'
-const GPUI_ALIAS = 'mdownative-mac-beta.zip'
-const GPUI_VERSIONED_SUFFIX = '-arm64-mac-beta.zip'
+/** Mdow for Mac, the Swift app: `Mdow-for-Mac-<version>.zip`, and the same under a fixed name. */
+const MAC_APP_ALIAS = 'mdow-for-mac.zip'
+const MAC_APP_VERSIONED = /^mdow-for-mac-.+\.zip$/
 const GPUI_LINUX_ALIAS = 'mdownative-linux-beta.appimage'
 /** The Native updater's asset: `mdow-native_<version>_x86_64.AppImage`. */
 const GPUI_LINUX_VERSIONED = /^mdow-native_.+_x86_64\.appimage$/
@@ -45,13 +46,10 @@ function releaseAsset(asset: GhAsset): ReleaseAsset {
   return arch ? { arch, url: asset.browser_download_url } : { url: asset.browser_download_url }
 }
 
-function gpuiBetaAssetType(name: string): 'alias' | 'versioned' | null {
+function macAppAssetType(name: string): 'alias' | 'versioned' | null {
   const normalized = name.toLowerCase()
-  if (normalized === GPUI_ALIAS) return 'alias'
-  if (normalized.startsWith('mdownative-') && normalized.endsWith(GPUI_VERSIONED_SUFFIX)) {
-    const version = normalized.slice('mdownative-'.length, -GPUI_VERSIONED_SUFFIX.length)
-    if (version.length > 0) return 'versioned'
-  }
+  if (normalized === MAC_APP_ALIAS) return 'alias'
+  if (MAC_APP_VERSIONED.test(normalized)) return 'versioned'
   return null
 }
 
@@ -67,7 +65,7 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
 
   const dmg: ReleaseAsset[] = []
   const zip: ReleaseAsset[] = []
-  let gpuiBeta: ReleaseAsset | null = null
+  let macApp: ReleaseAsset | null = null
   let linuxGpuiBeta: ReleaseAsset | null = null
   let exe: string | null = null
   let appImage: string | null = null
@@ -83,15 +81,16 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
       } else {
         linuxGpuiBeta ??= releaseAsset(asset)
       }
-    } else if (normalized.endsWith('.zip') && normalized.includes('mac')) {
-      const gpuiBetaType = gpuiBetaAssetType(asset.name)
-      if (gpuiBetaType === 'alias') {
-        gpuiBeta = releaseAsset(asset)
-      } else if (gpuiBetaType === 'versioned') {
-        gpuiBeta ??= releaseAsset(asset)
-      } else if (!normalized.startsWith('mdownative')) {
-        zip.push(releaseAsset(asset))
+    } else if (normalized.endsWith('.zip') && macAppAssetType(asset.name)) {
+      // The versioned name is the one the release notes and update feed point at.
+      if (macAppAssetType(asset.name) === 'versioned') {
+        macApp = { url: asset.browser_download_url }
+      } else {
+        macApp ??= { url: asset.browser_download_url }
       }
+    } else if (normalized.endsWith('.zip') && normalized.includes('mac')) {
+      // Older releases also carried Mdow Native's Mac beta, which isn't offered anymore.
+      if (!normalized.startsWith('mdownative')) zip.push(releaseAsset(asset))
     } else if (normalized.endsWith('.exe')) {
       exe ??= asset.browser_download_url
     } else if (normalized.endsWith('.appimage')) {
@@ -104,7 +103,7 @@ export function parseRelease(release: GhRelease): ReleaseInfo | null {
     publishedAt: release.published_at,
     htmlUrl: release.html_url,
     assets: {
-      mac: { dmg, zip, gpuiBeta },
+      mac: { dmg, zip, app: macApp },
       windows: { exe },
       linux: { appImage, gpuiBeta: linuxGpuiBeta },
     },
@@ -126,3 +125,6 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
     return null
   }
 }
+
+/** The newest Mdow for Mac zip, for when the release can't be read from GitHub's API. */
+export const MAC_APP_DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/Mdow-for-Mac.zip`

@@ -15,14 +15,18 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
 
-### Mdow Native (beta)
+### Mdow for Mac
 
-Mdow Native is a separate beta that renders with GPUI through [gpuix](https://gpuix.dev). On Apple
-Silicon Macs running macOS 14 or newer, download `MdowNative-mac-beta.zip`, unzip it, and move
-`Mdow Native.app` to Applications. It runs alongside the regular Mdow app.
+Mdow for Mac is Mdow rebuilt in Swift on AppKit and TextKit, with its own paper-and-ink look. It
+needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-for-Mac-<version>.zip` from
+the [download page](/download), unzip it, and move `Mdow for Mac.app` to Applications. It runs
+alongside the regular Mdow app and keeps its own settings.
 
-Tagged macOS releases are signed and notarized. Mdow Native checks for updates in the background
-and offers them in a banner; you can also check from **Mdow → Check for Updates…**.
+It's signed and notarized, and updates itself: it checks in the background, and you can check
+from **Mdow → Check for Updates…**.
+
+Mdow Native's Mac beta is retired in favour of Mdow for Mac. Copies already installed keep working
+but no longer get updates.
 
 ## Windows
 

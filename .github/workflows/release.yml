@@ -151,42 +151,59 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
-  native-mac:
+  # Mdow for Mac (apps/macos), the Swift app. Released with the same version as the rest, and
+  # updated through Sparkle from the feed on the latest release.
+  mac-app:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/macos
     env:
-      SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-    runs-on: macos-15
-    timeout-minutes: 30
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # CFBundleVersion, which Sparkle compares, is the commit count.
+          fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
         with:
-          bun-version: 1.4.3
+          path: apps/macos/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
 
-      - run: pnpm install --frozen-lockfile --filter native
+      - name: Check the tag matches the app version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DESKTOP="$(jq -r .version ../desktop/package.json)"
+          if [[ "$DESKTOP" != "$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match apps/desktop/package.json ($DESKTOP)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Check the version matches the tag
-        run: test "$(bun -e "console.log(require('./apps/native/package.json').version)")" = "${GITHUB_REF_NAME#v}"
+      - name: Check the Sparkle key is configured
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          if [[ -z "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+            echo "::error::SPARKLE_PRIVATE_ED_KEY is not set; refusing to release without updates"
+            exit 1
+          fi
 
-      - run: pnpm --filter native run typecheck
-      - run: pnpm --filter native run lint
-      - run: pnpm --filter native run test
+      - run: swift test
 
       - name: Import Apple signing certificate
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
-          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
           P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/mac-app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(uuidgen)
 
           printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
@@ -197,63 +214,101 @@ jobs:
           security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
 
-          echo "=== Available signing identities ==="
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Using $IDENTITY"
 
-      - name: Build signed and notarized Mdow Native
-        shell: bash
+      - name: Build and sign
         env:
-          CI: 'true'
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
-          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash scripts/bundle.sh
+          codesign --verify --deep --strict --verbose=2 "dist/Mdow for Mac.app"
+          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow for Mac.app"
+
+      - name: Notarize and staple
+        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
-          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
-        run: VERSION="${GITHUB_REF_NAME#v}" bash apps/native/scripts/package-mac.sh
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "dist/Mdow for Mac.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "dist/Mdow for Mac.app"
+          xcrun stapler validate "dist/Mdow for Mac.app"
+          spctl --assess --type execute --verbose=2 "dist/Mdow for Mac.app"
 
-      # Installs of the Rust build update through Sparkle. Keep publishing its feed, pointed at
-      # the new zip, so they move to this build once and use the gpuix updater from then on.
-      - name: Generate Sparkle migration appcast
-        if: env.SPARKLE_PRIVATE_ED_KEY != ''
-        run: VERSION="${GITHUB_REF_NAME#v}" DIST_DIR=dist/native-mac bash script/generate_native_mac_appcast.sh
+      - name: Zip and write the appcast
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          ZIP="Mdow-for-Mac-$VERSION.zip"
+          mkdir -p dist/release
+          ditto -c -k --keepParent "dist/Mdow for Mac.app" "dist/release/$ZIP"
+          # A copy under a fixed name, for links to the latest download.
+          cp "dist/release/$ZIP" dist/release/Mdow-for-Mac.zip
+
+          # generate_appcast signs every archive in the folder, so give it only the versioned zip.
+          FEED_DIR="$RUNNER_TEMP/appcast"
+          rm -rf "$FEED_DIR" && mkdir -p "$FEED_DIR"
+          cp "dist/release/$ZIP" "$FEED_DIR/"
+          printf '%s' "$SPARKLE_PRIVATE_ED_KEY" \
+            | .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME/" \
+              --link "https://github.com/$GH_REPO/releases/tag/$GITHUB_REF_NAME" \
+              --maximum-versions 1 \
+              --maximum-deltas 0 \
+              -o "$FEED_DIR/mdow-for-mac-appcast.xml" \
+              "$FEED_DIR"
+          cp "$FEED_DIR/mdow-for-mac-appcast.xml" dist/release/
+
+          grep -F "releases/download/$GITHUB_REF_NAME/$ZIP" dist/release/mdow-for-mac-appcast.xml >/dev/null \
+            || { echo "::error::The appcast does not point at $ZIP"; exit 1; }
+          grep -F 'sparkle:edSignature' dist/release/mdow-for-mac-appcast.xml >/dev/null \
+            || { echo "::error::The appcast is missing sparkle:edSignature"; exit 1; }
+          cat dist/release/mdow-for-mac-appcast.xml
 
       - uses: actions/upload-artifact@v4
         with:
-          name: native-mac
-          path: |
-            dist/native-mac/*.zip
-            dist/native-mac/*.tar.gz*
-            dist/native-mac/*.xml
+          name: mdow-for-mac
+          path: apps/macos/dist/release/
           if-no-files-found: error
 
       - name: Ensure draft GitHub release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --draft --title "$TAG" --notes ""
 
-      - name: Upload Mdow Native for macOS
+      - name: Upload Mdow for Mac
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          shopt -s nullglob
-          TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" \
-            dist/native-mac/MdowNative-*.zip \
-            dist/native-mac/*.app.tar.gz* \
-            dist/native-mac/*.xml \
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/release/Mdow-for-Mac-$VERSION.zip" \
+            dist/release/Mdow-for-Mac.zip \
+            dist/release/mdow-for-mac-appcast.xml \
             --clobber
 
       - name: Clean up keychain
-        if: ${{ always() }}
-        env:
-          KEYCHAIN_PATH: ${{ runner.temp }}/native-mac-signing.keychain-db
-        run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/mac-app-signing.keychain-db" 2>/dev/null || true
 
   native-linux:
     runs-on: ubuntu-latest
@@ -316,7 +371,7 @@ jobs:
   publish:
     needs:
       - release
-      - native-mac
+      - mac-app
       - native-linux
     runs-on: ubuntu-latest
     permissions:
@@ -329,7 +384,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # Keep releases in draft until the signed Native feed is present. A
-          # maintainer can sign locally from Keychain when no CI key is configured.
-          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx appcast-native-mac.xml
+          # Keep the release in draft until Mdow for Mac's signed update feed is on it.
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx mdow-for-mac-appcast.xml
           gh release edit "$TAG" --draft=false --latest

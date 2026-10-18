@@ -1,0 +1,49 @@
+name: Mac (AppKit)
+
+# Builds and tests Mdow for Mac (apps/macos) and uploads an ad hoc signed app as an artifact.
+# Releases are built by release.yml, from the same `vX.Y.Z` tags as the rest of Mdow.
+'on':
+  pull_request:
+    paths:
+      - 'apps/macos/**'
+      - '.github/workflows/macos.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/macos/**'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: apps/macos/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
+
+      - run: swift test
+
+      - run: bash scripts/bundle.sh
+
+      - name: Zip the app
+        run: ditto -c -k --keepParent "dist/Mdow for Mac.app" "dist/Mdow-for-Mac.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdow-for-mac
+          path: apps/macos/dist/Mdow-for-Mac.zip

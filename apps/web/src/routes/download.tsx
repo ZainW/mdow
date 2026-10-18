@@ -3,19 +3,18 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadButton, PlatformIcon } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
+import { MacAppDownloadSection } from '~/components/mac-app-download-section'
 import { NativeDownloadSection } from '~/components/native-download-section'
 import { PlatformDownloadRow, type DownloadFormat } from '~/components/platform-download-row'
 import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
 import {
   detectPlatform,
   gpuiLinuxBetaDownloadUrl,
-  gpuiMacBetaDownloadUrl,
   GPUI_LINUX_BETA_DOWNLOAD_URL,
-  GPUI_MAC_BETA_DOWNLOAD_URL,
   platformLabel,
   type PlatformId,
 } from '~/lib/download-links'
-import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
+import { fetchLatestRelease, MAC_APP_DOWNLOAD_URL, type ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
 
@@ -38,7 +37,7 @@ export const Route = createFileRoute('/download')({
     meta: seo({
       title: 'Download Mdow for Mac, Windows & Linux',
       description:
-        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes the Mdow Native beta for Apple Silicon and Linux.',
+        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes Mdow for Mac, built in Swift, and the Mdow Native beta for Linux.',
       path: '/download',
     }),
     links: [canonical('/download')],
@@ -176,8 +175,18 @@ function DownloadPage() {
         </section>
       )}
 
+      {/* Releases before Mdow for Mac don't have it; without GitHub, the fixed link stands in. */}
+      {(!release || release.assets.mac.app) && (
+        <MacAppDownloadSection
+          download={{
+            url: release?.assets.mac.app?.url ?? MAC_APP_DOWNLOAD_URL,
+            version: release?.version ?? null,
+            publishedAt: release?.publishedAt ?? null,
+          }}
+        />
+      )}
+
       <NativeDownloadSection
-        macUrl={release ? gpuiMacBetaDownloadUrl(release) : GPUI_MAC_BETA_DOWNLOAD_URL}
         linuxUrl={release ? gpuiLinuxBetaDownloadUrl(release) : GPUI_LINUX_BETA_DOWNLOAD_URL}
       />
 

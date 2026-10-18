@@ -8,30 +8,20 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 describe('NativeDownloadSection', () => {
-  it('renders mac and linux Native beta downloads', () => {
-    const macUrl = 'https://example.test/MdowNative-mac-beta.zip'
+  it('offers the Linux Native beta only', () => {
     const linuxUrl = 'https://example.test/MdowNative-linux-beta.AppImage'
 
-    render(<NativeDownloadSection macUrl={macUrl} linuxUrl={linuxUrl} />)
+    render(<NativeDownloadSection linuxUrl={linuxUrl} />)
 
     expect(screen.getByRole('heading', { name: 'Mdow Native' })).toBeInTheDocument()
     expect(
       screen.getByText(
-        'A GPU-rendered beta for Apple Silicon Macs and x64 Linux, built with gpuix. Runs alongside the regular Mdow app.',
+        'A GPU-rendered beta for x64 Linux, built with gpuix. Runs alongside the regular Mdow app.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Download macOS Mdow Native (.zip)' })).toHaveAttribute(
-      'href',
-      macUrl,
-    )
     expect(
       screen.getByRole('link', { name: 'Download Linux Mdow Native (.AppImage)' }),
     ).toHaveAttribute('href', linuxUrl)
-  })
-
-  it('omits the linux row when there is no linux build', () => {
-    render(<NativeDownloadSection macUrl="https://example.test/mac.zip" linuxUrl={null} />)
-
-    expect(screen.getAllByRole('link', { name: /Download .* Mdow Native/ })).toHaveLength(1)
+    expect(screen.queryByRole('link', { name: /Download macOS/ })).toBeNull()
   })
 })
