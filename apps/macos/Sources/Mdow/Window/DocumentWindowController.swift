@@ -13,6 +13,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
   private let paneSplit = NSSplitViewController()
   private let sidebar = SidebarViewController()
   private var sidebarItem: NSSplitViewItem!
+  let companion = CompanionViewController()
+  private(set) var companionItem: NSSplitViewItem!
 
   private(set) var panes: [DocumentPane] = []
   /// The pane the sidebar, title and menu commands follow: the one last clicked.
@@ -67,6 +69,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     contentItem.minimumThickness = 320
     split.addSplitViewItem(sidebarItem)
     split.addSplitViewItem(contentItem)
+    companionItem = companion.makeSplitItem(context: self)
+    split.addSplitViewItem(companionItem)
     split.splitView.autosaveName = "MdowSidebar"
     window.contentViewController = split
     window.setContentSize(NSSize(width: 1080, height: 760))
@@ -226,6 +230,7 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
       window.representedURL = nil
     }
     window.tab.title = window.title
+    companion.documentContextChanged()
     window.tab.toolTip = activePane.rendered?.title
   }
 
@@ -468,6 +473,9 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
     case #selector(showRecents(_:)):
       item.state = sidebar.mode == .recents && !sidebarItem.isCollapsed ? .on : .off
       return true
+    case #selector(toggleCompanion(_:)):
+      item.title = companionItem.isCollapsed ? "Show Companion" : "Hide Companion"
+      return true
     default: return true
     }
   }
@@ -489,7 +497,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
 
   func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     [.toggleSidebar, .sidebarTrackingSeparator, Self.backItem, Self.forwardItem, .flexibleSpace,
-     Self.quickOpenItem, Self.shareItem]
+     Self.quickOpenItem, Self.shareItem, .inspectorTrackingSeparator, .flexibleSpace,
+     CompanionViewController.toolbarItemIdentifier]
   }
 
   func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -522,6 +531,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSTo
       return item
     case Self.quickOpenItem:
       return button("Quick Open", "magnifyingglass", #selector(quickOpen(_:)))
+    case CompanionViewController.toolbarItemIdentifier:
+      return companion.makeToolbarItem(target: self, action: #selector(toggleCompanion(_:)))
     case Self.shareItem:
       let item = NSSharingServicePickerToolbarItem(itemIdentifier: identifier)
       item.delegate = self

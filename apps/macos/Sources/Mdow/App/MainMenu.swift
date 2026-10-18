@@ -120,6 +120,7 @@ import MdowKit
     menu.addItem(item("Outline", #selector(DocumentWindowController.showOutline(_:)), "1", [.command, .control]))
     menu.addItem(item("Files", #selector(DocumentWindowController.showFiles(_:)), "2", [.command, .control]))
     menu.addItem(item("Recents", #selector(DocumentWindowController.showRecents(_:)), "3", [.command, .control]))
+    menu.addItem(item("Show Companion", #selector(DocumentWindowController.toggleCompanion(_:)), "0", [.command, .option]))
     menu.addItem(.separator())
     menu.addItem(item("Split View", #selector(DocumentWindowController.toggleSplitView(_:)), "\\"))
     menu.addItem(.separator())

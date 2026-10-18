@@ -52,6 +52,10 @@ macOS shows it in the compatibility look. `bundle.sh` fixes both.
   - An `NSSplitViewController` sidebar showing the Outline (it follows your scroll position),
     the Files in the folder (with a filter), or Recents.
   - Quick Open (⌘K) for headings, files and commands.
+  - The companion inspector (⌥⌘0, or the sparkles button): chat with OpenCode about the
+    document and its folder. It runs a private `opencode serve` (OpenCode 2, found on PATH, the
+    login shell's PATH or the usual install folders) and shows every edit as a diff to accept
+    or decline; shell commands are declined automatically.
   - A SwiftUI Settings window, and the proxy icon and path menu in the title.
 - **Behaviour**:
   - Live reload that keeps your place, and drag and drop onto the window or the Dock.
@@ -92,22 +96,24 @@ rolling `mac-latest` release (creating it the first time), which is what install
 
 ## Not included
 
-- The OpenCode companion.
+- The companion's inline review inside the document; edits are reviewed in the inspector.
 - Some of MathJax's TeX: `\boxed`, `\xrightarrow`, `\overset`, `\substack` and colours.
 
 ## Layout
 
-| Path                        | What it does                                                    |
-| --------------------------- | --------------------------------------------------------------- |
-| `Sources/MdowKit/Document`  | file kinds, frontmatter, footnotes, heading slugs               |
-| `Sources/MdowKit/Render`    | markdown → `NSAttributedString`, text blocks, styles, HTML bits |
-| `Sources/MdowKit/Highlight` | syntax highlighter and Xcode-style code colours                 |
-| `Sources/MdowKit/Files`     | folder scanning, file watching, fuzzy matching                  |
-| `Sources/Mdow/App`          | app delegate, menus, settings storage, images and diagrams      |
-| `Sources/Mdow/Window`       | window controller (tabs, toolbar, history), reader, text view   |
-| `Sources/Mdow/Sidebar`      | the source list                                                 |
-| `Sources/Mdow/Panels`       | welcome screen, Settings, Quick Open, shortcuts (SwiftUI)       |
-| `Sources/Mdow/Reader`       | Mermaid through Pele                                            |
+| Path                         | What it does                                                   |
+| ---------------------------- | -------------------------------------------------------------- |
+| `Sources/MdowKit/Document`   | file kinds, frontmatter, footnotes, heading slugs              |
+| `Sources/MdowKit/Render`     | markdown → `NSAttributedString`, text blocks, styles, HTML bits |
+| `Sources/MdowKit/Highlight`  | syntax highlighter and Xcode-style code colours                |
+| `Sources/MdowKit/Files`      | folder scanning, file watching, fuzzy matching                 |
+| `Sources/MdowKit/Companion`  | OpenCode client, event translation, conversation state         |
+| `Sources/Mdow/App`           | app delegate, menus, settings storage, images and diagrams     |
+| `Sources/Mdow/Window`        | window controller (tabs, toolbar, history), reader, text view  |
+| `Sources/Mdow/Sidebar`       | the source list                                                |
+| `Sources/Mdow/Panels`        | welcome screen, Settings, Quick Open, shortcuts (SwiftUI)      |
+| `Sources/Mdow/Reader`        | Mermaid through Pele                                           |
+| `Sources/Mdow/Companion`     | the OpenCode server process, companion service and inspector   |
 
 Settings live in the `com.zain.mdow.Mac` user defaults.
 
@@ -123,4 +129,5 @@ Settings live in the `com.zain.mdow.Mac` user defaults.
   ```
 
   The steps are `appearance`, `sidebar`, `palette`, `find`, `scroll`, `settings`, `shortcuts`,
-  `split`, `htmlfind`, `newtab`, `open` and `zoom`.
+  `split`, `htmlfind`, `newtab`, `open`, `zoom` and `companion` (`companion=hide`, or
+  `companion=ask:text` to send).

@@ -61,6 +61,11 @@ import AppKit
       AppDelegate.shared.open([URL(fileURLWithPath: value)], from: nil)
     case "zoom":
       Preferences.shared.zoom = Double(value) ?? 1
+    case "companion":
+      // `companion` shows the pane, `companion=hide` hides it, `companion=ask:text` sends text.
+      guard let controller else { return }
+      if (value == "hide") != controller.companionItem.isCollapsed { controller.toggleCompanion(nil) }
+      if value.hasPrefix("ask:") { controller.companion.session.send(String(value.dropFirst(4))) }
     default:
       break
     }
