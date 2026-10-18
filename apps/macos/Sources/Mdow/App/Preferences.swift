@@ -78,6 +78,8 @@ final class Preferences {
   var openInTabs: Bool { didSet { store(openInTabs, "openInTabs") } }
   var reloadOnChange: Bool { didSet { store(reloadOnChange, "reloadOnChange") } }
   var sidebarMode: SidebarMode { didSet { store(sidebarMode.rawValue, "sidebarMode") } }
+  /// The companion's model, `providerID/modelID`; nil uses OpenCode's default.
+  var companionModel: String? { didSet { defaults.set(companionModel, forKey: "companionModel") } }
   private(set) var recents: [URL] = []
 
   private init() {
@@ -98,6 +100,7 @@ final class Preferences {
     zoom = defaults.object(forKey: "zoom") as? Double ?? 1
     openInTabs = defaults.object(forKey: "openInTabs") as? Bool ?? true
     reloadOnChange = defaults.object(forKey: "reloadOnChange") as? Bool ?? true
+    companionModel = defaults.string(forKey: "companionModel")
     recents = (defaults.stringArray(forKey: "recents") ?? []).map { URL(fileURLWithPath: $0) }
   }
 

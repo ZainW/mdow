@@ -63,6 +63,8 @@ struct SettingsView: View {
         Toggle("Reload documents when they change on disk", isOn: $preferences.reloadOnChange)
       }
 
+      CompanionSettingsSection()
+
       Section {
         HStack {
           Spacer()
@@ -139,6 +141,7 @@ struct ShortcutsView: View {
       title: "View",
       items: [
         .init(title: "Show or hide sidebar", keys: "⌃⌘S"),
+        .init(title: "Show or hide companion", keys: "⌥⌘0"),
         .init(title: "Outline, files, recents", keys: "⌃⌘1  ⌃⌘2  ⌃⌘3"),
         .init(title: "Zoom in / out", keys: "⌘+  ⌘−"),
         .init(title: "Actual size", keys: "⌘0"),
