@@ -5,9 +5,14 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.15.0
+## v1.15.1
 
 Latest release.
+
+- Mdow Native for Linux no longer needs libfuse2 installed to run its AppImage
+- Mdow Native runs on Bun 1.4.3 on macOS and Linux
+
+## v1.15.0
 
 - Mdow Native opens very large tables about twice as fast, with a much shorter pause on open, and uses about half the memory while they're open
 - Scrolling in Mdow Native does far less work: the scrollbar is drawn by the native renderer, and hovering over code blocks no longer interrupts a scroll
