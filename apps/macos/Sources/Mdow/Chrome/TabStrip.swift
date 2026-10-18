@@ -47,6 +47,7 @@ final class TabStrip: NSView {
   override var mouseDownCanMoveWindow: Bool { true }
 
   func update(items: [TabStripItem], selectedIndex: Int) {
+    guard items != self.items || selectedIndex != self.selectedIndex else { return }
     if items.count != tabViews.count {
       tabViews.forEach { $0.removeFromSuperview() }
       tabViews = items.indices.map { _ in

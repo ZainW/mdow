@@ -112,6 +112,12 @@ public final class MarkdownRenderer {
   private var slugger = Slugger()
   private var marker: Marker?
   private var fonts: [FontKey: NSFont] = [:]
+  private var assetSlots = 0
+  // Looking fonts up by descriptor is slow (Charter especially), so the common ones are made once.
+  lazy var bodyFont = style.body()
+  lazy var codeFont = style.code()
+  lazy var boldCodeFont = style.code(weight: .semibold)
+  lazy var digitFont = NSFont.monospacedDigitSystemFont(ofSize: style.bodySize, weight: .regular)
 
   init(
     style: ReaderStyle, baseURL: URL?, assets: RenderAssets, footnotes: Footnotes,
@@ -198,7 +204,7 @@ public final class MarkdownRenderer {
     }
     line.append(NSAttributedString(string: "\n", attributes: newlineAttributes))
     if line.length > 0, line.attribute(.font, at: 0, effectiveRange: nil) == nil {
-      line.addAttribute(.font, value: style.body(), range: NSRange(location: 0, length: 1))
+      line.addAttribute(.font, value: bodyFont, range: NSRange(location: 0, length: 1))
     }
     line.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: line.length))
     out.append(line)
@@ -264,7 +270,16 @@ public final class MarkdownRenderer {
     if code.hasSuffix("\n") { code.removeLast() }
     let language = SyntaxHighlighter.language(for: info)
     let infoWord = info?.split(separator: " ").first.map { $0.lowercased() }
-    if infoWord == "mermaid", renderDiagram(code, ctx) { return }
+    if infoWord == "mermaid" {
+      // Whatever the diagram turns out as (drawn, pending or shown as code) is one asset slot.
+      let slot = nextAssetSlot()
+      let start = out.length
+      defer {
+        out.addAttribute(
+          .mdowAssetSlot, value: slot, range: NSRange(location: start, length: out.length - start))
+      }
+      if renderDiagram(code, ctx) { return }
+    }
     if infoWord == "math", renderDisplayMath(code, ctx) { return }
 
     let block = CodeTextBlock()
@@ -279,12 +294,12 @@ public final class MarkdownRenderer {
       block.label = infoWord
     }
 
-    let font = style.code()
+    let font = codeFont
     let text = NSMutableAttributedString(
       string: code.isEmpty ? " " : code,
       attributes: [.font: font, .foregroundColor: ReaderColors.text])
     if code.utf16.count < 400_000 {
-      let bold = style.code(weight: .semibold)
+      let bold = boldCodeFont
       for token in SyntaxHighlighter.tokens(in: code, language: language) {
         guard NSMaxRange(token.range) <= text.length else { continue }
         text.addAttribute(.foregroundColor, value: CodeTheme.color(for: token.kind), range: token.range)
@@ -314,7 +329,7 @@ public final class MarkdownRenderer {
       pendingDiagrams.append(source)
       let placeholder = NSAttributedString(
         string: "Drawing diagram…",
-        attributes: [.font: style.body(), .foregroundColor: ReaderColors.tertiary])
+        attributes: [.font: bodyFont, .foregroundColor: ReaderColors.tertiary])
       append(placeholder, paragraph)
     case .ready(let image):
       let attachment = NSTextAttachment()
@@ -451,7 +466,7 @@ public final class MarkdownRenderer {
     let tight = isTight(items)
     let digits = String(start + items.count - 1).count
     let width: CGFloat = ordered ? max(26, CGFloat(digits) * style.bodySize * 0.6 + 14) : 22
-    let markerFont = ordered ? NSFont.monospacedDigitSystemFont(ofSize: style.bodySize, weight: .regular) : style.body()
+    let markerFont = ordered ? digitFont : bodyFont
 
     var inner = ctx
     inner.listDepth += 1
@@ -490,7 +505,7 @@ public final class MarkdownRenderer {
     attachment.image = symbol.withSymbolConfiguration(config)
     if let image = attachment.image {
       attachment.bounds = CGRect(
-        x: 0, y: style.body().descender + 1, width: image.size.width, height: image.size.height)
+        x: 0, y: bodyFont.descender + 1, width: image.size.width, height: image.size.height)
     }
     return NSAttributedString(attachment: attachment)
   }
@@ -752,12 +767,12 @@ public final class MarkdownRenderer {
 
   /// Text, with footnote references.
   func appendPlainText(_ string: String, _ inline: Inline, into text: NSMutableAttributedString) {
-    guard !footnotes.notes.isEmpty, string.contains("[^") else {
+    guard !footnotes.notes.isEmpty, string.containsBytes("[^") else {
       text.append(NSAttributedString(string: string, attributes: attributes(inline)))
       return
     }
     var rest = string[...]
-    while let open = rest.range(of: "[^"), let close = rest[open.upperBound...].firstIndex(of: "]"),
+    while let open = rest.rangeOfBytes("[^"), let close = rest[open.upperBound...].firstIndex(of: "]"),
       let number = footnotes.number(for: String(rest[open.upperBound..<close]))
     {
       let id = String(rest[open.upperBound..<close])
@@ -780,12 +795,20 @@ public final class MarkdownRenderer {
     guard let url = resolve(source) else { return }
     var placeholder = inline
     placeholder.color = ReaderColors.tertiary
+    let slot = nextAssetSlot()
+    let start = text.length
+    defer {
+      text.addAttribute(
+        .mdowAssetSlot, value: slot, range: NSRange(location: start, length: text.length - start))
+    }
+    // An image without alt text still needs a character to hold its slot.
+    let altText = alt.isEmpty ? "\u{200B}" : alt
     switch assets.image(url) {
     case .pending:
       pendingImages.append(url)
-      text.append(NSAttributedString(string: alt.isEmpty ? "" : alt, attributes: attributes(placeholder)))
+      text.append(NSAttributedString(string: altText, attributes: attributes(placeholder)))
     case .failed:
-      text.append(NSAttributedString(string: alt.isEmpty ? "" : alt, attributes: attributes(placeholder)))
+      text.append(NSAttributedString(string: altText, attributes: attributes(placeholder)))
     case .ready(let image):
       var size = image.size
       if size.width <= 0 || size.height <= 0 { return }
@@ -808,6 +831,11 @@ public final class MarkdownRenderer {
       if !alt.isEmpty { attributes[.toolTip] = alt }
       text.append(NSAttributedString(string: "\u{FFFC}", attributes: attributes))
     }
+  }
+
+  func nextAssetSlot() -> Int {
+    assetSlots += 1
+    return assetSlots
   }
 
   func fitted(_ size: CGSize, maxWidth: CGFloat) -> CGSize {

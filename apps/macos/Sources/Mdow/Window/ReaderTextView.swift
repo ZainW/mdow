@@ -83,11 +83,18 @@ final class ReaderTextView: NSTextView {
   }
 
   func updateInsets() {
-    let available = max(bounds.width - minimumMargin * 2, 200)
-    let column = columnWidth(available)
-    let side = max(minimumMargin, ((bounds.width - column) / 2).rounded(.down))
-    let inset = NSSize(width: side, height: 30)
+    let inset = NSSize(width: sideInset(forWidth: bounds.width), height: 30)
     if textContainerInset != inset { textContainerInset = inset }
+  }
+
+  private func sideInset(forWidth width: CGFloat) -> CGFloat {
+    let column = columnWidth(max(width - minimumMargin * 2, 200))
+    return max(minimumMargin, ((width - column) / 2).rounded(.down))
+  }
+
+  /// The column width the text will have in a view `width` wide.
+  func columnWidth(forWidth width: CGFloat) -> CGFloat {
+    max(width - sideInset(forWidth: width) * 2, 200)
   }
 
   var currentColumnWidth: CGFloat {

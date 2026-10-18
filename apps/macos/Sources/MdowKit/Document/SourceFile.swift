@@ -85,7 +85,7 @@ public struct Footnotes: Sendable, Equatable {
 
   /// Returns the body without definitions, plus the definitions numbered by first reference.
   public static func extract(from body: String) -> (String, Footnotes) {
-    guard body.contains("[^") else { return (body, Footnotes()) }
+    guard body.containsBytes("[^") else { return (body, Footnotes()) }
     var kept: [Substring] = []
     var definitions: [(String, String)] = []
     var inFence = false
@@ -130,7 +130,7 @@ public struct Footnotes: Sendable, Equatable {
     // Number notes in the order they're first referenced, like GitHub.
     var order: [String] = []
     var search = stripped[...]
-    while let start = search.range(of: "[^") {
+    while let start = search.rangeOfBytes("[^") {
       guard let close = search[start.upperBound...].firstIndex(of: "]") else { break }
       let id = String(search[start.upperBound..<close])
       if !order.contains(id), definitions.contains(where: { $0.0 == id }) { order.append(id) }
@@ -175,5 +175,28 @@ public struct Slugger: Sendable {
     }
     seen[base] = 1
     return base
+  }
+}
+
+extension StringProtocol {
+  /// Whether the text contains `needle`, compared byte for byte. Much faster than Foundation's
+  /// `contains(_:)` on long strings, which bridges the whole string first.
+  public func containsBytes(_ needle: String) -> Bool {
+    rangeOfBytes(needle) != nil
+  }
+
+  /// The first range of `needle`, compared byte for byte (see `containsBytes`).
+  public func rangeOfBytes(_ needle: String) -> Range<Index>? {
+    let bytes = Array(needle.utf8)
+    guard let first = bytes.first else { return nil }
+    let haystack = utf8
+    var start = haystack.startIndex
+    while let index = haystack[start...].firstIndex(of: first) {
+      if haystack[index...].starts(with: bytes) {
+        return index..<haystack.index(index, offsetBy: bytes.count)
+      }
+      start = haystack.index(after: index)
+    }
+    return nil
   }
 }

@@ -22,7 +22,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   private(set) var headings: [OutlineHeading] = []
 
   let textView = ReaderTextView.make()
-  private let scrollView = NSScrollView()
+  let scrollView = NSScrollView()
 
   private var webView: WKWebView?
   private var hostingView: NSView?
@@ -63,7 +63,28 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
       object: scrollView.contentView)
     NotificationCenter.default.addObserver(
       self, selector: #selector(didResize), name: NSView.frameDidChangeNotification, object: textView)
-    showWelcome()
+    // The welcome screen is built when the view appears, so a window that opens straight to a
+    // document never lays it out.
+  }
+
+  override func viewWillAppear() {
+    super.viewWillAppear()
+    if mode == .welcome, hostingView == nil { showWelcome() }
+  }
+
+  /// Clears the welcome screen while a document loads, so it doesn't flash up first.
+  func showLoading() {
+    guard mode == .welcome else { return }
+    hostingView = nil
+    for subview in view.subviews where subview !== findBar { subview.removeFromSuperview() }
+    mode = .message
+  }
+
+  /// The text column's width, also while something else is showing and the text view has no
+  /// width of its own yet. Rendering sizes images and diagrams to it.
+  var expectedColumnWidth: CGFloat {
+    if view.bounds.width == 0 { view.window?.layoutIfNeeded() }
+    return textView.columnWidth(forWidth: view.bounds.width)
   }
 
   // MARK: Modes
@@ -138,6 +159,42 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     didScroll()
     // A reload keeps the search going.
     if !findBar.isHidden { search(findBar.query, from: findMatches.indices.contains(findIndex) ? findMatches[findIndex].location : nil) }
+  }
+
+  /// Swaps in the images and diagrams of a fresh render of the same document, replacing only
+  /// their placeholders, which is far cheaper than replacing the whole text. Returns false if the
+  /// documents differ in more than that, in which case nothing useful was done.
+  func applyAssets(_ document: RenderedDocument) -> Bool {
+    guard mode == .markdown, let storage = textView.textStorage else { return false }
+    let old = Self.assetSlots(in: storage)
+    let new = Self.assetSlots(in: document.text)
+    guard Set(old.keys) == Set(new.keys) else { return false }
+    let top = topCharacterIndex
+    var shift = 0
+    storage.beginEditing()
+    for (slot, range) in old.sorted(by: { $0.value.location > $1.value.location }) {
+      let replacement = document.text.attributedSubstring(from: new[slot]!)
+      if storage.attributedSubstring(from: range).isEqual(to: replacement) { continue }
+      if range.location < top { shift += replacement.length - range.length }
+      storage.replaceCharacters(in: range, with: replacement)
+    }
+    storage.endEditing()
+    guard storage.string == document.text.string else { return false }
+    headings = document.headings
+    if top > 0, shift != 0 { scroll(toCharacter: top + shift, animated: false, margin: 0) }
+    if !findBar.isHidden { search(findBar.query) }
+    refreshHeadingTracking()
+    return true
+  }
+
+  private static func assetSlots(in text: NSAttributedString) -> [Int: NSRange] {
+    var slots: [Int: NSRange] = [:]
+    text.enumerateAttribute(.mdowAssetSlot, in: NSRange(location: 0, length: text.length)) {
+      value, range, _ in
+      guard let slot = value as? Int else { return }
+      slots[slot] = slots[slot].map { NSUnionRange($0, range) } ?? range
+    }
+    return slots
   }
 
   func showHTML(_ url: URL) {
@@ -258,6 +315,12 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
 
   /// Finds every match in the document, starting at the reading position (or `location`).
   private func search(_ query: String, from location: Int? = nil) {
+    PerfLog.measure("find “\(query)”") {
+      runSearch(query, from: location)
+    }
+  }
+
+  private func runSearch(_ query: String, from location: Int?) {
     if mode == .html {
       findInHTML(query, backwards: false)
       return
@@ -265,7 +328,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     clearHighlights()
     findMatches = []
     findIndex = -1
-    guard !query.isEmpty, let storage = textView.textStorage, let layout = textView.layoutManager else {
+    guard !query.isEmpty, let storage = textView.textStorage else {
       findBar.setResult(current: nil, total: nil)
       return
     }
@@ -276,9 +339,6 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
       guard match.location != NSNotFound, match.length > 0 else { break }
       findMatches.append(match)
       range = NSRange(location: NSMaxRange(match), length: string.length - NSMaxRange(match))
-    }
-    for match in findMatches {
-      layout.addTemporaryAttribute(.backgroundColor, value: ReaderColors.findMatch, forCharacterRange: match)
     }
     guard !findMatches.isEmpty else {
       findBar.setResult(current: nil, total: 0)
@@ -300,20 +360,58 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
 
   private func showMatch(_ index: Int) {
     guard let layout = textView.layoutManager else { return }
-    if findMatches.indices.contains(findIndex) {
+    if findMatches.indices.contains(findIndex), highlighted.location != NSNotFound {
       layout.addTemporaryAttribute(
         .backgroundColor, value: ReaderColors.findMatch, forCharacterRange: findMatches[findIndex])
     }
     findIndex = index
-    let match = findMatches[index]
-    layout.addTemporaryAttribute(.backgroundColor, value: ReaderColors.findCurrent, forCharacterRange: match)
-    scroll(toCharacter: match.location, animated: false, margin: scrollView.contentView.bounds.height * 0.3)
+    scroll(toCharacter: findMatches[index].location, animated: false, margin: scrollView.contentView.bounds.height * 0.3)
+    highlightVisibleMatches(force: true)
     findBar.setResult(current: index + 1, total: findMatches.count)
   }
 
+  /// The characters whose matches are highlighted. Only matches around the visible text are, so
+  /// a search with thousands of matches stays instant; scrolling moves the window along.
+  private var highlighted = NSRange(location: NSNotFound, length: 0)
+
+  private func highlightVisibleMatches(force: Bool = false) {
+    guard !findMatches.isEmpty, let layout = textView.layoutManager, let container = textView.textContainer,
+      let storage = textView.textStorage, storage.length > 0
+    else { return }
+    var rect = textView.visibleRect
+    rect.origin.x -= textView.textContainerOrigin.x
+    rect.origin.y -= textView.textContainerOrigin.y
+    let glyphs = layout.glyphRange(forBoundingRect: rect, in: container)
+    let visible = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    if !force, highlighted.location != NSNotFound, NSIntersectionRange(visible, highlighted) == visible {
+      return
+    }
+    clearHighlights()
+    let margin = max(visible.length, 2000)
+    let start = max(0, visible.location - margin)
+    highlighted = NSRange(location: start, length: min(storage.length, NSMaxRange(visible) + margin) - start)
+    // Matches are in order, so the first one in the window is found by bisection.
+    var low = 0
+    var high = findMatches.count
+    while low < high {
+      let middle = (low + high) / 2
+      if NSMaxRange(findMatches[middle]) <= highlighted.location { low = middle + 1 } else { high = middle }
+    }
+    var index = low
+    while index < findMatches.count, findMatches[index].location < NSMaxRange(highlighted) {
+      let color = index == findIndex ? ReaderColors.findCurrent : ReaderColors.findMatch
+      layout.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: findMatches[index])
+      index += 1
+    }
+  }
+
   private func clearHighlights() {
-    guard let layout = textView.layoutManager, let storage = textView.textStorage else { return }
-    layout.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: storage.length))
+    guard highlighted.location != NSNotFound, let layout = textView.layoutManager,
+      let storage = textView.textStorage
+    else { return }
+    let range = NSIntersectionRange(highlighted, NSRange(location: 0, length: storage.length))
+    layout.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+    highlighted = NSRange(location: NSNotFound, length: 0)
   }
 
   private func findInHTML(_ query: String, backwards: Bool) {
@@ -439,6 +537,7 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
       }
     }
     textView.refreshHover()
+    if !findMatches.isEmpty { highlightVisibleMatches() }
     guard !suppressScrollTracking, mode == .markdown else { return }
     let top = topCharacterIndex
     // A heading counts as current once it reaches the top quarter of the view.

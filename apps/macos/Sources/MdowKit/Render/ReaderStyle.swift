@@ -205,6 +205,9 @@ public extension NSAttributedString.Key {
   static let mdowCodeBlock = NSAttributedString.Key("mdow.codeBlock")
   /// A heading's anchor slug, on the heading's text.
   static let mdowAnchor = NSAttributedString.Key("mdow.anchor")
+  /// Numbers each image and diagram in document order, on its placeholder or attachment, so a
+  /// later render with the assets loaded can be swapped in piece by piece.
+  static let mdowAssetSlot = NSAttributedString.Key("mdow.assetSlot")
 }
 
 /// Identifies a code block so the reader can offer to copy it.

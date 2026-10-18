@@ -15,7 +15,7 @@ final class HeaderView: NSView {
   /// Where the document card starts, so the tabs can line up with it.
   var contentLeading: CGFloat = 0 { didSet { if contentLeading != oldValue { needsLayout = true } } }
   /// Full screen hides the window buttons, so everything moves left.
-  var isFullScreen = false { didSet { needsLayout = true } }
+  var isFullScreen = false { didSet { if isFullScreen != oldValue { needsLayout = true } } }
 
   init(target: AnyObject) {
     sidebarButton = ChromeButton(
@@ -95,14 +95,20 @@ final class HeaderView: NSView {
 }
 
 /// The document's card: a rounded sheet of paper inset from the window's edges.
+///
+/// The corners are rounded by four small caps painted in the window's colour rather than by
+/// masking: a mask makes the window server render the whole card offscreen on every frame,
+/// which made scrolling stutter.
 final class CardView: NSView {
+  private let caps = CardCorner.Corner.allCases.map { CardCorner($0) }
+
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
     layer?.cornerRadius = Theme.cardRadius
-    layer?.cornerCurve = .continuous
-    layer?.masksToBounds = true
+    layer?.cornerCurve = .circular
     layer?.borderWidth = 1
+    caps.forEach { addSubview($0) }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -112,6 +118,65 @@ final class CardView: NSView {
   override func updateLayer() {
     layer?.backgroundColor = Palette.paper.cgColor
     layer?.borderColor = Palette.line.cgColor
+  }
+
+  /// Adds content under the corner caps.
+  func addContent(_ view: NSView) {
+    addSubview(view, positioned: .below, relativeTo: caps[0])
+  }
+
+  override func layout() {
+    super.layout()
+    let side = Theme.cardRadius
+    for cap in caps {
+      let x = cap.corner.isLeft ? 0 : bounds.width - side
+      let y = cap.corner.isBottom ? 0 : bounds.height - side
+      cap.frame = NSRect(x: x, y: y, width: side, height: side)
+    }
+  }
+}
+
+/// The window's colour outside one rounded corner of the card.
+private final class CardCorner: NSView {
+  enum Corner: CaseIterable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    var isLeft: Bool { self == .topLeft || self == .bottomLeft }
+    var isBottom: Bool { self == .bottomLeft || self == .bottomRight }
+  }
+
+  let corner: Corner
+
+  init(_ corner: Corner) {
+    self.corner = corner
+    super.init(frame: .zero)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override var isFlipped: Bool { false }
+  override var isOpaque: Bool { false }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    // The arc's centre is the corner of the square inside the card.
+    let center = NSPoint(
+      x: corner.isLeft ? bounds.maxX : bounds.minX, y: corner.isBottom ? bounds.maxY : bounds.minY)
+    let path = NSBezierPath(rect: bounds)
+    path.appendOval(
+      in: NSRect(
+        x: center.x - bounds.width, y: center.y - bounds.height, width: bounds.width * 2,
+        height: bounds.height * 2))
+    path.windingRule = .evenOdd
+    // Views no longer clip their drawing by default, and the circle reaches past the cap.
+    NSBezierPath.clip(bounds)
+    Palette.chrome.setFill()
+    path.fill()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    needsDisplay = true
   }
 }
 
@@ -153,7 +218,7 @@ final class CardViewController: NSViewController {
     addChild(controller)
     let view = controller.view
     view.translatesAutoresizingMaskIntoConstraints = false
-    card.addSubview(view)
+    card.addContent(view)
     NSLayoutConstraint.activate([
       view.leadingAnchor.constraint(equalTo: card.leadingAnchor),
       view.trailingAnchor.constraint(equalTo: card.trailingAnchor),

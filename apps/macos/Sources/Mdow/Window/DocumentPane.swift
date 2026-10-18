@@ -29,8 +29,14 @@ final class DocumentPane: NSObject, ReaderDelegate {
   private var watcher: FileWatcher?
   private var generation = 0
   private var renderTask: Task<Void, Never>?
+  private var readTask: Task<Void, Never>?
+  private var reads = 0
   private var widthTask: Task<Void, Never>?
   private var lastDark: Bool?
+  /// Whether the document has images, diagrams or math, which are sized to the column.
+  private var sizesToColumn = false
+  /// The column width images and diagrams were last sized for.
+  private var renderedWidth: CGFloat = 0
 
   var canGoBack: Bool { !backStack.isEmpty }
   var canGoForward: Bool { !forwardStack.isEmpty }
@@ -48,6 +54,7 @@ final class DocumentPane: NSObject, ReaderDelegate {
     watcher?.cancel()
     watcher = nil
     renderTask?.cancel()
+    readTask?.cancel()
     widthTask?.cancel()
     NotificationCenter.default.removeObserver(self)
   }
@@ -87,6 +94,7 @@ final class DocumentPane: NSObject, ReaderDelegate {
       return
     }
     Preferences.shared.noteRecent(url)
+    reader.showLoading()
     watch(url)
     if FileKind(url: url) == .html {
       reader.showHTML(url)
@@ -123,18 +131,34 @@ final class DocumentPane: NSObject, ReaderDelegate {
   /// editors briefly remove files while saving.
   private func load(restoring location: Int, initial: Bool) {
     guard let url = fileURL else { return }
-    generation += 1
-    let generation = generation
-    renderTask?.cancel()
-    renderTask = Task {
+    if initial {
+      // A new document: whatever was rendering for the last one is stale.
+      generation += 1
+      renderTask?.cancel()
+      // Small documents take a few milliseconds to read and render, less than the trip to a
+      // background thread and back, so they're drawn before the window next appears.
+      let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max
+      if size < 64 << 10, let text = try? Self.readText(url) {
+        adopt(MarkdownSource(text))
+        renderNow(restoring: location)
+        return
+      }
+    }
+    reads += 1
+    let read = reads
+    readTask?.cancel()
+    readTask = Task {
       let result = await Task.detached(priority: .userInitiated) { () -> Result<MarkdownSource, Error> in
         Result { MarkdownSource(try Self.readText(url)) }
       }.value
-      guard generation == self.generation else { return }
+      guard read == self.reads, url == self.fileURL else { return }
       switch result {
       case .success(let source):
-        self.source = source
-        await self.render(restoring: location, generation: generation)
+        // Editors touch files without changing them; only re-render real changes.
+        if !initial, source == self.source { return }
+        self.adopt(source)
+        self.generation += 1
+        await self.render(restoring: location, generation: self.generation)
       case .failure(let error):
         guard initial else { return }
         self.reader.showMessage(
@@ -142,6 +166,12 @@ final class DocumentPane: NSObject, ReaderDelegate {
         self.delegate?.paneDidRender(self)
       }
     }
+  }
+
+  private func adopt(_ source: MarkdownSource) {
+    self.source = source
+    let body = source.body
+    sizesToColumn = ["![", "<img", "mermaid", "$", "```math"].contains { body.containsBytes($0) }
   }
 
   nonisolated static func readText(_ url: URL) throws -> String {
@@ -155,43 +185,94 @@ final class DocumentPane: NSObject, ReaderDelegate {
     return String(decoding: data, as: UTF8.self)
   }
 
-  /// Re-renders the current source, keeping the reading position.
-  private func rerender() {
+  /// Re-renders the current source, keeping the reading position. `sizesOnly` is for changes
+  /// that only resize images, diagrams and formulas, which can then be swapped in place.
+  private func rerender(sizesOnly: Bool = false) {
     guard source != nil, reader.mode == .markdown else { return }
     generation += 1
     let generation = generation
     let location = reader.topCharacterIndex
     renderTask?.cancel()
-    renderTask = Task { await self.render(restoring: location, generation: generation) }
+    renderTask = Task {
+      await self.render(restoring: location, generation: generation, sizesOnly: sizesOnly)
+    }
   }
 
-  private func render(restoring location: Int, generation: Int) async {
-    guard let source, let url = fileURL else { return }
-    let style = Preferences.shared.readerStyle(columnWidth: reader.textView.currentColumnWidth)
+  /// What a render of the current document needs, captured on the main thread.
+  private struct RenderInput: Sendable {
+    var source: MarkdownSource
+    var style: ReaderStyle
+    var base: URL
+    var assets: RenderAssets
+    var dark: Bool
+
+    func render() -> RenderedDocument {
+      PerfLog.measure("render \(source.body.utf8.count) bytes") {
+        MarkdownRenderer.render(source, style: style, baseURL: base, assets: assets)
+      }
+    }
+  }
+
+  private func renderInput() -> RenderInput? {
+    guard let source, let url = fileURL else { return nil }
+    let style = Preferences.shared.readerStyle(columnWidth: reader.expectedColumnWidth)
+    renderedWidth = style.maxContentWidth
     let dark = isDark
     lastDark = dark
-    let base = url.deletingLastPathComponent()
-    let assets = AssetStore.shared.assets(dark: dark)
-    let rendered = await Task.detached(priority: .userInitiated) {
-      MarkdownRenderer.render(source, style: style, baseURL: base, assets: assets)
-    }.value
-    guard generation == self.generation, !Task.isCancelled else { return }
-    show(rendered, restoring: location)
+    return RenderInput(
+      source: source, style: style, base: url.deletingLastPathComponent(),
+      assets: AssetStore.shared.assets(dark: dark), dark: dark)
+  }
 
-    guard !rendered.pendingImages.isEmpty || !rendered.pendingDiagrams.isEmpty else { return }
-    let changed = await AssetStore.shared.fetch(
-      images: rendered.pendingImages, diagrams: rendered.pendingDiagrams, dark: dark)
-    guard changed, generation == self.generation, !Task.isCancelled else { return }
-    let again = await Task.detached(priority: .userInitiated) {
-      MarkdownRenderer.render(source, style: style, baseURL: base, assets: assets)
-    }.value
+  private func render(restoring location: Int, generation: Int, sizesOnly: Bool = false) async {
+    guard let input = renderInput() else { return }
+    let rendered = await Task.detached(priority: .userInitiated) { input.render() }.value
     guard generation == self.generation, !Task.isCancelled else { return }
-    show(again, restoring: reader.topCharacterIndex)
+    if sizesOnly, PerfLog.measure("apply sizes", { reader.applyAssets(rendered) }) {
+      self.rendered = rendered
+      delegate?.paneDidRender(self)
+    } else {
+      show(rendered, restoring: location)
+    }
+    await loadAssets(of: rendered, input, generation: generation)
+  }
+
+  /// Renders and shows the document right away, on the main thread; for small documents.
+  private func renderNow(restoring location: Int) {
+    guard let input = renderInput() else { return }
+    let generation = generation
+    let rendered = input.render()
+    show(rendered, restoring: location)
+    renderTask = Task { await self.loadAssets(of: rendered, input, generation: generation) }
+  }
+
+  /// Fetches the images and diagrams a render was waiting for, then swaps them in.
+  private func loadAssets(of rendered: RenderedDocument, _ input: RenderInput, generation: Int) async {
+    guard !rendered.pendingImages.isEmpty || !rendered.pendingDiagrams.isEmpty else { return }
+    let fetchStart = CACurrentMediaTime()
+    let changed = await AssetStore.shared.fetch(
+      images: rendered.pendingImages, diagrams: rendered.pendingDiagrams, dark: input.dark)
+    PerfLog.note(
+      String(
+        format: "assets %d images, %d diagrams %.1fms", rendered.pendingImages.count,
+        rendered.pendingDiagrams.count, (CACurrentMediaTime() - fetchStart) * 1000))
+    guard changed, generation == self.generation, !Task.isCancelled else { return }
+    let again = await Task.detached(priority: .userInitiated) { input.render() }.value
+    guard generation == self.generation, !Task.isCancelled else { return }
+    if PerfLog.measure("apply assets", { reader.applyAssets(again) }) {
+      self.rendered = again
+      delegate?.paneDidRender(self)
+    } else {
+      show(again, restoring: reader.topCharacterIndex)
+    }
   }
 
   private func show(_ rendered: RenderedDocument, restoring location: Int) {
     self.rendered = rendered
-    reader.showMarkdown(rendered, restoring: location)
+    PerfLog.measure("show \(rendered.text.length) characters") {
+      reader.showMarkdown(rendered, restoring: location)
+    }
+    PerfLog.milestone("document on screen")
     delegate?.paneDidRender(self)
   }
 
@@ -224,15 +305,17 @@ final class DocumentPane: NSObject, ReaderDelegate {
   }
 
   func readerColumnWidthChanged(_ reader: ReaderViewController) {
-    guard
-      source.map({ $0.body.contains("![") || $0.body.contains("<img") || $0.body.contains("mermaid") })
-        == true
-    else { return }
+    // Only a real change resizes images and diagrams; the first layout often lands within a point.
+    guard sizesToColumn, abs(reader.textView.currentColumnWidth - renderedWidth) > 1 else { return }
     widthTask?.cancel()
     widthTask = Task {
       try? await Task.sleep(for: .milliseconds(150))
+      // Wait for a live resize to end rather than re-render in the middle of it.
+      while !Task.isCancelled, self.reader.view.inLiveResize {
+        try? await Task.sleep(for: .milliseconds(100))
+      }
       guard !Task.isCancelled else { return }
-      self.rerender()
+      self.rerender(sizesOnly: true)
     }
   }
 

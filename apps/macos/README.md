@@ -141,3 +141,8 @@ Settings live in the `com.zain.mdow.Mac` user defaults.
   The steps are `appearance`, `sidebar`, `palette`, `find`, `scroll`, `settings`, `shortcuts`,
   `split`, `htmlfind`, `newtab`, `open`, `zoom` and `companion` (`companion=hide`, or
   `companion=ask:text` to send).
+- Performance: `scrollbench=14` scrolls the document 14 points per frame and `resizebench`
+  narrows and widens the window; both log `MDOWBENCH` with frame times and hitches (frames over
+  one and a half refresh intervals). `MDOW_PERF=1` logs how long rendering, showing, asset
+  loading and find take, and when the first document reached the screen. A release build
+  (`CONFIGURATION=release scripts/bundle.sh`) gives representative numbers.

@@ -110,7 +110,9 @@ public final class FileWatcher: @unchecked Sendable {
       return
     }
     let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: descriptor, eventMask: [.write, .extend, .delete, .rename, .attrib],
+      // Not `.attrib`: reading the file updates its access time, which would make every reload
+      // trigger the next one.
+      fileDescriptor: descriptor, eventMask: [.write, .extend, .delete, .rename],
       queue: queue)
     source.setEventHandler { [weak self] in
       guard let self else { return }

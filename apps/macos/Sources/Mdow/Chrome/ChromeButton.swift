@@ -14,10 +14,10 @@ final class ChromeButton: NSButton {
   }
 
   var style: Style { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
-  var symbolName: String? { didSet { needsDisplay = true } }
+  var symbolName: String? { didSet { if symbolName != oldValue { needsDisplay = true } } }
   var hint: String? { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
   /// Shows the button as switched on, e.g. while the panel it toggles is open.
-  var isOn = false { didSet { needsDisplay = true } }
+  var isOn = false { didSet { if isOn != oldValue { needsDisplay = true } } }
   var symbolSize: CGFloat = 14
   var side: CGFloat = 28
   var titleFont = Theme.ui(12.5, .medium)
@@ -55,8 +55,8 @@ final class ChromeButton: NSButton {
     }
   }
 
-  override var isEnabled: Bool { didSet { needsDisplay = true } }
-  override var isHighlighted: Bool { didSet { needsDisplay = true } }
+  override var isEnabled: Bool { didSet { if isEnabled != oldValue { needsDisplay = true } } }
+  override var isHighlighted: Bool { didSet { if isHighlighted != oldValue { needsDisplay = true } } }
   override var mouseDownCanMoveWindow: Bool { false }
 
   override func updateTrackingAreas() {

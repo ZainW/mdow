@@ -32,6 +32,7 @@ import UniformTypeIdentifiers
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    PerfLog.milestone("did finish launching")
     launched = true
     Updater.shared.start()
     keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

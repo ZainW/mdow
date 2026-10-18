@@ -72,7 +72,7 @@ public struct MathSpans: Sendable, Equatable {
 
   /// Returns the body with math replaced by placeholders, plus the spans.
   public static func extract(from body: String) -> (String, MathSpans) {
-    guard body.contains("$") else { return (body, MathSpans()) }
+    guard body.containsBytes("$") else { return (body, MathSpans()) }
     var scanner = Scanner()
     scanner.run(body)
     guard !scanner.spans.spans.isEmpty else { return (body, MathSpans()) }
@@ -185,7 +185,7 @@ public struct MathSpans: Sendable, Equatable {
 
     /// Replaces math in a run of text lines, skipping code spans and escaped dollars.
     mutating func scanInline(_ text: String) -> String {
-      guard text.contains("$") else { return text }
+      guard text.containsBytes("$") else { return text }
       let chars = Array(text)
       var out = ""
       var index = 0
@@ -341,6 +341,8 @@ extension MarkdownRenderer {
     let base = inline.superscript != 0 ? (inline.size * 0.75).rounded() : inline.size
     let scale = span.display ? Self.displayMathScale : Self.inlineMathScale
     let source = MathSource(tex: span.tex, display: span.display)
+    // Formulas are sized to the column, so a resize swaps them like images.
+    let slot = nextAssetSlot()
     switch MathFormula.make(
       span.tex, fontSize: (base * scale).rounded(), display: span.display, color: inline.color)
     {
@@ -350,6 +352,7 @@ extension MarkdownRenderer {
       attachment.bounds = mathBounds(formula, maxWidth: style.maxContentWidth)
       var attributes: [NSAttributedString.Key: Any] = [
         .attachment: attachment, .mdowMathSource: source, .font: font(for: inline),
+        .mdowAssetSlot: slot,
       ]
       if let link = inline.link { attributes[.link] = link }
       text.append(NSAttributedString(string: "\u{FFFC}", attributes: attributes))
@@ -363,6 +366,7 @@ extension MarkdownRenderer {
         dark: NSColor.systemRed.withAlphaComponent(0.14))
       attributes[.toolTip] = error.message
       attributes[.mdowMathSource] = source
+      attributes[.mdowAssetSlot] = slot
       text.append(NSAttributedString(string: span.source, attributes: attributes))
     }
   }
@@ -390,7 +394,7 @@ extension MarkdownRenderer {
       string: "\u{FFFC}",
       attributes: [
         .attachment: attachment, .mdowMathSource: MathSource(tex: tex, display: true),
-        .font: style.body(),
+        .font: bodyFont, .mdowAssetSlot: nextAssetSlot(),
       ])
     append(text, displayMathStyle(ctx))
     return true

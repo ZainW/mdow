@@ -56,6 +56,10 @@ import AppKit
       AppDelegate.shared.newTabAction(nil)
     case "open":
       AppDelegate.shared.open([URL(fileURLWithPath: value)], from: nil)
+    case "scrollbench":
+      if let controller { ScrollBench.run(controller.reader.scrollView, step: CGFloat(Double(value) ?? 14)) }
+    case "resizebench":
+      if let window = controller?.window { ResizeBench.run(window) }
     case "zoom":
       Preferences.shared.zoom = Double(value) ?? 1
     case "companion":
