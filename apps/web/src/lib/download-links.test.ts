@@ -38,6 +38,19 @@ describe('primaryDownloadUrl', () => {
     expect(primaryDownloadUrl(stableRelease, 'mac')).toBe('https://example.com/app.dmg')
   })
 
+  it('prefers the Swift app zip for mac', () => {
+    const release = parseRelease({
+      tag_name: 'v1.0.5',
+      published_at: '2026-05-26T00:00:00Z',
+      html_url: 'https://github.com/ZainW/mdow/releases/tag/v1.0.5',
+      assets: [
+        { name: 'Mdow-1.0.5.zip', browser_download_url: 'https://example.com/Mdow-1.0.5.zip' },
+        { name: 'Mdow-1.0.5.exe', browser_download_url: 'https://example.com/app.exe' },
+      ],
+    })!
+    expect(primaryDownloadUrl(release, 'mac')).toBe('https://example.com/Mdow-1.0.5.zip')
+  })
+
   it('returns exe for windows', () => {
     expect(primaryDownloadUrl(stableRelease, 'windows')).toBe('https://example.com/app.exe')
   })

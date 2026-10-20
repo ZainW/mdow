@@ -16,11 +16,8 @@ const sample = {
       name: 'Mdow-1.2.3-arm64-mac.zip',
       browser_download_url: 'https://example.test/Mdow-1.2.3-arm64-mac.zip',
     },
-    {
-      name: 'Mdow-for-Mac-1.2.3.zip',
-      browser_download_url: 'https://example.test/Mdow-for-Mac-1.2.3.zip',
-    },
-    { name: 'Mdow-for-Mac.zip', browser_download_url: 'https://example.test/Mdow-for-Mac.zip' },
+    { name: 'Mdow-1.2.3.zip', browser_download_url: 'https://example.test/Mdow-1.2.3.zip' },
+    { name: 'Mdow.zip', browser_download_url: 'https://example.test/Mdow.zip' },
     {
       name: 'MdowNative-linux-beta.AppImage',
       browser_download_url: 'https://example.test/MdowNative-linux-beta.AppImage',
@@ -56,7 +53,7 @@ describe('parseRelease', () => {
       { arch: 'x64', url: 'https://example.test/Mdow-1.2.3-x64.dmg' },
     ])
     expect(result.assets.mac.zip).toHaveLength(1)
-    expect(result.assets.mac.app).toEqual({ url: 'https://example.test/Mdow-for-Mac-1.2.3.zip' })
+    expect(result.assets.mac.app).toEqual({ url: 'https://example.test/Mdow-1.2.3.zip' })
     expect(result.assets.windows.exe).toBe('https://example.test/Mdow-Setup-1.2.3.exe')
     expect(result.assets.linux.appImage).toBe('https://example.test/Mdow-1.2.3.AppImage')
     expect(result.assets.linux.gpuiBeta).toEqual({
@@ -64,12 +61,12 @@ describe('parseRelease', () => {
     })
   })
 
-  it('keeps Mdow for Mac out of the Electron archives, whatever the asset order', () => {
+  it('keeps the Mac app out of the Electron archives, whatever the asset order', () => {
     const parsed = parseRelease(
       releaseWithAssets([
-        asset('Mdow-for-Mac.zip', 'alias'),
+        asset('Mdow.zip', 'alias'),
         asset('Mdow-2.0.0-arm64-mac.zip', 'electron'),
-        asset('Mdow-for-Mac-2.0.0.zip', 'versioned'),
+        asset('Mdow-2.0.0.zip', 'versioned'),
       ]),
     )!
 
@@ -77,8 +74,8 @@ describe('parseRelease', () => {
     expect(parsed.assets.mac.app).toEqual({ url: 'versioned' })
   })
 
-  it('falls back to the fixed-name Mdow for Mac zip', () => {
-    const parsed = parseRelease(releaseWithAssets([asset('Mdow-for-Mac.zip', 'alias')]))!
+  it('falls back to the fixed-name Mac app zip', () => {
+    const parsed = parseRelease(releaseWithAssets([asset('Mdow.zip', 'alias')]))!
     expect(parsed.assets.mac.app).toEqual({ url: 'alias' })
   })
 

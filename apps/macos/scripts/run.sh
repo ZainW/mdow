@@ -9,4 +9,4 @@ paths=()
 for arg in "$@"; do
   if [[ -e "$arg" ]]; then paths+=("$(cd "$(dirname "$arg")" && pwd -P)/$(basename "$arg")"); else paths+=("$arg"); fi
 done
-exec "dist/Mdow for Mac.app/Contents/MacOS/Mdow" "${paths[@]+"${paths[@]}"}"
+exec "dist/Mdow.app/Contents/MacOS/Mdow" "${paths[@]+"${paths[@]}"}"

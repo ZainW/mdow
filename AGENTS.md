@@ -6,11 +6,11 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 This is a pnpm monorepo managed by Turborepo.
 
-- `apps/desktop/` — Electron markdown viewer (the main app)
+- `apps/desktop/` — Electron markdown viewer (released for Windows and Linux)
 - `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
 - `apps/native/` — Mdow Native beta (Linux x64; it also runs on macOS for development): React on [gpuix](https://gpuix.dev) (Zed's GPUI), run and compiled with Bun
 - `apps/native-linux/` — Mdow for Linux: a Rust app on GTK 4 + libadwaita, no web view or cross-platform UI layer (not a pnpm workspace; built with Cargo)
-- `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit with its own custom look (not a pnpm workspace; built with SwiftPM)
+- `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit with its own custom look, shipped as `Mdow.app` in place of the Electron app on macOS (not a pnpm workspace; built with SwiftPM)
 - `packages/` — shared libraries (none yet)
 
 ## Build & Development

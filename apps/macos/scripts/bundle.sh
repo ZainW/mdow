@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds "Mdow for Mac.app" into dist/. Signs ad hoc unless SIGN_IDENTITY is set.
+# Builds "Mdow.app" into dist/. Signs ad hoc unless SIGN_IDENTITY is set.
 #   CONFIGURATION=debug scripts/bundle.sh    # faster, unoptimised build
 #   SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh
 # The version is Mdow's, from apps/desktop/package.json (VERSION=… overrides it).
@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 CONFIGURATION="${CONFIGURATION:-release}"
 VERSION="${VERSION:-$(sed -nE 's/^  "version": "([^"]+)".*/\1/p' ../desktop/package.json)}"
 BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
-APP="dist/Mdow for Mac.app"
+APP="dist/Mdow.app"
 SPARKLE=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 
 bash scripts/fetch-pele.sh

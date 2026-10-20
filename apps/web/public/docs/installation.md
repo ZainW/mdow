@@ -11,22 +11,16 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 ## macOS
 
-**Recommended:** Download the `.dmg` file, open it, and drag Mdow to your Applications folder.
-
-Alternatively, download the `.zip` for a portable version — unzip and run Mdow from anywhere.
-
-### Mdow for Mac
-
-Mdow for Mac is Mdow rebuilt in Swift on AppKit and TextKit, with its own paper-and-ink look. It
-needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-for-Mac-<version>.zip` from
-the [download page](/download), unzip it, and move `Mdow for Mac.app` to Applications. It runs
-alongside the regular Mdow app and keeps its own settings.
+On Mac, Mdow is a native app, built in Swift on AppKit and TextKit, with its own paper-and-ink
+look. It needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-<version>.zip`
+from the [download page](/download), unzip it, and move `Mdow.app` to Applications.
 
 It's signed and notarized, and updates itself: it checks in the background, and you can check
 from **Mdow → Check for Updates…**.
 
-Mdow Native's Mac beta is retired in favour of Mdow for Mac. Copies already installed keep working
-but no longer get updates.
+If you have the earlier Electron version of Mdow, the new app replaces it: move it to
+Applications over the old one. The Electron version doesn't update itself to the new app, and
+Mdow Native's Mac beta is retired too. Copies of either keep working but no longer get updates.
 
 ## Windows
 
