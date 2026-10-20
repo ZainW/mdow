@@ -6,10 +6,10 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
-      <title>v1.16.0</title>
-      <link>https://mdow.wania.app/changelog#v1-16-0</link>
-      <guid isPermaLink="false">v1.16.0</guid>
-      <pubDate>Sun, 18 Oct 2026 20:12:29 GMT</pubDate>
+      <title>v1.16.1</title>
+      <link>https://mdow.wania.app/changelog#v1-16-1</link>
+      <guid isPermaLink="false">v1.16.1</guid>
+      <pubDate>Tue, 20 Oct 2026 02:45:26 GMT</pubDate>
       <description>Latest release.
 
 - On Mac, Mdow is now a native app: rebuilt in Swift on AppKit and TextKit, with no web view. It replaces the Electron version on Mac: get it from the download page and move `Mdow.app` to Applications over the old one

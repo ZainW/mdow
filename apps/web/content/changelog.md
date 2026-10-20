@@ -5,7 +5,7 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.16.0
+## v1.16.1
 
 Latest release.
 
