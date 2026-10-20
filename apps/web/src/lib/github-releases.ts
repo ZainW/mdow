@@ -8,6 +8,7 @@ export interface ReleaseInfo {
   publishedAt: string
   htmlUrl: string
   assets: {
+    /** `app` is the Swift app; `dmg` and `zip` are the Electron builds older releases carry. */
     mac: { dmg: ReleaseAsset[]; zip: ReleaseAsset[]; app: ReleaseAsset | null }
     windows: { exe: string | null }
     linux: { appImage: string | null; gpuiBeta: ReleaseAsset | null }
@@ -28,9 +29,9 @@ interface GhRelease {
 }
 
 const REPO = 'ZainW/mdow'
-/** Mdow for Mac, the Swift app: `Mdow-for-Mac-<version>.zip`, and the same under a fixed name. */
-const MAC_APP_ALIAS = 'mdow-for-mac.zip'
-const MAC_APP_VERSIONED = /^mdow-for-mac-.+\.zip$/
+/** The Mac app: `Mdow-<version>.zip`, and the same under a fixed name. */
+const MAC_APP_ALIAS = 'mdow.zip'
+const MAC_APP_VERSIONED = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
 const GPUI_LINUX_ALIAS = 'mdownative-linux-beta.appimage'
 /** The Native updater's asset: `mdow-native_<version>_x86_64.AppImage`. */
 const GPUI_LINUX_VERSIONED = /^mdow-native_.+_x86_64\.appimage$/
@@ -125,6 +126,3 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
     return null
   }
 }
-
-/** The newest Mdow for Mac zip, for when the release can't be read from GitHub's API. */
-export const MAC_APP_DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/Mdow-for-Mac.zip`

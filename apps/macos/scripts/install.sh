@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 DEST="${DEST:-$HOME/Applications}"
-APP="Mdow for Mac.app"
+APP="Mdow.app"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
   rm -rf "${DEST:?}/$APP"

@@ -1,6 +1,6 @@
 name: Mac (AppKit)
 
-# Builds and tests Mdow for Mac (apps/macos) and uploads an ad hoc signed app as an artifact.
+# Builds and tests the Mac app (apps/macos) and uploads an ad hoc signed app as an artifact.
 # Releases are built by release.yml, from the same `vX.Y.Z` tags as the rest of Mdow.
 'on':
   pull_request:
@@ -41,9 +41,9 @@ jobs:
       - run: bash scripts/bundle.sh
 
       - name: Zip the app
-        run: ditto -c -k --keepParent "dist/Mdow for Mac.app" "dist/Mdow-for-Mac.zip"
+        run: ditto -c -k --keepParent "dist/Mdow.app" "dist/Mdow.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mdow-for-mac
-          path: apps/macos/dist/Mdow-for-Mac.zip
+          name: mdow-mac
+          path: apps/macos/dist/Mdow.zip

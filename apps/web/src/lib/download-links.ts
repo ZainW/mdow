@@ -13,7 +13,8 @@ export function detectPlatform(userAgent: string): PlatformId {
 
 export function primaryDownloadUrl(release: ReleaseInfo, platform: PlatformId): string | null {
   if (platform === 'mac') {
-    return release.assets.mac.dmg[0]?.url ?? release.assets.mac.zip[0]?.url ?? null
+    const { app, dmg, zip } = release.assets.mac
+    return app?.url ?? dmg[0]?.url ?? zip[0]?.url ?? null
   }
   if (platform === 'windows') return release.assets.windows.exe
   return release.assets.linux.appImage

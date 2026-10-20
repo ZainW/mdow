@@ -3,7 +3,6 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadButton, PlatformIcon } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
-import { MacAppDownloadSection } from '~/components/mac-app-download-section'
 import { NativeDownloadSection } from '~/components/native-download-section'
 import { PlatformDownloadRow, type DownloadFormat } from '~/components/platform-download-row'
 import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
@@ -14,7 +13,7 @@ import {
   platformLabel,
   type PlatformId,
 } from '~/lib/download-links'
-import { fetchLatestRelease, MAC_APP_DOWNLOAD_URL, type ReleaseInfo } from '~/lib/github-releases'
+import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
 
@@ -37,7 +36,7 @@ export const Route = createFileRoute('/download')({
     meta: seo({
       title: 'Download Mdow for Mac, Windows & Linux',
       description:
-        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. Includes Mdow for Mac, built in Swift, and the Mdow Native beta for Linux.',
+        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. On Mac it is a native app built in Swift; Linux also gets the Mdow Native beta.',
       path: '/download',
     }),
     links: [canonical('/download')],
@@ -54,29 +53,43 @@ interface PlatformBlock {
   formats: DownloadFormat[]
 }
 
-function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
-  const macArches = [...new Set(release.assets.mac.dmg.map((a) => a.arch).filter(Boolean))]
-  return [
-    {
+function macPlatform(release: ReleaseInfo): PlatformBlock {
+  const { app, dmg, zip } = release.assets.mac
+  if (app) {
+    return {
       id: 'mac',
       platform: 'macOS',
-      description:
-        macArches.length > 0
-          ? `${macArches.map((a) => ARCH_LABEL[a!]).join(' and ')} · drag to Applications`
-          : 'Drag to Applications',
-      formats: [
-        ...release.assets.mac.dmg.map((a) => ({
-          label: 'Disk image',
-          detail: macArches.length > 1 && a.arch ? `.dmg · ${a.arch}` : '.dmg',
-          url: a.url,
-        })),
-        ...release.assets.mac.zip.map((a) => ({
-          label: 'Archive',
-          detail: macArches.length > 1 && a.arch ? `.zip · ${a.arch}` : '.zip',
-          url: a.url,
-        })),
-      ],
-    },
+      description: 'Apple Silicon · macOS 15 or newer · unzip and move to Applications',
+      formats: [{ label: 'Archive', detail: '.zip', url: app.url }],
+    }
+  }
+  // Releases before the Swift app carry the Electron build instead.
+  const macArches = [...new Set(dmg.map((a) => a.arch).filter(Boolean))]
+  return {
+    id: 'mac',
+    platform: 'macOS',
+    description:
+      macArches.length > 0
+        ? `${macArches.map((a) => ARCH_LABEL[a!]).join(' and ')} · drag to Applications`
+        : 'Drag to Applications',
+    formats: [
+      ...dmg.map((a) => ({
+        label: 'Disk image',
+        detail: macArches.length > 1 && a.arch ? `.dmg · ${a.arch}` : '.dmg',
+        url: a.url,
+      })),
+      ...zip.map((a) => ({
+        label: 'Archive',
+        detail: macArches.length > 1 && a.arch ? `.zip · ${a.arch}` : '.zip',
+        url: a.url,
+      })),
+    ],
+  }
+}
+
+function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
+  return [
+    macPlatform(release),
     {
       id: 'windows',
       platform: 'Windows',
@@ -173,17 +186,6 @@ function DownloadPage() {
             </Link>
           </p>
         </section>
-      )}
-
-      {/* Releases before Mdow for Mac don't have it; without GitHub, the fixed link stands in. */}
-      {(!release || release.assets.mac.app) && (
-        <MacAppDownloadSection
-          download={{
-            url: release?.assets.mac.app?.url ?? MAC_APP_DOWNLOAD_URL,
-            version: release?.version ?? null,
-            publishedAt: release?.publishedAt ?? null,
-          }}
-        />
       )}
 
       <NativeDownloadSection

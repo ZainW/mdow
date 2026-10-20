@@ -9,7 +9,7 @@ Do this on a clean `main` that matches `origin/main`. Do not skip changelog/RSS.
 
 ## 1. Version
 
-Bump `apps/desktop/package.json` and `apps/native/package.json` to the same version. electron-builder and the Electron updater read the first, and so does Mdow for Mac (`apps/macos/scripts/bundle.sh`); Mdow Native compiles its version (and its updater's current version) from the second. The release workflow fails if either does not match the tag. Leave `apps/web/package.json` alone.
+Bump `apps/desktop/package.json` and `apps/native/package.json` to the same version. electron-builder and the Electron updater read the first, and so does the Mac app (`apps/macos/scripts/bundle.sh`); Mdow Native compiles its version (and its updater's current version) from the second. The release workflow fails if either does not match the tag. Leave `apps/web/package.json` alone.
 
 Patch for fixes and small additions. Minor for user-facing features. Match recent history (`1.5.1` command palette, `1.4.1` native beta).
 
@@ -57,7 +57,7 @@ Do not force-push. Do not skip hooks.
 
 ## 5. GitHub Release notes
 
-Pushing the tag starts `.github/workflows/release.yml`. It creates a draft named after the tag, uploads the Electron, Mdow for Mac and Mdow Native (Linux) assets, then publishes with `--latest` once Mdow for Mac's signed update feed is attached.
+Pushing the tag starts `.github/workflows/release.yml`. It creates a draft named after the tag, uploads the Electron (Windows and Linux), Mac app and Mdow Native (Linux) assets, then publishes with `--latest` once the Mac app's signed update feed is attached.
 
 As soon as the draft exists, set notes from the changelog bullets (no `Latest release.` line):
 
@@ -89,7 +89,7 @@ Poll `gh run list --workflow=release.yml --branch vX.Y.Z` until the run succeeds
 gh release view vX.Y.Z
 ```
 
-The release must be published (not draft), marked latest, and include mac `.dmg`/`.zip`, Windows `.exe`, Linux `.AppImage`, `Mdow-for-Mac-X.Y.Z.zip`, `Mdow-for-Mac.zip`, `mdow-for-mac-appcast.xml`, and the Mdow Native Linux AppImage (`MdowNative-linux-beta.AppImage`).
+The release must be published (not draft), marked latest, and include Windows `.exe`, Linux `.AppImage`, the Mac app's `Mdow-X.Y.Z.zip`, `Mdow.zip` and `mdow-appcast.xml`, and the Mdow Native Linux AppImage (`MdowNative-linux-beta.AppImage`).
 
 There is no Homebrew tap updater in this repo. Skip it.
 

@@ -13,13 +13,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The Electron app for Windows and Linux. On macOS, Mdow is the Swift app (mac-app below).
   release:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            platform: mac
           - os: ubuntu-latest
             platform: linux
           - os: windows-latest
@@ -38,74 +37,17 @@ jobs:
 
       # apps/native's tests run on Bun.
       - uses: oven-sh/setup-bun@v2
-        if: matrix.platform == 'mac'
+        if: matrix.platform == 'linux'
         with:
           bun-version: 1.4.3
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run typecheck
-        if: matrix.platform == 'mac'
+        if: matrix.platform == 'linux'
 
       - run: pnpm run test
-        if: matrix.platform == 'mac'
-
-      # ── macOS: import signing certificate into an explicit keychain ──
-      - name: Import Apple signing certificate
-        if: matrix.platform == 'mac'
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
-          P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(uuidgen)
-
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          ls -la "$CERTIFICATE_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          security import "$CERTIFICATE_PATH" \
-            -P "$P12_PASSWORD" \
-            -A \
-            -t cert \
-            -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
-
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
-            | awk -F'"' '/Developer ID Application/{print $2; exit}')
-          # electron-builder CSC_NAME must not include this prefix — it chooses
-          # Developer ID Application automatically (otherwise the build fails with
-          # "Please remove prefix Developer ID Application: from the specified name")
-          IDENTITY="${IDENTITY#Developer ID Application:}"
-          IDENTITY="${IDENTITY#"${IDENTITY%%[![:space:]]*}"}"
-          if [ -z "$IDENTITY" ]; then
-            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
-            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-            exit 1
-          fi
-
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
-          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"
-
-          echo "=== Available signing identities ==="
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-          echo "Using CSC_NAME=$IDENTITY"
+        if: matrix.platform == 'linux'
 
       - name: Ensure draft GitHub release exists
         shell: bash
@@ -121,37 +63,12 @@ jobs:
             gh release create "$TAG" --draft --title "$TAG" --notes "" 2>/dev/null || true
           fi
 
-      # Windows/Linux: CSC_LINK is unused. Do not pass it on mac — electron-builder
-      # 26.15.x (issue 10066) re-imports CSC_LINK into a temp keychain, then calls
-      # set-key-partition-list with the .p12 password instead of the keychain password.
       - name: Build and publish
-        if: matrix.platform != 'mac'
         run: pnpm run --filter desktop publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Build and publish (mac)
-        if: matrix.platform == 'mac'
-        run: pnpm run --filter desktop publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_KEYCHAIN: ${{ env.KEYCHAIN_PATH }}
-          CSC_NAME: ${{ env.CSC_NAME }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Clean up keychain
-        if: ${{ always() && matrix.platform == 'mac' }}
-        run: |
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-
-  # Mdow for Mac (apps/macos), the Swift app. Released with the same version as the rest, and
+  # Mdow on macOS: the Swift app in apps/macos. Released with the same version as the rest, and
   # updated through Sparkle from the feed on the latest release.
   mac-app:
     runs-on: macos-26
@@ -231,8 +148,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           bash scripts/bundle.sh
-          codesign --verify --deep --strict --verbose=2 "dist/Mdow for Mac.app"
-          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow for Mac.app"
+          codesign --verify --deep --strict --verbose=2 "dist/Mdow.app"
+          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow.app"
 
       - name: Notarize and staple
         env:
@@ -241,15 +158,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          ditto -c -k --keepParent "dist/Mdow for Mac.app" "$RUNNER_TEMP/notarize.zip"
+          ditto -c -k --keepParent "dist/Mdow.app" "$RUNNER_TEMP/notarize.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait
-          xcrun stapler staple "dist/Mdow for Mac.app"
-          xcrun stapler validate "dist/Mdow for Mac.app"
-          spctl --assess --type execute --verbose=2 "dist/Mdow for Mac.app"
+          xcrun stapler staple "dist/Mdow.app"
+          xcrun stapler validate "dist/Mdow.app"
+          spctl --assess --type execute --verbose=2 "dist/Mdow.app"
 
       - name: Zip and write the appcast
         env:
@@ -257,11 +174,11 @@ jobs:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: |
           set -euo pipefail
-          ZIP="Mdow-for-Mac-$VERSION.zip"
+          ZIP="Mdow-$VERSION.zip"
           mkdir -p dist/release
-          ditto -c -k --keepParent "dist/Mdow for Mac.app" "dist/release/$ZIP"
+          ditto -c -k --keepParent "dist/Mdow.app" "dist/release/$ZIP"
           # A copy under a fixed name, for links to the latest download.
-          cp "dist/release/$ZIP" dist/release/Mdow-for-Mac.zip
+          cp "dist/release/$ZIP" dist/release/Mdow.zip
 
           # generate_appcast signs every archive in the folder, so give it only the versioned zip.
           FEED_DIR="$RUNNER_TEMP/appcast"
@@ -274,19 +191,19 @@ jobs:
               --link "https://github.com/$GH_REPO/releases/tag/$GITHUB_REF_NAME" \
               --maximum-versions 1 \
               --maximum-deltas 0 \
-              -o "$FEED_DIR/mdow-for-mac-appcast.xml" \
+              -o "$FEED_DIR/mdow-appcast.xml" \
               "$FEED_DIR"
-          cp "$FEED_DIR/mdow-for-mac-appcast.xml" dist/release/
+          cp "$FEED_DIR/mdow-appcast.xml" dist/release/
 
-          grep -F "releases/download/$GITHUB_REF_NAME/$ZIP" dist/release/mdow-for-mac-appcast.xml >/dev/null \
+          grep -F "releases/download/$GITHUB_REF_NAME/$ZIP" dist/release/mdow-appcast.xml >/dev/null \
             || { echo "::error::The appcast does not point at $ZIP"; exit 1; }
-          grep -F 'sparkle:edSignature' dist/release/mdow-for-mac-appcast.xml >/dev/null \
+          grep -F 'sparkle:edSignature' dist/release/mdow-appcast.xml >/dev/null \
             || { echo "::error::The appcast is missing sparkle:edSignature"; exit 1; }
-          cat dist/release/mdow-for-mac-appcast.xml
+          cat dist/release/mdow-appcast.xml
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mdow-for-mac
+          name: mdow-mac
           path: apps/macos/dist/release/
           if-no-files-found: error
 
@@ -301,9 +218,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            "dist/release/Mdow-for-Mac-$VERSION.zip" \
-            dist/release/Mdow-for-Mac.zip \
-            dist/release/mdow-for-mac-appcast.xml \
+            "dist/release/Mdow-$VERSION.zip" \
+            dist/release/Mdow.zip \
+            dist/release/mdow-appcast.xml \
             --clobber
 
       - name: Clean up keychain
@@ -384,6 +301,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # Keep the release in draft until Mdow for Mac's signed update feed is on it.
-          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx mdow-for-mac-appcast.xml
+          # Keep the release in draft until the Mac app's signed update feed is on it.
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx mdow-appcast.xml
           gh release edit "$TAG" --draft=false --latest

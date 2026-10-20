@@ -23,7 +23,7 @@ pnpm run install:mac               # release build into ~/Applications (DEST=…
 ```
 
 Or in this folder: `swift build`, `swift test`, and `scripts/bundle.sh`, which writes
-`dist/Mdow for Mac.app`, signed ad hoc unless `SIGN_IDENTITY` is set. The first build
+`dist/Mdow.app`, signed ad hoc unless `SIGN_IDENTITY` is set. The first build
 downloads Pele (pinned and checksummed) into `Resources/vendor/` with `scripts/fetch-pele.sh`.
 
 Run the bundle (`scripts/bundle.sh` or `run.sh`) rather than `swift run`. A bare SwiftPM binary
@@ -74,7 +74,7 @@ for tabs, and ⇧⌘O for Open Folder. Help › Keyboard Shortcuts lists them al
 ## Updates and releases
 
 The app updates itself with [Sparkle 2](https://sparkle-project.org) (`Sources/Mdow/App/Updater.swift`,
-Mdow › Check for Updates…). Its feed is `mdow-for-mac-appcast.xml` on the latest GitHub release
+Mdow › Check for Updates…). Its feed is `mdow-appcast.xml` on the latest GitHub release
 (`SUFeedURL` in `Resources/Info.plist`), and updates are verified against `SUPublicEDKey`
 (`Resources/sparkle-public-ed-key.txt`; the private half is the `SPARKLE_PRIVATE_ED_KEY` repo
 secret). Only builds signed with a Developer ID update: ad hoc and debug builds leave Sparkle off
@@ -84,13 +84,14 @@ and the menu item disabled.
 drops its XPC services (the app isn't sandboxed) and signs it inside out. With `SIGN_IDENTITY`
 set it signs with the hardened runtime and a secure timestamp, ready for notarization.
 
-Mdow for Mac ships with every Mdow release, with the same version: `bundle.sh` reads it from
+It ships with every Mdow release, with the same version, as Mdow on macOS (the Electron app is
+released for Windows and Linux only): `bundle.sh` reads it from
 `apps/desktop/package.json` (`VERSION=…` overrides it), and the build number is the commit count.
 Cut releases the usual way (bump the version, tag `vX.Y.Z`; see `.claude/skills/release`). The
 `mac-app` job in `.github/workflows/release.yml` then tests the app, signs it with the Developer
 ID (`CSC_LINK`, `CSC_KEY_PASSWORD`), notarizes and staples it (`APPLE_ID`,
-`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), and uploads `Mdow-for-Mac-<version>.zip`, a copy
-named `Mdow-for-Mac.zip`, and `mdow-for-mac-appcast.xml` (written by Sparkle's `generate_appcast`
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), and uploads `Mdow-<version>.zip`, a copy
+named `Mdow.zip`, and `mdow-appcast.xml` (written by Sparkle's `generate_appcast`
 and signed with `SPARKLE_PRIVATE_ED_KEY`) to the release. The release stays a draft until the
 feed is on it. `.github/workflows/macos.yml` builds and tests every pull request.
 
@@ -126,7 +127,7 @@ Settings live in the `com.zain.mdow.Mac` user defaults.
 
   ```sh
   MDOW_ACTIONS="appearance=dark;sidebar=files;palette;find=Pele;scroll=diagrams" \
-    "dist/Mdow for Mac.app/Contents/MacOS/Mdow" -ApplePersistenceIgnoreState YES README.md
+    "dist/Mdow.app/Contents/MacOS/Mdow" -ApplePersistenceIgnoreState YES README.md
   ```
 
   The steps are `appearance`, `sidebar`, `palette`, `find`, `scroll`, `settings`, `shortcuts`,
