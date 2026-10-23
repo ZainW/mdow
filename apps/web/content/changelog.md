@@ -5,9 +5,13 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.16.2
+## v1.16.3
 
 Latest release.
+
+- Mermaid diagrams now follow a theme change in every tab on Mac, including documents that were in the background when the theme changed
+
+## v1.16.2
 
 - Mdow for Windows and Linux moves to Electron 45, with a newer Chromium underneath
 - Mdow Native picks up newer markdown and diagram libraries: marked 18.1 and Pele 1.8
