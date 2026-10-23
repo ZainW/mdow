@@ -5,9 +5,15 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.16.1
+## v1.16.2
 
 Latest release.
+
+- Mdow for Windows and Linux moves to Electron 45, with a newer Chromium underneath
+- Mdow Native picks up newer markdown and diagram libraries: marked 18.1 and Pele 1.8
+- The app and the site run on newer foundations: React 19.3, Vite 8.3, TypeScript 7 and Tailwind 4.3, with refreshed lint and format tooling
+
+## v1.16.1
 
 - On Mac, Mdow is now a native app: rebuilt in Swift on AppKit and TextKit, with no web view. It replaces the Electron version on Mac: get it from the download page and move `Mdow.app` to Applications over the old one
 - A calm look of its own: the document sits on a sheet of warm paper (or neutral ink in dark mode), set in Charter, with tabs in the header and a quiet sidebar for the outline, files and recents

@@ -6,15 +6,24 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.16.2</title>
+      <link>https://mdow.wania.app/changelog#v1-16-2</link>
+      <guid isPermaLink="false">v1.16.2</guid>
+      <pubDate>Fri, 23 Oct 2026 13:57:54 GMT</pubDate>
+      <description>Latest release.
+
+- Mdow for Windows and Linux moves to Electron 45, with a newer Chromium underneath
+- Mdow Native picks up newer markdown and diagram libraries: marked 18.1 and Pele 1.8
+- The app and the site run on newer foundations: React 19.3, Vite 8.3, TypeScript 7 and Tailwind 4.3, with refreshed lint and format tooling</description>
+    </item>
+    <item>
       <title>v1.16.1</title>
       <link>https://mdow.wania.app/changelog#v1-16-1</link>
       <guid isPermaLink="false">v1.16.1</guid>
       <pubDate>Tue, 20 Oct 2026 02:45:26 GMT</pubDate>
-      <description>Latest release.
-
-- On Mac, Mdow is now a native app: rebuilt in Swift on AppKit and TextKit, with no web view. It replaces the Electron version on Mac: get it from the download page and move `Mdow.app` to Applications over the old one
+      <description>- On Mac, Mdow is now a native app: rebuilt in Swift on AppKit and TextKit, with no web view. It replaces the Electron version on Mac: get it from the download page and move `Mdow.app` to Applications over the old one
 - A calm look of its own: the document sits on a sheet of warm paper (or neutral ink in dark mode), set in Charter, with tabs in the header and a quiet sidebar for the outline, files and recents
-- Tables, task lists, alerts, footnotes, syntax-highlighted code,</description>
+- Tables, task lists, alerts, footnotes, syntax-highlighted code, Mermaid diagrams and</description>
     </item>
     <item>
       <title>v1.15.1</title>
