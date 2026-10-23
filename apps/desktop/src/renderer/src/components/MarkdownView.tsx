@@ -110,20 +110,19 @@ export function MarkdownView({ tab, isActive = true, onOpenMarkdownLink }: Markd
       data-markdown-scroller=""
       className="group/content relative flex-1 overflow-y-auto"
     >
-      {searchOpen &&
-        isActive && (
-          // Zero-height sticky rail: the bar floats over the document instead of pushing it down.
-          <div className="pointer-events-none sticky top-0 z-20 flex h-0 items-start justify-end">
-            <SearchBar
-              matchCount={matchCount}
-              currentIndex={currentIndex}
-              onNext={next}
-              onPrev={prev}
-              onClose={handleCloseSearch}
-              onQueryChange={setSearchQuery}
-            />
-          </div>
-        )}
+      {searchOpen && isActive && (
+        // Zero-height sticky rail: the bar floats over the document instead of pushing it down.
+        <div className="pointer-events-none sticky top-0 z-20 flex h-0 items-start justify-end">
+          <SearchBar
+            matchCount={matchCount}
+            currentIndex={currentIndex}
+            onNext={next}
+            onPrev={prev}
+            onClose={handleCloseSearch}
+            onQueryChange={setSearchQuery}
+          />
+        </div>
+      )}
       <div
         data-reading-frame=""
         className={cn('flex min-h-full w-full', wideMode ? 'justify-start' : 'justify-center')}
