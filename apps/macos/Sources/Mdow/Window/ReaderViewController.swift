@@ -227,8 +227,9 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
   }
 
   /// The window's appearance, which updates before its views' when the appearance changes.
+  /// A view that's out of a window (a background tab) falls back to the app's.
   var isDark: Bool {
-    (view.window?.effectiveAppearance ?? view.effectiveAppearance)
+    (view.window?.effectiveAppearance ?? NSApp.effectiveAppearance)
       .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
   }
 

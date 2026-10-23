@@ -107,8 +107,12 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
       object: split.splitView)
     updateTitle()
 
-    appearanceObservation = window.observe(\.effectiveAppearance) { [weak self] _, _ in
-      MainActor.assumeIsolated { self?.tabs.forEach { $0.panes.forEach { $0.appearanceChanged() } } }
+    appearanceObservation = window.observe(\.effectiveAppearance) { [weak self] observed, _ in
+      MainActor.assumeIsolated {
+        // Read it here: a pane in a background tab is out of the window, so it can't look it up.
+        let dark = observed.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        self?.tabs.forEach { $0.panes.forEach { $0.appearanceChanged(dark: dark) } }
+      }
     }
     // A click in a pane makes it the one the sidebar and commands follow.
     clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {

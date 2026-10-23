@@ -33,6 +33,9 @@ final class DocumentPane: NSObject, ReaderDelegate {
   private var reads = 0
   private var widthTask: Task<Void, Never>?
   private var lastDark: Bool?
+  /// The window's appearance as of the last change. A pane in a background tab is out of the
+  /// window, where the reader can't see the window's appearance, so it's recorded here.
+  private var windowDark: Bool?
   /// Whether the document has images, diagrams or math, which are sized to the column.
   private var sizesToColumn = false
   /// The column width images and diagrams were last sized for.
@@ -59,7 +62,7 @@ final class DocumentPane: NSObject, ReaderDelegate {
     NotificationCenter.default.removeObserver(self)
   }
 
-  private var isDark: Bool { reader.isDark }
+  private var isDark: Bool { windowDark ?? reader.isDark }
 
   // MARK: Opening
 
@@ -283,7 +286,8 @@ final class DocumentPane: NSObject, ReaderDelegate {
     rerender()
   }
 
-  func appearanceChanged() {
+  func appearanceChanged(dark: Bool) {
+    windowDark = dark
     reader.updateHTMLAppearance()
     // Text colours are dynamic; only diagrams are drawn for one appearance.
     guard let lastDark, lastDark != isDark, source?.body.contains("mermaid") == true else { return }
