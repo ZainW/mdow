@@ -4,7 +4,7 @@ import Testing
 
 @testable import MdowKit
 
-// Mirrors the desktop app's companion tests (`apps/desktop/src/main/companion/*.test.ts`).
+// Mirrors the former Electron app's companion tests.
 // Event shapes are the ones `opencode serve` 2.0.x sends.
 
 private let session = "ses_test"

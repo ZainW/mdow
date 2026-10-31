@@ -1,11 +1,11 @@
 {
   "name": "mdow-monorepo",
+  "version": "1.16.3",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "package:native-linux": "bash apps/native/scripts/package-linux.sh",
     "dev:linux": "cargo run --manifest-path apps/native-linux/Cargo.toml",
     "test:linux": "cargo test --manifest-path apps/native-linux/Cargo.toml",
     "install:linux": "bash apps/native-linux/scripts/install.sh",

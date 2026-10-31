@@ -29,14 +29,6 @@ export function AppleIcon(props: IconProps) {
   )
 }
 
-export function WindowsIcon(props: IconProps) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M3 5.1 10.4 4v7.2H3V5.1Zm0 13.8 7.4 1.1v-7.1H3v6Zm8.2 1.2L21 21.5v-8.6h-9.8v7.2ZM11.2 3.9v7.3H21V2.5l-9.8 1.4Z" />
-    </svg>
-  )
-}
-
 export function LinuxIcon(props: IconProps) {
   // Tux, from Simple Icons (CC0)
   return (

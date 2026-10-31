@@ -6,18 +6,18 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 This is a pnpm monorepo managed by Turborepo.
 
-- `apps/desktop/` — Electron markdown viewer (released for Windows and Linux)
 - `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
-- `apps/native/` — Mdow Native beta (Linux x64; it also runs on macOS for development): React on [gpuix](https://gpuix.dev) (Zed's GPUI), run and compiled with Bun
 - `apps/native-linux/` — Mdow for Linux: a Rust app on GTK 4 + libadwaita, no web view or cross-platform UI layer (not a pnpm workspace; built with Cargo)
-- `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit with its own custom look, shipped as `Mdow.app` in place of the Electron app on macOS (not a pnpm workspace; built with SwiftPM)
+- `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit with its own custom look, shipped as `Mdow.app` (not a pnpm workspace; built with SwiftPM)
 - `packages/` — shared libraries (none yet)
+
+The release version lives in the root `package.json`.
 
 ## Build & Development
 
-From the repo root, turbo orchestrates all tasks:
+From the repo root, turbo orchestrates the pnpm workspaces (the website):
 
-- `pnpm run dev` — start Electron in development mode
+- `pnpm run dev` — start the website in development mode
 - `pnpm run build` — compile all workspaces
 - `pnpm run typecheck` — type-check all workspaces (uses tsgo)
 - `pnpm run lint` — oxlint across all workspaces
@@ -25,12 +25,8 @@ From the repo root, turbo orchestrates all tasks:
 - `pnpm run fmt:check` — check formatting
 - `pnpm run test` — run tests with Vitest
 
-To target a specific workspace:
+The native apps:
 
-- `pnpm run --filter desktop dev`
-- `pnpm run --filter desktop build:dist -- --mac`
-- `pnpm run --filter native start:hot` — run Mdow Native with hot reload (needs Bun)
-- `pnpm run package:native-linux` — build the Mdow Native AppImage
 - `pnpm run dev:linux` / `test:linux` / `install:linux` — run, test, or install Mdow for Linux (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.5); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/native-linux/packaging/`)
 - `pnpm run dev:mac` / `test:mac` / `install:mac` — run, test, or install Mdow for Mac (needs Xcode 26+; macOS 15+ to run)
 
@@ -41,31 +37,20 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 - oxfmt: no semicolons, single quotes, 100-char line width, trailing commas, 2-space indent
 - React 19 with JSX transform — no `import React` needed
 - Tailwind CSS v4 with CSS variables for theming (light/dark)
-- shadcn/ui components live in `apps/desktop/src/renderer/src/components/ui/`
-- When running shadcn CLI commands, always use `-c apps/desktop` flag (e.g. `npx shadcn@latest add -c apps/desktop button`)
-- Use `cn()` from `apps/desktop/src/renderer/src/lib/utils.ts` for conditional class merging
 
 ## Architecture
 
-- **Main process** (`apps/desktop/src/main/`): Electron window, IPC handlers, file/folder services, chokidar watchers
-- **Preload** (`apps/desktop/src/preload/`): IPC bridge exposing `window.api` — types in `index.d.ts`
-- **Renderer** (`apps/desktop/src/renderer/src/`): React app with Zustand store + TanStack Query
-- Desktop markdown rendering uses comark + `@comark/react` + Shiki + Mermaid
 - Website docs and changelog render with md4x
-- **Native** (`apps/native/`): gpuix renders the React tree with GPUI (no DOM, no webview). Markdown is split into blocks (`src/lib/markdown.ts`) and each block paints through gpuix's native `<markdown>`/`<code>` inside a windowed `<virtual-list>`. macOS menus, Finder open events and font registration go through the Objective-C runtime with `bun:ffi` (`src/lib/macos.ts`). Tests: `bun test` (headless GPU renderer).
-- **Linux** (`apps/native-linux/`): `doc.rs` parses markdown (comrak) or HTML (via htmd → markdown) into top-level rows; `reader.rs` shows them in a virtualized `GtkListView`, one row per block, built into native widgets by `render.rs`. Code is highlighted with syntect, Mermaid is laid out by mermaid-rs-renderer and rasterised with resvg. The design tokens in `theme.rs` are the desktop's OKLCH values, turned into a GTK stylesheet; window actions in `window.rs` mirror the desktop shortcuts. Rust style: `cargo fmt` (100 columns) and `cargo clippy`.
+- **Linux** (`apps/native-linux/`): `doc.rs` parses markdown (comrak) or HTML (via htmd → markdown) into top-level rows; `reader.rs` shows them in a virtualized `GtkListView`, one row per block, built into native widgets by `render.rs`. Code is highlighted with syntect, Mermaid is laid out by mermaid-rs-renderer and rasterised with resvg. The design tokens in `theme.rs` are OKLCH values turned into a GTK stylesheet; window actions live in `window.rs`. Fonts and the logo are in `assets/`. Rust style: `cargo fmt` (100 columns) and `cargo clippy`.
 - **Mac** (`apps/macos/`): `MdowKit` renders markdown (Apple's swift-markdown) into an `NSAttributedString` built from TextKit 1 parts: paragraph styles, `NSTextBlock` subclasses for code and quotes, `NSTextTable` for tables, attachments for images. The app target shows it in a read-only `NSTextView` (selection, printing; find is its own floating bar) on a rounded card, with Mdow's own chrome drawn in AppKit views (`Sources/Mdow/Chrome`): a header with in-window tabs (`DocumentTab`), a flat sidebar, and colours from one `Palette` (warm paper light, neutral ink dark, clay accent) shared with the reader. Charter for text, bundled Inter and Geist Mono for the interface and code. Code is highlighted by a hand-written Swift scanner, Mermaid is laid out by Pele in JavaScriptCore and drawn as SVG, HTML files open in a `WKWebView` with JavaScript off. Math is typeset by SwiftMath, updates come through Sparkle 2 (released with every `vX.Y.Z` Mdow release), and the OpenCode companion is a trailing panel (`Sources/*/Companion`). Swift style: 2-space indent, 100 columns.
-- Path alias: `@renderer/*` maps to `src/renderer/src/*` (within the desktop workspace)
 
 ## Key Patterns
 
-- State: Zustand for UI state (`store/app-store.ts`), TanStack Query for async data
-- IPC: all main↔renderer communication through typed handlers in `ipc.ts` / `preload/index.ts`
 - File types: `.md`, `.markdown`, `.mdx` are markdown; `.html` / `.htm` open in a sandboxed HTML viewer
 
 ## Testing
 
-- `pnpm run test` — run all tests (Vitest, single run)
-- `pnpm run --filter desktop test -- -t 'test name'` — run a single test by name
-- `pnpm run --filter desktop test:watch` — run tests in watch mode
+- `pnpm run test` — run the website's tests (Vitest, single run)
+- `pnpm run --filter web test -- -t 'test name'` — run a single test by name
 - Test environment: jsdom with `@testing-library/react`
+- `pnpm run test:linux` (Cargo) and `pnpm run test:mac` (SwiftPM) test the native apps

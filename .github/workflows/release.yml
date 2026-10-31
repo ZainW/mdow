@@ -13,63 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The Electron app for Windows and Linux. On macOS, Mdow is the Swift app (mac-app below).
-  release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: windows
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      # apps/native's tests run on Bun.
-      - uses: oven-sh/setup-bun@v2
-        if: matrix.platform == 'linux'
-        with:
-          bun-version: 1.4.3
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm run typecheck
-        if: matrix.platform == 'linux'
-
-      - run: pnpm run test
-        if: matrix.platform == 'linux'
-
-      - name: Ensure draft GitHub release exists
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            # electron-builder only uploads to a draft release; a published
-            # release at this tag would make it skip every artifact
-            gh release edit "$TAG" --draft || true
-          else
-            gh release create "$TAG" --draft --title "$TAG" --notes "" 2>/dev/null || true
-          fi
-
-      - name: Build and publish
-        run: pnpm run --filter desktop publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Mdow on macOS: the Swift app in apps/macos. Released with the same version as the rest, and
-  # updated through Sparkle from the feed on the latest release.
+  # Mdow on macOS: the Swift app in apps/macos, updated through Sparkle from the feed on the
+  # latest release.
   mac-app:
     runs-on: macos-26
     timeout-minutes: 45
@@ -94,9 +39,9 @@ jobs:
         id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          DESKTOP="$(jq -r .version ../desktop/package.json)"
-          if [[ "$DESKTOP" != "$VERSION" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match apps/desktop/package.json ($DESKTOP)"
+          ROOT="$(jq -r .version ../../package.json)"
+          if [[ "$ROOT" != "$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($ROOT)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -227,69 +172,9 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/mac-app-signing.keychain-db" 2>/dev/null || true
 
-  native-linux:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install runtime dependencies for the smoke test
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libvulkan1 \
-            mesa-vulkan-drivers \
-            libwayland-client0 \
-            libx11-xcb1 \
-            libxkbcommon0 \
-            libxkbcommon-x11-0 \
-            xvfb
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.3
-
-      - run: pnpm install --frozen-lockfile --filter native
-
-      - name: Build Mdow Native AppImage
-        env:
-          CI: 'true'
-          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
-          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
-        run: VERSION="${GITHUB_REF_NAME#v}" xvfb-run -a bash apps/native/scripts/package-linux.sh
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: native-linux
-          path: dist/native-linux/*.AppImage*
-          if-no-files-found: error
-
-      - name: Ensure draft GitHub release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --notes ""
-
-      - name: Upload Mdow Native for Linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          gh release upload "$TAG" dist/native-linux/*.AppImage* --clobber
-
   publish:
     needs:
-      - release
       - mac-app
-      - native-linux
     runs-on: ubuntu-latest
     permissions:
       contents: write

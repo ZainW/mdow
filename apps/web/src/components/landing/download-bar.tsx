@@ -2,18 +2,16 @@ import { useScrollPast, useDownloadBarDismissed } from '~/hooks/use-scroll-past'
 import { DownloadButton } from '~/components/download-button'
 import { CloseIcon } from '~/components/icons'
 import { Logo } from '~/components/logo'
-import type { PlatformId } from '~/lib/download-links'
 import type { ReleaseInfo } from '~/lib/github-releases'
 import { cn } from '~/lib/utils'
 
 interface DownloadBarProps {
-  platform: PlatformId
   release: ReleaseInfo | null
   downloadUrl: string | null
 }
 
 /** A small floating download prompt that appears once the hero is out of view. */
-export function DownloadBar({ platform, release, downloadUrl }: DownloadBarProps) {
+export function DownloadBar({ release, downloadUrl }: DownloadBarProps) {
   const scrolledPast = useScrollPast(900)
   const [dismissed, dismiss] = useDownloadBarDismissed()
 
@@ -41,7 +39,7 @@ export function DownloadBar({ platform, release, downloadUrl }: DownloadBarProps
             v{release.version}
           </span>
         </p>
-        <DownloadButton href={downloadUrl} platform={platform} size="sm">
+        <DownloadButton href={downloadUrl} platform="mac" size="sm">
           Download
         </DownloadButton>
         <button

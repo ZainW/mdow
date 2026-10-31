@@ -8,7 +8,6 @@ set -euo pipefail
 
 APP_ID="com.zain.mdow.Linux"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-ROOT_DIR="$(cd "$APP_DIR/../.." && pwd -P)"
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN="$PREFIX/bin/mdow-linux"
 DESKTOP="$PREFIX/share/applications/$APP_ID.desktop"
@@ -38,7 +37,7 @@ install -d "$(dirname "$DESKTOP")"
 sed "s|@BINDIR@|$PREFIX/bin|g" "$APP_DIR/data/$APP_ID.desktop.in" >"$DESKTOP"
 chmod 644 "$DESKTOP"
 install -Dm644 "$APP_DIR/data/$APP_ID.metainfo.xml" "$METAINFO"
-install -Dm644 "$ROOT_DIR/apps/native/assets/icons/mdow-logo.svg" "$ICON"
+install -Dm644 "$APP_DIR/assets/icons/mdow-logo.svg" "$ICON"
 refresh
 
 echo "Installed Mdow to $BIN"

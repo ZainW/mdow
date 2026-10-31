@@ -8,14 +8,12 @@ name: Linux (GTK)
   pull_request:
     paths:
       - 'apps/native-linux/**'
-      - 'apps/native/assets/**'
       - '.github/workflows/linux.yml'
   push:
     branches: [main]
     tags: ['linux-[0-9]*']
     paths:
       - 'apps/native-linux/**'
-      - 'apps/native/assets/**'
       - '.github/workflows/linux.yml'
   workflow_dispatch:
 

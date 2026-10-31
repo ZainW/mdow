@@ -1,7 +1,7 @@
 // Generate a 1200×630 Open Graph image for social sharing.
 // Run: node apps/web/scripts/generate-og-image.mjs
 
-import { chromium } from '../../desktop/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

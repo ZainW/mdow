@@ -1,5 +1,4 @@
-//! Reading documents, scanning folders, and resolving links — the desktop's file and folder
-//! services (`apps/desktop/src/main/file-service.ts`, `folder-service.ts`).
+//! Reading documents, scanning folders, and resolving links.
 
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
@@ -348,8 +347,8 @@ pub fn breadcrumb_segments(file: &Path, root: Option<&Path>) -> Vec<(String, Pat
     dirs[start..].iter().map(|d| (display_name(d), d.clone())).collect()
 }
 
-/// The desktop palette's file search: subsequence score with bonuses for runs, word starts and a
-/// matching first character (`apps/desktop/src/renderer/src/lib/fuzzy-search.ts`).
+/// The palette's file search: subsequence score with bonuses for runs, word starts and a
+/// matching first character.
 pub fn fuzzy_score(query: &str, target: &str) -> f64 {
     let q: Vec<char> = query.to_lowercase().chars().collect();
     let t: Vec<char> = target.to_lowercase().chars().collect();

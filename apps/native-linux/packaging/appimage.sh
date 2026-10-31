@@ -35,7 +35,7 @@ install -Dm755 "${CARGO_TARGET_DIR:-$APP_DIR/target}/release/mdow-linux" "$APPDI
 install -d "$APPDIR/usr/share/applications"
 sed "s|@BINDIR@/||" "$APP_DIR/data/$APP_ID.desktop.in" >"$APPDIR/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$APP_DIR/data/$APP_ID.metainfo.xml" "$APPDIR/usr/share/metainfo/$APP_ID.appdata.xml"
-install -Dm644 "$ROOT_DIR/apps/native/assets/icons/mdow-logo.svg" \
+install -Dm644 "$APP_DIR/assets/icons/mdow-logo.svg" \
   "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 
 # The symbolic icons the UI uses, from Adwaita, so hosts without that theme still show them.

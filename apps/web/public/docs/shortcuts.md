@@ -7,44 +7,44 @@ order: 5
 
 # Keyboard Shortcuts
 
-Mdow is built for keyboard-first reading. Hold **⌘** (macOS) or **Ctrl** (Windows/Linux) to glance at a cheat sheet, or press **⌘/** / **Ctrl+/** for the full shortcuts dialog.
+Mdow is built for keyboard-first reading. Hold **⌘** (macOS) or **Ctrl** (Linux) to glance at a cheat sheet, or press **⌘/** / **Ctrl+/** for the full shortcuts dialog.
 
 ![The Mdow command palette listing files in an open folder](/screenshots/palette-light.webp)
 
 ## Files
 
-| Action      | macOS | Windows / Linux |
-| ----------- | ----- | --------------- |
-| Open file   | ⌘O    | Ctrl+O          |
-| Open folder | ⌘⇧O   | Ctrl+Shift+O    |
+| Action      | macOS | Linux        |
+| ----------- | ----- | ------------ |
+| Open file   | ⌘O    | Ctrl+O       |
+| Open folder | ⌘⇧O   | Ctrl+Shift+O |
 
 ## Navigation
 
-| Action             | macOS | Windows / Linux |
-| ------------------ | ----- | --------------- |
-| Command palette    | ⌘K    | Ctrl+K          |
-| Find in document   | ⌘F    | Ctrl+F          |
-| Switch tab by slot | ⌘1–9  | Ctrl+1–9        |
-| Close tab          | ⌘W    | Ctrl+W          |
-| Next tab           | ⌘⌥→   | Ctrl+Alt+→      |
-| Previous tab       | ⌘⌥←   | Ctrl+Alt+←      |
+| Action             | macOS | Linux      |
+| ------------------ | ----- | ---------- |
+| Command palette    | ⌘K    | Ctrl+K     |
+| Find in document   | ⌘F    | Ctrl+F     |
+| Switch tab by slot | ⌘1–9  | Ctrl+1–9   |
+| Close tab          | ⌘W    | Ctrl+W     |
+| Next tab           | ⌘⌥→   | Ctrl+Alt+→ |
+| Previous tab       | ⌘⌥←   | Ctrl+Alt+← |
 
 ## View
 
-| Action             | macOS | Windows / Linux |
-| ------------------ | ----- | --------------- |
-| Toggle sidebar     | ⌘B    | Ctrl+B          |
-| Keyboard shortcuts | ⌘/    | Ctrl+/          |
-| Zoom in            | ⌘+    | Ctrl++          |
-| Zoom out           | ⌘-    | Ctrl+-          |
-| Reset zoom         | ⌘0    | Ctrl+0          |
-| Toggle full screen | ⌃⌘F   | F11             |
+| Action             | macOS | Linux  |
+| ------------------ | ----- | ------ |
+| Toggle sidebar     | ⌘B    | Ctrl+B |
+| Keyboard shortcuts | ⌘/    | Ctrl+/ |
+| Zoom in            | ⌘+    | Ctrl++ |
+| Zoom out           | ⌘-    | Ctrl+- |
+| Reset zoom         | ⌘0    | Ctrl+0 |
+| Toggle full screen | ⌃⌘F   | F11    |
 
 ## App
 
-| Action   | macOS | Windows / Linux |
-| -------- | ----- | --------------- |
-| Settings | ⌘,    | Ctrl+,          |
+| Action   | macOS | Linux  |
+| -------- | ----- | ------ |
+| Settings | ⌘,    | Ctrl+, |
 
 ## Command palette actions
 

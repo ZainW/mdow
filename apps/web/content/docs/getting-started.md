@@ -7,7 +7,7 @@ order: 1
 
 # Getting Started
 
-Mdow is a quiet AI markdown reader for Mac, Windows, and Linux. Open Markdown or local HTML files in a focused desktop app, then ask questions about your documents through an installed ACP provider.
+Mdow is a quiet AI markdown reader for Mac, with a Linux preview. Open Markdown or local HTML files in a focused desktop app, then ask questions about your documents through an installed ACP provider.
 
 ## Quick start
 
@@ -36,12 +36,12 @@ Press `Cmd+K` (or `Ctrl+K`) to search open-folder files and run common actions s
 
 ## Keyboard shortcuts
 
-| Action           | macOS   | Windows / Linux |
-| ---------------- | ------- | --------------- |
-| Command palette  | `Cmd+K` | `Ctrl+K`        |
-| Find in document | `Cmd+F` | `Ctrl+F`        |
-| Toggle sidebar   | `Cmd+B` | `Ctrl+B`        |
-| Settings         | `Cmd+,` | `Ctrl+,`        |
-| Close tab        | `Cmd+W` | `Ctrl+W`        |
+| Action           | macOS   | Linux    |
+| ---------------- | ------- | -------- |
+| Command palette  | `Cmd+K` | `Ctrl+K` |
+| Find in document | `Cmd+F` | `Ctrl+F` |
+| Toggle sidebar   | `Cmd+B` | `Ctrl+B` |
+| Settings         | `Cmd+,` | `Ctrl+,` |
+| Close tab        | `Cmd+W` | `Ctrl+W` |
 
 Press `Cmd+/` (or `Ctrl+/`) inside the app to see the full shortcuts list, or read the [keyboard shortcuts guide](/docs/shortcuts).

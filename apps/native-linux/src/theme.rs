@@ -1,5 +1,4 @@
-//! The desktop app's design tokens (`apps/desktop/src/renderer/src/assets/styles/index.css`),
-//! converted from OKLCH, and the GTK stylesheet built from them.
+//! Mdow's design tokens, converted from OKLCH, and the GTK stylesheet built from them.
 
 use crate::prefs::{InterfaceScale, Prefs};
 use std::fmt::Write;

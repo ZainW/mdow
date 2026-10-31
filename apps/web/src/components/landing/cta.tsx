@@ -1,17 +1,15 @@
 import { Link } from '@tanstack/react-router'
 import { DownloadButton } from '~/components/download-button'
-import { AppleIcon, GitHubIcon, LinuxIcon, WindowsIcon } from '~/components/icons'
+import { AppleIcon, GitHubIcon, LinuxIcon } from '~/components/icons'
 import { Logo } from '~/components/logo'
 import { btnPrimary, btnSecondary } from '~/lib/button-styles'
-import { downloadButtonLabel, type PlatformId } from '~/lib/download-links'
 import { GITHUB_URL } from '~/lib/site'
 
 interface LandingCtaProps {
-  platform: PlatformId
   downloadUrl: string | null
 }
 
-export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
+export function LandingCta({ downloadUrl }: LandingCtaProps) {
   return (
     <section className="px-5 pb-20 sm:px-6 md:pb-28">
       <div className="surface-card relative mx-auto max-w-6xl overflow-hidden rounded-3xl px-6 py-16 text-center sm:py-20">
@@ -28,11 +26,11 @@ export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
             {downloadUrl ? (
               <DownloadButton
                 href={downloadUrl}
-                platform={platform}
+                platform="mac"
                 size="lg"
                 className="w-full max-w-72 sm:w-auto"
               >
-                {downloadButtonLabel(platform)}
+                Download for macOS
               </DownloadButton>
             ) : (
               <Link to="/download" className={btnPrimary('lg', 'w-full max-w-72 sm:w-auto')}>
@@ -54,10 +52,7 @@ export function LandingCta({ platform, downloadUrl }: LandingCtaProps) {
               <AppleIcon className="size-3.5" /> macOS
             </span>
             <span className="flex items-center gap-1.5">
-              <WindowsIcon className="size-3.5" /> Windows
-            </span>
-            <span className="flex items-center gap-1.5">
-              <LinuxIcon className="size-3.5" /> Linux
+              <LinuxIcon className="size-3.5" /> Linux preview
             </span>
           </div>
         </div>

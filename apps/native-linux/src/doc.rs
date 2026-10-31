@@ -2,7 +2,7 @@
 //!
 //! The top level of a document becomes a flat list of rows for a virtualized list view. Very
 //! long code blocks and lists are split into several rows so no single row gets huge, the same
-//! trick the desktop and gpuix readers use to keep giant documents fast.
+//! trick that keeps giant documents fast.
 
 use comrak::nodes::{AlertType, ListType, Node, NodeValue, TableAlignment};
 use comrak::{Arena, Options};

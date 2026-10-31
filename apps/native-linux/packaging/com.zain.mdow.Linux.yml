@@ -35,13 +35,10 @@ modules:
       - install -d /app/share/applications
       - sed 's|@BINDIR@/||' apps/native-linux/data/com.zain.mdow.Linux.desktop.in > /app/share/applications/com.zain.mdow.Linux.desktop
       - install -Dm644 apps/native-linux/data/com.zain.mdow.Linux.metainfo.xml /app/share/metainfo/com.zain.mdow.Linux.metainfo.xml
-      - install -Dm644 apps/native/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.Linux.svg
+      - install -Dm644 apps/native-linux/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.Linux.svg
     sources:
       - type: dir
         path: ..
         dest: apps/native-linux
         skip:
           - target
-      - type: dir
-        path: ../../native/assets
-        dest: apps/native/assets

@@ -3,16 +3,9 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
 import { DownloadButton, PlatformIcon } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
-import { NativeDownloadSection } from '~/components/native-download-section'
 import { PlatformDownloadRow, type DownloadFormat } from '~/components/platform-download-row'
 import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
-import {
-  detectPlatform,
-  gpuiLinuxBetaDownloadUrl,
-  GPUI_LINUX_BETA_DOWNLOAD_URL,
-  platformLabel,
-  type PlatformId,
-} from '~/lib/download-links'
+import { detectPlatform, LINUX_PREVIEW_URL, type PlatformId } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
@@ -34,17 +27,15 @@ export const Route = createFileRoute('/download')({
   loader: () => loadDownloadData(),
   head: () => ({
     meta: seo({
-      title: 'Download Mdow for Mac, Windows & Linux',
+      title: 'Download Mdow for Mac',
       description:
-        'Download Mdow, the free and open source markdown reader, for macOS, Windows, or Linux. On Mac it is a native app built in Swift; Linux also gets the Mdow Native beta.',
+        'Download Mdow, the free and open source markdown reader: a native Mac app built in Swift, with a preview of Mdow for Linux.',
       path: '/download',
     }),
     links: [canonical('/download')],
   }),
   component: DownloadPage,
 })
-
-const ARCH_LABEL = { arm64: 'Apple Silicon', x64: 'Intel' } as const
 
 interface PlatformBlock {
   id: PlatformId
@@ -53,58 +44,21 @@ interface PlatformBlock {
   formats: DownloadFormat[]
 }
 
-function macPlatform(release: ReleaseInfo): PlatformBlock {
-  const { app, dmg, zip } = release.assets.mac
-  if (app) {
-    return {
+function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
+  return [
+    {
       id: 'mac',
       platform: 'macOS',
       description: 'Apple Silicon · macOS 15 or newer · unzip and move to Applications',
-      formats: [{ label: 'Archive', detail: '.zip', url: app.url }],
-    }
-  }
-  // Releases before the Swift app carry the Electron build instead.
-  const macArches = [...new Set(dmg.map((a) => a.arch).filter(Boolean))]
-  return {
-    id: 'mac',
-    platform: 'macOS',
-    description:
-      macArches.length > 0
-        ? `${macArches.map((a) => ARCH_LABEL[a!]).join(' and ')} · drag to Applications`
-        : 'Drag to Applications',
-    formats: [
-      ...dmg.map((a) => ({
-        label: 'Disk image',
-        detail: macArches.length > 1 && a.arch ? `.dmg · ${a.arch}` : '.dmg',
-        url: a.url,
-      })),
-      ...zip.map((a) => ({
-        label: 'Archive',
-        detail: macArches.length > 1 && a.arch ? `.zip · ${a.arch}` : '.zip',
-        url: a.url,
-      })),
-    ],
-  }
-}
-
-function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
-  return [
-    macPlatform(release),
-    {
-      id: 'windows',
-      platform: 'Windows',
-      description: 'Installer · adds Mdow to the Start menu',
-      formats: release.assets.windows.exe
-        ? [{ label: 'Installer', detail: '.exe', url: release.assets.windows.exe }]
+      formats: release.assets.mac
+        ? [{ label: 'Archive', detail: '.zip', url: release.assets.mac }]
         : [],
     },
     {
       id: 'linux',
       platform: 'Linux',
-      description: 'AppImage · no installation needed',
-      formats: release.assets.linux.appImage
-        ? [{ label: 'AppImage', url: release.assets.linux.appImage }]
-        : [],
+      description: 'Preview · x64 · AppImage or Flatpak from the latest pre-release',
+      formats: [{ label: 'Pre-release', detail: 'GitHub', url: LINUX_PREVIEW_URL }],
     },
   ]
 }
@@ -116,8 +70,7 @@ function DownloadPage() {
   }
 
   const platforms = release ? buildPlatforms(release) : []
-  const recommended = platforms.find((p) => p.id === os)
-  const primary = recommended?.formats[0]
+  const primary = release?.assets.mac
 
   return (
     <div className="mx-auto max-w-4xl px-5 pb-24 pt-14 sm:px-6 md:pt-20">
@@ -146,13 +99,13 @@ function DownloadPage() {
             instead.
           </p>
         )}
-        {primary && recommended && (
+        {primary && (
           <div className="mt-9 flex flex-col items-center gap-3">
-            <DownloadButton href={primary.url} platform={recommended.id} size="lg">
-              Download for {platformLabel(recommended.id)}
+            <DownloadButton href={primary} platform="mac" size="lg">
+              Download for macOS
             </DownloadButton>
             <p className="text-[13px] text-muted-foreground">
-              {recommended.description.split(' · ')[0]} · Free and open source
+              Apple Silicon · Free and open source
             </p>
           </div>
         )}
@@ -176,7 +129,7 @@ function DownloadPage() {
             ))}
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            After installing, Mdow checks for updates in the background.{' '}
+            On Mac, Mdow checks for updates in the background.{' '}
             <Link
               to="/docs/$"
               params={{ _splat: 'installation' }}
@@ -187,10 +140,6 @@ function DownloadPage() {
           </p>
         </section>
       )}
-
-      <NativeDownloadSection
-        linuxUrl={release ? gpuiLinuxBetaDownloadUrl(release) : GPUI_LINUX_BETA_DOWNLOAD_URL}
-      />
 
       <div className="mt-16 grid gap-4 sm:grid-cols-2">
         <a
