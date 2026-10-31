@@ -87,9 +87,11 @@ private struct ActionCard: View {
   var body: some View {
     Button(action: action) {
       VStack(alignment: .leading, spacing: 18) {
+        // A fixed box, so cards with taller or shorter symbols keep the same height.
         Image(systemName: symbol)
           .font(.system(size: 15, weight: .medium))
           .foregroundStyle(Color.mdowAccent)
+          .frame(width: 18, height: 18, alignment: .leading)
         HStack {
           Text(title)
             .font(.mdowUI(13.5, .medium))

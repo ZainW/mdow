@@ -21,6 +21,8 @@ struct PaletteItem: Identifiable {
   var title: String
   var detail: String
   var symbol: String
+  /// How far the row steps in, e.g. a heading's depth below the title.
+  var level = 0
   var action: @MainActor () -> Void
 }
 
@@ -58,7 +60,8 @@ final class CommandPalette: NSPanel {
     isOpaque = false
     hasShadow = true
     isMovableByWindowBackground = false
-    animationBehavior = .utilityWindow
+    // Opened many times a day from the keyboard, so it appears at once rather than animating.
+    animationBehavior = .none
     let view = PaletteView(items: items) { [weak self] item in
       guard let self else { return }
       let parent = self.parent
@@ -95,6 +98,9 @@ private struct PaletteView: View {
 
   @State private var query = ""
   @State private var selected = 0
+  /// Where the pointer was last seen, so hover only moves the selection when the mouse moves,
+  /// not when the palette opens under it or the list scrolls beneath it.
+  @State private var pointer = NSEvent.mouseLocation
   @FocusState private var focused: Bool
 
   private var results: [(PaletteItem.Section, [PaletteItem])] {
@@ -164,10 +170,14 @@ private struct PaletteView: View {
                 }
                 ForEach(items) { item in
                   let index = flat.firstIndex { $0.id == item.id } ?? 0
-                  PaletteRow(item: item, selected: index == selected)
+                  PaletteRow(item: item, selected: index == selected, indented: showsHeaders)
                     .id(item.id)
                     .onTapGesture { finish(item) }
-                    .onHover { if $0 { selected = index } }
+                    .onContinuousHover { phase in
+                      guard case .active = phase, NSEvent.mouseLocation != pointer else { return }
+                      pointer = NSEvent.mouseLocation
+                      selected = index
+                    }
                 }
               }
             }
@@ -193,7 +203,10 @@ private struct PaletteView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.mdowElevated)
     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.mdowLine))
-    .onAppear { focused = true }
+    .onAppear {
+      focused = true
+      pointer = NSEvent.mouseLocation
+    }
     .onChange(of: query) { selected = 0 }
   }
 
@@ -214,6 +227,8 @@ private struct PaletteView: View {
 private struct PaletteRow: View {
   var item: PaletteItem
   var selected: Bool
+  /// Steps the row in by its level; off for search results, which are one ranked list.
+  var indented = true
 
   var body: some View {
     HStack(spacing: 10) {
@@ -243,7 +258,8 @@ private struct PaletteRow: View {
           .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.mdowLine))
       }
     }
-    .padding(.horizontal, 10)
+    .padding(.leading, 10 + (indented ? CGFloat(item.level) * 16 : 0))
+    .padding(.trailing, 10)
     .frame(height: 34)
     .background(
       selected ? Color.mdowSelected : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -483,8 +483,9 @@ final class ReaderViewController: NSViewController, NSTextViewDelegate, WKNaviga
     let target = NSPoint(x: 0, y: y.rounded())
     if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
       NSAnimationContext.runAnimationGroup { context in
-        context.duration = 0.3
-        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Short with a strong ease-out: outline jumps are frequent, so they should land quickly.
+        context.duration = 0.22
+        context.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
         scrollView.contentView.animator().setBoundsOrigin(target)
       } completionHandler: { [weak self] in
         MainActor.assumeIsolated {

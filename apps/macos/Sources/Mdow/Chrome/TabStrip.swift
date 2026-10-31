@@ -235,7 +235,9 @@ private final class TabPill: NSView {
       .font: Theme.ui(12.5, .medium), .foregroundColor: color,
       .paragraphStyle: paragraph,
     ]
-    let trailing: CGFloat = closeButton.isHidden ? 10 : 28
+    // Room for the close button is kept whether or not it shows, so a long title doesn't reflow
+    // as the pointer passes over the tab.
+    let trailing: CGFloat = item.badge ? 34 : 28
     let height = (item.title as NSString).size(withAttributes: attributes).height
     (item.title as NSString).draw(
       in: NSRect(
@@ -244,7 +246,8 @@ private final class TabPill: NSView {
       withAttributes: attributes)
     if item.badge {
       Palette.accent.setFill()
-      let dot = NSRect(x: bounds.width - (closeButton.isHidden ? 12 : 30), y: bounds.midY - 3, width: 6, height: 6)
+      // The dot sits where the close button appears, and steps aside for it on hover.
+      let dot = NSRect(x: bounds.width - (closeButton.isHidden ? 17 : 30), y: bounds.midY - 3, width: 6, height: 6)
       NSBezierPath(ovalIn: dot).fill()
     }
   }
