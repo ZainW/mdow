@@ -720,9 +720,8 @@ final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMe
     for (index, heading) in reader.headings.enumerated() {
       items.append(
         PaletteItem(
-          section: .headings, title: String(repeating: "  ", count: heading.level - 1) + heading.title,
-          detail: "",
-          symbol: "number"
+          section: .headings, title: heading.title, detail: "", symbol: "number",
+          level: heading.level - 1
         ) { [weak self] in self?.reader.scroll(toHeading: index) })
     }
     let root = openedFolder ?? tab.scannedFolder
