@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { getRequestHeader, setResponseHeader } from '@tanstack/react-start/server'
+import { setResponseHeader } from '@tanstack/react-start/server'
 import { LandingHero } from '~/components/landing/hero'
 import { LandingFeatures } from '~/components/landing/features'
 import { LandingReaderSection } from '~/components/landing/reader-section'
@@ -8,13 +8,10 @@ import { LandingLatestRelease } from '~/components/landing/latest-release'
 import { LandingCta } from '~/components/landing/cta'
 import { DownloadBar } from '~/components/landing/download-bar'
 import { getReleases, releaseHeadline } from '~/lib/changelog'
-import { detectPlatform, primaryDownloadUrl } from '~/lib/download-links'
 import { fetchLatestRelease } from '~/lib/github-releases'
 import { absoluteUrl, canonical, jsonLd, seo, SITE_URL } from '~/lib/seo'
 
 const loadHomeData = createServerFn({ method: 'GET' }).handler(async () => {
-  const ua = getRequestHeader('user-agent') || ''
-  const platform = detectPlatform(ua)
   const release = await fetchLatestRelease()
 
   setResponseHeader(
@@ -39,9 +36,8 @@ const loadHomeData = createServerFn({ method: 'GET' }).handler(async () => {
   }
 
   return {
-    platform,
     release,
-    downloadUrl: release ? primaryDownloadUrl(release, platform) : null,
+    downloadUrl: release?.assets.mac ?? null,
     latestRelease,
   }
 })
@@ -50,7 +46,7 @@ export const Route = createFileRoute('/')({
   loader: () => loadHomeData(),
   head: ({ loaderData }) => ({
     meta: seo({
-      title: 'Mdow: A Quiet Markdown Reader for Mac, Windows & Linux',
+      title: 'Mdow: A Quiet Markdown Reader for Mac',
       description:
         'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
     }),
@@ -64,10 +60,9 @@ export const Route = createFileRoute('/')({
           name: 'Mdow',
           url: SITE_URL,
           image: absoluteUrl('/og-image.png'),
-          description:
-            'A cross-platform markdown reader with local AI chat through OpenCode and ACP.',
+          description: 'A native Mac markdown reader with local AI chat through OpenCode and ACP.',
           applicationCategory: 'UtilitiesApplication',
-          operatingSystem: 'macOS, Windows, Linux',
+          operatingSystem: 'macOS, Linux',
           softwareVersion: loaderData?.release?.version,
           downloadUrl: absoluteUrl('/download'),
           isAccessibleForFree: true,
@@ -99,21 +94,16 @@ export const Route = createFileRoute('/')({
 })
 
 function HomePage() {
-  const { platform, release, downloadUrl, latestRelease } = Route.useLoaderData()
+  const { release, downloadUrl, latestRelease } = Route.useLoaderData()
 
   return (
     <>
-      <LandingHero
-        platform={platform}
-        release={release}
-        downloadUrl={downloadUrl}
-        latest={latestRelease}
-      />
+      <LandingHero release={release} downloadUrl={downloadUrl} latest={latestRelease} />
       <LandingFeatures />
       <LandingReaderSection />
       {latestRelease && <LandingLatestRelease release={latestRelease} />}
-      <LandingCta platform={platform} downloadUrl={downloadUrl} />
-      <DownloadBar platform={platform} release={release} downloadUrl={downloadUrl} />
+      <LandingCta downloadUrl={downloadUrl} />
+      <DownloadBar release={release} downloadUrl={downloadUrl} />
     </>
   )
 }

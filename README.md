@@ -21,54 +21,40 @@ Mdow is a fast markdown viewer for macOS, Windows, and Linux. Open files, browse
 
 Download the latest release from the [Releases](https://github.com/ZainW/mdow/releases) page.
 
-| Platform          | Format                           |
-| ----------------- | -------------------------------- |
-| macOS             | `Mdow-<version>.zip`             |
-| Linux Native beta | `MdowNative-linux-beta.AppImage` |
-| Windows           | `.exe` (NSIS installer)          |
-| Linux             | `.AppImage`                      |
+| Platform | Format                 |
+| -------- | ---------------------- |
+| macOS    | `Mdow-<version>.zip`   |
 
 On macOS, Mdow is a native app built in Swift on AppKit and TextKit, for Apple Silicon Macs on
-macOS 15 or newer (`apps/macos`). It updates itself. Windows and Linux get the Electron app.
+macOS 15 or newer (`apps/macos`). It updates itself.
 
-Mdow Native is a GPU-rendered beta for x64 Linux, built with React on [gpuix](https://gpuix.dev)
-and Bun. The Electron app remains the recommended stable build.
+Mdow for Linux (`apps/native-linux`) is a Rust app on GTK 4 and libadwaita. Its AppImage and
+Flatpak are published as pre-releases (`linux-latest`).
 
 ## Development
 
-This is a pnpm monorepo. The Electron app lives in `apps/desktop`, the website in `apps/web`, Mdow Native in `apps/native`, and the Mac app in `apps/macos` (a SwiftPM package).
+This is a pnpm monorepo. The website lives in `apps/web`, the Mac app in `apps/macos` (a SwiftPM
+package), and the Linux app in `apps/native-linux` (a Cargo crate).
 
 ```sh
 # Install dependencies
 pnpm install
 
-# Start in development mode
+# Website: dev server, type check, lint, format, tests
 pnpm run dev
-
-# Type check
 pnpm run typecheck
-
-# Lint
 pnpm run lint
-
-# Format
 pnpm run fmt
-
-# Run tests
 pnpm run test
 
-# Build the desktop app for distribution
-pnpm run --filter desktop build:dist
+# Mac app: run, test
+pnpm run dev:mac
+pnpm run test:mac
+
+# Linux app: run, test
+pnpm run dev:linux
+pnpm run test:linux
 ```
-
-## Stack
-
-- Electron + electron-vite
-- React 19 + Zustand + TanStack Query
-- Tailwind CSS v4
-- comark for markdown rendering
-- Shiki for syntax highlighting
-- Mermaid for diagrams
 
 ## License
 

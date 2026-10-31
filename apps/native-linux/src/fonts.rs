@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 macro_rules! font {
     ($name:literal) => {
-        ($name, include_bytes!(concat!("../../native/assets/fonts/", $name)) as &[u8])
+        ($name, include_bytes!(concat!("../assets/fonts/", $name)) as &[u8])
     };
 }
 

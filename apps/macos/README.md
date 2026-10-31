@@ -84,9 +84,8 @@ and the menu item disabled.
 drops its XPC services (the app isn't sandboxed) and signs it inside out. With `SIGN_IDENTITY`
 set it signs with the hardened runtime and a secure timestamp, ready for notarization.
 
-It ships with every Mdow release, with the same version, as Mdow on macOS (the Electron app is
-released for Windows and Linux only): `bundle.sh` reads it from
-`apps/desktop/package.json` (`VERSION=…` overrides it), and the build number is the commit count.
+It ships with every Mdow release: `bundle.sh` reads the version from the root `package.json`
+(`VERSION=…` overrides it), and the build number is the commit count.
 Cut releases the usual way (bump the version, tag `vX.Y.Z`; see `.claude/skills/release`). The
 `mac-app` job in `.github/workflows/release.yml` then tests the app, signs it with the Developer
 ID (`CSC_LINK`, `CSC_KEY_PASSWORD`), notarizes and staples it (`APPLE_ID`,

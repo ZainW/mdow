@@ -47,7 +47,7 @@ Open a folder and browse its contents in a collapsible tree view. Click any Mark
 
 ## Command palette
 
-Press `Cmd+K` (or `Ctrl+K` on Windows/Linux) to open the command palette. Jump to files, open folders, toggle the sidebar, switch wide or split view, open settings, and more without leaving the keyboard. See the [shortcuts page](/docs/shortcuts) for the full list.
+Press `Cmd+K` (or `Ctrl+K` on Linux) to open the command palette. Jump to files, open folders, toggle the sidebar, switch wide or split view, open settings, and more without leaving the keyboard. See the [shortcuts page](/docs/shortcuts) for the full list.
 
 ## Find in document
 

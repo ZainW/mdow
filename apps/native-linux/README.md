@@ -5,8 +5,7 @@ JavaScript runtime or cross-platform UI layer. Documents are drawn with real GTK
 Pango text, and the app follows libadwaita conventions (CSD window, `AdwTabView` tabs,
 `GtkFileDialog` via portals, `GFileMonitor` live reload, D-Bus single instance).
 
-It is designed to look and behave like the Electron app in `apps/desktop`, using the same
-design tokens (converted from OKLCH), fonts, layout and shortcuts.
+It shares Mdow's design tokens (converted from OKLCH), fonts, layout and shortcuts.
 
 ## Requirements
 
@@ -17,7 +16,7 @@ design tokens (converted from OKLCH), fonts, layout and shortcuts.
   - Debian 13 / Ubuntu 24.04+: `apt install libgtk-4-dev libadwaita-1-dev`
 
 The fonts (Inter, Charter, Geist Mono, JetBrains Mono) are compiled in from
-`apps/native/assets/fonts` and registered for the app's process only.
+`assets/fonts` and registered for the app's process only.
 
 ## Run, test, install
 
@@ -72,7 +71,7 @@ distro. To build either locally with Docker, use `packaging/docker-appimage.sh` 
 
 ## Not included
 
-These Electron features are not in the Linux build:
+These features of the other Mdow apps are not in the Linux build:
 
 - The OpenCode companion.
 - The auto-updater (on Linux, updates come from your package manager).

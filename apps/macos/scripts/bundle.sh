@@ -2,12 +2,12 @@
 # Builds "Mdow.app" into dist/. Signs ad hoc unless SIGN_IDENTITY is set.
 #   CONFIGURATION=debug scripts/bundle.sh    # faster, unoptimised build
 #   SIGN_IDENTITY="Developer ID Application: …" scripts/bundle.sh
-# The version is Mdow's, from apps/desktop/package.json (VERSION=… overrides it).
+# The version is Mdow's, from the root package.json (VERSION=… overrides it).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 CONFIGURATION="${CONFIGURATION:-release}"
-VERSION="${VERSION:-$(sed -nE 's/^  "version": "([^"]+)".*/\1/p' ../desktop/package.json)}"
+VERSION="${VERSION:-$(sed -nE 's/^  "version": "([^"]+)".*/\1/p' ../../package.json)}"
 BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 APP="dist/Mdow.app"
 SPARKLE=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"

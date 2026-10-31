@@ -1,5 +1,5 @@
 //! Preferences and session state, persisted as JSON in the XDG config directory.
-//! Field names and values follow the desktop app's store (`apps/desktop/src/main/store.ts`).
+//! Field names and values follow the former Electron app's store.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

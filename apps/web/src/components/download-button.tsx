@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { btnPrimary, btnSecondary } from '~/lib/button-styles'
 import type { PlatformId } from '~/lib/download-links'
-import { AppleIcon, LinuxIcon, WindowsIcon } from './icons'
+import { AppleIcon, LinuxIcon } from './icons'
 
 interface DownloadButtonProps {
   href: string
@@ -20,7 +20,6 @@ export function PlatformIcon({
   className?: string
 }) {
   if (platform === 'mac') return <AppleIcon className={className} />
-  if (platform === 'windows') return <WindowsIcon className={className} />
   return <LinuxIcon className={className} />
 }
 

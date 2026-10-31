@@ -375,7 +375,7 @@ pub fn render_mermaid(
 
 /// The app logo, rasterised for the welcome screen.
 pub fn logo(size: f64, scale: i32) -> Option<gdk::Paintable> {
-    const LOGO: &[u8] = include_bytes!("../../native/assets/icons/mdow-logo.svg");
+    const LOGO: &[u8] = include_bytes!("../assets/icons/mdow-logo.svg");
     let scale = scale.max(1) as f64;
     let raster = rasterize_svg(LOGO, scale * size / 1024.0, None).ok()?;
     let paintable = raster.into_paintable();
@@ -383,7 +383,7 @@ pub fn logo(size: f64, scale: i32) -> Option<gdk::Paintable> {
     Some(ScaledTexture::new(texture, size, size).upcast())
 }
 
-pub const LOGO_SVG: &[u8] = include_bytes!("../../native/assets/icons/mdow-logo.svg");
+pub const LOGO_SVG: &[u8] = include_bytes!("../assets/icons/mdow-logo.svg");
 
 #[cfg(test)]
 mod tests {

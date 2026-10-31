@@ -19,7 +19,7 @@ export const Route = createRootRoute({
       { name: 'theme-color', content: '#faf8f5', media: '(prefers-color-scheme: light)' },
       { name: 'theme-color', content: '#1b1a19', media: '(prefers-color-scheme: dark)' },
       ...seo({
-        title: 'Mdow: A Quiet Markdown Reader for Mac, Windows & Linux',
+        title: 'Mdow: A Quiet Markdown Reader for Mac',
         description:
           'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
       }),

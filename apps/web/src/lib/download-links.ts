@@ -1,35 +1,10 @@
-import type { ReleaseInfo } from './github-releases'
+export type PlatformId = 'mac' | 'linux'
 
-export type PlatformId = 'mac' | 'windows' | 'linux'
-export const GPUI_LINUX_BETA_DOWNLOAD_URL =
-  'https://github.com/ZainW/mdow/releases/latest/download/MdowNative-linux-beta.AppImage'
+/** Mdow for Linux is published as a rolling pre-release, separate from the Mac releases. */
+export const LINUX_PREVIEW_URL = 'https://github.com/ZainW/mdow/releases/tag/linux-latest'
 
 export function detectPlatform(userAgent: string): PlatformId {
   if (userAgent.includes('Mac')) return 'mac'
-  if (userAgent.includes('Windows')) return 'windows'
   if (userAgent.includes('Linux')) return 'linux'
   return 'mac'
-}
-
-export function primaryDownloadUrl(release: ReleaseInfo, platform: PlatformId): string | null {
-  if (platform === 'mac') {
-    const { app, dmg, zip } = release.assets.mac
-    return app?.url ?? dmg[0]?.url ?? zip[0]?.url ?? null
-  }
-  if (platform === 'windows') return release.assets.windows.exe
-  return release.assets.linux.appImage
-}
-
-export function gpuiLinuxBetaDownloadUrl(release: ReleaseInfo): string {
-  return release.assets.linux.gpuiBeta?.url ?? GPUI_LINUX_BETA_DOWNLOAD_URL
-}
-
-export function platformLabel(platform: PlatformId): string {
-  if (platform === 'mac') return 'macOS'
-  if (platform === 'windows') return 'Windows'
-  return 'Linux'
-}
-
-export function downloadButtonLabel(platform: PlatformId): string {
-  return `Download for ${platformLabel(platform)}`
 }

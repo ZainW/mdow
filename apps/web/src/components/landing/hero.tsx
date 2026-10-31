@@ -3,18 +3,16 @@ import { DownloadButton } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
 import { IntroSection } from '~/components/landing/intro-section'
 import { btnPrimary, btnSecondary } from '~/lib/button-styles'
-import { downloadButtonLabel, type PlatformId } from '~/lib/download-links'
 import type { ReleaseInfo } from '~/lib/github-releases'
 import { AppWindow } from './app-window'
 
 interface LandingHeroProps {
-  platform: PlatformId
   release: ReleaseInfo | null
   downloadUrl: string | null
   latest: { version: string; anchor: string; headline: string } | null
 }
 
-export function LandingHero({ platform, release, downloadUrl, latest }: LandingHeroProps) {
+export function LandingHero({ release, downloadUrl, latest }: LandingHeroProps) {
   return (
     <section className="relative isolate overflow-hidden">
       <div
@@ -49,11 +47,11 @@ export function LandingHero({ platform, release, downloadUrl, latest }: LandingH
             {downloadUrl ? (
               <DownloadButton
                 href={downloadUrl}
-                platform={platform}
+                platform="mac"
                 size="lg"
                 className="w-full max-w-72 sm:w-auto"
               >
-                {downloadButtonLabel(platform)}
+                Download for macOS
               </DownloadButton>
             ) : (
               <Link to="/download" className={btnPrimary('lg', 'w-full max-w-72 sm:w-auto')}>
@@ -67,12 +65,7 @@ export function LandingHero({ platform, release, downloadUrl, latest }: LandingH
           <p className="mt-5 text-[13px] text-muted-foreground">
             Free and open source{release ? ` · v${release.version}` : ''} ·{' '}
             <Link to="/download" className="link-underline">
-              Also for{' '}
-              {platform === 'mac'
-                ? 'Windows and Linux'
-                : platform === 'windows'
-                  ? 'macOS and Linux'
-                  : 'macOS and Windows'}
+              Linux preview
             </Link>
           </p>
         </IntroSection>

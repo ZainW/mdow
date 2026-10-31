@@ -20,8 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path(os.environ.get("MDOW_FONT_CACHE", "/tmp/mdow-font-src"))
-GPUI_FONTS = ROOT / "apps/native/assets/fonts"
-DESKTOP_FONTS = ROOT / "apps/desktop/src/renderer/src/assets/fonts"
+GPUI_FONTS = ROOT / "apps/native-linux/assets/fonts"
 WEB_FONTS = ROOT / "apps/web/src/assets/fonts"
 LICENSE_DIR = GPUI_FONTS / "licenses"
 
@@ -173,17 +172,14 @@ def set_family(path: Path, family: str, subfamily: str) -> None:
     font.save(path)
 
 
-def write_outputs(ttf: Path, desktop_name: str | None, web_name: str | None) -> None:
-    if desktop_name:
-        to_woff2(ttf, DESKTOP_FONTS / desktop_name)
+def write_outputs(ttf: Path, web_name: str | None) -> None:
     if web_name:
         to_woff2(ttf, WEB_FONTS / web_name)
 
 
 def copy_license(src: Path, dest_name: str) -> None:
-    for directory in (LICENSE_DIR, DESKTOP_FONTS / "licenses"):
-        directory.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, directory / dest_name)
+    LICENSE_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, LICENSE_DIR / dest_name)
 
 
 def optimize_variable(
@@ -191,23 +187,19 @@ def optimize_variable(
     gpui_name: str,
     unicodes: str,
     gpui_weights: tuple[int, ...],
-    desktop_name: str | None = None,
     web_name: str | None = None,
     **axes: str,
 ) -> Path:
-    """Subset a variable font for desktop/web, and cut static GPUI instances from it.
+    """Subset a variable font for the web, and cut static instances from it for the Linux app.
 
-    Mdow Native bundles static instances only: CoreText recomputes glyph advances from outlines
-    for variable TrueType fonts each time GPUI sizes a font for a line, which made shaping new
-    text ~4x slower than with static files. `gpui_name` is the stem of the static files, written
-    as `<stem>-<weight>.ttf`.
+    `gpui_name` is the stem of the static files, written as `<stem>-<weight>.ttf`.
     """
     staged = CACHE / "staged" / f"{gpui_name}.ttf"
     staged.parent.mkdir(parents=True, exist_ok=True)
     instanced = staged.with_suffix(".instanced.ttf")
     instance(src, instanced, **axes)
     subset(instanced, staged, unicodes)
-    write_outputs(staged, desktop_name, web_name)
+    write_outputs(staged, web_name)
     for weight in gpui_weights:
         write_static_instance(staged, GPUI_FONTS / f"{gpui_name}-{weight}.ttf", weight)
     return staged
@@ -229,12 +221,11 @@ def optimize_static(
     family: str,
     subfamily: str,
     unicodes: str,
-    desktop_name: str | None = None,
 ) -> Path:
     dest = GPUI_FONTS / gpui_name
     subset(src, dest, unicodes)
     set_family(dest, family, subfamily)
-    write_outputs(dest, desktop_name, None)
+    write_outputs(dest, None)
     return dest
 
 
@@ -270,7 +261,6 @@ def main() -> int:
         "Inter",
         READER_UNICODES,
         (400, 500, 600, 700),
-        desktop_name="InterVariable.woff2",
         web_name="InterVariable.woff2",
         wght="400:700",
         opsz="16",
@@ -280,7 +270,6 @@ def main() -> int:
         "Inter-Italic",
         READER_UNICODES,
         (400, 500, 600, 700),
-        desktop_name="InterVariable-Italic.woff2",
         web_name="InterVariable-Italic.woff2",
         wght="400:700",
         opsz="16",
@@ -290,7 +279,6 @@ def main() -> int:
         "GeistMono",
         MONO_UNICODES,
         (400, 500, 700),
-        desktop_name="GeistMono-Variable.woff2",
         web_name="GeistMono-Variable.woff2",
         wght="400:700",
     )
@@ -299,21 +287,15 @@ def main() -> int:
         "GeistMono-Italic",
         MONO_UNICODES,
         (400, 700),
-        desktop_name="GeistMono-Italic-Variable.woff2",
         web_name="GeistMono-Italic-Variable.woff2",
         wght="400:700",
     )
 
-    for src_name, dest_name, subfamily, woff2 in (
-        ("Charis-Regular.ttf", "Charter-Regular.ttf", "Regular", "Charter-Regular.woff2"),
-        ("Charis-Italic.ttf", "Charter-Italic.ttf", "Italic", "Charter-Italic.woff2"),
-        ("Charis-Bold.ttf", "Charter-Bold.ttf", "Bold", "Charter-Bold.woff2"),
-        (
-            "Charis-BoldItalic.ttf",
-            "Charter-BoldItalic.ttf",
-            "Bold Italic",
-            "Charter-BoldItalic.woff2",
-        ),
+    for src_name, dest_name, subfamily in (
+        ("Charis-Regular.ttf", "Charter-Regular.ttf", "Regular"),
+        ("Charis-Italic.ttf", "Charter-Italic.ttf", "Italic"),
+        ("Charis-Bold.ttf", "Charter-Bold.ttf", "Bold"),
+        ("Charis-BoldItalic.ttf", "Charter-BoldItalic.ttf", "Bold Italic"),
     ):
         optimize_static(
             find_file(charis, src_name),
@@ -321,7 +303,6 @@ def main() -> int:
             "Charter",
             subfamily,
             READER_UNICODES,
-            desktop_name=woff2,
         )
 
     optimize_variable(
@@ -329,7 +310,6 @@ def main() -> int:
         "JetBrainsMono",
         MONO_UNICODES,
         (400, 500, 700),
-        desktop_name="JetBrainsMono-Variable.woff2",
         wght="400:700",
     )
     optimize_variable(
@@ -337,7 +317,6 @@ def main() -> int:
         "JetBrainsMono-Italic",
         MONO_UNICODES,
         (400, 700),
-        desktop_name="JetBrainsMono-Italic-Variable.woff2",
         wght="400:700",
     )
 
@@ -353,7 +332,6 @@ def main() -> int:
 
     print("wrote optimized fonts to")
     print(f"  {GPUI_FONTS}")
-    print(f"  {DESKTOP_FONTS}")
     print(f"  {WEB_FONTS}")
     return 0
 

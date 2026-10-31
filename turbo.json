@@ -15,7 +15,6 @@
         "tsconfig*.json",
         "vite.config.*",
         "wrangler.jsonc",
-        "electron.vite.config.*",
         "package.json"
       ],
       "outputs": ["out/**", ".output/**", "dist/**"]
