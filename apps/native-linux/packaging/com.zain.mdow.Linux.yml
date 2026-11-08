@@ -10,7 +10,7 @@ sdk-extensions:
 command: mdow-linux
 finish-args:
   # Follow the Omarchy theme where there is one.
-  - --filesystem=xdg-state/omarchy:ro
+  - --filesystem=~/.local/state/omarchy:ro
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
