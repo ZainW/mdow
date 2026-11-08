@@ -3,9 +3,8 @@
 This is a working plan, not a promise. It comes from a review of `apps/macos` in October 2026,
 after the Swift app replaced Electron in v1.16.1. Paths are relative to `apps/macos/Sources/`.
 
-The base is solid: the reader renders natively, there are good debugging hooks (`MDOW_ACTIONS`,
-snapshots, benchmarks), and the OpenCode companion is something the Linux app doesn't have. What's
-left falls into three groups: rough edges, how well the app fits into macOS, and how it handles
+The base is solid: the reader renders natively, and there are good debugging hooks (`MDOW_ACTIONS`,
+snapshots, benchmarks). What's left falls into three groups: rough edges, how well the app fits into macOS, and how it handles
 real-world READMEs and large folders.
 
 ## 1.17: Polish

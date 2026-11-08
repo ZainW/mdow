@@ -9,6 +9,8 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 command: mdow-linux
 finish-args:
+  # Follow the Omarchy theme where there is one.
+  - --filesystem=~/.local/state/omarchy:ro
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11

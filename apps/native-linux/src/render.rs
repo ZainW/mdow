@@ -1,9 +1,10 @@
 //! Blocks → native GTK widgets: selectable Pango labels for text, real check buttons for task
-//! lists, grids for tables and pictures for images and diagrams. The look follows the desktop's
+//! lists, grids for tables and pictures for images and diagrams. The look follows Mdow's
 //! `markdown.css`.
 
 use crate::doc::{
     Align, Block, CodeChunk, Footnote, Image, ImageSrc, Inline, Item, List, Part, gaps,
+    has_inline_math,
 };
 use crate::highlight::{Span, Tok};
 use crate::media;
@@ -19,6 +20,7 @@ pub struct Style {
     pub fs: f64,
     pub code_family: &'static str,
     pub scale_factor: i32,
+    pub line_height: f64,
 }
 
 /// A label's Pango markup and the exact plain text it displays (for find).
@@ -99,7 +101,21 @@ fn wrap(m: &mut Markup, open: &str, close: &str, children: &[Inline], style: &St
     m.tag(close);
 }
 
-fn markup_of(inlines: &[Inline], style: &Style) -> Markup {
+/// Pango's `<a>` works in labels only; elsewhere, links are plain underlined text.
+pub fn plain_links(markup: &str) -> String {
+    let mut out = String::with_capacity(markup.len());
+    let mut rest = markup;
+    while let Some(open) = rest.find("<a ") {
+        out.push_str(&rest[..open]);
+        out.push_str("<span underline=\"single\">");
+        rest = &rest[open..];
+        rest = rest.find('>').map_or("", |end| &rest[end + 1..]);
+    }
+    out.push_str(rest);
+    out.replace("</a>", "</span>")
+}
+
+pub fn markup_of(inlines: &[Inline], style: &Style) -> Markup {
     let mut m = Markup::default();
     inline_markup(inlines, style, &mut m);
     // Trailing hard breaks would leave an empty last line.
@@ -213,6 +229,7 @@ impl<'a> Builder<'a> {
                 };
                 self.text_label(&markup, &[&class]).upcast()
             }
+            Block::Paragraph(inlines) if has_inline_math(inlines) => self.math_paragraph(inlines),
             Block::Paragraph(inlines) => {
                 let m = markup_of(inlines, self.style);
                 self.text_label(&m.markup, &["md-p"]).upcast()
@@ -228,6 +245,12 @@ impl<'a> Builder<'a> {
                 let b = self.children(blocks, ChildMode::Normal);
                 b.add_css_class("md-alert");
                 b.add_css_class(kind.css());
+                // The colour alone wouldn't say what kind of alert this is.
+                let title = gtk::Label::new(Some(kind.title()));
+                title.add_css_class("md-alert-title");
+                title.set_xalign(0.0);
+                title.set_margin_bottom(4);
+                b.prepend(&title);
                 b.upcast()
             }
             Block::List(list) => self.list(list),
@@ -238,12 +261,7 @@ impl<'a> Builder<'a> {
                 sep.add_css_class("md-hr");
                 sep.upcast()
             }
-            Block::Math(tex) => {
-                let label = self.text_label(&markup_escape_text(tex), &["md-math"]);
-                label.set_xalign(0.5);
-                label.set_justify(gtk::Justification::Center);
-                label.upcast()
-            }
+            Block::Math(tex) => self.math_block(tex),
             Block::Footnotes(notes) => self.footnotes(notes),
         }
     }
@@ -317,6 +335,7 @@ impl<'a> Builder<'a> {
                 tools.append(&badge);
             }
             let copy = gtk::Button::from_icon_name("edit-copy-symbolic");
+            crate::set_accessible_name(&copy, "Copy code");
             copy.add_css_class("md-copy");
             copy.set_tooltip_text(Some("Copy code"));
             let source = chunk.source.clone();
@@ -355,9 +374,119 @@ impl<'a> Builder<'a> {
         overlay.upcast()
     }
 
+    /// A paragraph with formulas in it. Labels can't hold images, so this is a read-only text
+    /// view, which find doesn't search.
+    fn math_paragraph(&mut self, inlines: &[Inline]) -> gtk::Widget {
+        let view = gtk::TextView::new();
+        view.set_editable(false);
+        view.set_cursor_visible(false);
+        view.set_wrap_mode(gtk::WrapMode::WordChar);
+        view.set_hexpand(true);
+        view.add_css_class("md-p");
+        view.add_css_class("md-math-text");
+        let line = self.style.fs * self.style.line_height;
+        view.set_pixels_inside_wrap(px((line - self.style.fs * 1.2).max(0.0)));
+        let buffer = view.buffer();
+        let color = self.style.palette.foreground;
+        let mut run: Vec<Inline> = Vec::new();
+        let flush = |run: &mut Vec<Inline>, buffer: &gtk::TextBuffer, style: &Style| {
+            if !run.is_empty() {
+                let markup = plain_links(&markup_of(run, style).markup);
+                buffer.insert_markup(&mut buffer.end_iter(), &markup);
+                run.clear();
+            }
+        };
+        for inline in inlines {
+            match inline {
+                Inline::Math(tex) => {
+                    flush(&mut run, &buffer, self.style);
+                    let typeset = crate::media::math_paintable(
+                        tex,
+                        false,
+                        self.style.fs,
+                        color,
+                        self.style.scale_factor,
+                    );
+                    match typeset {
+                        Ok(paintable) => {
+                            buffer.insert_paintable(&mut buffer.end_iter(), &paintable);
+                        }
+                        Err(_) => {
+                            run.push(inline.clone());
+                            flush(&mut run, &buffer, self.style);
+                        }
+                    }
+                }
+                Inline::Link { url, children } => {
+                    flush(&mut run, &buffer, self.style);
+                    let start = buffer.create_mark(None, &buffer.end_iter(), true);
+                    let markup = markup_of(children, self.style).markup;
+                    buffer.insert_markup(&mut buffer.end_iter(), &plain_links(&markup));
+                    let tag = gtk::TextTag::new(Some(&format!("link:{url}")));
+                    tag.set_foreground(Some(&self.style.palette.primary.hex()));
+                    tag.set_underline(pango::Underline::Single);
+                    if buffer.tag_table().add(&tag) {
+                        let begin = buffer.iter_at_mark(&start);
+                        buffer.apply_tag(&tag, &begin, &buffer.end_iter());
+                    }
+                    buffer.delete_mark(&start);
+                }
+                other => run.push(other.clone()),
+            }
+        }
+        flush(&mut run, &buffer, self.style);
+        let click = gtk::GestureClick::new();
+        let host = self.host.clone();
+        click.connect_released(move |gesture, _, x, y| {
+            let Some(view) = gesture.widget().and_downcast::<gtk::TextView>() else { return };
+            let (bx, by) =
+                view.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+            let Some(iter) = view.iter_at_location(bx, by) else { return };
+            for tag in iter.tags() {
+                let name = tag.name().unwrap_or_default();
+                if let Some(url) = name.strip_prefix("link:") {
+                    host.activate_link(url);
+                    return;
+                }
+            }
+        });
+        view.add_controller(click);
+        view.upcast()
+    }
+
+    /// A formula on its own line, or its TeX if it doesn't parse.
+    fn math_block(&mut self, tex: &str) -> gtk::Widget {
+        let typeset = crate::media::math_paintable(
+            tex,
+            true,
+            self.style.fs * 1.1,
+            self.style.palette.foreground,
+            self.style.scale_factor,
+        );
+        match typeset {
+            Ok(paintable) => {
+                let picture = gtk::Picture::for_paintable(&paintable);
+                picture.set_size_request(paintable.intrinsic_width(), paintable.intrinsic_height());
+                picture.set_halign(gtk::Align::Center);
+                picture.set_tooltip_text(Some(tex));
+                picture.set_alternative_text(Some(tex));
+                gtk::ScrolledWindow::builder()
+                    .hscrollbar_policy(gtk::PolicyType::Automatic)
+                    .vscrollbar_policy(gtk::PolicyType::Never)
+                    .propagate_natural_height(true)
+                    .child(&picture)
+                    .build()
+                    .upcast()
+            }
+            Err(_) => {
+                let label = self.text_label(&markup_escape_text(tex), &["md-math"]);
+                label.upcast()
+            }
+        }
+    }
+
     fn mermaid(&mut self, code: std::sync::Arc<str>) -> gtk::Widget {
         let picture = gtk::Picture::new();
-        picture.set_can_shrink(false);
         picture.set_halign(gtk::Align::Center);
         let scroller = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Automatic)
@@ -378,7 +507,13 @@ impl<'a> Builder<'a> {
                 return;
             };
             match result {
-                Ok(paintable) => picture.set_paintable(Some(&paintable)),
+                Ok(paintable) => {
+                    picture.set_size_request(
+                        paintable.intrinsic_width(),
+                        paintable.intrinsic_height(),
+                    );
+                    picture.set_paintable(Some(&paintable));
+                }
                 Err(err) => {
                     let label = gtk::Label::new(Some(&format!(
                         "Mermaid diagram could not be rendered:\n{err}"
@@ -412,7 +547,7 @@ impl<'a> Builder<'a> {
                     check.set_can_focus(false);
                     check.set_valign(gtk::Align::Start);
                     // Centre the box on the first line of text.
-                    let line = fs * crate::theme::READER_LINE_HEIGHT;
+                    let line = fs * self.style.line_height;
                     check.set_margin_top(px((line - 16.0).max(0.0) / 2.0));
                     check.add_css_class("md-task");
                     check.set_margin_end(px(0.5 * fs));
@@ -717,6 +852,8 @@ pub fn marker_text(list: &List, index: usize) -> String {
 /// creates them.
 pub fn label_texts(block: &Block, style: &Style, out: &mut Vec<String>) {
     match block {
+        // Paragraphs with formulas are text views, which find doesn't search.
+        Block::Paragraph(inlines) if has_inline_math(inlines) => {}
         Block::Heading { inlines, .. } | Block::Paragraph(inlines) => {
             out.push(markup_of(inlines, style).text)
         }
@@ -746,7 +883,12 @@ pub fn label_texts(block: &Block, style: &Style, out: &mut Vec<String>) {
                 }
             }
         }
-        Block::Math(tex) => out.push(tex.clone()),
+        Block::Math(tex) => {
+            // Typeset formulas are pictures; only the ones showing their TeX are labels.
+            if !crate::media::math_parses(tex) {
+                out.push(tex.clone());
+            }
+        }
         Block::Footnotes(notes) => {
             for note in notes {
                 for b in &note.blocks {
@@ -836,10 +978,20 @@ mod tests {
     fn style() -> Style {
         Style {
             palette: Rc::new(Palette::light()),
+            line_height: 1.65,
             fs: 15.5,
             code_family: "Geist Mono",
             scale_factor: 1,
         }
+    }
+
+    #[test]
+    fn links_become_underlined_text() {
+        assert_eq!(
+            plain_links("a <a href=\"x\" title=\"y\">b</a> c"),
+            "a <span underline=\"single\">b</span> c"
+        );
+        assert_eq!(plain_links("plain"), "plain");
     }
 
     #[test]

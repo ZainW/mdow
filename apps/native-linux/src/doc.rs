@@ -25,6 +25,16 @@ pub enum AlertKind {
 }
 
 impl AlertKind {
+    pub fn title(self) -> &'static str {
+        match self {
+            AlertKind::Note => "Note",
+            AlertKind::Tip => "Tip",
+            AlertKind::Important => "Important",
+            AlertKind::Warning => "Warning",
+            AlertKind::Caution => "Caution",
+        }
+    }
+
     pub fn css(self) -> &'static str {
         match self {
             AlertKind::Note => "md-alert-note",
@@ -138,6 +148,69 @@ pub struct Footnote {
     pub blocks: Vec<Block>,
 }
 
+fn collect_inline_links(inlines: &[Inline], out: &mut Vec<(String, String)>) {
+    for inline in inlines {
+        match inline {
+            Inline::Link { url, children } => {
+                if !out.iter().any(|(known, _)| known == url) {
+                    out.push((url.clone(), inline_text(children)));
+                }
+            }
+            Inline::Strong(children)
+            | Inline::Emph(children)
+            | Inline::Strike(children)
+            | Inline::Underline(children)
+            | Inline::Mark(children)
+            | Inline::Sup(children)
+            | Inline::Sub(children) => collect_inline_links(children, out),
+            _ => {}
+        }
+    }
+}
+
+fn collect_links(blocks: &[Block], out: &mut Vec<(String, String)>) {
+    for block in blocks {
+        match block {
+            Block::Heading { inlines, .. } | Block::Paragraph(inlines) => {
+                collect_inline_links(inlines, out);
+            }
+            Block::Quote(blocks) | Block::Alert(_, blocks) => collect_links(blocks, out),
+            Block::List(list) => {
+                for item in &list.items {
+                    collect_links(&item.blocks, out);
+                }
+            }
+            Block::Table(table) => {
+                for cell in table.head.iter().chain(table.rows.iter().flatten()) {
+                    collect_inline_links(cell, out);
+                }
+            }
+            Block::Footnotes(notes) => {
+                for note in notes {
+                    collect_links(&note.blocks, out);
+                }
+            }
+            Block::Code(_)
+            | Block::Mermaid(_)
+            | Block::Images(_)
+            | Block::Rule
+            | Block::Math(_) => {}
+        }
+    }
+}
+
+/// Every link in a document as `(url, text)`, in reading order, so the keyboard can reach them.
+pub fn links(doc: &Doc) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    collect_links(&doc.blocks, &mut out);
+    out
+}
+
+/// Whether a paragraph has a formula that needs typesetting among its text.
+pub fn has_inline_math(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|inline| matches!(inline, Inline::Math(_)))
+}
+
 #[derive(Clone, Debug)]
 pub enum Block {
     Heading { level: u8, inlines: Vec<Inline>, slug: String },
@@ -219,7 +292,7 @@ pub fn gaps(blocks: &[Block]) -> Vec<f64> {
     out
 }
 
-/// The desktop's heading slug: lowercase, ASCII letters, digits, spaces and dashes only.
+/// A heading's slug, as GitHub makes them: lowercase, ASCII letters, digits, spaces and dashes only.
 pub fn slugify(text: &str) -> String {
     let kept: String = text
         .to_lowercase()
@@ -632,7 +705,8 @@ fn convert_inlines<'a>(node: Node<'a>) -> Vec<Inline> {
         };
         match &data.value {
             NodeValue::Text(text) => push(&mut stack, Inline::Text(text.to_string())),
-            NodeValue::SoftBreak | NodeValue::LineBreak => push(&mut stack, Inline::Break),
+            NodeValue::SoftBreak => push(&mut stack, Inline::Text(" ".to_string())),
+            NodeValue::LineBreak => push(&mut stack, Inline::Break),
             NodeValue::Code(code) => push(&mut stack, Inline::Code(code.literal.clone())),
             NodeValue::Emph => push(&mut stack, Inline::Emph(convert_inlines(child))),
             NodeValue::Strong => push(&mut stack, Inline::Strong(convert_inlines(child))),
@@ -818,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn slugs_match_the_desktop() {
+    fn slugs_match_github() {
         assert_eq!(slugify("Hello, World!"), "hello-world");
         assert_eq!(slugify("  Getting   Started  "), "getting-started");
         assert_eq!(slugify("API v2.0 — Notes"), "api-v20-notes");
@@ -851,10 +925,23 @@ mod tests {
     }
 
     #[test]
-    fn soft_breaks_are_line_breaks() {
-        let doc = parse("one\ntwo\n");
-        let Block::Paragraph(inlines) = &doc.blocks[0] else { panic!() };
-        assert!(inlines.contains(&Inline::Break));
+    fn soft_breaks_are_spaces_and_hard_breaks_are_not() {
+        let doc = parse("one\ntwo\n\nthree  \nfour\n");
+        let Block::Paragraph(soft) = &doc.blocks[0] else { panic!() };
+        assert!(!soft.contains(&Inline::Break));
+        let Block::Paragraph(hard) = &doc.blocks[1] else { panic!() };
+        assert!(hard.contains(&Inline::Break));
+    }
+
+    #[test]
+    fn links_are_collected_once_in_reading_order() {
+        let doc = parse(
+            "[one](a.md)\n\n- **[two](b.md)**\n\n| [three](c.md) |\n|---|\n| [one again](a.md) |\n",
+        );
+        let found: Vec<(String, String)> = links(&doc);
+        let urls: Vec<&str> = found.iter().map(|(url, _)| url.as_str()).collect();
+        assert_eq!(urls, ["a.md", "b.md", "c.md"]);
+        assert_eq!(found[1].1, "two");
     }
 
     #[test]

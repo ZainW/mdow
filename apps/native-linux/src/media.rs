@@ -3,7 +3,7 @@
 //! scale, so diagrams stay crisp on HiDPI screens.
 
 use crate::doc::ImageSrc;
-use crate::theme::Palette;
+use crate::theme::{Palette, Rgba};
 use gtk::subclass::prelude::*;
 use gtk::{gdk, glib, graphene, gsk, prelude::*};
 use resvg::{tiny_skia, usvg};
@@ -300,7 +300,7 @@ pub fn load_image(
     }
 }
 
-/// Mermaid colours from the Mdow palette, as the desktop maps them onto Pele's variables: nodes
+/// Mermaid colours from the palette: nodes
 /// on the muted surface of code blocks and tables, lines in muted ink, charts in the chart series.
 fn mermaid_theme(p: &Palette) -> mermaid_rs_renderer::Theme {
     let mut t = mermaid_rs_renderer::Theme::modern();
@@ -349,6 +349,109 @@ fn mermaid_theme(p: &Palette) -> mermaid_rs_renderer::Theme {
     t
 }
 
+/// Typeset TeX to SVG with RaTeX, in `color` at `size` px per em.
+fn math_svg(tex: &str, display: bool, size: f64, color: Rgba) -> Result<String, String> {
+    let nodes = ratex_parser::parser::parse(tex).map_err(|e| e.to_string())?;
+    let options = ratex_layout::LayoutOptions::default()
+        .with_style(if display {
+            ratex_types::math_style::MathStyle::Display
+        } else {
+            ratex_types::math_style::MathStyle::Text
+        })
+        .with_color(ratex_types::color::Color {
+            r: color.r as f32,
+            g: color.g as f32,
+            b: color.b as f32,
+            a: 1.0,
+        });
+    let layout = ratex_layout::layout(&nodes, &options);
+    let list = ratex_layout::to_display_list(&layout);
+    let svg_options = ratex_svg::SvgOptions {
+        font_size: size,
+        padding: 0.0,
+        stroke_width: (size / 26.0).max(0.5),
+        embed_glyphs: true,
+        font_dir: String::new(),
+    };
+    Ok(ratex_svg::render_to_svg(&list, &svg_options))
+}
+
+/// Whether a formula can be typeset, or has to show its TeX.
+pub fn math_parses(tex: &str) -> bool {
+    ratex_parser::parser::parse(tex).is_ok()
+}
+
+/// A formula as a paintable, typeset on the spot since formulas take well under a frame. Cached,
+/// because rows are rebuilt as they scroll back into view.
+pub fn math_paintable(
+    tex: &str,
+    display: bool,
+    size: f64,
+    color: Rgba,
+    scale: i32,
+) -> Result<gdk::Paintable, String> {
+    thread_local! {
+        static MATH: RefCell<HashMap<String, gdk::Paintable>> = RefCell::new(HashMap::new());
+    }
+    let key = format!("{tex}\0{display}\0{size:.2}\0{}\0{scale}", color.hex());
+    if let Some(paintable) = MATH.with_borrow(|cache| cache.get(&key).cloned()) {
+        return Ok(paintable);
+    }
+    let svg = math_svg(tex, display, size, color)?;
+    let raster = rasterize_svg(svg.as_bytes(), scale.max(1) as f64, None)?;
+    let paintable = raster.into_paintable();
+    MATH.with_borrow_mut(|cache| {
+        if cache.len() >= CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(key, paintable.clone());
+    });
+    Ok(paintable)
+}
+
+/// A formula or diagram for printing: premultiplied BGRA, with its size in logical pixels.
+pub struct PrintImage {
+    pub pixels: Vec<u8>,
+    pub stride: i32,
+    pub width: i32,
+    pub height: i32,
+    pub logical_width: f64,
+    pub logical_height: f64,
+}
+
+fn print_image(raster: Raster) -> PrintImage {
+    let stride = raster.width as i32 * 4;
+    let mut pixels = raster.pixels;
+    // tiny-skia gives premultiplied RGBA; cairo's ARGB32 is BGRA in memory on little-endian.
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+    }
+    PrintImage {
+        pixels,
+        stride,
+        width: raster.width as i32,
+        height: raster.height as i32,
+        logical_width: raster.logical_width,
+        logical_height: raster.logical_height,
+    }
+}
+
+pub fn math_for_print(tex: &str, size: f64, color: Rgba) -> Option<PrintImage> {
+    let svg = math_svg(tex, true, size, color).ok()?;
+    rasterize_svg(svg.as_bytes(), 4.0, None).ok().map(print_image)
+}
+
+pub fn mermaid_for_print(code: &str, palette: &Palette) -> Option<PrintImage> {
+    let options = mermaid_rs_renderer::RenderOptions {
+        theme: mermaid_theme(palette),
+        layout: mermaid_rs_renderer::LayoutConfig::default(),
+    };
+    let svg = std::panic::catch_unwind(|| mermaid_rs_renderer::render_with_options(code, options))
+        .ok()?
+        .ok()?;
+    rasterize_svg(svg.as_bytes(), 3.0, None).ok().map(print_image)
+}
+
 pub fn render_mermaid(
     code: Arc<str>,
     palette: &Palette,
@@ -358,7 +461,7 @@ pub fn render_mermaid(
     let scale = scale.max(1) as f64;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     code.hash(&mut hasher);
-    let key = format!("mermaid:{}:{scale}:{:x}", palette.dark, hasher.finish());
+    let key = format!("mermaid:{}:{scale}:{:x}", palette.cache_tag(), hasher.finish());
     let theme = mermaid_theme(palette);
     cached(key, Box::new(cb), move || {
         let options = mermaid_rs_renderer::RenderOptions {

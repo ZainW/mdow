@@ -315,7 +315,7 @@ pub fn display_dir(path: &Path) -> String {
     }
 }
 
-/// Shorten the middle of a long path, as the desktop's `truncatePathMiddle`.
+/// Shorten the middle of a long path.
 pub fn truncate_middle(text: &str, max: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     if chars.len() <= max {
@@ -328,23 +328,6 @@ pub fn truncate_middle(text: &str, max: usize) -> String {
     out.push('…');
     out.extend(&chars[chars.len() - tail..]);
     out
-}
-
-/// Breadcrumb segments: the folders above a file, from the open folder if it contains the file,
-/// otherwise the last three.
-pub fn breadcrumb_segments(file: &Path, root: Option<&Path>) -> Vec<(String, PathBuf)> {
-    let Some(parent) = file.parent() else { return Vec::new() };
-    let dirs: Vec<PathBuf> =
-        parent.ancestors().map(Path::to_path_buf).collect::<Vec<_>>().into_iter().rev().collect();
-    // `dirs` runs from `/` down to the parent; drop the bare root.
-    let dirs: Vec<PathBuf> = dirs.into_iter().filter(|d| d.file_name().is_some()).collect();
-    let mut start = dirs.len().saturating_sub(3);
-    if let Some(root_name) = root.and_then(|r| r.file_name())
-        && let Some(idx) = dirs.iter().rposition(|d| d.file_name() == Some(root_name))
-    {
-        start = idx;
-    }
-    dirs[start..].iter().map(|d| (display_name(d), d.clone())).collect()
 }
 
 /// The palette's file search: subsequence score with bonuses for runs, word starts and a
@@ -412,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_links_like_the_desktop() {
+    fn resolves_links() {
         let doc = Path::new("/docs/guide/intro.md");
         assert_eq!(resolve_link("#set-up", doc), LinkTarget::Anchor("set-up".into()));
         assert_eq!(
@@ -453,17 +436,6 @@ mod tests {
         let filtered = filter_tree(&scan.tree, &root, "page");
         assert_eq!(count_files(&filtered), 1);
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn breadcrumbs_anchor_at_the_open_folder() {
-        let file = Path::new("/home/me/notes/proj/docs/a.md");
-        let names = |root: Option<&Path>| -> Vec<String> {
-            breadcrumb_segments(file, root).into_iter().map(|s| s.0).collect()
-        };
-        assert_eq!(names(None), ["notes", "proj", "docs"]);
-        assert_eq!(names(Some(Path::new("/home/me/notes/proj"))), ["proj", "docs"]);
-        assert_eq!(names(Some(Path::new("/home/me"))), ["me", "notes", "proj", "docs"]);
     }
 
     #[test]

@@ -2,10 +2,37 @@
 
 Mdow, built natively for the Linux desktop: Rust on GTK 4 and libadwaita. There's no web view,
 JavaScript runtime or cross-platform UI layer. Documents are drawn with real GTK widgets and
-Pango text, and the app follows libadwaita conventions (CSD window, `AdwTabView` tabs,
-`GtkFileDialog` via portals, `GFileMonitor` live reload, D-Bus single instance).
+Pango text.
 
-It shares Mdow's design tokens (converted from OKLCH), fonts, layout and shortcuts.
+It has the same layout and features as [Mdow for Mac](../macos): tabs in the header, a flat
+sidebar, the document on a card, Quick Open and the OpenCode companion. Away from Omarchy it uses
+the Mac app's warm paper and neutral ink colours, with the desktop's window buttons.
+
+## On Omarchy
+
+On [Omarchy](https://omarchy.org) Mdow takes its look from the system, the way first-party apps
+do. Nothing needs setting up; it notices `~/.local/state/omarchy/current/theme`.
+
+- **Theme**: colours come from the theme's `colors.toml`, hover and selection from the `[controls]`
+  tokens in its `shell.toml`, and floating cards from `[menu]`, so any theme works, stock or
+  third-party. `omarchy theme set` recolours open windows at once, diagrams and code included.
+- **Shape**: corners follow Hyprland's `decoration:rounding`, with flat surfaces and no shadows.
+  There's no title bar or window buttons: Hyprland draws the frame, and Super+W closes the window.
+- **Contrast**: text that would fall below 4.5:1 on a theme's surfaces is nudged lighter or darker,
+  so low-contrast accents and comments stay readable. Colours that already pass aren't touched.
+- **Type**: the interface and (on a new install) code use the system font from `omarchy font set`,
+  picked up the next time Mdow starts. Documents stay in Charter unless Settings says otherwise.
+- **Helpers**: Open in Editor uses `omarchy default editor`, Share uses `omarchy share`, the moon
+  button in the sidebar opens the theme switcher, and Open Terminal Here uses your default terminal.
+- **Tiling**: Ctrl+N opens another window for Hyprland to tile. Turn off "Open documents in tabs"
+  in Settings to give every document its own window.
+- **Keyboard**: with no text field focused, a document takes the same motions as the terminal apps
+  around it: `j`/`k`, `d`/`u`, `gg`/`G`, `/`, `n`/`N`, `H`/`L` (back, forward), `[`/`]` (headings),
+  `gt`/`gT` (tabs), `o` (Quick Open), `y` (copy the code block in view), `e` (editor), `r`
+  (reload), `b` (sidebar), `q` (close tab) and `?` (shortcuts).
+
+Settings › Theme › Light or Dark switches to Mdow's own colours. `MDOW_OMARCHY=off` turns the whole
+integration off, and `MDOW_OMARCHY_THEME=<dir>` previews a theme directory without applying it.
 
 ## Requirements
 
@@ -37,22 +64,37 @@ the running window. To make Mdow the default markdown viewer:
 
 ## What's in it
 
-- **Reader**: GitHub-flavored markdown (comrak) with tables, task lists, alerts, footnotes,
-  frontmatter titles, and soft line breaks shown as on GitHub. The top level of a document is a
-  virtualized `GtkListView`, one row per block. Long code blocks and lists are split across rows,
-  so multi-megabyte files open instantly.
-- **Code**: syntect with bat's grammars, coloured with the desktop's GitHub light/dark palettes.
-  It runs off the main thread and shows a copy button on hover.
-- **Mermaid**: laid out by mermaid-rs-renderer in Rust, themed with the Mdow palette, and
-  rasterised by resvg at the display scale. No browser engine is involved.
+- **Reading column**: prose stops at about 70 characters a line in whatever font and size you
+  read in (80 or 90 with Settings › Reading width), while code, tables, diagrams and images may
+  use a wider column, since they don't wrap like prose. Full Width (Ctrl+Shift+L) lifts both caps.
+- **Reader**: GitHub-flavored markdown (comrak) with tables, task lists, alerts, footnotes and
+  frontmatter titles. The top level of a document is a virtualized `GtkListView`, one row per
+  block. Long code blocks and lists are split across rows, so multi-megabyte files open instantly.
+- **Code**: syntect with bat's grammars, coloured from the theme. It runs off the main thread and
+  shows a copy button on hover.
+- **Math**: `$…$`, `$$…$$` and ` ```math ` blocks are typeset by RaTeX and rasterised by resvg in
+  the text colour. Formulas that don't parse show their TeX.
+- **Mermaid**: laid out by mermaid-rs-renderer in Rust, themed with the palette, and rasterised by
+  resvg at the display scale. No browser engine is involved.
 - **HTML files**: converted to markdown (htmd) and rendered natively. Scripts and styles never
   run.
-- **Chrome**: tabs with drag-to-reorder and the desktop's context menu; a side-by-side split
-  view; a breadcrumb; a sidebar with Recents, Folder (with filter) and Outline (follows your
-  scroll position); find in document; command palette; settings; keyboard shortcuts; the
-  hold-Ctrl cheat sheet; and a zoom indicator.
-- **Behaviour**: live reload that keeps your place, session restore, drag and drop of files or
-  a folder anywhere in the window, and links to other documents opening in a new tab.
+- **Windows**:
+  - Tabs in the header (Ctrl+1–9, Ctrl+Tab, drag to reorder, and a context menu), several windows
+    (Ctrl+N), and a side-by-side split view (Ctrl+\\).
+  - Back and forward history per tab and pane (Ctrl+[ and Ctrl+]). Links and sidebar files open
+    in place; Ctrl+click a link for a new tab.
+  - A sidebar with the Outline (follows your scroll position), the Files in the folder (with a
+    filter) and Recents, with Settings and the theme at the bottom.
+  - Quick Open (Ctrl+K) for headings, links, files and commands, find in document, keyboard
+    shortcuts, the hold-Ctrl cheat sheet and a zoom indicator.
+  - The ⋯ menu (F10): Open in Editor, Show in Files, Open Terminal Here, Copy Path, Share, Export
+    as PDF and Print.
+  - The companion (Ctrl+Alt+0, or the speech-bubble button): chat with OpenCode about the document and
+    its folder. It runs a private `opencode serve` (OpenCode 2, found on PATH, the login shell's
+    PATH or the usual install folders) and shows every edit as a diff to accept or decline; shell
+    commands are declined automatically.
+- **Behaviour**: live reload that keeps your place, session restore, drag and drop of files or a
+  folder anywhere in the window, and a folder's README opening when nothing else is.
 
 ## Downloads and packaging
 
@@ -71,23 +113,33 @@ distro. To build either locally with Docker, use `packaging/docker-appimage.sh` 
 
 ## Not included
 
-These features of the other Mdow apps are not in the Linux build:
+These differ from Mdow for Mac:
 
-- The OpenCode companion.
-- The auto-updater (on Linux, updates come from your package manager).
-- KaTeX math typesetting: TeX source is shown in the code font instead.
+- Selection stays within one block, because each block is its own widget. Mac selects across the
+  whole document.
+- HTML files are converted and rendered natively rather than shown in a web view, so their own
+  styling isn't kept. WebKitGTK would be a large dependency for this.
+- Find doesn't search paragraphs that contain inline formulas, or typeset formulas.
+- Inline formulas sit slightly high, as GTK text views align images to the baseline, and they print
+  as TeX. Formulas on their own line print typeset.
+- There's no auto-updater: on Linux, updates come from your package manager.
+- Each window has one folder, rather than one per tab.
+- Services, Speech and Look Up are macOS features.
 
 ## Layout
 
 | File                                                               | What it does                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | `src/main.rs`                                                      | `AdwApplication`, single instance, file opening                       |
-| `src/window.rs`                                                    | main window, tabs, split view, actions and shortcuts, session         |
+| `src/window.rs`                                                    | windows, tabs, split view, history, actions and shortcuts, session    |
 | `src/reader.rs`                                                    | the virtualized reader, find, zoom indicator, outline tracking        |
 | `src/render.rs`                                                    | blocks → GTK widgets and Pango markup                                 |
 | `src/doc.rs`                                                       | markdown / HTML → block model                                         |
 | `src/sidebar.rs`, `src/welcome.rs`, `src/dialogs.rs`               | the rest of the UI                                                    |
-| `src/theme.rs`                                                     | design tokens and the generated stylesheet                            |
+| `src/theme.rs`                                                     | palettes, the generated stylesheet and its Omarchy layer              |
+| `src/omarchy.rs`                                                   | the Omarchy theme, Hyprland's rounding, watching and helpers          |
+| `src/print.rs`                                                     | printing and Export as PDF                                            |
+| `src/companion/`                                                   | OpenCode client, process, conversation state and the panel            |
 | `src/media.rs`, `src/highlight.rs`, `src/files.rs`, `src/prefs.rs` | images and diagrams, syntax highlighting, files and folders, settings |
 
 Settings and the session live in `~/.config/mdow-linux/state.json`.

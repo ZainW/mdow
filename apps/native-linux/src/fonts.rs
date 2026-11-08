@@ -1,4 +1,4 @@
-//! The desktop app's fonts (Inter, Charter, Geist Mono, JetBrains Mono), compiled into the binary
+//! Mdow's fonts (Inter, Charter, Geist Mono, JetBrains Mono), compiled into the binary
 //! and registered with fontconfig for this process only. Nothing is installed into the user's home.
 
 use std::ffi::{CString, c_char, c_int, c_void};

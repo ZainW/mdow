@@ -1,5 +1,4 @@
 //! Preferences and session state, persisted as JSON in the XDG config directory.
-//! Field names and values follow the former Electron app's store.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -16,8 +15,8 @@ pub enum ThemeMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ContentFont {
-    #[default]
     Inter,
+    #[default]
     Charter,
     SystemSans,
     Georgia,
@@ -55,10 +54,48 @@ pub enum ReadingWidth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum SidebarMode {
-    #[default]
     Recents,
     Folder,
+    #[default]
     Outline,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum LineSpacing {
+    Tight,
+    #[default]
+    Normal,
+    Relaxed,
+}
+
+impl LineSpacing {
+    pub const ALL: [LineSpacing; 3] =
+        [LineSpacing::Tight, LineSpacing::Normal, LineSpacing::Relaxed];
+    pub fn id(self) -> &'static str {
+        match self {
+            LineSpacing::Tight => "tight",
+            LineSpacing::Normal => "normal",
+            LineSpacing::Relaxed => "relaxed",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            LineSpacing::Tight => "Tight",
+            LineSpacing::Normal => "Normal",
+            LineSpacing::Relaxed => "Relaxed",
+        }
+    }
+    pub fn height(self) -> f64 {
+        match self {
+            LineSpacing::Tight => 1.45,
+            LineSpacing::Normal => 1.65,
+            LineSpacing::Relaxed => 1.85,
+        }
+    }
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.id() == id)
+    }
 }
 
 impl ThemeMode {
@@ -188,7 +225,17 @@ impl ReadingWidth {
             ReadingWidth::Wide => "Wide",
         }
     }
-    /// The reading column, side padding included (48rem / 56rem / 68rem on desktop).
+    /// The reading column, side padding included.
+    /// Characters per line of prose.
+    pub fn measure(self) -> f64 {
+        match self {
+            ReadingWidth::Standard => 70.0,
+            ReadingWidth::Comfortable => 80.0,
+            ReadingWidth::Wide => 90.0,
+        }
+    }
+
+    /// The column for code, tables, diagrams and images, side padding included.
     pub fn px(self) -> i32 {
         match self {
             ReadingWidth::Standard => 768,
@@ -203,7 +250,7 @@ impl ReadingWidth {
 
 impl SidebarMode {
     pub const ALL: [SidebarMode; 3] =
-        [SidebarMode::Recents, SidebarMode::Folder, SidebarMode::Outline];
+        [SidebarMode::Outline, SidebarMode::Folder, SidebarMode::Recents];
     pub fn id(self) -> &'static str {
         match self {
             SidebarMode::Recents => "recents",
@@ -214,7 +261,7 @@ impl SidebarMode {
     pub fn label(self) -> &'static str {
         match self {
             SidebarMode::Recents => "Recents",
-            SidebarMode::Folder => "Folder",
+            SidebarMode::Folder => "Files",
             SidebarMode::Outline => "Outline",
         }
     }
@@ -261,6 +308,11 @@ pub struct Prefs {
     pub reading_width: ReadingWidth,
     pub sidebar_mode: SidebarMode,
     pub sidebar_open: bool,
+    pub line_spacing: LineSpacing,
+    pub live_reload: bool,
+    pub open_in_tabs: bool,
+    /// The companion's model, `providerID/modelID`; `None` uses OpenCode's default.
+    pub companion_model: Option<String>,
 }
 
 impl Default for Prefs {
@@ -282,6 +334,10 @@ impl Default for Prefs {
             reading_width: ReadingWidth::default(),
             sidebar_mode: SidebarMode::default(),
             sidebar_open: true,
+            line_spacing: LineSpacing::default(),
+            live_reload: true,
+            open_in_tabs: true,
+            companion_model: None,
         }
     }
 }
@@ -327,7 +383,7 @@ impl Prefs {
         self.recents.retain(|p| p != path);
     }
 
-    /// The desktop's "Reset to defaults": appearance only, never the session.
+    /// "Reset to defaults": appearance only, never the session.
     pub fn reset_appearance(&mut self) {
         let d = Prefs::default();
         self.theme = d.theme;
@@ -335,6 +391,7 @@ impl Prefs {
         self.code_font = d.code_font;
         self.interface_scale = d.interface_scale;
         self.reading_width = d.reading_width;
+        self.line_spacing = d.line_spacing;
     }
 }
 
