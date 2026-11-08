@@ -676,7 +676,7 @@ impl Panel {
             icon.add_css_class("mdow-companion-tertiary");
             row.append(&icon);
             row.append(&label(&files::display_name(path), &[]));
-            let parent = path.parent().map(&relative).unwrap_or_default();
+            let parent = path.parent().map(relative).unwrap_or_default();
             let folder = ellipsized(
                 if root.as_deref() == path.parent() { "" } else { &parent },
                 pango::EllipsizeMode::Start,
