@@ -222,7 +222,10 @@ pub fn open_new_window(paths: Vec<PathBuf>) {
     let attach_key = key.clone();
     let app = rune::App::new(spec(init_window))
         .on_window(move |w| webview::attach(&attach_key, w))
-        .on_close(|s: &mut App, _tx| crate::windows::unregister(&s.key));
+        .on_close(|s: &mut App, _tx| {
+            s.companion.shutdown();
+            crate::windows::unregister(&s.key);
+        });
     let spec = rune::WindowSpec::from_app(key, app)
         .chrome(CHROME)
         .titlebar(Titlebar::new(theme::HEADER_HEIGHT));

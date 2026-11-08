@@ -134,10 +134,13 @@ pub fn run(
     }
     let mut child = command.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
+    // The output arrives on a channel rather than through `join`: a background process the
+    // shell started can hold the pipe open long after the shell is gone.
+    let (sent, output) = mpsc::channel();
+    std::thread::spawn(move || {
         let mut out = Vec::new();
         let _ = stdout.read_to_end(&mut out);
-        out
+        let _ = sent.send(out);
     });
     let deadline = Instant::now() + timeout;
     let status = loop {
@@ -145,14 +148,18 @@ pub fn run(
             Ok(Some(status)) => break Some(status),
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
             _ => {
+                // The child leads its own session (setsid), so this stops what it started too.
+                unsafe { kill(-(child.id() as i32), 9) };
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
             }
         }
     };
-    let out = reader.join().ok()?;
-    status.filter(|s| s.success()).map(|_| String::from_utf8_lossy(&out).into_owned())
+    let status = status.filter(|s| s.success())?;
+    let out = output.recv_timeout(Duration::from_millis(500)).ok()?;
+    let _ = status;
+    Some(String::from_utf8_lossy(&out).into_owned())
 }
 
 /// The running server's pid, for stopping it from a signal handler or at exit.

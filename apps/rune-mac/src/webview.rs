@@ -116,11 +116,12 @@ mod imp {
 
     thread_local! {
         static HOSTS: RefCell<HashMap<String, Retained<NSView>>> = RefCell::new(HashMap::new());
-        static WEBS: RefCell<HashMap<u64, Web>> = RefCell::new(HashMap::new());
+        /// By window and pane: pane ids are only unique within a window.
+        static WEBS: RefCell<HashMap<(String, u64), Web>> = RefCell::new(HashMap::new());
         /// Web views kept alive while they print.
         static PRINTING: RefCell<Vec<(Retained<WKWebView>, Retained<Delegate>)>> = const { RefCell::new(Vec::new()) };
         /// Find results by pane: true when the page has a match.
-        static FOUND: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::new());
+        static FOUND: RefCell<HashMap<(String, u64), bool>> = RefCell::new(HashMap::new());
     }
 
     const DARK_SCRIPT: &str = r#"(() => {
@@ -236,11 +237,12 @@ mod imp {
         let Some(host) = HOSTS.with_borrow(|h| h.get(window).cloned()) else { return };
         let frame = to_ns(&host, rect);
         WEBS.with_borrow_mut(|webs| {
-            let stale = webs.get(&pane).is_some_and(|w| w.path != path || w.window != window);
-            if stale && let Some(old) = webs.remove(&pane) {
+            let key = (window.to_string(), pane);
+            let stale = webs.get(&key).is_some_and(|w| w.path != path);
+            if stale && let Some(old) = webs.remove(&key) {
                 old.view.removeFromSuperview();
             }
-            let web = webs.entry(pane).or_insert_with(|| {
+            let web = webs.entry(key).or_insert_with(|| {
                 let delegate = Delegate::new(mtm, window, pane);
                 let view = make_web(mtm, &delegate, frame);
                 // Round it with the document card under it.
@@ -284,7 +286,7 @@ mod imp {
     /// (Quick Open or a sheet is up: Rune draws those under native views).
     pub fn sync(window: &str, keep: &[u64], covered: bool) {
         WEBS.with_borrow(|webs| {
-            for (pane, web) in webs.iter().filter(|(_, w)| w.window == window) {
+            for ((_, pane), web) in webs.iter().filter(|(_, w)| w.window == window) {
                 web.view.setHidden(covered || !keep.contains(pane));
             }
         });
@@ -293,7 +295,7 @@ mod imp {
     /// Drops the web views of panes that are gone.
     pub fn retain_panes(window: &str, alive: &[u64]) {
         WEBS.with_borrow_mut(|webs| {
-            webs.retain(|pane, web| {
+            webs.retain(|(_, pane), web| {
                 let keep = web.window != window || alive.contains(pane);
                 if !keep {
                     web.view.removeFromSuperview();
@@ -303,9 +305,9 @@ mod imp {
         });
     }
 
-    pub fn reload(pane: u64) {
+    pub fn reload(window: &str, pane: u64) {
         WEBS.with_borrow(|webs| {
-            if let Some(w) = webs.get(&pane) {
+            if let Some(w) = webs.get(&(window.to_string(), pane)) {
                 unsafe { w.view.reload() };
             }
         });
@@ -313,10 +315,11 @@ mod imp {
 
     /// Finds `query` in the page, selecting the next (or previous) match; the answer arrives
     /// in `found` once WebKit has looked.
-    pub fn find(pane: u64, query: &str, backwards: bool, waker: Option<rune::Waker>) {
+    pub fn find(window: &str, pane: u64, query: &str, backwards: bool, waker: Option<rune::Waker>) {
         let Some(mtm) = MainThreadMarker::new() else { return };
         WEBS.with_borrow(|webs| {
-            let Some(w) = webs.get(&pane) else { return };
+            let Some(w) = webs.get(&(window.to_string(), pane)) else { return };
+            let key = (window.to_string(), pane);
             unsafe {
                 let config = WKFindConfiguration::new(mtm);
                 config.setBackwards(backwards);
@@ -324,7 +327,7 @@ mod imp {
                 config.setWraps(true);
                 let done = RcBlock::new(move |result: NonNull<WKFindResult>| {
                     let found = result.as_ref().matchFound();
-                    FOUND.with_borrow_mut(|f| f.insert(pane, found));
+                    FOUND.with_borrow_mut(|f| f.insert(key.clone(), found));
                     if let Some(w) = &waker {
                         w();
                     }
@@ -338,8 +341,8 @@ mod imp {
         });
     }
 
-    pub fn found(pane: u64) -> Option<bool> {
-        FOUND.with_borrow_mut(|f| f.remove(&pane))
+    pub fn found(window: &str, pane: u64) -> Option<bool> {
+        FOUND.with_borrow_mut(|f| f.remove(&(window.to_string(), pane)))
     }
 
     fn window_of(window: &str) -> Option<Retained<NSWindow>> {
@@ -391,7 +394,8 @@ mod imp {
     ) {
         let Some(mtm) = MainThreadMarker::new() else { return };
         if html.is_none() {
-            let web = WEBS.with_borrow(|w| w.get(&pane).map(|w| w.view.clone()));
+            let web =
+                WEBS.with_borrow(|w| w.get(&(window.to_string(), pane)).map(|w| w.view.clone()));
             if let Some(web) = web {
                 run_print(&web, window, save, title);
             }
@@ -458,9 +462,9 @@ mod stub {
     pub fn place(_: &str, _: u64, _: &Path, _: Rect, _: bool, _: bool, _: f32) {}
     pub fn sync(_: &str, _: &[u64], _: bool) {}
     pub fn retain_panes(_: &str, _: &[u64]) {}
-    pub fn reload(_: u64) {}
-    pub fn find(_: u64, _: &str, _: bool, _: Option<rune::Waker>) {}
-    pub fn found(_: u64) -> Option<bool> {
+    pub fn reload(_: &str, _: u64) {}
+    pub fn find(_: &str, _: u64, _: &str, _: bool, _: Option<rune::Waker>) {}
+    pub fn found(_: &str, _: u64) -> Option<bool> {
         None
     }
     pub fn print(_: &str, _: u64, _: Option<PathBuf>, _: Option<PathBuf>, _: &str) {}

@@ -18,6 +18,30 @@ fn hex(c: rune::Color) -> String {
 struct Out<'a> {
     p: &'a Palette,
     html: String,
+    /// The document's folder, for relative image sources: the page itself lives elsewhere.
+    base: &'a Path,
+}
+
+/// A `file://` URL for `path`, with the characters URLs reserve escaped.
+fn file_url(path: &Path) -> String {
+    let mut out = String::from("file://");
+    for b in path.to_string_lossy().bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+fn image_url(src: &ImageSrc) -> Option<String> {
+    match src {
+        ImageSrc::File(p) => Some(file_url(p)),
+        ImageSrc::Remote(u) => Some(u.clone()),
+        ImageSrc::Missing => None,
+    }
 }
 
 impl Out<'_> {
@@ -41,7 +65,10 @@ impl Out<'_> {
                     self.html.push_str("</a>");
                 }
                 Inline::Image { src, alt } => {
-                    let _ = write!(self.html, "<img src=\"{}\" alt=\"{}\">", esc(src), esc(alt));
+                    if let Some(url) = image_url(&crate::doc::resolve_image(src, self.base)) {
+                        let _ =
+                            write!(self.html, "<img src=\"{}\" alt=\"{}\">", esc(&url), esc(alt));
+                    }
                 }
                 Inline::Break => self.html.push_str("<br>"),
                 Inline::Math(tex) => self.math(tex, false),
@@ -214,11 +241,7 @@ impl Out<'_> {
                 Block::Images(images) => {
                     self.html.push_str("<p class=\"images\">");
                     for image in images {
-                        let src = match &image.src {
-                            ImageSrc::File(p) => format!("file://{}", p.display()),
-                            ImageSrc::Remote(u) => u.clone(),
-                            ImageSrc::Missing => continue,
-                        };
+                        let Some(src) = image_url(&image.src) else { continue };
                         let _ = write!(
                             self.html,
                             "<img src=\"{}\" alt=\"{}\">",
@@ -244,10 +267,10 @@ impl Out<'_> {
     }
 }
 
-/// The page for `doc`, set in `body_family`.
-pub fn html(doc: &Doc, title: &str, body_family: &str) -> String {
+/// The page for `doc` (from the folder `base`), set in `body_family`.
+pub fn html(doc: &Doc, title: &str, body_family: &str, base: &Path) -> String {
     let p = Palette::get(false);
-    let mut out = Out { p: &p, html: String::new() };
+    let mut out = Out { p: &p, html: String::new(), base };
     out.blocks(&doc.blocks);
     format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><title>{title}</title><style>
@@ -286,7 +309,7 @@ mark {{ background: #ffe79a }}
 /// Writes the page for `doc` to a temporary file and returns its path.
 pub fn write_temp(doc: &Doc, source: &Path, body_family: &str) -> Option<PathBuf> {
     let title = doc.title.clone().unwrap_or_else(|| crate::files::display_name(source));
-    let page = html(doc, &title, body_family);
+    let page = html(doc, &title, body_family, source.parent().unwrap_or(Path::new("/")));
     let dir = std::env::temp_dir().join("mdow-rune-print");
     std::fs::create_dir_all(&dir).ok()?;
     let path = dir.join(format!("{}.html", std::process::id()));
@@ -304,11 +327,19 @@ mod tests {
             "# Title\n\nSome **bold** and `code` and $x^2$.\n\n```rust\nfn main() {}\n```\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n",
             Path::new("/tmp/a.md"),
         );
-        let page = html(&doc, "Title", "Charter");
+        let page = html(&doc, "Title", "Charter", Path::new("/tmp"));
         assert!(page.contains("<h1 id=\"title\">Title</h1>"));
         assert!(page.contains("<strong>bold</strong>"));
         assert!(page.contains("<pre><code>"));
         assert!(page.contains("<span class=\"imath\""));
         assert!(page.contains("text-align:right"));
+    }
+
+    #[test]
+    fn relative_images_resolve_against_the_document() {
+        let doc =
+            crate::doc::parse_markdown("See ![d](img/a%20b.png) here.\n", Path::new("/docs/x.md"));
+        let page = html(&doc, "x", "Charter", Path::new("/docs"));
+        assert!(page.contains("src=\"file:///docs/img/a%20b.png\""), "{page}");
     }
 }

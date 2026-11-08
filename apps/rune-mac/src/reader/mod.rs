@@ -138,6 +138,7 @@ pub fn document(s: &App, pane_id: u64, doc: &LoadedDoc, width: f32, p: &Palette)
         s.media_revision,
         s.find_revision,
         s.copied_code.map(|c| c.0),
+        (st.body_family, st.code_family, st.line.to_bits()),
     );
     let rows = col()
         .key(rows_key(pane_id))

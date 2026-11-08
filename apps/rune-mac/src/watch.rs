@@ -2,8 +2,8 @@
 //! reports changed paths to the window's `poll`.
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
 #[derive(Default)]
@@ -36,23 +36,31 @@ impl Watcher {
     /// Watch exactly these files (by their folders) and folders (recursively).
     pub fn set(&mut self, files: HashSet<PathBuf>, folders: HashSet<PathBuf>) {
         let Some(w) = self.inner.as_mut() else { return };
-        let dirs = |files: &HashSet<PathBuf>| -> HashSet<PathBuf> {
-            files.iter().filter_map(|f| f.parent().map(Path::to_path_buf)).collect()
+        // What each path should be watched as. A folder that is also an open file's folder is
+        // watched recursively, which covers the file.
+        let wanted = |files: &HashSet<PathBuf>,
+                      folders: &HashSet<PathBuf>|
+         -> HashMap<PathBuf, RecursiveMode> {
+            let mut out: HashMap<PathBuf, RecursiveMode> = files
+                .iter()
+                .filter_map(|f| f.parent().map(|d| (d.to_path_buf(), RecursiveMode::NonRecursive)))
+                .collect();
+            for f in folders {
+                out.insert(f.clone(), RecursiveMode::Recursive);
+            }
+            out
         };
-        let (old_dirs, new_dirs) = (dirs(&self.files), dirs(&files));
-        for d in old_dirs.difference(&new_dirs) {
-            if !self.folders.contains(d) {
-                let _ = w.unwatch(d);
+        let before = wanted(&self.files, &self.folders);
+        let after = wanted(&files, &folders);
+        for (path, mode) in &before {
+            if after.get(path) != Some(mode) {
+                let _ = w.unwatch(path);
             }
         }
-        for f in self.folders.difference(&folders) {
-            let _ = w.unwatch(f);
-        }
-        for d in new_dirs.difference(&old_dirs) {
-            let _ = w.watch(d, RecursiveMode::NonRecursive);
-        }
-        for f in folders.difference(&self.folders) {
-            let _ = w.watch(f, RecursiveMode::Recursive);
+        for (path, mode) in &after {
+            if before.get(path) != Some(mode) {
+                let _ = w.watch(path, *mode);
+            }
         }
         self.files = files;
         self.folders = folders;

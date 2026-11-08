@@ -117,6 +117,8 @@ pub struct Pane {
     pub visible: Range<usize>,
     /// An anchor to scroll to once the document has rendered.
     pub pending_anchor: Option<String>,
+    /// A row to scroll to once the document has rendered (Back and Forward).
+    pub pending_row: Option<usize>,
 }
 
 impl Pane {
@@ -128,6 +130,7 @@ impl Pane {
             forward: Vec::new(),
             visible: 0..0,
             pending_anchor: None,
+            pending_row: None,
         }
     }
 
@@ -436,6 +439,18 @@ impl App {
             }
             self.scroll_to_anchor(pane, &anchor, tx);
         }
+        let rows: Vec<(u64, usize)> = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.panes.iter())
+            .filter_map(|p| p.pending_row.map(|r| (p.id, r)))
+            .collect();
+        for (pane, row) in rows {
+            if let Some(p) = self.pane_mut(pane) {
+                p.pending_row = None;
+            }
+            self.scroll_to_row(pane, row, tx);
+        }
         // The main window's tabs come back at the next launch.
         if self.key == windows::MAIN && !rune::is_headless() {
             let session = self.session();
@@ -446,7 +461,7 @@ impl App {
         }
         self.sync_web_views();
         if let Some(f) = self.find.as_mut()
-            && let Some(found) = crate::webview::found(f.pane)
+            && let Some(found) = crate::webview::found(&self.key, f.pane)
         {
             f.web_found = Some(found);
             changed = true;
@@ -521,11 +536,14 @@ impl App {
     fn handle_changes(&mut self, changes: &[PathBuf], tx: &mut Tx) -> bool {
         let mut changed = false;
         let reload = self.prefs.reload_on_change;
+        // FSEvents reports resolved paths (/private/tmp, not /tmp), so compare those.
+        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let changes: Vec<PathBuf> = changes.iter().map(|c| real(c)).collect();
         let mut rescans = Vec::new();
         for (ti, tab) in self.tabs.iter().enumerate() {
-            if let Some(folder) = &tab.folder
+            if let Some(folder) = tab.folder.as_deref().map(real)
                 && changes.iter().any(|c| {
-                    c.starts_with(folder) && (files::is_document(c) || c.extension().is_none())
+                    c.starts_with(&folder) && (files::is_document(c) || c.extension().is_none())
                 })
             {
                 rescans.push(ti);
@@ -545,7 +563,10 @@ impl App {
             .iter()
             .flat_map(|t| t.panes.iter())
             .filter(|p| {
-                p.path().is_some_and(|path| changes.iter().any(|c| files::normalize(c) == path))
+                p.path().is_some_and(|path| {
+                    let path = real(path);
+                    changes.contains(&path)
+                })
             })
             .map(|p| p.id)
             .collect();
@@ -947,7 +968,7 @@ impl App {
             f.web_found = None;
             return;
         }
-        crate::webview::find(pane, &query, backwards, self.waker.clone());
+        crate::webview::find(&self.key, pane, &query, backwards, self.waker.clone());
     }
 
     pub fn find_changed(&mut self, tx: &mut Tx) {
@@ -1018,7 +1039,6 @@ impl App {
     fn history(&mut self, forward: bool, tx: &mut Tx) {
         let version = self.id();
         let pane = self.tab_mut().pane_mut();
-        let id = pane.id;
         let Some(loc) = (if forward { pane.forward.pop() } else { pane.back.pop() }) else {
             return;
         };
@@ -1028,10 +1048,11 @@ impl App {
         }
         pane.doc = Some(LoadedDoc::load(&loc.path, version));
         pane.visible = 0..0;
+        // The new rows aren't laid out yet; `poll` scrolls once they are.
+        pane.pending_row = Some(loc.row);
         self.assets_dirty = true;
         self.watch_dirty = true;
         self.refresh_find();
-        self.scroll_to_row(id, loc.row, tx);
         tx.set_title(self.window_title());
     }
 
@@ -1115,7 +1136,7 @@ impl App {
                 }
                 let id = self.tab().pane().id;
                 if self.front_is_html() {
-                    crate::webview::reload(id);
+                    crate::webview::reload(&self.key, id);
                 }
                 self.assets_dirty = true;
                 self.refresh_find();
@@ -1495,6 +1516,7 @@ impl App {
             return;
         }
         let session = self.session();
+        self.saved_session = session.clone();
         self.prefs = prefs::update(|p| p.session = vec![session]);
     }
 
@@ -1507,6 +1529,8 @@ impl App {
         self.sheet = None;
         self.companion.shutdown();
         self.watch_dirty = true;
+        // The tabs just saved stay the session: the empty window isn't one to restore.
+        self.saved_session = self.session();
     }
 
     /// Splits the current tab with `path` in the second pane (the `split` scene).

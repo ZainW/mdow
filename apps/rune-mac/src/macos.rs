@@ -14,7 +14,25 @@ pub fn open_in_editor(path: &Path) {
     let _ = Command::new("/usr/bin/open").arg("-t").arg(path).spawn();
 }
 
+/// Opens a linked file in its app, but only shows apps, folders, scripts and other executables in
+/// Finder: a link in a document should never run something.
 pub fn open_with_default_app(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    const RUNNABLE: [&str; 12] = [
+        "app", "command", "sh", "zsh", "bash", "tool", "pkg", "mpkg", "terminal", "scpt",
+        "workflow", "action",
+    ];
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let executable =
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+    if path.is_dir() || RUNNABLE.contains(&ext.as_str()) || executable {
+        reveal_in_finder(path);
+        return;
+    }
     let _ = Command::new("/usr/bin/open").arg(path).spawn();
 }
 
