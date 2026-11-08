@@ -1,12 +1,15 @@
 //! Mdow for Linux: the Mdow markdown viewer built natively on GTK 4 and libadwaita.
 
+mod companion;
 mod dialogs;
 mod doc;
 mod files;
 mod fonts;
 mod highlight;
 mod media;
+mod omarchy;
 mod prefs;
+mod print;
 mod reader;
 mod render;
 mod segmented;
@@ -19,12 +22,20 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use window::Win;
 
 pub const APP_ID: &str = "com.zain.mdow.Linux";
 
 thread_local! {
-    static WINDOW: RefCell<Option<Win>> = const { RefCell::new(None) };
+    static PREFS: RefCell<Option<Rc<RefCell<prefs::Prefs>>>> = const { RefCell::new(None) };
+}
+
+/// Names an icon-only control for screen readers. Tooltips carry their shortcut in brackets, which
+/// isn't part of the name.
+pub fn set_accessible_name(widget: &impl IsA<gtk::Accessible>, tooltip: &str) {
+    let name = tooltip.split(" (").next().unwrap_or(tooltip);
+    widget.update_property(&[gtk::accessible::Property::Label(name)]);
 }
 
 fn prefs_path() -> PathBuf {
@@ -44,7 +55,11 @@ fn install_runtime_icons() {
         let _ = std::fs::write(apps.join(format!("{APP_ID}.svg")), media::LOGO_SVG);
     }
     let actions = scalable.join("actions");
-    let symbolic: [(&str, &[u8]); 2] = [
+    let symbolic: [(&str, &[u8]); 3] = [
+        (
+            "mdow-companion-symbolic.svg",
+            include_bytes!("../data/icons/mdow-companion-symbolic.svg"),
+        ),
         ("mdow-wide-symbolic.svg", include_bytes!("../data/icons/mdow-wide-symbolic.svg")),
         ("mdow-narrow-symbolic.svg", include_bytes!("../data/icons/mdow-narrow-symbolic.svg")),
     ];
@@ -58,22 +73,32 @@ fn install_runtime_icons() {
     }
 }
 
-/// The single main window, created (and the last session restored) on first use.
-fn main_window(app: &adw::Application) -> Win {
-    if let Some(win) = WINDOW.with_borrow(|w| w.clone()) {
-        return win;
+/// The preferences every window shares. A new install on Omarchy uses the system's font for code.
+fn shared_prefs() -> Rc<RefCell<prefs::Prefs>> {
+    if let Some(prefs) = PREFS.with_borrow(Clone::clone) {
+        return prefs;
     }
     let path = prefs_path();
-    let prefs = prefs::Prefs::load_from(&path);
-    let win = Win::new(app, prefs, path);
-    WINDOW.with_borrow_mut(|w| *w = Some(win.clone()));
-    let weak_app = app.downgrade();
-    win.window().connect_destroy(move |_| {
-        WINDOW.with_borrow_mut(|w| *w = None);
-        if let Some(app) = weak_app.upgrade() {
-            app.quit();
-        }
-    });
+    let mut loaded = prefs::Prefs::load_from(&path);
+    if !path.exists() && window::on_omarchy() {
+        loaded.code_font = prefs::CodeFont::SystemMono;
+    }
+    let prefs = Rc::new(RefCell::new(loaded));
+    PREFS.with_borrow_mut(|p| *p = Some(prefs.clone()));
+    prefs
+}
+
+/// The window to open things in: the last focused one, or the first, with its session restored.
+fn main_window(app: &adw::Application) -> Win {
+    let windows = Win::all();
+    let focused = app.active_window();
+    if let Some(win) = windows.iter().find(|w| focused.as_ref() == Some(w.window().upcast_ref())) {
+        return win.clone();
+    }
+    if let Some(win) = windows.into_iter().next() {
+        return win;
+    }
+    let win = Win::new(app, shared_prefs(), prefs_path());
     win.restore_session();
     if let Ok(target) = std::env::var("MDOW_SCREENSHOT") {
         schedule_screenshot(&win, target);
@@ -141,6 +166,7 @@ fn main() -> glib::ExitCode {
     }
     let app = adw::Application::builder().application_id(APP_ID).flags(flags).build();
     app.connect_startup(|app| {
+        window::init_omarchy();
         if std::env::var_os("MDOW_SCREENSHOT").is_some()
             && let Some(settings) = gtk::Settings::default()
         {
@@ -153,7 +179,7 @@ fn main() -> glib::ExitCode {
         let quit = gio::SimpleAction::new("quit", None);
         let weak = app.downgrade();
         quit.connect_activate(move |_, _| {
-            if let Some(win) = WINDOW.with_borrow(|w| w.clone()) {
+            for win in Win::all() {
                 win.save_now();
             }
             if let Some(app) = weak.upgrade() {
@@ -162,6 +188,7 @@ fn main() -> glib::ExitCode {
         });
         app.add_action(&quit);
     });
+    app.connect_shutdown(|_| companion::service::Runtime::shared().stop_now());
     app.connect_activate(|app| {
         main_window(app).window().present();
     });

@@ -1,4 +1,4 @@
-A native Linux build of Mdow: Rust on GTK 4 + libadwaita, no web view or cross-platform UI layer. It looks and behaves like the desktop app (same design tokens, fonts, layout and shortcuts).
+A native Linux build of Mdow: Rust on GTK 4 + libadwaita, no web view or cross-platform UI layer. It has the same layout and features as Mdow for Mac, and on Omarchy it follows your theme, font and corners.
 
 **AppImage** (any distro with glibc 2.39+: Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch):
 ```sh

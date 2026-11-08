@@ -1,14 +1,20 @@
-//! The main window: sidebar, tab bar, breadcrumb, readers (with an optional side-by-side pane),
-//! window actions and keyboard shortcuts, live reload and session persistence.
+//! A document window: the header with its tabs, the sidebar, the document card with its readers
+//! (and an optional side-by-side pane), window actions and keyboard shortcuts, per-pane history,
+//! live reload and session persistence.
 
+use crate::companion::panel::Panel as CompanionPanel;
+use crate::companion::service::Runtime as CompanionRuntime;
 use crate::dialogs;
 use crate::doc::{self, Doc};
 use crate::files::{self, ErrorKind};
 use crate::media;
+use crate::omarchy;
 use crate::prefs::{
-    self, CodeFont, ContentFont, InterfaceScale, Prefs, ReadingWidth, SidebarMode, ThemeMode,
+    self, CodeFont, ContentFont, InterfaceScale, LineSpacing, Prefs, ReadingWidth, SidebarMode,
+    ThemeMode,
 };
-use crate::reader::{Reader, ReaderHost};
+use crate::print;
+use crate::reader::{self, Columns, Reader, ReaderHost};
 use crate::render::Style;
 use crate::sidebar::Sidebar;
 use crate::theme::{self, Palette};
@@ -21,14 +27,63 @@ use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
+thread_local! {
+    /// Every open window, oldest first. This is what keeps a window's state alive.
+    static WINDOWS: RefCell<Vec<Rc<WinInner>>> = const { RefCell::new(Vec::new()) };
+    static STYLESHEET: gtk::CssProvider = gtk::CssProvider::new();
+    static LOADED_CSS: RefCell<String> = const { RefCell::new(String::new()) };
+    static OMARCHY: RefCell<Option<omarchy::Theme>> = const { RefCell::new(None) };
+    static OMARCHY_MONITOR: RefCell<Option<gio::FileMonitor>> = const { RefCell::new(None) };
+}
+
+/// Reads the Omarchy theme, and follows `omarchy theme set` from then on.
+pub fn init_omarchy() {
+    OMARCHY.with_borrow_mut(|theme| *theme = omarchy::load());
+    let monitor = omarchy::watch(|| {
+        OMARCHY.with_borrow_mut(|theme| *theme = omarchy::load());
+        // A theme swap shouldn't fade every colour separately.
+        let settings = gtk::Settings::default();
+        let animations = settings.as_ref().is_some_and(|s| s.is_gtk_enable_animations());
+        if let Some(settings) = &settings {
+            settings.set_gtk_enable_animations(false);
+        }
+        Win::restyle_all();
+        glib::timeout_add_local_once(Duration::from_millis(300), move || {
+            if let Some(settings) = settings {
+                settings.set_gtk_enable_animations(animations);
+            }
+        });
+    });
+    OMARCHY_MONITOR.with_borrow_mut(|m| *m = monitor);
+}
+
+pub fn on_omarchy() -> bool {
+    OMARCHY.with_borrow(|theme| theme.is_some())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Pane {
     Primary,
     Secondary,
 }
 
-pub struct Tab {
+/// A spot to come back to: the document, and the row at the top of the view.
+#[derive(Clone, Debug)]
+struct Place {
     path: PathBuf,
+    position: Option<(usize, f64)>,
+}
+
+#[derive(Default)]
+struct History {
+    back: Vec<Place>,
+    forward: Vec<Place>,
+}
+
+pub struct Tab {
+    location: RefCell<PathBuf>,
+    history: RefCell<History>,
+    restore: Cell<Option<(usize, f64)>>,
     page: adw::TabPage,
     stack: gtk::Stack,
     reader: Reader,
@@ -40,6 +95,12 @@ pub struct Tab {
     anchor: RefCell<Option<String>>,
 }
 
+impl Tab {
+    fn path(&self) -> PathBuf {
+        self.location.borrow().clone()
+    }
+}
+
 struct SecondaryPane {
     path: PathBuf,
     reader: Reader,
@@ -48,14 +109,18 @@ struct SecondaryPane {
 
 pub struct WinInner {
     pub window: adw::ApplicationWindow,
-    prefs: RefCell<Prefs>,
+    prefs: Rc<RefCell<Prefs>>,
     prefs_path: PathBuf,
-    css: gtk::CssProvider,
     split: adw::OverlaySplitView,
     sidebar: Rc<Sidebar>,
     tab_view: adw::TabView,
     tabs: RefCell<Vec<Rc<Tab>>>,
-    breadcrumb: gtk::Box,
+    card: gtk::Box,
+    companion: Rc<CompanionPanel>,
+    companion_paned: gtk::Paned,
+    menu_button: gtk::MenuButton,
+    header_leading: gtk::Box,
+    header_spacer: gtk::Box,
     main_stack: gtk::Stack,
     welcome: Welcome,
     primary_pane: gtk::Box,
@@ -66,8 +131,8 @@ pub struct WinInner {
     secondary_name: gtk::Label,
     secondary_stack: gtk::Stack,
     secondary: RefCell<Option<Rc<SecondaryPane>>>,
+    secondary_history: RefCell<History>,
     active_pane: Cell<Pane>,
-    start_controls: gtk::WindowControls,
     folder_monitors: RefCell<Vec<gio::FileMonitor>>,
     folder_rescan: RefCell<Option<glib::SourceId>>,
     folder_generation: Cell<u64>,
@@ -89,9 +154,14 @@ pub struct Win(pub Rc<WinInner>);
 struct HostRef(Weak<WinInner>);
 
 impl ReaderHost for HostRef {
-    fn open_document(&self, path: PathBuf, anchor: Option<String>) {
+    fn open_document(&self, path: PathBuf, anchor: Option<String>, new_tab: bool) {
         if let Some(inner) = self.0.upgrade() {
-            Win(inner).open_path(&path, anchor, true);
+            let win = Win(inner);
+            if new_tab {
+                win.open_path(&path, anchor, true);
+            } else {
+                win.navigate(&path, anchor);
+            }
         }
     }
 
@@ -145,6 +215,7 @@ fn flat_icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     b.add_css_class("flat");
     b.add_css_class("mdow-icon-button");
     b.set_tooltip_text(Some(tooltip));
+    crate::set_accessible_name(&b, tooltip);
     b.set_valign(gtk::Align::Center);
     b
 }
@@ -155,6 +226,7 @@ fn icon_toggle(icon: &str, tooltip: &str, action: &str) -> gtk::ToggleButton {
     b.add_css_class("flat");
     b.add_css_class("mdow-icon-button");
     b.set_tooltip_text(Some(tooltip));
+    crate::set_accessible_name(&b, tooltip);
     b.set_valign(gtk::Align::Center);
     b.set_action_name(Some(action));
     b
@@ -247,24 +319,32 @@ fn error_view(path: &Path, kind: ErrorKind, tab_path: &str) -> gtk::Box {
 }
 
 impl Win {
-    pub fn new(app: &adw::Application, prefs: Prefs, prefs_path: PathBuf) -> Win {
+    pub fn new(app: &adw::Application, prefs: Rc<RefCell<Prefs>>, prefs_path: PathBuf) -> Win {
         let window = adw::ApplicationWindow::new(app);
         window.add_css_class("mdow");
         window.set_title(Some("Mdow"));
         window.set_icon_name(Some(crate::APP_ID));
         window.set_size_request(600, 400);
-        window.set_default_size(prefs.window.width.max(600), prefs.window.height.max(400));
-        if prefs.window.maximized {
-            window.maximize();
+        // On Omarchy, Hyprland draws the frame and Super+W closes the window, as for every app.
+        let on_omarchy = on_omarchy();
+        window.set_decorated(!on_omarchy);
+        {
+            let prefs = prefs.borrow();
+            window.set_default_size(prefs.window.width.max(600), prefs.window.height.max(400));
+            if prefs.window.maximized {
+                window.maximize();
+            }
         }
 
-        let css = gtk::CssProvider::new();
-        if let Some(display) = gdk::Display::default() {
-            gtk::style_context_add_provider_for_display(
-                &display,
-                &css,
-                gtk::STYLE_PROVIDER_PRIORITY_USER + 1,
-            );
+        let first_window = WINDOWS.with_borrow(|windows| windows.is_empty());
+        if first_window && let Some(display) = gdk::Display::default() {
+            STYLESHEET.with(|css| {
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    css,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER + 1,
+                );
+            });
         }
 
         let sidebar = Sidebar::new();
@@ -282,48 +362,43 @@ impl Win {
 
         let start_controls = gtk::WindowControls::new(gtk::PackType::Start);
         let end_controls = gtk::WindowControls::new(gtk::PackType::End);
+        start_controls.set_visible(!on_omarchy);
+        end_controls.set_visible(!on_omarchy);
         let sidebar_toggle =
             icon_toggle("sidebar-show-symbolic", "Toggle sidebar (Ctrl+B)", "win.toggle-sidebar");
         sidebar_toggle.add_css_class("mdow-quiet");
-        let split_toggle =
-            icon_toggle("view-dual-symbolic", "Open side-by-side view", "win.split-view");
+        let back = flat_icon_button("go-previous-symbolic", "Back (Ctrl+[)");
+        back.set_action_name(Some("win.go-back"));
+        let forward = flat_icon_button("go-next-symbolic", "Forward (Ctrl+])");
+        forward.set_action_name(Some("win.go-forward"));
 
-        // Primary menu, with a zoom row as in GNOME's own apps.
+        let search = gtk::Button::new();
+        search.add_css_class("mdow-search");
+        search.set_action_name(Some("win.palette"));
+        search.set_tooltip_text(Some("Quick Open (Ctrl+K)"));
+        search.set_valign(gtk::Align::Center);
+        search.set_hexpand(false);
+        let search_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let search_icon = gtk::Image::from_icon_name("system-search-symbolic");
+        search_icon.set_pixel_size(12);
+        search_content.append(&search_icon);
+        let search_label = gtk::Label::new(Some("Search"));
+        search_label.set_hexpand(true);
+        search_label.set_xalign(0.0);
+        search_content.append(&search_label);
+        let search_keys = gtk::Label::new(Some("Ctrl K"));
+        search_keys.add_css_class("mdow-subtle");
+        search_content.append(&search_keys);
+        search.set_child(Some(&search_content));
+
         let recent_menu = gio::Menu::new();
-        let menu = gio::Menu::new();
-        let files_section = gio::Menu::new();
-        files_section.append(Some("Open File…"), Some("win.open-file"));
-        files_section.append(Some("Open Folder…"), Some("win.open-folder"));
-        files_section.append_submenu(Some("Open Recent"), &recent_menu);
-        menu.append_section(None, &files_section);
-        let nav = gio::Menu::new();
-        nav.append(Some("Command Palette"), Some("win.palette"));
-        nav.append(Some("Find…"), Some("win.find"));
-        menu.append_section(None, &nav);
-        let zoom_section = gio::Menu::new();
-        let zoom_item = gio::MenuItem::new(None, None);
-        zoom_item.set_attribute_value("custom", Some(&"zoom".to_variant()));
-        zoom_section.append_item(&zoom_item);
-        menu.append_section(None, &zoom_section);
-        let view = gio::Menu::new();
-        view.append(Some("Show Sidebar"), Some("win.toggle-sidebar"));
-        view.append(Some("Wide Mode"), Some("win.wide-mode"));
-        view.append(Some("Split View"), Some("win.split-view"));
-        menu.append_section(None, &view);
-        let app_section = gio::Menu::new();
-        app_section.append(Some("Settings"), Some("win.settings"));
-        app_section.append(Some("Keyboard Shortcuts"), Some("win.shortcuts"));
-        app_section.append(Some("About Mdow"), Some("win.about"));
-        menu.append_section(None, &app_section);
-        let close_section = gio::Menu::new();
-        close_section.append(Some("Close Tab"), Some("win.close-tab"));
-        close_section.append(Some("Quit"), Some("app.quit"));
-        menu.append_section(None, &close_section);
+        let menu = primary_menu(&recent_menu);
         let menu_button = gtk::MenuButton::new();
-        menu_button.set_icon_name("open-menu-symbolic");
+        menu_button.set_icon_name("view-more-horizontal-symbolic");
         menu_button.add_css_class("flat");
         menu_button.add_css_class("mdow-icon-button");
-        menu_button.set_tooltip_text(Some("Main menu"));
+        menu_button.set_tooltip_text(Some("More"));
+        crate::set_accessible_name(&menu_button, "More");
         menu_button.set_valign(gtk::Align::Center);
         menu_button.set_menu_model(Some(&menu));
         let zoom_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -334,6 +409,7 @@ impl Win {
         let zoom_out = gtk::Button::from_icon_name("zoom-out-symbolic");
         zoom_out.set_action_name(Some("win.zoom-out"));
         zoom_out.set_tooltip_text(Some("Zoom out"));
+        crate::set_accessible_name(&zoom_out, "Zoom out");
         let zoom_menu_label = gtk::Button::with_label("100%");
         zoom_menu_label.set_action_name(Some("win.zoom-reset"));
         zoom_menu_label.set_tooltip_text(Some("Reset zoom"));
@@ -341,36 +417,49 @@ impl Win {
         let zoom_in = gtk::Button::from_icon_name("zoom-in-symbolic");
         zoom_in.set_action_name(Some("win.zoom-in"));
         zoom_in.set_tooltip_text(Some("Zoom in"));
+        crate::set_accessible_name(&zoom_in, "Zoom in");
         for b in [&zoom_out, &zoom_menu_label, &zoom_in] {
             b.add_css_class("flat");
             zoom_row.append(b);
         }
         if let Some(popover) = menu_button.popover().and_downcast::<gtk::PopoverMenu>() {
             popover.add_child(&zoom_row, "zoom");
+            popover.set_has_arrow(false);
         }
 
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         actions.add_css_class("mdow-tab-actions");
         actions.set_valign(gtk::Align::Fill);
-        actions.append(&split_toggle);
+        actions.append(&search);
+        let companion_toggle = icon_toggle(
+            "mdow-companion-symbolic",
+            "Companion (Ctrl+Alt+0)",
+            "win.toggle-companion",
+        );
+        companion_toggle.add_css_class("mdow-quiet");
+        actions.append(&companion_toggle);
         actions.append(&menu_button);
 
+        let header_leading = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        header_leading.set_valign(gtk::Align::Center);
+        start_controls.set_margin_end(6);
+        header_leading.append(&start_controls);
+        header_leading.append(&sidebar_toggle);
+        header_leading.append(&back);
+        header_leading.append(&forward);
+        // Keeps the tabs lined up with the document card while the sidebar is open.
+        let header_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        header_spacer.add_css_class("mdow-header-spacer");
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         header.add_css_class("mdow-tabbar");
-        start_controls.set_margin_start(6);
-        header.append(&start_controls);
-        sidebar_toggle.set_margin_start(6);
-        header.append(&sidebar_toggle);
+        header.append(&header_leading);
+        header.append(&header_spacer);
         header.append(&tab_bar);
         header.append(&actions);
-        end_controls.set_margin_end(6);
+        end_controls.set_margin_start(6);
         header.append(&end_controls);
         let handle = gtk::WindowHandle::new();
         handle.set_child(Some(&header));
-
-        let breadcrumb = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        breadcrumb.add_css_class("mdow-breadcrumb");
-        breadcrumb.set_visible(false);
 
         // Panes.
         let primary_name = gtk::Label::new(None);
@@ -428,18 +517,39 @@ impl Win {
         main_stack.add_named(&docs, Some("docs"));
         main_stack.set_visible_child_name("welcome");
 
-        let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        content.append(&handle);
-        content.append(&breadcrumb);
-        content.append(&main_stack);
+        // The document's card, inset from the window like a sheet of paper.
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        card.add_css_class("mdow-card");
+        card.set_overflow(gtk::Overflow::Hidden);
+        card.append(&main_stack);
+
+        CompanionRuntime::shared().set_prefs(prefs.clone(), prefs_path.clone());
+        let companion = CompanionPanel::new(Rc::new(Style {
+            palette: Rc::new(Palette::light()),
+            fs: theme::READER_FONT_SIZE,
+            code_family: prefs.borrow().code_font.pango_family(),
+            scale_factor: 1,
+            line_height: prefs.borrow().line_spacing.height(),
+        }));
+        // The trailing panel keeps its width as the window resizes; the card takes the rest.
+        let companion_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        companion_paned.add_css_class("mdow-companion-paned");
+        companion_paned.set_start_child(Some(&card));
+        companion_paned.set_end_child(Some(&companion.root));
+        companion_paned.set_resize_start_child(true);
+        companion_paned.set_resize_end_child(false);
+        companion_paned.set_shrink_start_child(false);
+        companion_paned.set_shrink_end_child(false);
+        card.set_hexpand(true);
 
         let split = adw::OverlaySplitView::new();
         split.set_sidebar(Some(&sidebar.root));
-        split.set_content(Some(&content));
-        let width = theme::sidebar_width(prefs.interface_scale);
+        split.set_content(Some(&companion_paned));
+        split.set_vexpand(true);
+        let width = theme::sidebar_width(prefs.borrow().interface_scale);
         split.set_min_sidebar_width(width);
         split.set_max_sidebar_width(width);
-        split.set_show_sidebar(prefs.sidebar_open);
+        split.set_show_sidebar(prefs.borrow().sidebar_open);
         let breakpoint = adw::Breakpoint::new(adw::BreakpointCondition::new_length(
             adw::BreakpointConditionLengthType::MaxWidth,
             720.0,
@@ -450,8 +560,11 @@ impl Win {
 
         let cheat = dialogs::cheat_sheet();
         cheat.set_visible(false);
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        body.append(&handle);
+        body.append(&split);
         let overlay = gtk::Overlay::new();
-        overlay.set_child(Some(&split));
+        overlay.set_child(Some(&body));
         overlay.add_overlay(&cheat);
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&overlay));
@@ -459,14 +572,18 @@ impl Win {
 
         let inner = Rc::new(WinInner {
             window,
-            prefs: RefCell::new(prefs),
+            prefs,
             prefs_path,
-            css,
             split,
             sidebar,
             tab_view,
             tabs: RefCell::new(Vec::new()),
-            breadcrumb,
+            card,
+            companion,
+            companion_paned,
+            menu_button,
+            header_leading,
+            header_spacer,
             main_stack,
             welcome,
             primary_pane,
@@ -477,8 +594,8 @@ impl Win {
             secondary_name,
             secondary_stack,
             secondary: RefCell::new(None),
+            secondary_history: RefCell::new(History::default()),
             active_pane: Cell::new(Pane::Primary),
-            start_controls,
             folder_monitors: RefCell::new(Vec::new()),
             folder_rescan: RefCell::new(None),
             folder_generation: Cell::new(0),
@@ -493,16 +610,41 @@ impl Win {
             host: RefCell::new(None),
         });
         inner.host.replace(Some(Rc::new(HostRef(Rc::downgrade(&inner)))));
+        WINDOWS.with_borrow_mut(|windows| windows.push(inner.clone()));
         let win = Win(inner);
-        win.setup_actions(&sidebar_toggle, &split_toggle);
+        let weak = win.weak();
+        win.0.companion.set_open_document(Rc::new(move |path: &Path| {
+            if let Some(inner) = weak.upgrade() {
+                Win(inner).open_path(path, None, true);
+            }
+        }));
+        win.setup_actions();
         win.setup_signals();
         win.apply_visuals();
         win.refresh_recents();
         let mode = win.0.prefs.borrow().sidebar_mode;
         win.0.sidebar.set_mode(mode);
         win.update_controls();
+        win.update_history_actions();
+        win.update_document_actions();
         win.update_zoom_label();
         win
+    }
+
+    /// Every open window, oldest first.
+    pub fn all() -> Vec<Win> {
+        WINDOWS.with_borrow(|windows| windows.iter().cloned().map(Win).collect())
+    }
+
+    pub fn restyle_all() {
+        for win in Win::all() {
+            win.apply_visuals();
+        }
+    }
+
+    /// The oldest window keeps the session, so closing a second window doesn't forget the tabs.
+    fn is_primary(&self) -> bool {
+        Win::all().first().is_some_and(|w| Rc::ptr_eq(&w.0, &self.0))
     }
 
     pub fn window(&self) -> &adw::ApplicationWindow {
@@ -521,8 +663,19 @@ impl Win {
 
     // ── Style ────────────────────────────────────────────────────────────────
 
+    /// The Omarchy theme, unless Settings asks for Mdow's own light or dark.
+    fn omarchy_theme(&self) -> Option<omarchy::Theme> {
+        if self.0.prefs.borrow().theme != ThemeMode::System {
+            return None;
+        }
+        OMARCHY.with_borrow(Clone::clone)
+    }
+
     fn palette(&self) -> Rc<Palette> {
-        Rc::new(Palette::for_dark(adw::StyleManager::default().is_dark()))
+        Rc::new(match self.omarchy_theme() {
+            Some(theme) => Palette::from_omarchy(&theme),
+            None => Palette::for_dark(adw::StyleManager::default().is_dark()),
+        })
     }
 
     fn style(&self) -> Rc<Style> {
@@ -532,12 +685,25 @@ impl Win {
             fs: theme::reader_font_size(prefs.zoom_level),
             code_family: prefs.code_font.pango_family(),
             scale_factor: self.0.window.scale_factor().max(1),
+            line_height: prefs.line_spacing.height(),
         })
     }
 
-    fn column(&self) -> Option<i32> {
+    /// The reading column. Prose is capped at a number of characters in the chosen font and
+    /// size, so the line length holds when either changes.
+    fn column(&self) -> Option<Columns> {
         let prefs = self.0.prefs.borrow();
-        (!prefs.wide_mode).then(|| prefs.reading_width.px())
+        if prefs.wide_mode {
+            return None;
+        }
+        let wide = prefs.reading_width.px();
+        let text = reader::text_column(
+            &self.0.window.pango_context(),
+            dialogs::content_pango_family(prefs.content_font),
+            theme::reader_font_size(prefs.zoom_level),
+            prefs.reading_width.measure(),
+        );
+        Some(Columns { text: text.min(wide), wide })
     }
 
     fn new_reader(&self) -> Reader {
@@ -549,10 +715,13 @@ impl Win {
 
     /// Theme, fonts, scale, zoom or width changed: restyle everything.
     fn apply_visuals(&self) {
-        let scheme = match self.0.prefs.borrow().theme {
-            ThemeMode::System => adw::ColorScheme::Default,
-            ThemeMode::Light => adw::ColorScheme::ForceLight,
-            ThemeMode::Dark => adw::ColorScheme::ForceDark,
+        let theme = self.0.prefs.borrow().theme;
+        let scheme = match (theme, self.omarchy_theme()) {
+            (ThemeMode::System, Some(omarchy)) if omarchy.dark => adw::ColorScheme::ForceDark,
+            (ThemeMode::System, Some(_)) => adw::ColorScheme::ForceLight,
+            (ThemeMode::System, None) => adw::ColorScheme::Default,
+            (ThemeMode::Light, _) => adw::ColorScheme::ForceLight,
+            (ThemeMode::Dark, _) => adw::ColorScheme::ForceDark,
         };
         let manager = adw::StyleManager::default();
         if manager.color_scheme() != scheme {
@@ -561,7 +730,13 @@ impl Win {
         }
         let palette = self.palette();
         let css = theme::stylesheet(&palette, &self.0.prefs.borrow());
-        self.0.css.load_from_string(&css);
+        // Each window restyles itself, but they share one stylesheet.
+        LOADED_CSS.with_borrow_mut(|loaded| {
+            if *loaded != css {
+                STYLESHEET.with(|provider| provider.load_from_string(&css));
+                *loaded = css;
+            }
+        });
         let width = theme::sidebar_width(self.0.prefs.borrow().interface_scale);
         self.0.split.set_min_sidebar_width(width);
         self.0.split.set_max_sidebar_width(width);
@@ -572,6 +747,8 @@ impl Win {
         for reader in self.all_readers() {
             reader.set_style(style.clone(), column);
         }
+        self.0.companion.set_style(style);
+        self.update_controls();
     }
 
     fn all_readers(&self) -> Vec<Reader> {
@@ -613,24 +790,27 @@ impl Win {
         }
         let tabs: Vec<String> = (0..self.0.tab_view.n_pages())
             .filter_map(|i| self.tab_for_page(&self.0.tab_view.nth_page(i)))
-            .map(|t| t.path.to_string_lossy().into_owned())
+            .map(|t| t.path().to_string_lossy().into_owned())
             .collect();
-        let active = self.active_tab().map(|t| t.path.to_string_lossy().into_owned());
+        let active = self.active_tab().map(|t| t.path().to_string_lossy().into_owned());
         let secondary =
             self.0.secondary.borrow().as_ref().map(|s| s.path.to_string_lossy().into_owned());
         let window = &self.0.window;
+        let is_primary = self.is_primary();
         let mut prefs = self.0.prefs.borrow_mut();
-        prefs.session_tabs = tabs;
-        prefs.session_active_tab_path = active;
-        prefs.session_split_view = self.0.secondary_box.is_visible();
-        prefs.session_secondary_pane_path = secondary;
-        prefs.sidebar_open = self.0.split.shows_sidebar();
-        prefs.window.maximized = window.is_maximized();
-        if !window.is_maximized() && !window.is_fullscreen() {
-            let (w, h) = window.default_size();
-            if w > 0 && h > 0 {
-                prefs.window.width = w;
-                prefs.window.height = h;
+        if is_primary {
+            prefs.session_tabs = tabs;
+            prefs.session_active_tab_path = active;
+            prefs.session_split_view = self.0.secondary_box.is_visible();
+            prefs.session_secondary_pane_path = secondary;
+            prefs.sidebar_open = self.0.split.shows_sidebar();
+            prefs.window.maximized = window.is_maximized();
+            if !window.is_maximized() && !window.is_fullscreen() {
+                let (w, h) = window.default_size();
+                if w > 0 && h > 0 {
+                    prefs.window.width = w;
+                    prefs.window.height = h;
+                }
             }
         }
         if let Err(err) = prefs.save_to(&self.0.prefs_path) {
@@ -662,7 +842,7 @@ impl Win {
     }
 
     fn tab_for_path(&self, path: &Path) -> Option<Rc<Tab>> {
-        self.0.tabs.borrow().iter().find(|t| t.path == path).cloned()
+        self.0.tabs.borrow().iter().find(|t| t.path() == path).cloned()
     }
 
     fn active_tab(&self) -> Option<Rc<Tab>> {
@@ -676,7 +856,7 @@ impl Win {
         {
             return Some(s.path.clone());
         }
-        self.active_tab().map(|t| t.path.clone())
+        self.active_tab().map(|t| t.path())
     }
 
     /// The reader the outline, find and zoom indicator act on.
@@ -710,6 +890,17 @@ impl Win {
                 files::display_name(&path)
             ));
             self.0.toasts.add_toast(toast);
+            return;
+        }
+        if !self.0.prefs.borrow().open_in_tabs
+            && self.tab_for_path(&path).is_none()
+            && self.0.tab_view.n_pages() > 0
+            && !self.0.restoring.get()
+            && let Some(app) = self.0.window.application().and_downcast::<adw::Application>()
+        {
+            let win = Win::new(&app, self.0.prefs.clone(), self.0.prefs_path.clone());
+            win.0.window.present();
+            win.open_path(&path, anchor, activate);
             return;
         }
         if self.split_on() && self.0.active_pane.get() == Pane::Secondary && activate {
@@ -750,7 +941,9 @@ impl Win {
         page.set_icon(Some(&gio::ThemedIcon::new("text-x-generic-symbolic")));
         page.set_loading(true);
         let tab = Rc::new(Tab {
-            path: path.to_path_buf(),
+            location: RefCell::new(path.to_path_buf()),
+            history: RefCell::new(History::default()),
+            restore: Cell::new(None),
             page: page.clone(),
             stack,
             reader,
@@ -780,7 +973,7 @@ impl Win {
             if keep_position && tab.error.get().is_none() { tab.content_hash.get() } else { 0 };
         let weak_win = self.weak();
         let weak_tab = Rc::downgrade(tab);
-        let path = tab.path.clone();
+        let path = tab.path();
         glib::spawn_future_local(async move {
             let result = load(path.clone(), previous).await;
             let (Some(inner), Some(tab)) = (weak_win.upgrade(), weak_tab.upgrade()) else { return };
@@ -801,11 +994,16 @@ impl Win {
                     tab.stack.set_visible_child_name("reader");
                     if let Some(anchor) = tab.anchor.take() {
                         tab.reader.scroll_to_anchor(&anchor);
+                    } else if let Some((row, offset)) = tab.restore.take() {
+                        tab.reader.restore_position(row, offset);
                     }
                     win.update_prefs(|p| p.push_recent(&path.to_string_lossy()));
                     win.refresh_recents();
                     if win.active_tab().is_some_and(|t| Rc::ptr_eq(&t, &tab)) {
                         win.refresh_active();
+                        if !had_doc && win.0.window.visible_dialog().is_none() {
+                            tab.reader.focus();
+                        }
                     }
                     win.reload_secondary_if(&path);
                 }
@@ -821,7 +1019,7 @@ impl Win {
         if let Some(old) = tab.stack.child_by_name("error") {
             tab.stack.remove(&old);
         }
-        let view = error_view(&tab.path, kind, &tab.path.to_string_lossy());
+        let view = error_view(&tab.path(), kind, &tab.path().to_string_lossy());
         tab.stack.add_named(&view, Some("error"));
         tab.stack.set_visible_child_name("error");
         if self.active_tab().is_some_and(|t| Rc::ptr_eq(&t, tab)) {
@@ -830,7 +1028,7 @@ impl Win {
     }
 
     fn watch_tab(&self, tab: &Rc<Tab>) {
-        let file = gio::File::for_path(&tab.path);
+        let file = gio::File::for_path(tab.path());
         let Ok(monitor) =
             file.monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
         else {
@@ -853,7 +1051,9 @@ impl Win {
                 return;
             }
             let (Some(inner), Some(tab)) = (weak_win.upgrade(), weak_tab.upgrade()) else { return };
-            Win(inner).schedule_reload(&tab);
+            if inner.prefs.borrow().live_reload {
+                Win(inner).schedule_reload(&tab);
+            }
         });
         tab.monitor.replace(Some(monitor));
     }
@@ -869,7 +1069,7 @@ impl Win {
             let (Some(inner), Some(tab)) = (weak_win.upgrade(), weak_tab.upgrade()) else { return };
             tab.reload_timer.take();
             let win = Win(inner);
-            if tab.path.exists() {
+            if tab.path().exists() {
                 win.load_tab(&tab, true);
             } else {
                 // A save by rename briefly leaves no file; only then call it deleted.
@@ -880,7 +1080,7 @@ impl Win {
                         return;
                     };
                     let win = Win(inner);
-                    if tab.path.exists() {
+                    if tab.path().exists() {
                         win.load_tab(&tab, true);
                     } else {
                         win.show_error(&tab, ErrorKind::Deleted);
@@ -908,7 +1108,6 @@ impl Win {
 
     /// The selected tab (or pane) changed: sync the chrome to it.
     fn refresh_active(&self) {
-        let tab = self.active_tab();
         let has_tabs = self.0.tab_view.n_pages() > 0;
         self.0.main_stack.set_visible_child_name(if has_tabs { "docs" } else { "welcome" });
         let active_path = self.active_path();
@@ -923,71 +1122,198 @@ impl Win {
             }
             None => self.0.sidebar.set_outline(&[], active_path.is_some(), None),
         }
-        self.update_breadcrumb(tab.as_ref());
         self.update_panes();
+        self.update_history_actions();
+        self.update_document_actions();
+        self.0.companion.document_changed(
+            active_path,
+            self.0.sidebar.folder_root(),
+            self.0.sidebar.folder_files(),
+        );
     }
 
-    fn update_breadcrumb(&self, tab: Option<&Rc<Tab>>) {
-        let bar = &self.0.breadcrumb;
-        while let Some(child) = bar.first_child() {
-            bar.remove(&child);
+    fn set_companion_shown(&self, shown: bool) {
+        let paned = &self.0.companion_paned;
+        if shown {
+            const COMPANION_WIDTH: i32 = 360;
+            let available = paned.width().max(COMPANION_WIDTH * 2);
+            let width = (available as f64 * 0.3).clamp(COMPANION_WIDTH as f64, 560.0) as i32;
+            paned.set_position(available - width);
         }
-        let Some(tab) = tab.filter(|_| !self.split_on()) else {
-            bar.set_visible(false);
+        self.0.companion.set_shown(shown);
+        self.update_controls();
+    }
+
+    // ── History ──────────────────────────────────────────────────────────────
+
+    fn history_of_active<T>(&self, f: impl FnOnce(&mut History) -> T) -> Option<T> {
+        if self.split_on() && self.0.active_pane.get() == Pane::Secondary {
+            return Some(f(&mut self.0.secondary_history.borrow_mut()));
+        }
+        self.active_tab().map(|tab| f(&mut tab.history.borrow_mut()))
+    }
+
+    fn current_place(&self) -> Option<Place> {
+        let path = self.active_path()?;
+        Some(Place { path, position: self.active_reader().and_then(|r| r.position()) })
+    }
+
+    /// Follow a link in the active pane, as a browser does; Back returns to this spot.
+    pub fn navigate(&self, path: &Path, anchor: Option<String>) {
+        let path = files::normalize(path);
+        if self.active_path().is_none() || !files::is_document(&path) {
+            self.open_path(&path, anchor, true);
+            return;
+        }
+        let in_secondary = self.split_on() && self.0.active_pane.get() == Pane::Secondary;
+        if !in_secondary && self.tab_for_path(&path).is_some() {
+            self.open_path(&path, anchor, true);
+            return;
+        }
+        let Some(place) = self.current_place() else { return };
+        self.history_of_active(|history| {
+            history.back.push(place);
+            history.forward.clear();
+        });
+        self.show_in_active_pane(&path, anchor, None);
+    }
+
+    fn show_in_active_pane(
+        &self,
+        path: &Path,
+        anchor: Option<String>,
+        position: Option<(usize, f64)>,
+    ) {
+        if self.split_on() && self.0.active_pane.get() == Pane::Secondary {
+            self.show_in_secondary(path, anchor, position);
+        } else if let Some(tab) = self.active_tab() {
+            tab.location.replace(path.to_path_buf());
+            tab.page.set_title(&files::display_name(path));
+            tab.page.set_tooltip(&glib::markup_escape_text(&path.to_string_lossy()));
+            tab.page.set_loading(true);
+            tab.anchor.replace(anchor);
+            tab.restore.set(position);
+            tab.content_hash.set(0);
+            self.watch_tab(&tab);
+            self.load_tab(&tab, false);
+            self.schedule_save();
+        }
+        self.refresh_active();
+    }
+
+    fn go_in_history(&self, back: bool) {
+        let Some(current) = self.current_place() else { return };
+        let target = self.history_of_active(|history| {
+            let (from, to) = if back {
+                (&mut history.back, &mut history.forward)
+            } else {
+                (&mut history.forward, &mut history.back)
+            };
+            let target = from.pop();
+            if target.is_some() {
+                to.push(current);
+            }
+            target
+        });
+        let Some(Some(target)) = target else { return };
+        self.show_in_active_pane(&target.path, None, target.position);
+    }
+
+    fn update_history_actions(&self) {
+        let (can_back, can_forward) = self
+            .history_of_active(|h| (!h.back.is_empty(), !h.forward.is_empty()))
+            .unwrap_or_default();
+        self.set_action_enabled("go-back", can_back);
+        self.set_action_enabled("go-forward", can_forward);
+    }
+
+    fn set_action_enabled(&self, name: &str, enabled: bool) {
+        if let Some(action) = self.0.window.lookup_action(name).and_downcast::<gio::SimpleAction>()
+        {
+            action.set_enabled(enabled);
+        }
+    }
+
+    /// The actions that need a document greyed out without one.
+    fn update_document_actions(&self) {
+        let has_document = self.active_path().is_some();
+        for name in [
+            "open-in-editor",
+            "show-document",
+            "open-terminal",
+            "copy-document-path",
+            "share",
+            "reload",
+            "print",
+            "export-pdf",
+            "previous-heading",
+            "next-heading",
+            "find",
+        ] {
+            self.set_action_enabled(name, has_document);
+        }
+    }
+
+    // ── The document, outside Mdow ───────────────────────────────────────────
+
+    fn toast(&self, text: &str) {
+        let toast = adw::Toast::new(text);
+        toast.set_timeout(3);
+        self.0.toasts.add_toast(toast);
+    }
+
+    fn open_in_editor(&self) {
+        let Some(path) = self.active_path() else { return };
+        if on_omarchy() && omarchy::open_in_editor(&path) {
+            return;
+        }
+        let file = gio::File::for_path(&path);
+        gtk::FileLauncher::new(Some(&file)).launch(
+            Some(&self.0.window),
+            gio::Cancellable::NONE,
+            |_| {},
+        );
+    }
+
+    fn open_terminal(&self) {
+        let Some(dir) = self.active_path().and_then(|p| p.parent().map(Path::to_path_buf)) else {
             return;
         };
-        bar.set_visible(true);
-        let nav = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-        nav.set_hexpand(true);
-        nav.set_overflow(gtk::Overflow::Hidden);
-        let root = self.0.sidebar.folder_root();
-        for (name, dir) in files::breadcrumb_segments(&tab.path, root.as_deref()) {
-            let b = gtk::Button::with_label(&name);
-            b.add_css_class("flat");
-            b.add_css_class("mdow-crumb");
-            b.set_tooltip_text(Some(&format!("Show in Folder: {}", dir.display())));
-            b.set_action_name(Some("win.show-in-folder"));
-            b.set_action_target_value(Some(&dir.to_string_lossy().to_variant()));
-            if let Some(label) = b.child().and_downcast::<gtk::Label>() {
-                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        if !omarchy::open_terminal(&dir) {
+            self.toast("Could not open a terminal");
+        }
+    }
+
+    fn export_pdf_dialog(&self) {
+        let Some(path) = self.active_path() else { return };
+        let name = path.with_extension("pdf");
+        let name = name.file_name().map(|n| n.to_string_lossy().into_owned());
+        let dialog = gtk::FileDialog::builder()
+            .title("Export as PDF")
+            .modal(true)
+            .initial_name(name.unwrap_or_else(|| "document.pdf".to_string()))
+            .build();
+        if let Some(dir) = path.parent() {
+            dialog.set_initial_folder(Some(&gio::File::for_path(dir)));
+        }
+        let weak = self.weak();
+        dialog.save(Some(&self.0.window), gio::Cancellable::NONE, move |result| {
+            let (Some(inner), Ok(file)) = (weak.upgrade(), result) else { return };
+            let win = Win(inner);
+            if let (Some(target), Some(reader)) = (file.path(), win.active_reader()) {
+                win.toast(&match print::export_pdf(&win.0.window, &reader, &target) {
+                    Ok(()) => format!("Exported {}", files::display_name(&target)),
+                    Err(err) => format!("Could not export the PDF: {err}"),
+                });
             }
-            nav.append(&b);
-            let chevron = gtk::Image::from_icon_name("pan-end-symbolic");
-            chevron.add_css_class("mdow-crumb-sep");
-            nav.append(&chevron);
+        });
+    }
+
+    fn share(&self) {
+        let Some(path) = self.active_path() else { return };
+        if !omarchy::share_file(&path) {
+            self.toast("Sharing needs Omarchy's share menu");
         }
-        let filename = files::display_name(&tab.path);
-        let title = tab
-            .reader
-            .title()
-            .filter(|_| tab.error.get().is_none())
-            .unwrap_or_else(|| filename.clone());
-        let file = gtk::Button::with_label(&title);
-        file.add_css_class("flat");
-        file.add_css_class("mdow-crumb");
-        file.add_css_class("mdow-crumb-file");
-        file.set_tooltip_text(Some("Show in Folder"));
-        file.set_action_name(Some("win.show-in-folder"));
-        file.set_action_target_value(Some(&tab.path.to_string_lossy().to_variant()));
-        if let Some(label) = file.child().and_downcast::<gtk::Label>() {
-            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        }
-        nav.append(&file);
-        if title != filename {
-            let secondary = gtk::Label::new(Some(&filename));
-            secondary.add_css_class("mdow-crumb-secondary");
-            secondary.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            secondary.set_margin_start(4);
-            nav.append(&secondary);
-        }
-        bar.append(&nav);
-        let wide = self.0.prefs.borrow().wide_mode;
-        let toggle = flat_icon_button(
-            if wide { "mdow-narrow-symbolic" } else { "mdow-wide-symbolic" },
-            if wide { "Constrained width" } else { "Full width" },
-        );
-        toggle.set_action_name(Some("win.wide-mode"));
-        bar.append(&toggle);
     }
 
     // ── Split view ───────────────────────────────────────────────────────────
@@ -997,7 +1323,7 @@ impl Win {
         self.0.primary_header.set_visible(split);
         self.0.split_line.set_visible(split);
         if split {
-            let primary = self.active_tab().map(|t| files::display_name(&t.path));
+            let primary = self.active_tab().map(|t| files::display_name(&t.path()));
             self.0.primary_name.set_text(primary.as_deref().unwrap_or("No document"));
             let secondary =
                 self.0.secondary.borrow().as_ref().map(|s| files::display_name(&s.path));
@@ -1022,7 +1348,7 @@ impl Win {
         if on {
             self.0.secondary_box.set_visible(true);
             if self.0.secondary.borrow().is_none() {
-                // Like the desktop: the next tab after the active one, else the previous.
+                // The next tab after the active one, else the previous.
                 let n = self.0.tab_view.n_pages();
                 let current =
                     self.0.tab_view.selected_page().map(|p| self.0.tab_view.page_position(&p));
@@ -1037,7 +1363,7 @@ impl Win {
                 });
                 let path = pick
                     .and_then(|i| self.tab_for_page(&self.0.tab_view.nth_page(i)))
-                    .map(|t| t.path.clone());
+                    .map(|t| t.path());
                 self.set_secondary(path.as_deref(), None);
             }
         } else {
@@ -1054,7 +1380,31 @@ impl Win {
         self.schedule_save();
     }
 
+    /// Link navigation in the right pane: same reader, new document.
+    fn show_in_secondary(
+        &self,
+        path: &Path,
+        anchor: Option<String>,
+        position: Option<(usize, f64)>,
+    ) {
+        let pane = self.0.secondary.borrow().as_ref().map(|old| {
+            Rc::new(SecondaryPane {
+                path: path.to_path_buf(),
+                reader: old.reader.clone(),
+                generation: Cell::new(old.generation.get()),
+            })
+        });
+        match pane {
+            Some(pane) => {
+                self.0.secondary.replace(Some(pane.clone()));
+                self.load_secondary(&pane, false, anchor, position);
+            }
+            None => self.set_secondary(Some(path), anchor),
+        }
+    }
+
     fn set_secondary(&self, path: Option<&Path>, anchor: Option<String>) {
+        self.0.secondary_history.replace(History::default());
         if !self.split_on() {
             self.0.secondary_box.set_visible(true);
             if let Some(action) = self.0.window.lookup_action("split-view") {
@@ -1075,7 +1425,7 @@ impl Win {
                     generation: Cell::new(0),
                 });
                 self.0.secondary.replace(Some(pane.clone()));
-                self.load_secondary(&pane, false, anchor);
+                self.load_secondary(&pane, false, anchor, None);
             }
             None => self.0.secondary_stack.set_visible_child_name("empty"),
         }
@@ -1083,7 +1433,13 @@ impl Win {
         self.schedule_save();
     }
 
-    fn load_secondary(&self, pane: &Rc<SecondaryPane>, keep: bool, anchor: Option<String>) {
+    fn load_secondary(
+        &self,
+        pane: &Rc<SecondaryPane>,
+        keep: bool,
+        anchor: Option<String>,
+        position: Option<(usize, f64)>,
+    ) {
         let generation = pane.generation.get() + 1;
         pane.generation.set(generation);
         let weak_win = self.weak();
@@ -1102,6 +1458,8 @@ impl Win {
                 pane.reader.set_document(doc, &path, keep);
                 if let Some(anchor) = anchor {
                     pane.reader.scroll_to_anchor(&anchor);
+                } else if let Some((row, offset)) = position {
+                    pane.reader.restore_position(row, offset);
                 }
                 if win.0.active_pane.get() == Pane::Secondary {
                     win.refresh_active();
@@ -1116,7 +1474,7 @@ impl Win {
             && pane.path == path
             && pane.reader.has_document()
         {
-            self.load_secondary(&pane, true, None);
+            self.load_secondary(&pane, true, None, None);
         }
     }
 
@@ -1145,6 +1503,15 @@ impl Win {
             }
             let dirs = scan.dirs.clone();
             win.0.sidebar.set_folder(Some((root.clone(), scan)));
+            if reveal
+                && win.0.tab_view.n_pages() == 0
+                && let Some(readme) = win.0.sidebar.folder_files().into_iter().find(|p| {
+                    p.parent() == Some(root.as_path())
+                        && p.file_stem().is_some_and(|s| s.eq_ignore_ascii_case("readme"))
+                })
+            {
+                win.open_path(&readme, None, true);
+            }
             win.watch_folder(&root, &dirs);
             win.update_prefs(|p| p.last_folder = Some(root.to_string_lossy().into_owned()));
             if reveal {
@@ -1301,28 +1668,49 @@ impl Win {
         self.0.toasts.add_toast(toast);
     }
 
-    fn palette_files(&self) -> Vec<(String, String)> {
+    /// For Quick Open: the folder's documents, then recents outside the folder.
+    fn palette_files(&self) -> (dialogs::NamedPaths, dialogs::NamedPaths) {
         let folder_files = self.0.sidebar.folder_files();
         let mut seen: std::collections::HashSet<PathBuf> = folder_files.iter().cloned().collect();
-        let mut items: Vec<(String, String)> = folder_files
+        let files = folder_files
             .iter()
             .map(|p| (p.to_string_lossy().into_owned(), files::display_name(p)))
             .collect();
+        let mut recents = Vec::new();
         for recent in self.0.prefs.borrow().recents.iter() {
             let p = PathBuf::from(recent);
             if seen.insert(p.clone()) {
-                items.push((recent.clone(), files::display_name(&p)));
+                recents.push((recent.clone(), files::display_name(&p)));
             }
         }
-        items
+        (files, recents)
     }
 
     // ── Window chrome ────────────────────────────────────────────────────────
 
+    /// The card sits flush against an open sidebar, and the tabs line up with the card.
     fn update_controls(&self) {
-        // The sidebar header carries the start window buttons while it shows.
         let sidebar_visible = self.0.split.shows_sidebar() && !self.0.split.is_collapsed();
-        self.0.start_controls.set_visible(!sidebar_visible);
+        if sidebar_visible {
+            self.0.card.add_css_class("mdow-card-flush");
+        } else {
+            self.0.card.remove_css_class("mdow-card-flush");
+        }
+        if self.0.companion.is_shown() {
+            self.0.card.add_css_class("mdow-card-flush-end");
+        } else {
+            self.0.card.remove_css_class("mdow-card-flush-end");
+        }
+        let spacer = if sidebar_visible {
+            let scale = self.0.prefs.borrow().interface_scale;
+            let (_, leading, _, _) =
+                self.0.header_leading.measure(gtk::Orientation::Horizontal, -1);
+            // The header's padding is 8px.
+            (theme::sidebar_width(scale) as i32 - leading - 8).max(0)
+        } else {
+            0
+        };
+        self.0.header_spacer.set_size_request(spacer, -1);
     }
 
     fn setup_signals(&self) {
@@ -1522,6 +1910,27 @@ impl Win {
                 reader.close_find();
                 return glib::Propagation::Stop;
             }
+            if win.0.companion.handle_shortcut(key, state) {
+                return glib::Propagation::Stop;
+            }
+            let focus = gtk::prelude::RootExt::focus(&win.0.window);
+            if win.0.companion.claim_typing(key, state, focus.as_ref()) {
+                return glib::Propagation::Stop;
+            }
+            let typing = focus.as_ref().is_some_and(|f| {
+                f.is::<gtk::Text>()
+                    || f.is::<gtk::Editable>()
+                    || f.downcast_ref::<gtk::TextView>().is_some_and(|view| view.is_editable())
+            });
+            if !typing
+                && win.0.window.visible_dialog().is_none()
+                && let Some(reader) = win.active_reader()
+            {
+                let inside = focus.as_ref().is_some_and(|f| reader.contains_focus(f));
+                if reader.handle_key(key, state, inside) {
+                    return glib::Propagation::Stop;
+                }
+            }
             glib::Propagation::Proceed
         });
         let weak = self.weak();
@@ -1569,6 +1978,13 @@ impl Win {
                 Win(inner).save_now();
             }
             glib::Propagation::Proceed
+        });
+        let weak = self.weak();
+        self.0.window.connect_destroy(move |_| {
+            if let Some(inner) = weak.upgrade() {
+                inner.companion.close();
+                WINDOWS.with_borrow_mut(|windows| windows.retain(|w| !Rc::ptr_eq(w, &inner)));
+            }
         });
     }
 
@@ -1659,15 +2075,93 @@ impl Win {
         page.and_then(|p| self.tab_for_page(&p))
     }
 
-    fn setup_actions(
-        &self,
-        _sidebar_toggle: &gtk::ToggleButton,
-        _split_toggle: &gtk::ToggleButton,
-    ) {
+    fn setup_actions(&self) {
         self.add_action("open-file", |w| w.open_file_dialog());
         self.add_action("open-folder", |w| w.open_folder_dialog());
+        self.add_action("new-window", |w| {
+            let Some(app) = w.0.window.application().and_downcast::<adw::Application>() else {
+                return;
+            };
+            Win::new(&app, w.0.prefs.clone(), w.0.prefs_path.clone()).0.window.present();
+        });
+        self.add_toggle_action("toggle-companion", false, |w, on| w.set_companion_shown(on));
+        self.add_action("close-window", |w| w.0.window.close());
+        self.add_action("menu", |w| w.0.menu_button.popup());
+        self.add_action("go-back", |w| w.go_in_history(true));
+        self.add_action("go-forward", |w| w.go_in_history(false));
+        self.add_action("previous-heading", |w| {
+            if let Some(reader) = w.active_reader() {
+                reader.jump_heading(-1);
+            }
+        });
+        self.add_action("next-heading", |w| {
+            if let Some(reader) = w.active_reader() {
+                reader.jump_heading(1);
+            }
+        });
+        self.add_action("reload", |w| {
+            if let Some(tab) = w.active_tab() {
+                tab.content_hash.set(0);
+                w.load_tab(&tab, true);
+            }
+        });
+        self.add_action("open-in-editor", |w| w.open_in_editor());
+        self.add_action("show-document", |w| {
+            if let Some(path) = w.active_path() {
+                w.show_in_folder(&path);
+            }
+        });
+        self.add_action("open-terminal", |w| w.open_terminal());
+        self.add_action("copy-document-path", |w| {
+            if let Some(path) = w.active_path() {
+                w.copy_path(&path.to_string_lossy());
+            }
+        });
+        self.add_action("share", |w| w.share());
+        self.add_action("print", |w| {
+            if let Some(reader) = w.active_reader()
+                && let Err(err) = print::print(&w.0.window, &reader)
+            {
+                w.toast(&format!("Could not print: {err}"));
+            }
+        });
+        self.add_action("export-pdf", |w| w.export_pdf_dialog());
+        self.add_string_action("export-pdf-to", |w, path| {
+            if let Some(reader) = w.active_reader()
+                && let Err(err) = print::export_pdf(&w.0.window, &reader, Path::new(path))
+            {
+                w.toast(&format!("Could not export the PDF: {err}"));
+            }
+        });
+        self.add_action("appearance", |w| {
+            if w.omarchy_theme().is_some() && omarchy::open_theme_switcher() {
+                return;
+            }
+            let dark = adw::StyleManager::default().is_dark();
+            let next = if dark { ThemeMode::Light } else { ThemeMode::Dark };
+            w.update_prefs(|p| p.theme = next);
+            if let Some(action) =
+                w.0.window.lookup_action("theme").and_downcast::<gio::SimpleAction>()
+            {
+                action.set_state(&next.id().to_variant());
+            }
+            Win::restyle_all();
+        });
         self.add_action("none", |_| {}).set_enabled(false);
         self.add_string_action("open-path", |w, p| w.open_path(Path::new(p), None, true));
+        self.add_string_action("navigate", |w, p| w.navigate(Path::new(p), None));
+        self.add_action("copy-code", |w| match w.active_reader().and_then(|r| r.code_in_view()) {
+            Some(code) => {
+                w.0.window.clipboard().set_text(code.trim_end_matches('\n'));
+                w.toast("Code copied");
+            }
+            None => w.toast("No code block in view"),
+        });
+        self.add_string_action("follow-link", |w, url| {
+            if let Some(reader) = w.active_reader() {
+                reader.activate_link(url);
+            }
+        });
         self.add_string_action("reload-path", |w, p| {
             if let Some(tab) = w.tab_for_path(Path::new(p)) {
                 tab.page.set_loading(true);
@@ -1748,14 +2242,20 @@ impl Win {
                 reader.find_step(-1);
             }
         });
-        self.add_action("palette", |w| dialogs::present_palette(&w.0.window, w.palette_files()));
+        self.add_action("palette", |w| {
+            let reader = w.active_reader();
+            let headings = reader.as_ref().map(|r| r.headings()).unwrap_or_default();
+            let links = reader.and_then(|r| r.with_document(doc::links)).unwrap_or_default();
+            let (files, recents) = w.palette_files();
+            dialogs::present_palette(&w.0.window, headings, links, files, recents);
+        });
         self.add_action("zoom-in", |w| w.zoom(1));
         self.add_action("zoom-out", |w| w.zoom(-1));
         self.add_action("zoom-reset", |w| w.zoom(0));
         let wide = self.0.prefs.borrow().wide_mode;
         self.add_toggle_action("wide-mode", wide, |w, on| {
             w.update_prefs(|p| p.wide_mode = on);
-            w.apply_visuals();
+            Win::restyle_all();
             w.refresh_active();
         });
         self.add_toggle_action("split-view", false, |w, on| w.set_split(on));
@@ -1765,32 +2265,44 @@ impl Win {
         self.add_choice_action("theme", prefs.theme.id(), |w, id| {
             if let Some(v) = ThemeMode::from_id(id) {
                 w.update_prefs(|p| p.theme = v);
-                w.apply_visuals();
+                Win::restyle_all();
             }
         });
         self.add_choice_action("content-font", prefs.content_font.id(), |w, id| {
             if let Some(v) = ContentFont::from_id(id) {
                 w.update_prefs(|p| p.content_font = v);
-                w.apply_visuals();
+                Win::restyle_all();
             }
         });
         self.add_choice_action("code-font", prefs.code_font.id(), |w, id| {
             if let Some(v) = CodeFont::from_id(id) {
                 w.update_prefs(|p| p.code_font = v);
-                w.apply_visuals();
+                Win::restyle_all();
             }
         });
         self.add_choice_action("interface-scale", prefs.interface_scale.id(), |w, id| {
             if let Some(v) = InterfaceScale::from_id(id) {
                 w.update_prefs(|p| p.interface_scale = v);
-                w.apply_visuals();
+                Win::restyle_all();
             }
         });
         self.add_choice_action("reading-width", prefs.reading_width.id(), |w, id| {
             if let Some(v) = ReadingWidth::from_id(id) {
                 w.update_prefs(|p| p.reading_width = v);
-                w.apply_visuals();
+                Win::restyle_all();
             }
+        });
+        self.add_choice_action("line-spacing", prefs.line_spacing.id(), |w, id| {
+            if let Some(v) = LineSpacing::from_id(id) {
+                w.update_prefs(|p| p.line_spacing = v);
+                Win::restyle_all();
+            }
+        });
+        self.add_toggle_action("live-reload", prefs.live_reload, |w, on| {
+            w.update_prefs(|p| p.live_reload = on);
+        });
+        self.add_toggle_action("open-in-tabs", prefs.open_in_tabs, |w, on| {
+            w.update_prefs(|p| p.open_in_tabs = on);
         });
         self.add_action("reset-appearance", |w| {
             w.update_prefs(|p| p.reset_appearance());
@@ -1801,6 +2313,7 @@ impl Win {
                 ("code-font", prefs.code_font.id()),
                 ("interface-scale", prefs.interface_scale.id()),
                 ("reading-width", prefs.reading_width.id()),
+                ("line-spacing", prefs.line_spacing.id()),
             ] {
                 if let Some(action) =
                     w.0.window.lookup_action(name).and_downcast::<gio::SimpleAction>()
@@ -1808,11 +2321,11 @@ impl Win {
                     action.set_state(&value.to_variant());
                 }
             }
-            w.apply_visuals();
+            Win::restyle_all();
         });
         self.add_action("settings", |w| {
             let prefs = w.0.prefs.borrow().clone();
-            dialogs::present_settings(&w.0.window, &prefs);
+            dialogs::present_settings(&w.0.window, &prefs, on_omarchy());
         });
         self.add_action("shortcuts", |w| dialogs::present_shortcuts(&w.0.window));
         self.add_action("about", |w| dialogs::present_about(&w.0.window));
@@ -1862,18 +2375,18 @@ impl Win {
         });
         self.add_action("tab-right-pane", |w| {
             if let Some(tab) = w.menu_tab() {
-                let path = tab.path.clone();
+                let path = tab.path();
                 w.set_secondary(Some(&path), None);
             }
         });
         self.add_action("tab-copy-path", |w| {
             if let Some(tab) = w.menu_tab() {
-                w.copy_path(&tab.path.to_string_lossy());
+                w.copy_path(&tab.path().to_string_lossy());
             }
         });
         self.add_action("tab-show-in-folder", |w| {
             if let Some(tab) = w.menu_tab() {
-                w.show_in_folder(&tab.path);
+                w.show_in_folder(&tab.path());
             }
         });
     }
@@ -1926,24 +2439,104 @@ impl Win {
     }
 }
 
+/// The ⋯ menu. There's no menu bar on Hyprland, so this holds what Mac has in File and View.
+fn primary_menu(recent_menu: &gio::Menu) -> gio::Menu {
+    fn section(items: &[(&str, &str)]) -> gio::Menu {
+        let menu = gio::Menu::new();
+        for (label, action) in items {
+            menu.append(Some(label), Some(action));
+        }
+        menu
+    }
+    let menu = gio::Menu::new();
+    let files = section(&[
+        ("New Window", "win.new-window"),
+        ("Open File…", "win.open-file"),
+        ("Open Folder…", "win.open-folder"),
+    ]);
+    files.append_submenu(Some("Open Recent"), recent_menu);
+    menu.append_section(None, &files);
+    let document = section(&[
+        ("Open in Editor", "win.open-in-editor"),
+        ("Show in Files", "win.show-document"),
+        ("Open Terminal Here", "win.open-terminal"),
+        ("Copy Path", "win.copy-document-path"),
+    ]);
+    if on_omarchy() {
+        document.append(Some("Share…"), Some("win.share"));
+    }
+    menu.append_section(None, &document);
+    let zoom_section = gio::Menu::new();
+    let zoom_item = gio::MenuItem::new(None, None);
+    zoom_item.set_attribute_value("custom", Some(&"zoom".to_variant()));
+    zoom_section.append_item(&zoom_item);
+    menu.append_section(None, &zoom_section);
+    let view = section(&[
+        ("Show Sidebar", "win.toggle-sidebar"),
+        ("Show Companion", "win.toggle-companion"),
+        ("Split View", "win.split-view"),
+        ("Full Width", "win.wide-mode"),
+        ("Reload", "win.reload"),
+    ]);
+    menu.append_section(None, &view);
+    menu.append_section(
+        None,
+        &section(&[("Export as PDF…", "win.export-pdf"), ("Print…", "win.print")]),
+    );
+    menu.append_section(
+        None,
+        &section(&[
+            ("Settings", "win.settings"),
+            ("Keyboard Shortcuts", "win.shortcuts"),
+            ("About Mdow", "win.about"),
+        ]),
+    );
+    menu.append_section(None, &section(&[("Close Tab", "win.close-tab"), ("Quit", "app.quit")]));
+    menu
+}
+
 pub fn set_accels(app: &adw::Application) {
     let accels: &[(&str, &[&str])] = &[
+        ("win.new-window", &["<Control>n"]),
+        ("win.menu", &["F10"]),
+        ("win.palette", &["<Control>k", "<Control>t", "<Control><Shift>p"]),
         ("win.open-file", &["<Control>o"]),
         ("win.open-folder", &["<Control><Shift>o"]),
         ("win.close-tab", &["<Control>w"]),
-        ("win.palette", &["<Control>k", "<Control><Shift>p"]),
+        ("win.close-window", &["<Control><Shift>w"]),
+        ("win.reload", &["<Control>r", "F5"]),
+        ("win.show-document", &["<Control><Alt>r"]),
+        ("win.open-in-editor", &["<Control><Shift>e"]),
+        ("win.copy-document-path", &["<Control><Alt>c"]),
+        ("win.print", &["<Control>p"]),
         ("win.find", &["<Control>f"]),
         ("win.find-next", &["<Control>g", "F3"]),
         ("win.find-prev", &["<Control><Shift>g", "<Shift>F3"]),
+        ("win.go-back", &["<Control>bracketleft", "<Alt>Left"]),
+        ("win.go-forward", &["<Control>bracketright", "<Alt>Right"]),
+        ("win.previous-heading", &["<Control><Alt>Up"]),
+        ("win.next-heading", &["<Control><Alt>Down"]),
         ("win.toggle-sidebar", &["<Control>b"]),
+        ("win.toggle-companion", &["<Control><Alt>0"]),
+        ("win.sidebar-mode::outline", &["<Control><Alt>1"]),
+        ("win.sidebar-mode::folder", &["<Control><Alt>2"]),
+        ("win.sidebar-mode::recents", &["<Control><Alt>3"]),
         ("win.zoom-in", &["<Control>equal", "<Control>plus", "<Control>KP_Add"]),
         ("win.zoom-out", &["<Control>minus", "<Control>KP_Subtract"]),
         ("win.zoom-reset", &["<Control>0", "<Control>KP_0"]),
         ("win.shortcuts", &["<Control>slash", "<Control>question"]),
         ("win.settings", &["<Control>comma"]),
-        ("win.next-tab", &["<Control><Alt>Right"]),
-        ("win.prev-tab", &["<Control><Alt>Left"]),
-        ("win.wide-mode", &["<Control><Shift>w"]),
+        ("win.next-tab", &["<Control>Tab", "<Control><Shift>bracketright", "<Control><Alt>Right"]),
+        (
+            "win.prev-tab",
+            &[
+                "<Control><Shift>Tab",
+                "<Control><Shift>ISO_Left_Tab",
+                "<Control><Shift>bracketleft",
+                "<Control><Alt>Left",
+            ],
+        ),
+        ("win.wide-mode", &["<Control><Shift>l"]),
         ("win.split-view", &["<Control>backslash"]),
         ("win.fullscreen", &["F11"]),
         ("app.quit", &["<Control>q"]),

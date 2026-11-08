@@ -1,6 +1,6 @@
 //! Syntax highlighting with syntect and bat's grammar collection (two-face).
 //!
-//! Tokens are classified into the six roles of the desktop's GitHub themes rather than coloured
+//! Tokens are classified into the six roles of a GitHub-style theme rather than coloured
 //! directly, so one highlight pass serves both the light and the dark palette.
 
 use std::str::FromStr;
@@ -94,7 +94,7 @@ fn classifier() -> &'static Theme {
     })
 }
 
-/// Fence info strings the grammars don't know by name, as in the desktop's `normalizeLanguage`.
+/// Fence info strings the grammars don't know by name.
 fn alias(lang: &str) -> &str {
     match lang {
         "shell" | "console" | "shellscript" | "sh-session" | "zsh" | "fish" => "bash",

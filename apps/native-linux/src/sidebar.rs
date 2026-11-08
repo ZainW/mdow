@@ -1,5 +1,5 @@
 //! The sidebar: Recents, Folder and Outline, switched by a segmented control, with Settings in
-//! the footer — the desktop's `Sidebar.tsx`. Everything it triggers goes through window actions.
+//! the footer. Everything it triggers goes through window actions.
 
 use crate::doc::Heading;
 use crate::files::{self, Scan, TreeNode};
@@ -157,12 +157,8 @@ impl Sidebar {
         }
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         header.add_css_class("mdow-sidebar-header");
-        let start_controls = gtk::WindowControls::new(gtk::PackType::Start);
-        header.append(&start_controls);
         header.append(modes.widget());
-        let handle = gtk::WindowHandle::new();
-        handle.set_child(Some(&header));
-        root.append(&handle);
+        root.append(&header);
 
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
@@ -176,7 +172,7 @@ impl Sidebar {
         recents_box.set_activate_on_single_click(true);
         recents_box.connect_row_activated(|list, row| {
             let path = row.widget_name();
-            let _ = list.activate_action("win.open-path", Some(&path.to_variant()));
+            let _ = list.activate_action("win.navigate", Some(&path.to_variant()));
         });
         let recents_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         recents_content.append(&group_label("Recents"));
@@ -220,6 +216,16 @@ impl Sidebar {
         content.append(&label);
         settings.set_child(Some(&content));
         footer.append(&settings);
+        let appearance = gtk::Button::from_icon_name("weather-clear-night-symbolic");
+        appearance.add_css_class("flat");
+        appearance.set_action_name(Some("win.appearance"));
+        crate::set_accessible_name(&appearance, "Theme");
+        appearance.set_tooltip_text(Some(if crate::window::on_omarchy() {
+            "Change Omarchy theme"
+        } else {
+            "Switch between light and dark"
+        }));
+        footer.append(&appearance);
         root.append(&footer);
 
         let sidebar = Rc::new(Sidebar {
@@ -365,7 +371,7 @@ impl Sidebar {
                 row.set_expanded(!row.is_expanded());
             } else {
                 let path = node.path.to_string_lossy().into_owned();
-                let _ = list.activate_action("win.open-path", Some(&path.to_variant()));
+                let _ = list.activate_action("win.navigate", Some(&path.to_variant()));
             }
         });
         let scroll = gtk::ScrolledWindow::builder()

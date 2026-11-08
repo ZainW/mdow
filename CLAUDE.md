@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a pnpm monorepo managed by Turborepo.
 
 - `apps/web/` — marketing site and docs (TanStack Start, Cloudflare)
-- `apps/native-linux/` — Mdow for Linux: a Rust app on GTK 4 + libadwaita, no web view or cross-platform UI layer (not a pnpm workspace; built with Cargo)
+- `apps/native-linux/` — Mdow for Linux: a Rust app on GTK 4 + libadwaita with the same layout and features as Mdow for Mac, which takes its look from the Omarchy theme when it runs on Omarchy; no web view or cross-platform UI layer (not a pnpm workspace; built with Cargo)
 - `apps/macos/` — Mdow for Mac: a Swift app on AppKit and TextKit with its own custom look, shipped as `Mdow.app` (not a pnpm workspace; built with SwiftPM)
 - `packages/` — shared libraries (none yet)
 
@@ -41,7 +41,7 @@ Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.
 ## Architecture
 
 - Website docs and changelog render with md4x
-- **Linux** (`apps/native-linux/`): `doc.rs` parses markdown (comrak) or HTML (via htmd → markdown) into top-level rows; `reader.rs` shows them in a virtualized `GtkListView`, one row per block, built into native widgets by `render.rs`. Code is highlighted with syntect, Mermaid is laid out by mermaid-rs-renderer and rasterised with resvg. The design tokens in `theme.rs` are OKLCH values turned into a GTK stylesheet; window actions live in `window.rs`. Fonts and the logo are in `assets/`. Rust style: `cargo fmt` (100 columns) and `cargo clippy`.
+- **Linux** (`apps/native-linux/`): `doc.rs` parses markdown (comrak) or HTML (via htmd → markdown) into top-level rows; `reader.rs` shows them in a virtualized `GtkListView`, one row per block, built into native widgets by `render.rs`. Code is highlighted with syntect, Mermaid is laid out by mermaid-rs-renderer and rasterised with resvg, math is typeset by RaTeX, and `print.rs` sets print and PDF output in Pango. `theme.rs` holds the palettes and builds the GTK stylesheet; `omarchy.rs` reads the current Omarchy theme (`~/.local/state/omarchy/current/theme`), follows `omarchy theme set` live, and calls Omarchy's helpers. Window actions, tabs and per-pane history live in `window.rs`; the OpenCode companion is in `src/companion/`. Fonts and the logo are in `assets/`. Rust style: `cargo fmt` (100 columns) and `cargo clippy`.
 - **Mac** (`apps/macos/`): `MdowKit` renders markdown (Apple's swift-markdown) into an `NSAttributedString` built from TextKit 1 parts: paragraph styles, `NSTextBlock` subclasses for code and quotes, `NSTextTable` for tables, attachments for images. The app target shows it in a read-only `NSTextView` (selection, printing; find is its own floating bar) on a rounded card, with Mdow's own chrome drawn in AppKit views (`Sources/Mdow/Chrome`): a header with in-window tabs (`DocumentTab`), a flat sidebar, and colours from one `Palette` (warm paper light, neutral ink dark, clay accent) shared with the reader. Charter for text, bundled Inter and Geist Mono for the interface and code. Code is highlighted by a hand-written Swift scanner, Mermaid is laid out by Pele in JavaScriptCore and drawn as SVG, HTML files open in a `WKWebView` with JavaScript off. Math is typeset by SwiftMath, updates come through Sparkle 2 (released with every `vX.Y.Z` Mdow release), and the OpenCode companion is a trailing panel (`Sources/*/Companion`). Swift style: 2-space indent, 100 columns.
 
 ## Key Patterns

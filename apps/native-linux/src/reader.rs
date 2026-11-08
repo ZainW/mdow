@@ -1,13 +1,13 @@
 //! The document reader: a virtualized `GtkListView` with one row per top-level block, so even
 //! huge documents open instantly and scroll smoothly. Floating on top: the find bar (top right)
-//! and the zoom indicator (bottom right), as on desktop.
+//! and the zoom indicator (bottom right).
 
-use crate::doc::{CodeChunk, Doc, Heading, gaps};
+use crate::doc::{Block, CodeChunk, Doc, Heading, gaps};
 use crate::files::{self, LinkTarget};
 use crate::highlight::{self, Span};
 use crate::render::{self, Builder, Host, Style};
 use adw::prelude::*;
-use gtk::{gdk, gio, glib, graphene};
+use gtk::{gdk, gio, glib, graphene, pango};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,15 +15,33 @@ use std::rc::{Rc, Weak};
 
 /// What a reader asks of the window that owns it.
 pub trait ReaderHost {
-    fn open_document(&self, path: PathBuf, anchor: Option<String>);
+    fn open_document(&self, path: PathBuf, anchor: Option<String>, new_tab: bool);
     fn heading_changed(&self, reader: &Reader, index: Option<usize>);
     fn zoom(&self, step: i32);
 }
 
-/// Reading-frame padding, as the desktop's `px-12 py-8`.
-const PAD_X: i32 = 48;
+/// Reading-frame padding.
+pub const PAD_X: i32 = 48;
+
+/// The width of a text column holding `chars` characters of `family` at `size` px, side padding
+/// included.
+pub fn text_column(context: &pango::Context, family: &str, size: f64, chars: f64) -> i32 {
+    let mut font = pango::FontDescription::from_string(family);
+    font.set_absolute_size(size * pango::SCALE as f64);
+    let metrics = context.metrics(Some(&font), None);
+    let char_width = metrics.approximate_char_width() as f64 / pango::SCALE as f64;
+    (chars * char_width).round() as i32 + 2 * PAD_X
+}
+
+/// How wide rows may grow: text stops at a comfortable measure, while code, tables, diagrams,
+/// images and formulas, which don't wrap like prose, may use the wider column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Columns {
+    pub text: i32,
+    pub wide: i32,
+}
 const PAD_Y: f64 = 32.0;
-/// Where an anchored heading lands (the desktop's `scroll-margin-top: 1.5rem`).
+/// Where an anchored heading lands.
 const HEADING_OFFSET: f64 = 24.0;
 
 struct BoundRow {
@@ -75,7 +93,7 @@ pub struct Inner {
     store: gio::ListStore,
     doc: RefCell<Option<Rc<DocState>>>,
     style: RefCell<Rc<Style>>,
-    column: Cell<Option<i32>>,
+    column: Cell<Option<Columns>>,
     bound: RefCell<HashMap<usize, BoundRow>>,
     find: RefCell<FindState>,
     find_bar: gtk::Box,
@@ -97,6 +115,8 @@ pub struct Inner {
     animation: RefCell<Option<adw::TimedAnimation>>,
     reveal_generation: Cell<u64>,
     zoom_accum: Cell<f64>,
+    /// The first `g` of `gg`, `gt` or `gT` was just typed.
+    pending_g: Cell<bool>,
 }
 
 #[derive(Clone)]
@@ -117,6 +137,7 @@ impl Host for HostRef {
 
 fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
     let button = gtk::Button::from_icon_name(icon);
+    crate::set_accessible_name(&button, tooltip);
     button.add_css_class("flat");
     button.set_tooltip_text(Some(tooltip));
     button.set_valign(gtk::Align::Center);
@@ -124,7 +145,7 @@ fn icon_button(icon: &str, tooltip: &str) -> gtk::Button {
 }
 
 impl Reader {
-    pub fn new(style: Rc<Style>, column: Option<i32>) -> Reader {
+    pub fn new(style: Rc<Style>, column: Option<Columns>) -> Reader {
         let store = gio::ListStore::new::<glib::BoxedAnyObject>();
         let factory = gtk::SignalListItemFactory::new();
         let list = gtk::ListView::new(
@@ -229,6 +250,7 @@ impl Reader {
             animation: RefCell::new(None),
             reveal_generation: Cell::new(0),
             zoom_accum: Cell::new(0.0),
+            pending_g: Cell::new(false),
         });
         let reader = Reader(inner);
         reader.connect_factory(&factory);
@@ -262,10 +284,6 @@ impl Reader {
         self.0.doc.borrow().as_ref().map(|d| d.doc.headings.clone()).unwrap_or_default()
     }
 
-    pub fn title(&self) -> Option<String> {
-        self.0.doc.borrow().as_ref().and_then(|d| d.doc.title.clone())
-    }
-
     pub fn has_document(&self) -> bool {
         self.0.doc.borrow().is_some()
     }
@@ -283,7 +301,7 @@ impl Reader {
             item.set_focusable(false);
             let clamp = adw::Clamp::new();
             if let Some(inner) = weak.upgrade() {
-                Reader(inner).configure_clamp(&clamp);
+                Reader(inner).configure_clamp(&clamp, false);
             }
             item.set_child(Some(&clamp));
         });
@@ -315,9 +333,10 @@ impl Reader {
         });
     }
 
-    fn configure_clamp(&self, clamp: &adw::Clamp) {
+    fn configure_clamp(&self, clamp: &adw::Clamp, wide: bool) {
         match self.0.column.get() {
-            Some(width) => {
+            Some(columns) => {
+                let width = if wide { columns.wide } else { columns.text };
                 clamp.set_maximum_size(width);
                 clamp.set_tightening_threshold(width);
             }
@@ -348,7 +367,15 @@ impl Reader {
         let wrapper = gtk::Box::new(gtk::Orientation::Vertical, 0);
         wrapper.add_css_class("md");
         wrapper.append(&widget);
-        self.configure_clamp(clamp);
+        let wide = matches!(
+            block,
+            Block::Code(_)
+                | Block::Mermaid(_)
+                | Block::Table(_)
+                | Block::Images(_)
+                | Block::Math(_)
+        );
+        self.configure_clamp(clamp, wide);
         clamp.set_child(Some(&wrapper));
         self.0
             .bound
@@ -367,7 +394,7 @@ impl Reader {
         }
     }
 
-    pub fn set_style(&self, style: Rc<Style>, column: Option<i32>) {
+    pub fn set_style(&self, style: Rc<Style>, column: Option<Columns>) {
         let anchor = self.anchor();
         let zoomed = (self.0.style.borrow().fs - style.fs).abs() > f64::EPSILON;
         self.0.style.replace(style);
@@ -451,7 +478,96 @@ impl Reader {
         None
     }
 
-    fn activate_link(&self, uri: &str) {
+    /// A key press with no text field focused. Letters work from anywhere in the window, since
+    /// nothing else in it takes them; scrolling keys only when the document has focus, as the
+    /// sidebar's lists and the buttons use them too. Returns whether the key was used.
+    pub fn handle_key(&self, key: gdk::Key, state: gdk::ModifierType, focus_inside: bool) -> bool {
+        if !(state & (gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK)).is_empty() {
+            return false;
+        }
+        let shift = state.contains(gdk::ModifierType::SHIFT_MASK);
+        let widget: gtk::Widget = self.0.root.clone().upcast();
+        if let Some(action) = self.motion_action(key) {
+            let _ = widget.activate_action(action, None);
+            return true;
+        }
+        let vadj = self.0.scroller.vadjustment();
+        let page = vadj.page_size();
+        let pending_g = self.0.pending_g.replace(false);
+        let delta = match key {
+            gdk::Key::j => 48.0,
+            gdk::Key::k => -48.0,
+            gdk::Key::d => page * 0.5,
+            gdk::Key::u => -page * 0.5,
+            gdk::Key::G => vadj.upper(),
+            gdk::Key::g if pending_g => -vadj.upper(),
+            gdk::Key::g => {
+                self.0.pending_g.set(true);
+                return true;
+            }
+            gdk::Key::t if pending_g => {
+                let _ = widget.activate_action("win.next-tab", None);
+                return true;
+            }
+            gdk::Key::T if pending_g => {
+                let _ = widget.activate_action("win.prev-tab", None);
+                return true;
+            }
+            gdk::Key::Page_Down if focus_inside => page * 0.9,
+            gdk::Key::Page_Up if focus_inside => -page * 0.9,
+            gdk::Key::space if focus_inside && !shift => page * 0.9,
+            gdk::Key::space if focus_inside => -page * 0.9,
+            gdk::Key::Down | gdk::Key::KP_Down if focus_inside && !shift => 48.0,
+            gdk::Key::Up | gdk::Key::KP_Up if focus_inside && !shift => -48.0,
+            gdk::Key::Home if focus_inside && !shift => -vadj.upper(),
+            gdk::Key::End if focus_inside && !shift => vadj.upper(),
+            _ => return false,
+        };
+        let target = (vadj.value() + delta).clamp(vadj.lower(), vadj.upper() - page);
+        self.scroll_adjustment(target, false);
+        true
+    }
+
+    /// The source of the first code block at or below the top of the view, for keyboard copy:
+    /// its copy button only shows under the pointer.
+    pub fn code_in_view(&self) -> Option<String> {
+        let top = self.row_at(HEADING_OFFSET + 2.0).map_or(0, |(row, _)| row);
+        let doc = self.0.doc.borrow();
+        let state = doc.as_ref()?;
+        let visible =
+            (self.0.scroller.vadjustment().page_size() / self.0.style.borrow().fs) as usize;
+        state.doc.blocks.iter().skip(top).take(visible.max(1)).find_map(|block| match block {
+            Block::Code(chunk) => Some(chunk.source.text.clone()),
+            _ => None,
+        })
+    }
+
+    pub fn contains_focus(&self, focus: &gtk::Widget) -> bool {
+        focus.is_ancestor(&self.0.root) || *focus == *self.0.root.upcast_ref::<gtk::Widget>()
+    }
+
+    /// Single keys for a read-only document, the same motions as the terminal apps around it.
+    fn motion_action(&self, key: gdk::Key) -> Option<&'static str> {
+        Some(match key {
+            gdk::Key::slash => "win.find",
+            gdk::Key::n => "win.find-next",
+            gdk::Key::N => "win.find-prev",
+            gdk::Key::H => "win.go-back",
+            gdk::Key::L => "win.go-forward",
+            gdk::Key::bracketleft => "win.previous-heading",
+            gdk::Key::bracketright => "win.next-heading",
+            gdk::Key::o => "win.palette",
+            gdk::Key::b => "win.toggle-sidebar",
+            gdk::Key::e => "win.open-in-editor",
+            gdk::Key::r => "win.reload",
+            gdk::Key::q => "win.close-tab",
+            gdk::Key::question => "win.shortcuts",
+            gdk::Key::y => "win.copy-code",
+            _ => return None,
+        })
+    }
+
+    pub fn activate_link(&self, uri: &str) {
         let path = self.path();
         match files::resolve_link(uri, &path) {
             LinkTarget::Anchor(anchor) => {
@@ -467,7 +583,14 @@ impl Reader {
                         self.scroll_to_anchor(&anchor);
                     }
                 } else if let Some(host) = self.host() {
-                    host.open_document(target, anchor);
+                    // Ctrl+click opens beside this document, a plain click replaces it.
+                    let new_tab = gtk::gdk::Display::default()
+                        .and_then(|d| d.default_seat())
+                        .and_then(|seat| seat.keyboard())
+                        .is_some_and(|keyboard| {
+                            keyboard.modifier_state().contains(gdk::ModifierType::CONTROL_MASK)
+                        });
+                    host.open_document(target, anchor, new_tab);
                 }
             }
             LinkTarget::File(target) => {
@@ -502,6 +625,46 @@ impl Reader {
                 true
             }
             None => false,
+        }
+    }
+
+    pub fn with_document<T>(&self, f: impl FnOnce(&Doc) -> T) -> Option<T> {
+        self.0.doc.borrow().as_ref().map(|state| f(&state.doc))
+    }
+
+    /// The row at the top of the view and its offset, to come back to later.
+    pub fn position(&self) -> Option<(usize, f64)> {
+        self.anchor()
+    }
+
+    pub fn restore_position(&self, row: usize, offset: f64) {
+        let last = self.0.store.n_items().saturating_sub(1) as usize;
+        self.reveal(row.min(last), None, Align::RowTop(offset), false);
+    }
+
+    /// Go to the next or previous heading from where the view is; before the first, to the top.
+    pub fn jump_heading(&self, step: i32) {
+        let rows: Vec<usize> = self
+            .0
+            .doc
+            .borrow()
+            .as_ref()
+            .map(|d| d.doc.headings.iter().map(|h| h.row).collect())
+            .unwrap_or_default();
+        // A heading we jumped to sits just below the top edge, so look there.
+        let Some((top, _)) = self.row_at(HEADING_OFFSET + 2.0) else { return };
+        let target = if step > 0 {
+            rows.iter().position(|row| *row > top)
+        } else {
+            rows.iter().rposition(|row| *row < top)
+        };
+        match target {
+            Some(index) => self.reveal(rows[index], None, Align::Top(HEADING_OFFSET), false),
+            None if step < 0 => {
+                let vadj = self.0.scroller.vadjustment();
+                self.scroll_adjustment(vadj.lower(), false);
+            }
+            None => {}
         }
     }
 
@@ -658,42 +821,6 @@ impl Reader {
                 Reader(inner).schedule_heading_update();
             }
         });
-
-        // Keyboard scrolling: the list's own key handling moves between items, not pages.
-        let keys = gtk::EventControllerKey::new();
-        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-        let weak = self.weak();
-        keys.connect_key_pressed(move |controller, key, _, state| {
-            let Some(inner) = weak.upgrade() else { return glib::Propagation::Proceed };
-            let reader = Reader(inner);
-            let focus = controller.widget().and_then(|w| w.root()).and_then(|r| r.focus());
-            if focus.is_some_and(|f| f.is::<gtk::Text>() || f.is::<gtk::Editable>()) {
-                return glib::Propagation::Proceed;
-            }
-            let mods = state & (gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK);
-            if !mods.is_empty() {
-                return glib::Propagation::Proceed;
-            }
-            let shift = state.contains(gdk::ModifierType::SHIFT_MASK);
-            let vadj = reader.0.scroller.vadjustment();
-            let page = vadj.page_size();
-            let delta = match key {
-                gdk::Key::Page_Down => page * 0.9,
-                gdk::Key::Page_Up => -page * 0.9,
-                gdk::Key::space if !shift => page * 0.9,
-                gdk::Key::space => -page * 0.9,
-                gdk::Key::Down | gdk::Key::KP_Down if !shift => 48.0,
-                gdk::Key::Up | gdk::Key::KP_Up if !shift => -48.0,
-                gdk::Key::Home if !shift => -vadj.upper(),
-                gdk::Key::End if !shift => vadj.upper(),
-                _ => return glib::Propagation::Proceed,
-            };
-            let target = (vadj.value() + delta).clamp(vadj.lower(), vadj.upper() - page);
-            let big = delta.abs() >= page * 0.5;
-            reader.scroll_adjustment(target, big && delta.abs() < page * 3.0);
-            glib::Propagation::Stop
-        });
-        self.0.scroller.add_controller(keys);
 
         // Ctrl + wheel / pinch zoom.
         let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
@@ -1096,5 +1223,36 @@ impl Reader {
     /// Debug aid for screenshots: scroll so `row` sits at the top.
     pub fn scroll_to_row(&self, row: usize) {
         self.reveal(row, None, Align::Top(0.0), false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gtk::prelude::FontMapExt;
+
+    /// Real prose, set at the computed width, lands near the measure it was asked for.
+    #[test]
+    fn text_column_holds_about_the_requested_characters_per_line() {
+        crate::fonts::register();
+        let context = pangocairo::FontMap::new().create_context();
+        let family = crate::dialogs::content_pango_family(crate::prefs::ContentFont::Charter);
+        let width = text_column(&context, family, 16.0, 70.0) - 2 * PAD_X;
+        let text = "Atlas keeps every device in step with a local-first sync engine. Edits land \
+            in an on-device log first, then replicate to peers in the background, so the app stays \
+            instant offline and converges the moment a connection returns. Every mutation is an \
+            operation with a timestamp, and merging is deterministic, so any two replicas that have \
+            seen the same set of operations end up identical.";
+        let layout = pango::Layout::new(&context);
+        let mut font = pango::FontDescription::from_string(family);
+        font.set_absolute_size(16.0 * pango::SCALE as f64);
+        layout.set_font_description(Some(&font));
+        layout.set_width(width * pango::SCALE);
+        layout.set_wrap(pango::WrapMode::Word);
+        layout.set_text(text);
+        let full_lines = (layout.line_count() - 1) as f64;
+        let last = layout.line_readonly(layout.line_count() - 1).map_or(0, |l| l.length()) as f64;
+        let per_line = (text.len() as f64 - last) / full_lines;
+        assert!((60.0..=80.0).contains(&per_line), "{per_line:.0} characters per line");
     }
 }
