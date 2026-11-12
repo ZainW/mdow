@@ -99,6 +99,18 @@ impl Raster {
     }
 }
 
+/// The fonts to set an SVG's text in. Reading the system's fonts takes a while, so drawings
+/// with no text in them (the logo, and formulas, whose glyphs are outlines) go without.
+fn fonts_for(svg: &[u8]) -> Arc<usvg::fontdb::Database> {
+    static NONE: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+    let gzipped = svg.starts_with(&[0x1f, 0x8b]);
+    if gzipped || svg.windows(5).any(|w| w == b"<text") {
+        fontdb()
+    } else {
+        NONE.get_or_init(|| Arc::new(usvg::fontdb::Database::new())).clone()
+    }
+}
+
 fn fontdb() -> Arc<usvg::fontdb::Database> {
     static DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
     DB.get_or_init(|| {
@@ -122,7 +134,7 @@ fn rasterize_svg(
     resources: Option<std::path::PathBuf>,
 ) -> Result<Raster, String> {
     let options = usvg::Options {
-        fontdb: fontdb(),
+        fontdb: fonts_for(data),
         resources_dir: resources,
         font_family: "Inter Variable".to_string(),
         ..usvg::Options::default()

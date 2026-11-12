@@ -28,6 +28,7 @@ From the repo root, turbo orchestrates the pnpm workspaces (the website):
 The native apps:
 
 - `pnpm run dev:linux` / `test:linux` / `install:linux` — run, test, or install Mdow for Linux (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.5); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/native-linux/packaging/`)
+- `pnpm run perf:linux` — time Mdow for Linux starting up, opening documents, scrolling, zooming and restyling, without a display (`--against <binary>` compares two builds; `MDOW_PERF=1` logs the same timings in normal use)
 - `pnpm run dev:mac` / `test:mac` / `install:mac` — run, test, or install Mdow for Mac (needs Xcode 26+; macOS 15+ to run)
 
 Always use `pnpm run` scripts — never invoke oxlint, oxfmt, or tsgo directly.

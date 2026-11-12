@@ -351,6 +351,16 @@ mod menus {
 #[cfg(target_os = "macos")]
 pub use menus::{install as install_submenus, note_recent, refresh as refresh_submenus};
 
+// Elsewhere there's no menu bar or recent documents list; headless runs and tests go without.
+#[cfg(not(target_os = "macos"))]
+pub fn install_submenus() -> bool {
+    false
+}
+#[cfg(not(target_os = "macos"))]
+pub fn refresh_submenus(_: &[std::path::PathBuf], _: crate::prefs::ReadingWidth) {}
+#[cfg(not(target_os = "macos"))]
+pub fn note_recent(_: &Path) {}
+
 /// Whether macOS keeps windows when an app quits: System Settings › Desktop & Dock › "Close
 /// windows when quitting an application", off.
 pub fn keeps_windows() -> bool {

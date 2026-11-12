@@ -8,6 +8,7 @@ mod fonts;
 mod highlight;
 mod media;
 mod omarchy;
+mod perf;
 mod prefs;
 mod print;
 mod reader;
@@ -99,9 +100,14 @@ fn main_window(app: &adw::Application) -> Win {
         return win;
     }
     let win = Win::new(app, shared_prefs(), prefs_path());
+    perf::step("window built");
     win.restore_session();
+    perf::step("session restored");
     if let Ok(target) = std::env::var("MDOW_SCREENSHOT") {
         schedule_screenshot(&win, target);
+    }
+    if let Some(scenarios) = perf::bench() {
+        win.run_bench(scenarios);
     }
     win
 }
@@ -159,14 +165,18 @@ fn main() -> glib::ExitCode {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return glib::ExitCode::SUCCESS;
     }
+    perf::init();
     fonts::register();
+    perf::step("fonts registered");
     let mut flags = gio::ApplicationFlags::HANDLES_OPEN;
-    if std::env::var_os("MDOW_SCREENSHOT").is_some() {
+    if std::env::var_os("MDOW_SCREENSHOT").is_some() || perf::bench().is_some() {
         flags |= gio::ApplicationFlags::NON_UNIQUE;
     }
     let app = adw::Application::builder().application_id(APP_ID).flags(flags).build();
     app.connect_startup(|app| {
+        perf::step("GTK started");
         window::init_omarchy();
+        perf::step("Omarchy theme read");
         if std::env::var_os("MDOW_SCREENSHOT").is_some()
             && let Some(settings) = gtk::Settings::default()
         {
@@ -175,6 +185,7 @@ fn main() -> glib::ExitCode {
         }
         highlight::preload();
         install_runtime_icons();
+        perf::step("icons installed");
         window::set_accels(app);
         let quit = gio::SimpleAction::new("quit", None);
         let weak = app.downgrade();
@@ -191,6 +202,7 @@ fn main() -> glib::ExitCode {
     app.connect_shutdown(|_| companion::service::Runtime::shared().stop_now());
     app.connect_activate(|app| {
         main_window(app).window().present();
+        perf::step("window presented");
     });
     app.connect_open(|app, files, _| {
         let win = main_window(app);
@@ -199,6 +211,7 @@ fn main() -> glib::ExitCode {
             win.open_path(path, None, i + 1 == paths.len());
         }
         win.window().present();
+        perf::step("window presented");
     });
     app.run()
 }
