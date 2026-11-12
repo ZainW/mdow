@@ -8,7 +8,7 @@ use super::picker::{self, PickerFor};
 use super::types::*;
 use crate::app::App;
 use crate::icons;
-use crate::theme::{self, CARD_RADIUS, GUTTER, Palette};
+use crate::theme::{self, GUTTER, Palette};
 use rune::{
     Color, Cursor, Drag, El, Family, Icon, Key, KeyEvent, Link, LoopSpec, PopupItem, PopupMenu,
     ScrollSpec, Span, TextStyle, Tx, col, el, icon, rich, row, text,
@@ -1274,14 +1274,14 @@ fn review_bar(s: &App, change: &ChangePart, p: &Palette) -> El {
                     buttons = buttons
                         .child(
                             pill("companion-review-decline", None, "Decline", Pill::Secondary, p)
-                                .help("Decline (⌘⌫)")
+                                .help(crate::platform::label("Decline (⌘⌫)"))
                                 .on_press(move |s: &mut App| {
                                     s.companion.review(&decline, Decision::Reject)
                                 }),
                         )
                         .child(
                             pill("companion-review-accept", None, "Accept", Pill::Primary, p)
-                                .help("Accept (⌘↩)")
+                                .help(crate::platform::label("Accept (⌘↩)"))
                                 .on_press(move |s: &mut App| {
                                     s.companion.review(&permission, Decision::Approve)
                                 }),
@@ -1479,7 +1479,7 @@ fn composer(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
         .pt(10.0)
         .px(10.0)
         .pb(7.0)
-        .radius(CARD_RADIUS)
+        .radius(p.radius)
         .fill(p.paper)
         .border(1.0, if c.composer.focused { p.strong_line } else { p.line })
         .shadow(2.0, 12.0, Color::BLACK.alpha(0.05))
@@ -1559,7 +1559,7 @@ fn composer(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
                 .fill(p.text)
                 .role("button")
                 .label("Stop")
-                .help("Stop (⌘.)")
+                .help(crate::platform::label("Stop (⌘.)"))
                 .focusable(true)
                 .hover(p.paper.alpha(0.12))
                 .on_press(|s: &mut App| s.companion.stop())

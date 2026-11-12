@@ -1,0 +1,51 @@
+# Flatpak manifest for Mdow on Linux.
+#   flatpak-builder --user --install --install-deps-from=flathub build apps/rune/packaging/com.zain.mdow.yml
+# CI builds it on every push that touches the app.
+id: com.zain.mdow
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: mdow
+finish-args:
+  # Follow the Omarchy theme where there is one.
+  - --filesystem=~/.local/state/omarchy:ro
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Remote images in documents.
+  - --share=network
+  # A reader follows relative links and images, shows folder trees and watches files for
+  # changes, so it reads files where they are rather than through the document portal.
+  - --filesystem=host:ro
+build-options:
+  env:
+    CARGO_HOME: /run/build/mdow/cargo
+    RUSTUP_HOME: /run/build/mdow/rustup
+modules:
+  - name: mdow
+    buildsystem: simple
+    build-options:
+      # Rune pins its Rust toolchain, so it comes from rustup rather than the SDK's extension,
+      # and crates download at build time; a Flathub submission would vendor both.
+      build-args:
+        - --share=network
+    build-commands:
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+      - . "$CARGO_HOME/env" && cd apps/rune && cargo build --release --locked
+      - install -Dm755 apps/rune/target/release/mdow /app/bin/mdow
+      - install -d /app/share/applications
+      - sed 's|@BINDIR@/||' apps/rune/data/com.zain.mdow.desktop.in > /app/share/applications/com.zain.mdow.desktop
+      - install -Dm644 apps/rune/data/com.zain.mdow.metainfo.xml /app/share/metainfo/com.zain.mdow.metainfo.xml
+      - install -Dm644 apps/native-linux/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.svg
+    sources:
+      # The app, and the fonts and icon it shares with apps/native-linux.
+      - type: dir
+        path: ..
+        dest: apps/rune
+        skip:
+          - target
+          - dist
+      - type: dir
+        path: ../../native-linux/assets
+        dest: apps/native-linux/assets

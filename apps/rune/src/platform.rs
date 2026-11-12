@@ -1,17 +1,69 @@
-//! The bits of macOS Rune leaves to the app: the light/dark override, Finder and editor
-//! hand-offs, and documents opened from Finder, the Dock or `open`.
+//! What Rune leaves to the app on each system: the light/dark override, hand-offs to the file
+//! manager and the editor, documents opened from outside, and how shortcuts are written.
+//!
+//! On macOS that is AppKit: Finder, `open`, the menu bar's submenus and the recent documents
+//! list. On Linux it is the desktop's own tools (`xdg-open`, the file manager's D-Bus name, and
+//! Omarchy's helpers where they exist), and Ctrl where the Mac has ⌘.
 
 use crate::prefs::Appearance;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-pub fn reveal_in_finder(path: &Path) {
-    let _ = Command::new("/usr/bin/open").arg("-R").arg(path).spawn();
+pub const MAC: bool = cfg!(target_os = "macos");
+
+/// Runs a helper and forgets it: nothing to read back, and a failure leaves things as they were.
+fn run(program: &str, args: &[&std::ffi::OsStr]) -> bool {
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|mut child| {
+            // Reap it, so helpers that exit at once don't linger as zombies.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        })
+        .is_ok()
+}
+
+/// Shows the file selected in Finder, or in the desktop's file manager.
+pub fn reveal_in_files(path: &Path) {
+    if MAC {
+        run("/usr/bin/open", &["-R".as_ref(), path.as_os_str()]);
+        return;
+    }
+    // File managers answer on this name and select the file; without one, open its folder.
+    let uri = format!("array:string:file://{}", path.display());
+    let shown = Command::new("dbus-send")
+        .args([
+            "--session",
+            "--print-reply",
+            "--dest=org.freedesktop.FileManager1",
+            "/org/freedesktop/FileManager1",
+            "org.freedesktop.FileManager1.ShowItems",
+            &uri,
+            "string:",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if !shown && let Some(dir) = path.parent() {
+        run("xdg-open", &[dir.as_os_str()]);
+    }
 }
 
 /// Opens the file in the default text editor.
 pub fn open_in_editor(path: &Path) {
-    let _ = Command::new("/usr/bin/open").arg("-t").arg(path).spawn();
+    if MAC {
+        run("/usr/bin/open", &["-t".as_ref(), path.as_os_str()]);
+    } else if !run("omarchy-launch-editor", &[path.as_os_str()]) {
+        // Omarchy knows the editor; elsewhere the desktop picks the app for the file.
+        run("xdg-open", &[path.as_os_str()]);
+    }
 }
 
 /// Opens a linked file in its app, but only shows apps, folders, scripts and other executables in
@@ -30,10 +82,140 @@ pub fn open_with_default_app(path: &Path) {
     let executable =
         std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
     if path.is_dir() || RUNNABLE.contains(&ext.as_str()) || executable {
-        reveal_in_finder(path);
+        reveal_in_files(path);
         return;
     }
-    let _ = Command::new("/usr/bin/open").arg(path).spawn();
+    run(if MAC { "/usr/bin/open" } else { "xdg-open" }, &[path.as_os_str()]);
+}
+
+/// Keeps Vulkan from loading NVIDIA's driver on a machine with no NVIDIA GPU. Call first in
+/// `main`, before anything starts a thread.
+///
+/// The Vulkan loader opens every installed driver to ask what it can drive. NVIDIA's takes
+/// about half a second to answer "nothing" where its packages are installed without one of its
+/// GPUs (an eGPU that isn't plugged in, a card that was swapped out), and that half second is
+/// spent before the window's first frame. A driver for hardware that isn't there can't be the
+/// one a window draws with, so leaving it out changes nothing but the wait.
+pub fn skip_absent_gpu_drivers() {
+    const NVIDIA: &str = "0x10de";
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    // Someone who chose their drivers knows better.
+    let chosen = ["VK_LOADER_DRIVERS_DISABLE", "VK_LOADER_DRIVERS_SELECT", "VK_ICD_FILENAMES"]
+        .iter()
+        .chain(&["VK_DRIVER_FILES"])
+        .any(|var| std::env::var_os(var).is_some());
+    if chosen {
+        return;
+    }
+    let Ok(devices) = std::fs::read_dir("/sys/bus/pci/devices") else { return };
+    let mut gpus = 0;
+    for device in devices.flatten() {
+        let read = |name: &str| std::fs::read_to_string(device.path().join(name));
+        // Class 0x03: display controllers.
+        if !read("class").is_ok_and(|class| class.trim().starts_with("0x03")) {
+            continue;
+        }
+        gpus += 1;
+        if read("vendor").is_ok_and(|vendor| vendor.trim() == NVIDIA) {
+            return;
+        }
+    }
+    // With no GPU listed at all (a container, an ARM board), this is the wrong place to look.
+    if gpus > 0 {
+        // SAFETY: called before any thread exists, so nothing reads the environment meanwhile.
+        unsafe { std::env::set_var("VK_LOADER_DRIVERS_DISABLE", "*nvidia*") };
+    }
+}
+
+/// Where settings are kept: Application Support on macOS, the XDG config folder elsewhere.
+pub fn settings_file() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    if MAC {
+        return home.join("Library/Application Support/Mdow Rune/settings.json");
+    }
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(|| home.join(".config"))
+        .join("mdow/settings.json")
+}
+
+/// A label as this system writes it. The app's labels are the Mac's: off the Mac, shortcuts
+/// are spelled out with Ctrl for ⌘ ("⇧⌘O" becomes "Ctrl+Shift+O"), the few that need both ⌘
+/// and ⌃ take the Linux app's keys, and Finder is the file manager.
+pub fn label(mac: &'static str) -> &'static str {
+    if MAC {
+        return mac;
+    }
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<HashMap<&'static str, &'static str>>> = Mutex::new(None);
+    let mut seen = SEEN.lock().unwrap();
+    let seen = seen.get_or_insert_with(HashMap::new);
+    if let Some(done) = seen.get(mac) {
+        return done;
+    }
+    // A fixed set of labels, each translated once.
+    let done: &'static str = Box::leak(translate(mac).into_boxed_str());
+    seen.insert(mac, done);
+    done
+}
+
+fn translate(mac: &str) -> String {
+    let mut out = String::with_capacity(mac.len() + 8);
+    let mut chars = mac.chars().peekable();
+    while let Some(c) = chars.next() {
+        if !matches!(c, '⌘' | '⌃' | '⌥' | '⇧') {
+            out.push(c);
+            continue;
+        }
+        let (mut cmd, mut ctrl, mut alt, mut shift) = (false, false, false, false);
+        let mut next = Some(c);
+        while let Some(m) = next {
+            match m {
+                '⌘' => cmd = true,
+                '⌃' => ctrl = true,
+                '⌥' => alt = true,
+                '⇧' => shift = true,
+                _ => break,
+            }
+            next = chars.next_if(|n| matches!(n, '⌘' | '⌃' | '⌥' | '⇧'));
+        }
+        let key = chars.next();
+        // ⌃⌘ has no counterpart where ⌘ is Ctrl: these are the Linux app's keys for them.
+        if cmd && ctrl {
+            match key {
+                Some('S') => out.push_str("Ctrl+B"),
+                Some(k) => {
+                    out.push_str("Ctrl+Alt+");
+                    out.push(k);
+                }
+                None => {}
+            }
+            continue;
+        }
+        if cmd || ctrl {
+            out.push_str("Ctrl+");
+        }
+        if alt {
+            out.push_str("Alt+");
+        }
+        if shift {
+            out.push_str("Shift+");
+        }
+        match key {
+            Some('↑') => out.push_str("Up"),
+            Some('↓') => out.push_str("Down"),
+            Some('↩') => out.push_str("Enter"),
+            Some('⌫') => out.push_str("Backspace"),
+            Some('⇥') => out.push_str("Tab"),
+            Some(k) => out.push(k),
+            None => {}
+        }
+    }
+    out.replace("Finder", "Files")
 }
 
 #[cfg(target_os = "macos")]
@@ -115,8 +297,12 @@ pub fn set_appearance(_: Appearance) {}
 pub fn install_open_handler() {}
 
 /// Reads `text` aloud with the system voice, as Edit › Speech does; kill the child to stop.
+/// macOS only: there's no voice every Linux desktop has.
 pub fn speak(text: &str) -> Option<std::process::Child> {
     use std::io::Write;
+    if !MAC {
+        return None;
+    }
     let mut child =
         Command::new("/usr/bin/say").stdin(std::process::Stdio::piped()).spawn().ok()?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -369,8 +555,33 @@ pub fn keeps_windows() -> bool {
         let defaults = objc2_foundation::NSUserDefaults::standardUserDefaults();
         defaults.boolForKey(&objc2_foundation::NSString::from_str("NSQuitAlwaysKeepsWindows"))
     }
+    // Linux desktops have no such setting; the last session's tabs come back, as in the
+    // Linux app before this one.
     #[cfg(not(target_os = "macos"))]
     {
-        false
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcuts_are_spelled_out_off_the_mac() {
+        assert_eq!(translate("⌘O"), "Ctrl+O");
+        assert_eq!(translate("⇧⌘O"), "Ctrl+Shift+O");
+        assert_eq!(translate("⌥⌘↑"), "Ctrl+Alt+Up");
+        assert_eq!(translate("⌃⇥"), "Ctrl+Tab");
+        assert_eq!(translate("⌘1–⌘9"), "Ctrl+1–Ctrl+9");
+        assert_eq!(translate("Back (⌘[)"), "Back (Ctrl+[)");
+        assert_eq!(translate("Show in Finder"), "Show in Files");
+        assert_eq!(translate(""), "");
+    }
+
+    #[test]
+    fn chords_with_command_and_control_take_the_linux_keys() {
+        assert_eq!(translate("⌃⌘S"), "Ctrl+B");
+        assert_eq!(translate("⌃⌘2"), "Ctrl+Alt+2");
     }
 }

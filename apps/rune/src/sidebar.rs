@@ -57,8 +57,15 @@ pub fn view(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
         .center_y()
         .border_sides([1.0, 0.0, 0.0, 0.0], p.line)
         .child(
-            chrome_button("settings", &icons::GEAR, "Settings (⌘,)", p, true, None)
-                .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::Settings, tx)),
+            chrome_button(
+                "settings",
+                &icons::GEAR,
+                crate::platform::label("Settings (⌘,)"),
+                p,
+                true,
+                None,
+            )
+            .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::Settings, tx)),
         )
         .child(el().grow(1.0))
         .child(
@@ -163,7 +170,7 @@ fn outline(s: &App, p: &Palette) -> El {
             move |s: &App, i| {
                 let Some(doc) = s.pane(pane_id).and_then(|p| p.doc.as_ref()) else { return col() };
                 let Some(h) = doc.doc.headings.get(i) else { return col() };
-                let p = Palette::get(s.dark());
+                let p = s.palette();
                 let depth = (h.level - min_level) as usize;
                 let row_index = h.row;
                 let link = format!(
@@ -292,7 +299,7 @@ fn files_view(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
             move |s: &App, i| {
                 let (path, name, depth, dir) = rows[i].clone();
                 let menu_path = path.clone();
-                let p = Palette::get(s.dark());
+                let p = s.palette();
                 let open = dir && s.tab().expanded.contains(&path);
                 let selected = current.as_deref() == Some(path.as_path());
                 let glyph = if dir {

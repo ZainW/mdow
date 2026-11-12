@@ -66,6 +66,7 @@ pub fn send(key: &str, cmd: Cmd) {
     wake(key);
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn send_to_front(cmd: Cmd) {
     send(&target(), cmd);
 }

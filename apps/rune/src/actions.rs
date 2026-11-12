@@ -1,7 +1,8 @@
 //! `MDOW_ACTIONS` runs steps once a window has launched, for checking things in the real app
 //! without clicking, as the Swift app's variable of the same name does. Steps are separated by
 //! `;`: `export=/tmp/out.pdf`, `find=text`, `palette`, `settings`, `split`, `appearance=dark`,
-//! `newtab`, `open=/path`, `zoom=in|out`, `companion`, `selectall`.
+//! `newtab`, `open=/path`, `zoom=in|out`, `companion`, `selectall`, `glide=distance,seconds`
+//! (scrolls and logs how the frames went), `wait` and `quit`.
 
 use crate::app::{App, Cmd, QuickOpen};
 use crate::prefs::{self, Appearance};
@@ -32,6 +33,7 @@ pub fn run(s: &mut App, step: &str, arg: &str, tx: &mut Tx) {
             }
         }
         "find" => {
+            crate::perf::mark(format!("find {arg}"));
             s.run(Cmd::Find, tx);
             if let Some(f) = s.find.as_mut() {
                 f.query.replace_text(arg);
@@ -48,6 +50,8 @@ pub fn run(s: &mut App, step: &str, arg: &str, tx: &mut Tx) {
         "split" => s.run(Cmd::ToggleSplit, tx),
         "tab" => s.run(Cmd::SelectTab(arg.parse::<usize>().unwrap_or(1).saturating_sub(1)), tx),
         "quit" => tx.quit(),
+        // A second for the step before to finish (a glide, a document opening).
+        "wait" => {}
         // Glides down the document and logs the frames drawn on the way.
         "glide" => {
             // `distance` or `distance,seconds`.
@@ -69,13 +73,17 @@ pub fn run(s: &mut App, step: &str, arg: &str, tx: &mut Tx) {
             s.select_all(tx);
         }
         "open" => s.run(Cmd::Open(vec![arg.into()]), tx),
-        "zoom" => s.run(if arg == "out" { Cmd::ZoomOut } else { Cmd::ZoomIn }, tx),
+        "zoom" => {
+            crate::perf::mark(format!("zoom {arg}"));
+            s.run(if arg == "out" { Cmd::ZoomOut } else { Cmd::ZoomIn }, tx)
+        }
         "appearance" => {
             let a = match arg {
                 "dark" => Appearance::Dark,
                 "light" => Appearance::Light,
                 _ => Appearance::System,
             };
+            crate::perf::mark(format!("appearance {arg}"));
             s.prefs = prefs::update(|p| p.appearance = a);
         }
         _ => eprintln!("MDOW_ACTIONS: unknown step {step}"),

@@ -635,7 +635,10 @@ fn convert_inlines<'a>(node: Node<'a>) -> Vec<Inline> {
         };
         match &data.value {
             NodeValue::Text(text) => push(&mut stack, Inline::Text(text.to_string())),
-            NodeValue::SoftBreak | NodeValue::LineBreak => push(&mut stack, Inline::Break),
+            // A line ending inside a paragraph is a space, as in the Swift and Linux apps and
+            // on GitHub: prose wrapped at 80 columns in its file flows to the reading width.
+            NodeValue::SoftBreak => push(&mut stack, Inline::Text(" ".to_string())),
+            NodeValue::LineBreak => push(&mut stack, Inline::Break),
             NodeValue::Code(code) => push(&mut stack, Inline::Code(code.literal.clone())),
             NodeValue::Emph => push(&mut stack, Inline::Emph(convert_inlines(child))),
             NodeValue::Strong => push(&mut stack, Inline::Strong(convert_inlines(child))),
@@ -854,10 +857,11 @@ mod tests {
     }
 
     #[test]
-    fn soft_breaks_are_line_breaks() {
-        let doc = parse("one\ntwo\n");
+    fn soft_breaks_are_spaces_and_hard_breaks_stay() {
+        let doc = parse("one\ntwo  \nthree\n");
         let Block::Paragraph(inlines) = &doc.blocks[0] else { panic!() };
-        assert!(inlines.contains(&Inline::Break));
+        assert_eq!(inline_text(inlines), "one two three");
+        assert_eq!(inlines.iter().filter(|i| **i == Inline::Break).count(), 1);
     }
 
     #[test]

@@ -104,6 +104,7 @@ pub fn items(s: &App, query: &str) -> Vec<Item> {
         );
     }
     for (i, (title, hint, cmd)) in COMMANDS.iter().enumerate() {
+        let title = crate::platform::label(title);
         let score = files::fuzzy_score(q, title);
         push(
             score,
@@ -111,7 +112,7 @@ pub fn items(s: &App, query: &str) -> Vec<Item> {
                 title: title.to_string(),
                 detail: String::new(),
                 glyph: &icons::COMMAND,
-                hint,
+                hint: crate::platform::label(hint),
                 action: Action::Command(cmd()),
             },
             100_000 + i,

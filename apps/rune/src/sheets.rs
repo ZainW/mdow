@@ -408,12 +408,17 @@ pub const SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
     ("App", &[("Settings…", "⌘,"), ("Keyboard Shortcuts", "⌘/"), ("Quit", "⌘Q")]),
 ];
 
+/// Shortcuts for things only the Mac build does.
+const MAC_ONLY_KEYS: &[&str] = &["⌃⌘F"];
+
 fn shortcuts(p: &Palette) -> El {
     let mut c = col().w_full().gap(18.0).p_all(20.0);
     for (title, items) in SHORTCUTS {
         let rows: Vec<El> = items
             .iter()
+            .filter(|(_, keys)| crate::platform::MAC || !MAC_ONLY_KEYS.contains(keys))
             .map(|(label, keys)| {
+                let (label, keys) = (crate::platform::label(label), crate::platform::label(keys));
                 row()
                     .w_full()
                     .center_y()

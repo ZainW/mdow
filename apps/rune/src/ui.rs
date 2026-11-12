@@ -3,13 +3,15 @@
 
 use crate::app::{App, Cmd, DRAWN_DARK, FindState, Sheet};
 use crate::icons;
+use crate::platform::{self, label};
 use crate::reader;
-use crate::theme::{self, CARD_RADIUS, GUTTER, HEADER_HEIGHT, Palette, TRAFFIC_LIGHTS_WIDTH};
+use crate::theme::{self, GUTTER, HEADER_HEIGHT, Palette, TRAFFIC_LIGHTS_WIDTH};
 use rune::{Color, Cx, El, Icon, Key, KeyEvent, Tx, col, el, icon, row, text};
 use rune_kit::shell::{TabItem, TabOrientation, TabReorder, TabStrip};
 
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
-    let dark = if rune::is_headless() {
+    // AppKit applies the setting to the app, and Rune reports it back; elsewhere it is ours.
+    let dark = if rune::is_headless() || !platform::MAC {
         match s.prefs.appearance {
             crate::prefs::Appearance::Dark => true,
             crate::prefs::Appearance::Light => false,
@@ -18,8 +20,9 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     } else {
         cx.system_dark()
     };
-    DRAWN_DARK.with(|d| d.set(dark));
-    let p = Palette::get(dark);
+    // With Automatic on Omarchy this is the theme's palette, whichever way the system leans.
+    let p = theme::current(s.prefs.appearance, dark);
+    DRAWN_DARK.with(|d| d.set(p.dark));
     let k = p.kit();
     let mut layer: Vec<El> = Vec::new();
     if let Some(kind) = s.panel {
@@ -138,12 +141,12 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
     let leading = row()
         .gap(2.0)
         .center_y()
-        .pl(TRAFFIC_LIGHTS_WIDTH)
+        .pl(if platform::MAC { TRAFFIC_LIGHTS_WIDTH } else { GUTTER })
         .child(
             chrome_button(
                 "sidebar-toggle",
                 &icons::SIDEBAR,
-                "Show Sidebar (⌃⌘S)",
+                label("Show Sidebar (⌃⌘S)"),
                 p,
                 true,
                 Some(s.prefs.sidebar_open),
@@ -151,12 +154,19 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
             .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::ToggleSidebar, tx)),
         )
         .child(
-            chrome_button("back", &icons::BACK, "Back (⌘[)", p, s.can_go(false), None)
+            chrome_button("back", &icons::BACK, label("Back (⌘[)"), p, s.can_go(false), None)
                 .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::Back, tx)),
         )
         .child(
-            chrome_button("forward", &icons::FORWARD, "Forward (⌘])", p, s.can_go(true), None)
-                .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::Forward, tx)),
+            chrome_button(
+                "forward",
+                &icons::FORWARD,
+                label("Forward (⌘])"),
+                p,
+                s.can_go(true),
+                None,
+            )
+            .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::Forward, tx)),
         );
 
     // A tab whose document has a companion edit waiting for review gets a dot.
@@ -186,7 +196,7 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
         .close_icon(&icons::CLOSE)
         .fill(p.chrome)
         .trailing_action(
-            chrome_button("new-tab", &icons::PLUS, "New Tab (⌘T)", p, true, None)
+            chrome_button("new-tab", &icons::PLUS, label("New Tab (⌘T)"), p, true, None)
                 .on_press_tx(|s: &mut App, tx: &mut Tx| s.run(Cmd::NewTab, tx)),
         )
         .on_select(|s: &mut App, id: &str, tx: &mut Tx| {
@@ -217,7 +227,7 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
             chrome_button(
                 "quick-open",
                 &icons::SEARCH,
-                "Quick Open (⌘K)",
+                label("Quick Open (⌘K)"),
                 p,
                 true,
                 Some(s.quick_open.is_some()),
@@ -228,7 +238,7 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
             chrome_button(
                 "companion",
                 &icons::SPARKLE,
-                "Companion (⌥⌘0)",
+                label("Companion (⌥⌘0)"),
                 p,
                 true,
                 Some(s.companion.open),
@@ -244,20 +254,35 @@ fn header(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit, layer: &mut
                 .on_press_tx(|s: &mut App, tx: &mut Tx| {
                     let split =
                         if s.tab().panes.len() > 1 { "Close Split View" } else { "Split View" };
-                    let menu = rune::PopupMenu::new()
+                    let mut menu = rune::PopupMenu::new()
                         .item(
                             rune::PopupItem::new("editor", "Open in Editor")
                                 .symbol("square.and.pencil"),
                         )
-                        .item(rune::PopupItem::new("finder", "Show in Finder").symbol("folder"))
-                        .item(rune::PopupItem::new("copy", "Copy Path").symbol("doc.on.clipboard"))
-                        .item(rune::PopupItem::new("share", "Share…").symbol("square.and.arrow.up"))
+                        .item(
+                            rune::PopupItem::new("finder", label("Show in Finder"))
+                                .symbol("folder"),
+                        )
+                        .item(rune::PopupItem::new("copy", "Copy Path").symbol("doc.on.clipboard"));
+                    if platform::MAC {
+                        menu = menu.item(
+                            rune::PopupItem::new("share", "Share…").symbol("square.and.arrow.up"),
+                        );
+                    }
+                    menu = menu
                         .separator()
                         .item(rune::PopupItem::new("split", split).symbol("rectangle.split.2x1"))
-                        .item(rune::PopupItem::new("reload", "Reload").symbol("arrow.clockwise"))
-                        .separator()
-                        .item(rune::PopupItem::new("pdf", "Export as PDF…").symbol("doc.richtext"))
-                        .item(rune::PopupItem::new("print", "Print…").symbol("printer"));
+                        .item(rune::PopupItem::new("reload", "Reload").symbol("arrow.clockwise"));
+                    // Printing and PDFs go through WebKit, which only the Mac has.
+                    if platform::MAC {
+                        menu = menu
+                            .separator()
+                            .item(
+                                rune::PopupItem::new("pdf", "Export as PDF…")
+                                    .symbol("doc.richtext"),
+                            )
+                            .item(rune::PopupItem::new("print", "Print…").symbol("printer"));
+                    }
                     tx.popup_menu(
                         menu,
                         "more",
@@ -355,8 +380,8 @@ fn card(s: &App, cx: &mut Cx<App>, p: &Palette, k: &rune_kit::Kit) -> El {
         .w_full()
         .grow(1.0)
         .min_h(0.0)
-        .radius(CARD_RADIUS)
-        .clip_rounded(CARD_RADIUS)
+        .radius(p.radius)
+        .clip_rounded(p.radius)
         .fill(p.paper)
         .border(1.0, p.line)
         .shadow(1.0, 3.0, p.shadow.alpha(p.shadow.a * 0.5))
@@ -432,7 +457,7 @@ fn find_bar(f: &FindState, html: bool, p: &Palette, k: &rune_kit::Kit) -> El {
                 chrome_button(
                     "find-prev",
                     &icons::CHEVRON_UP,
-                    "Previous (⇧⌘G)",
+                    label("Previous (⇧⌘G)"),
                     p,
                     html || !f.matches.is_empty(),
                     None,
@@ -443,7 +468,7 @@ fn find_bar(f: &FindState, html: bool, p: &Palette, k: &rune_kit::Kit) -> El {
                 chrome_button(
                     "find-next",
                     &icons::CHEVRON_DOWN,
-                    "Next (⌘G)",
+                    label("Next (⌘G)"),
                     p,
                     html || !f.matches.is_empty(),
                     None,
@@ -466,7 +491,8 @@ fn TextStyle_tnum(style: rune::TextStyle) -> rune::TextStyle {
 /// Keys the menus don't cover: Escape closes whatever floats, and ⌘1–9 pick tabs when the
 /// native menu isn't there (headless runs).
 pub fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
-    let plain = !ev.mods.shift && !ev.mods.alt && !ev.mods.ctrl;
+    let mods = crate::menu::chord_mods(ev);
+    let plain = !mods.shift && !mods.alt && !mods.ctrl;
     match &ev.key {
         Key::Command('a') if plain && s.quick_open.is_none() && s.sheet.is_none() => {
             s.select_all(tx)

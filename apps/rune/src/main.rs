@@ -12,10 +12,11 @@ mod export;
 mod files;
 mod highlight;
 mod icons;
-mod macos;
 mod media;
 mod menu;
+mod omarchy;
 mod perf;
+mod platform;
 mod prefs;
 mod quick_open;
 mod reader;
@@ -91,7 +92,7 @@ fn launch_paths() -> Vec<PathBuf> {
 
 fn init_main() -> App {
     let mut paths = launch_paths();
-    if paths.is_empty() && !rune::is_headless() && macos::keeps_windows() {
+    if paths.is_empty() && !rune::is_headless() && platform::keeps_windows() {
         // Reopen last session's tabs, when "Close windows when quitting an application" is off.
         paths = prefs::get()
             .session
@@ -167,8 +168,12 @@ const SCENES: &[Scene] = &[
     ("companion-demo", |s| s.companion.demo()),
 ];
 
-const CHROME: Chrome =
-    Chrome { full_size_content: true, traffic_lights: Some((16.0, 13.0)), drag_regions: true };
+/// The Mac's window buttons sit in the header. Linux keeps the frame its desktop draws.
+const CHROME: Chrome = Chrome {
+    full_size_content: true,
+    traffic_lights: if platform::MAC { Some((16.0, 13.0)) } else { None },
+    drag_regions: true,
+};
 
 thread_local! {
     static PANELS: std::cell::RefCell<std::collections::HashMap<&'static str, rune::WindowHandle>> =
@@ -233,9 +238,11 @@ pub fn open_new_window(paths: Vec<PathBuf>) {
 }
 
 fn main() {
+    platform::skip_absent_gpu_drivers();
     rune_mac::launch();
     rune::prewarm_gpu();
-    macos::install_open_handler();
+    platform::install_open_handler();
+    omarchy::start();
     let app = rune::App::new(spec(init_main))
         .on_window(|w| webview::attach(windows::MAIN, w))
         .on_frame_drawn(|_rt| {
@@ -243,13 +250,21 @@ fn main() {
             perf::bench_frame();
         })
         .chrome(CHROME)
-        .titlebar(Titlebar::new(theme::HEADER_HEIGHT))
-        .keep_running()
-        .on_close(|s: &mut App, _tx| {
-            // The window hides; the next one (from the Dock) starts empty.
+        .titlebar(Titlebar::new(theme::HEADER_HEIGHT));
+    let app = if platform::MAC {
+        // A Mac app outlives its windows: this one hides, and the next (from the Dock) starts
+        // empty.
+        app.keep_running().on_close(|s: &mut App, _tx| {
             s.save_session();
             s.reset();
-        });
+        })
+    } else {
+        // Elsewhere closing the window ends the app.
+        app.on_close(|s: &mut App, _tx| {
+            s.save_session();
+            s.companion.shutdown();
+        })
+    };
     let app = menu::install(app);
     app.run();
 }

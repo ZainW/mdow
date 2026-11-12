@@ -34,7 +34,12 @@ pub static FONTS: &[&[u8]] = &[
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
+    /// Which palette this is, for caches of things drawn in its colours: 0 and 1 are Mdow's
+    /// light and dark, anything else an Omarchy theme.
+    pub id: u32,
     pub dark: bool,
+    /// The corner radius of the document card and the cards like it.
+    pub radius: f32,
     /// The window itself: sidebar, tab bar and the margin around the document.
     pub chrome: Color,
     /// The card the document sits on.
@@ -59,6 +64,23 @@ pub struct Palette {
     pub find_match: Color,
     pub find_current: Color,
     pub shadow: Color,
+    /// Syntax colours: comments, keywords, strings, entities and constants.
+    pub syntax: [Color; 5],
+    /// Alert colours: note, tip, important, warning and caution.
+    pub alerts: [Color; 5],
+}
+
+/// The palette for a setting: Mdow's own light or dark, or with Automatic the Omarchy theme
+/// where there is one, else the system's light or dark.
+pub fn current(appearance: crate::prefs::Appearance, system_dark: bool) -> Palette {
+    use crate::prefs::Appearance;
+    match appearance {
+        Appearance::Dark => Palette::get(true),
+        Appearance::Light => Palette::get(false),
+        Appearance::System => {
+            crate::omarchy::palette().unwrap_or_else(|| Palette::get(system_dark))
+        }
+    }
 }
 
 fn rgb(hex: u32) -> Color {
@@ -87,7 +109,9 @@ impl Palette {
         // The light theme's warm near-black, and white, at an opacity.
         let ink = |a: f32| if dark { rgba(0xFFFFFF, a) } else { rgba(0x3C2D1E, a) };
         Palette {
+            id: dark as u32,
             dark,
+            radius: CARD_RADIUS,
             chrome: pair(0xF3F1EB, 0x131313),
             paper: pair(0xFDFCF9, 0x1B1B1B),
             elevated: pair(0xFFFFFF, 0x242424),
@@ -112,54 +136,70 @@ impl Palette {
                 srgb(1.0, 0.72, 0.2, 0.85)
             },
             shadow: if dark { rgba(0x000000, 0.5) } else { rgba(0x3C2D1E, 0.12) },
+            // Soft enough for paper and ink.
+            syntax: [
+                pair(0x8C877D, 0x7A7A7A),
+                pair(0xA3456B, 0xE38CB0),
+                pair(0x4F7A3A, 0x9CC48A),
+                pair(0x7A5AA8, 0xB9A0E8),
+                pair(0xA65A1E, 0xE5A574),
+            ],
+            alerts: [
+                pair(0x0969DA, 0x4493F8),
+                pair(0x1A7F37, 0x3FB950),
+                pair(0x8250DF, 0xAB7DF8),
+                pair(0x9A6700, 0xD29922),
+                pair(0xCF222E, 0xF85149),
+            ],
         }
     }
 
     /// Alert colours: (accent, label) by kind.
     pub fn alert(&self, kind: crate::doc::AlertKind) -> (Color, &'static str) {
         use crate::doc::AlertKind::*;
-        let (l, d, label) = match kind {
-            Note => (0x0969DA, 0x4493F8, "Note"),
-            Tip => (0x1A7F37, 0x3FB950, "Tip"),
-            Important => (0x8250DF, 0xAB7DF8, "Important"),
-            Warning => (0x9A6700, 0xD29922, "Warning"),
-            Caution => (0xCF222E, 0xF85149, "Caution"),
+        let (i, label) = match kind {
+            Note => (0, "Note"),
+            Tip => (1, "Tip"),
+            Important => (2, "Important"),
+            Warning => (3, "Warning"),
+            Caution => (4, "Caution"),
         };
-        (if self.dark { rgb(d) } else { rgb(l) }, label)
+        (self.alerts[i], label)
     }
 
-    /// Syntax colours for the highlighter's six roles, soft enough for paper and ink.
+    /// Syntax colours for the highlighter's six roles.
     pub fn syntax(&self, tok: crate::highlight::Tok) -> Option<Color> {
         use crate::highlight::Tok::*;
-        let (l, d) = match tok {
+        Some(match tok {
             Plain => return None,
-            Comment => (0x8C877D, 0x7A7A7A),
-            Keyword => (0xA3456B, 0xE38CB0),
-            String => (0x4F7A3A, 0x9CC48A),
-            Entity => (0x7A5AA8, 0xB9A0E8),
-            Constant => (0xA65A1E, 0xE5A574),
-        };
-        Some(if self.dark { rgb(d) } else { rgb(l) })
+            Comment => self.syntax[0],
+            Keyword => self.syntax[1],
+            String => self.syntax[2],
+            Entity => self.syntax[3],
+            Constant => self.syntax[4],
+        })
     }
 
     pub fn kit(&self) -> rune_kit::Kit {
         thread_local! {
-            static KIT: RefCell<[Option<rune_kit::Kit>; 2]> = const { RefCell::new([None, None]) };
+            static KIT: RefCell<Vec<(u32, rune_kit::Kit)>> = const { RefCell::new(Vec::new()) };
         }
-        let dark = self.dark;
         let p = *self;
         KIT.with(|c| {
-            c.borrow_mut()[dark as usize]
-                .get_or_insert_with(|| {
-                    let mut k = rune_kit::Kit::from_palette(rune_kit::PaletteSeed {
-                        bg: p.elevated,
-                        fg: p.text,
-                        accent: p.accent,
-                    });
-                    k.c.border_focus = p.accent.alpha(0.6);
-                    k
-                })
-                .clone()
+            let mut kits = c.borrow_mut();
+            if let Some((_, kit)) = kits.iter().find(|(id, _)| *id == p.id) {
+                return kit.clone();
+            }
+            // Mdow's two, and the Omarchy theme: a theme change replaces the last.
+            kits.retain(|(id, _)| *id < 2);
+            let mut kit = rune_kit::Kit::from_palette(rune_kit::PaletteSeed {
+                bg: p.elevated,
+                fg: p.text,
+                accent: p.accent,
+            });
+            kit.c.border_focus = p.accent.alpha(0.6);
+            kits.push((p.id, kit.clone()));
+            kit
         })
     }
 }

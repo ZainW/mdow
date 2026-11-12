@@ -149,7 +149,7 @@ impl Ctx<'_> {
             ..TextStyle::new(size, weight)
         };
         let typeset = flat.maths.iter().any(|(_, tex)| {
-            let key = media::inline_math_key(tex, self.p.dark, size);
+            let key = media::inline_math_key(tex, self.p.id, size);
             matches!(self.media.get(&key), Some(Asset::Ready(..)))
         });
         if typeset { self.flow(flat, style, color) } else { self.text(flat, style, color) }
@@ -198,7 +198,7 @@ impl Ctx<'_> {
         let mut row = row().w_full().flex_wrap().items_end();
         for (piece, tex) in pieces {
             if let Some(tex) = tex {
-                let key = media::inline_math_key(tex, self.p.dark, size);
+                let key = media::inline_math_key(tex, self.p.id, size);
                 if let Some(Asset::Ready(image, [w, h])) = self.media.get(&key) {
                     let depth = self.media.depth(&key);
                     row = row.child(
@@ -278,7 +278,7 @@ impl Ctx<'_> {
                 chunk.source.id,
                 &chunk.source.text,
             ),
-            Block::Mermaid(code) => match self.media.get(&media::mermaid_key(code, p.dark)) {
+            Block::Mermaid(code) => match self.media.get(&media::mermaid_key(code, p.id)) {
                 Some(Asset::Ready(image, size)) => {
                     self.skip_text();
                     picture(image, *size, width).self_center()
@@ -289,24 +289,22 @@ impl Ctx<'_> {
                     placeholder(p, "Drawing diagram…", 120.0, width)
                 }
             },
-            Block::Math(tex) => {
-                match self.media.get(&media::math_key(tex, p.dark, st.size * 1.1)) {
-                    Some(Asset::Ready(image, size)) => {
-                        self.skip_text();
-                        let scaled = fit(*size, width);
-                        row().w_full().justify_center().child(picture(image, scaled, width))
-                    }
-                    Some(Asset::Failed(_)) => self.code(tex, "latex", Part::Whole, usize::MAX, tex),
-                    _ => {
-                        let flat = Flat { text: tex.trim().to_string(), ..Default::default() };
-                        row().w_full().justify_center().child(self.text(
-                            flat,
-                            st.code(st.code_size()),
-                            p.secondary,
-                        ))
-                    }
+            Block::Math(tex) => match self.media.get(&media::math_key(tex, p.id, st.size * 1.1)) {
+                Some(Asset::Ready(image, size)) => {
+                    self.skip_text();
+                    let scaled = fit(*size, width);
+                    row().w_full().justify_center().child(picture(image, scaled, width))
                 }
-            }
+                Some(Asset::Failed(_)) => self.code(tex, "latex", Part::Whole, usize::MAX, tex),
+                _ => {
+                    let flat = Flat { text: tex.trim().to_string(), ..Default::default() };
+                    row().w_full().justify_center().child(self.text(
+                        flat,
+                        st.code(st.code_size()),
+                        p.secondary,
+                    ))
+                }
+            },
             Block::Quote(blocks) => {
                 let inner = self.blocks(blocks, width - 21.0, p.secondary, list_depth);
                 row()

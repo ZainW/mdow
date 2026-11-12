@@ -79,17 +79,17 @@ fn hash(parts: impl Hash) -> u64 {
     h.finish()
 }
 
-pub fn mermaid_key(code: &str, dark: bool) -> String {
-    format!("mermaid:{dark}:{:x}", hash(code))
+pub fn mermaid_key(code: &str, palette: u32) -> String {
+    format!("mermaid:{palette}:{:x}", hash(code))
 }
 
-pub fn math_key(tex: &str, dark: bool, size: f32) -> String {
-    format!("math:{dark}:{}:{:x}", size.round() as i32, hash(tex))
+pub fn math_key(tex: &str, palette: u32, size: f32) -> String {
+    format!("math:{palette}:{}:{:x}", size.round() as i32, hash(tex))
 }
 
 /// An inline formula: text style, so its depth below the baseline is known (`Media::depth`).
-pub fn inline_math_key(tex: &str, dark: bool, size: f32) -> String {
-    format!("imath:{dark}:{}:{:x}", size.round() as i32, hash(tex))
+pub fn inline_math_key(tex: &str, palette: u32, size: f32) -> String {
+    format!("imath:{palette}:{}:{:x}", size.round() as i32, hash(tex))
 }
 
 impl Media {
@@ -152,7 +152,7 @@ impl Media {
     }
 
     pub fn request_mermaid(&mut self, code: &Arc<str>, palette: &Palette) {
-        let key = mermaid_key(code, palette.dark);
+        let key = mermaid_key(code, palette.id);
         if !self.start(&key) {
             return;
         }
@@ -171,7 +171,7 @@ impl Media {
     }
 
     pub fn request_math(&mut self, tex: &str, palette: &Palette, size: f32) {
-        let key = math_key(tex, palette.dark, size);
+        let key = math_key(tex, palette.id, size);
         if !self.start(&key) {
             return;
         }
@@ -185,7 +185,7 @@ impl Media {
 
     /// An inline formula, typeset in text style at `size`.
     pub fn request_inline_math(&mut self, tex: &str, palette: &Palette, size: f32) {
-        let key = inline_math_key(tex, palette.dark, size);
+        let key = inline_math_key(tex, palette.id, size);
         if !self.start(&key) {
             return;
         }

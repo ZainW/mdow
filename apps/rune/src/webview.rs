@@ -3,6 +3,7 @@
 //! PDF with real text. Pages that have no dark mode are darkened in dark mode, as in the Swift
 //! app, by a script in Mdow's own content world.
 
+#[cfg(target_os = "macos")]
 use crate::app::Cmd;
 use std::path::{Path, PathBuf};
 

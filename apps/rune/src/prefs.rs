@@ -290,8 +290,7 @@ static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 static REVISION: AtomicU64 = AtomicU64::new(1);
 
 fn file() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    home.join("Library/Application Support/Mdow Rune/settings.json")
+    crate::platform::settings_file()
 }
 
 fn load() -> Prefs {

@@ -17,6 +17,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 /// Everything a menu item, a key or another window can ask a window to do.
+// Some of these are only sent by the Mac's menu bar and web views.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cmd {
     Open(Vec<PathBuf>),
@@ -28,6 +30,8 @@ pub enum Cmd {
     NewTab,
     CloseTab,
     CloseWindow,
+    /// Leave the app (Ctrl+Q on Linux; the Mac's menu bar has its own Quit).
+    Quit,
     Reload,
     ShowInFinder,
     OpenInEditor,
@@ -98,6 +102,9 @@ impl LoadedDoc {
             Ok(text) => (doc::parse_markdown(&text, &path), None),
             Err(e) => (Doc::default(), Some(e)),
         };
+        // The Mac shows the page itself in a web view. Elsewhere there's no WebKit to lean on,
+        // so the page is read as a document: converted to markdown and drawn like any other.
+        let html = html && crate::platform::MAC;
         let gaps = doc::gaps(&doc.blocks);
         crate::perf::note(&format!("parse {}", files::display_name(&path)), started);
         LoadedDoc { path, doc: Arc::new(doc), gaps, html, error, version, modified }
@@ -239,7 +246,8 @@ pub struct App {
     watch_dirty: bool,
     assets_dirty: bool,
     /// The theme assets were last requested for.
-    assets_dark: Option<bool>,
+    assets_palette: Option<u32>,
+    theme_revision: u64,
     assets_font: f32,
     started: bool,
     frame_saved: bool,
@@ -287,7 +295,8 @@ impl App {
             next_id: 1,
             watch_dirty: true,
             assets_dirty: true,
-            assets_dark: None,
+            assets_palette: None,
+            theme_revision: 0,
             assets_font: 0.0,
             started: false,
             frame_saved: false,
@@ -327,6 +336,11 @@ impl App {
         DRAWN_DARK.with(|d| d.get())
     }
 
+    /// The palette the window draws in: the setting's, as `ui::view` picks it.
+    pub fn palette(&self) -> crate::theme::Palette {
+        crate::theme::current(self.prefs.appearance, self.dark())
+    }
+
     // MARK: Setup and polling
 
     pub fn setup(&mut self, waker: rune::Waker) {
@@ -344,13 +358,13 @@ impl App {
         if !self.started {
             self.started = true;
             tx.set_title(self.window_title());
-            crate::macos::set_appearance(self.prefs.appearance);
+            crate::platform::set_appearance(self.prefs.appearance);
         }
         if self.key == windows::MAIN && self.submenus_dirty && !rune::is_headless() {
             // Rune makes its menus as the first window starts; the submenus go in after.
-            if crate::macos::install_submenus() {
+            if crate::platform::install_submenus() {
                 self.submenus_dirty = false;
-                crate::macos::refresh_submenus(&self.prefs.recents, self.prefs.reading_width);
+                crate::platform::refresh_submenus(&self.prefs.recents, self.prefs.reading_width);
             }
         }
         // MDOW_ACTIONS, one step a second after launch.
@@ -381,11 +395,11 @@ impl App {
                 && let Some(newest) = self.prefs.recents.first()
                 && recents_before.first() != Some(newest)
             {
-                crate::macos::note_recent(newest);
+                crate::platform::note_recent(newest);
             }
             self.submenus_dirty = true;
             self.menu_recents = self.prefs.recents.clone();
-            crate::macos::set_appearance(self.prefs.appearance);
+            crate::platform::set_appearance(self.prefs.appearance);
             self.refresh_find();
             changed = true;
         }
@@ -397,9 +411,15 @@ impl App {
             self.media_revision += 1;
             changed = true;
         }
-        let dark = self.dark();
-        if self.assets_dark != Some(dark) {
-            self.assets_dark = Some(dark);
+        // A theme change (the setting, the system's, or `omarchy theme set`) redraws the window
+        // and the diagrams and formulas in it.
+        if crate::omarchy::revision() != self.theme_revision {
+            self.theme_revision = crate::omarchy::revision();
+            changed = true;
+        }
+        let palette = self.palette().id;
+        if self.assets_palette != Some(palette) {
+            self.assets_palette = Some(palette);
             self.assets_dirty = true;
         }
         if self.assets_dirty {
@@ -485,7 +505,7 @@ impl App {
     }
 
     fn request_assets(&mut self) {
-        let p = crate::theme::Palette::get(self.dark());
+        let p = self.palette();
         let size = self.prefs.font_size() * 1.1;
         let inline_size = self.prefs.font_size();
         let mut formulas: Vec<String> = Vec::new();
@@ -749,7 +769,7 @@ impl App {
             }
             LinkTarget::File(target) => {
                 if target.exists() {
-                    crate::macos::open_with_default_app(&target);
+                    crate::platform::open_with_default_app(&target);
                 } else {
                     self.show_toast(format!("{} doesn't exist.", files::display_name(&target)));
                 }
@@ -916,7 +936,7 @@ impl App {
         if id != pane.id {
             return false;
         }
-        let p = crate::theme::Palette::get(self.dark());
+        let p = self.palette();
         tx.copy(reader::plain_text(doc, &self.read_style(), &p));
         true
     }
@@ -934,7 +954,8 @@ impl App {
             line: self.prefs.line_spacing.multiple(),
             column: 600.0,
         };
-        let p = crate::theme::Palette::get(dark);
+        let _ = dark;
+        let p = self.palette();
         let matches = self
             .tabs
             .iter()
@@ -1125,6 +1146,10 @@ impl App {
                 }
             }
             Cmd::CloseWindow => tx.close_window(),
+            Cmd::Quit => {
+                self.save_session();
+                tx.quit();
+            }
             Cmd::Reload => {
                 if let Some(folder) = self.tab().folder.clone() {
                     self.tab_mut().scan = Some(files::scan_folder(&folder));
@@ -1143,12 +1168,12 @@ impl App {
             }
             Cmd::ShowInFinder => {
                 if let Some(p) = self.tab().pane().path() {
-                    crate::macos::reveal_in_finder(p);
+                    crate::platform::reveal_in_files(p);
                 }
             }
             Cmd::OpenInEditor => {
                 if let Some(p) = self.tab().pane().path() {
-                    crate::macos::open_in_editor(p);
+                    crate::platform::open_in_editor(p);
                 }
             }
             Cmd::CopyPath => {
@@ -1245,7 +1270,7 @@ impl App {
                 self.prefs = prefs::update(|p| {
                     p.appearance = if dark { Appearance::Light } else { Appearance::Dark }
                 });
-                crate::macos::set_appearance(self.prefs.appearance);
+                crate::platform::set_appearance(self.prefs.appearance);
             }
             Cmd::FullScreen => rune_mac::toggle_full_screen(),
             Cmd::Back => self.history(false, tx),
@@ -1318,7 +1343,7 @@ impl App {
                     .map(|s| s.text().to_string())
                     .filter(|t| !t.trim().is_empty());
                 let text = selected.or_else(|| {
-                    let p = crate::theme::Palette::get(self.dark());
+                    let p = self.palette();
                     self.tab()
                         .pane()
                         .doc
@@ -1327,7 +1352,7 @@ impl App {
                 });
                 if let Some(text) = text {
                     self.stop_speaking();
-                    self.speech = crate::macos::speak(&text);
+                    self.speech = crate::platform::speak(&text);
                 }
             }
             Cmd::StopSpeaking => self.stop_speaking(),
@@ -1371,18 +1396,22 @@ impl App {
             let short: String = text.trim().chars().take(24).collect();
             let shown =
                 if text.trim().chars().count() > 24 { format!("{short}…") } else { short };
-            menu = menu
-                .item(rune::PopupItem::new("copy", "Copy"))
-                .item(rune::PopupItem::new("lookup", format!("Look Up “{shown}”")))
-                .item(rune::PopupItem::new("google", "Search with Google"));
+            menu = menu.item(rune::PopupItem::new("copy", "Copy"));
+            // Dictionary is the Mac's.
+            if crate::platform::MAC {
+                menu = menu.item(rune::PopupItem::new("lookup", format!("Look Up “{shown}”")));
+            }
+            menu = menu.item(rune::PopupItem::new("google", "Search with Google"));
         }
-        menu = menu.item(rune::PopupItem::new("all", "Select All")).separator().item(
-            if self.speech.is_some() {
+        menu = menu.item(rune::PopupItem::new("all", "Select All"));
+        // So is the system voice.
+        if crate::platform::MAC {
+            menu = menu.separator().item(if self.speech.is_some() {
                 rune::PopupItem::new("stop", "Stop Speaking")
             } else {
                 rune::PopupItem::new("speak", "Start Speaking")
-            },
-        );
+            });
+        }
         tx.popup_menu(menu, press, move |s: &mut App, picked: Option<&str>, tx: &mut Tx| {
             let encode = |t: &str| -> String {
                 t.trim()
@@ -1446,7 +1475,7 @@ impl App {
             menu = menu.item(rune::PopupItem::new("open", "Open")).separator();
         }
         menu = menu
-            .item(rune::PopupItem::new("finder", "Show in Finder"))
+            .item(rune::PopupItem::new("finder", crate::platform::label("Show in Finder")))
             .item(rune::PopupItem::new("path", "Copy Path"));
         if recent {
             menu = menu
@@ -1461,7 +1490,7 @@ impl App {
                     s.open_path(&path, OpenIn::NewTab);
                     tx.set_title(s.window_title());
                 }
-                Some("finder") => crate::macos::reveal_in_finder(&path),
+                Some("finder") => crate::platform::reveal_in_files(&path),
                 Some("path") => tx.copy(path.display().to_string()),
                 Some("remove") => {
                     let p = path.clone();
@@ -1492,7 +1521,7 @@ impl App {
         let path = PathBuf::from(doc::percent_decode(path));
         if !files::is_document(&path) {
             if path.exists() {
-                crate::macos::open_with_default_app(&path);
+                crate::platform::open_with_default_app(&path);
             }
             return;
         }

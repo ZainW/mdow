@@ -111,12 +111,19 @@ pub fn view(s: &App, p: &Palette, _k: &rune_kit::Kit) -> El {
         .child(
             row()
                 .gap(12.0)
-                .child(action("welcome-open", &icons::DOC, "Open…", "⌘O", Cmd::OpenDialog, p))
+                .child(action(
+                    "welcome-open",
+                    &icons::DOC,
+                    "Open…",
+                    crate::platform::label("⌘O"),
+                    Cmd::OpenDialog,
+                    p,
+                ))
                 .child(action(
                     "welcome-folder",
                     &icons::FOLDER,
                     "Open Folder…",
-                    "⇧⌘O",
+                    crate::platform::label("⇧⌘O"),
                     Cmd::OpenFolderDialog,
                     p,
                 )),

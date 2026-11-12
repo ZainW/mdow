@@ -1,6 +1,6 @@
 //! The menu bar, laid out as the Swift app's: File, Edit (with Find), View, Go, Window and
 //! Help, plus Settings in the app menu. Submenus Rune's menus can't hold (Open Recent, Find,
-//! Speech, Text Width) are added in AppKit by `macos::install_submenus`. Rune adds the
+//! Speech, Text Width) are added in AppKit by `platform::install_submenus`. Rune adds the
 //! standard Edit and Window items (Copy, Select All, Minimize).
 //!
 //! Each item queues its command for the window in front (see `windows`).
@@ -92,7 +92,7 @@ pub fn items() -> Vec<MenuItem<App>> {
         item("File", "Export as PDF…", None, |s, tx| route(s, tx, Cmd::ExportPdf)),
         item("File", "Page Setup…", Some("cmd+shift+p"), |s, tx| route(s, tx, Cmd::PageSetup)),
         item("File", "Print…", Some("cmd+p"), |s, tx| route(s, tx, Cmd::Print)),
-        // Edit: Rune adds Undo, Cut, Copy, Paste and Select All; `macos::install_submenus`
+        // Edit: Rune adds Undo, Cut, Copy, Paste and Select All; `platform::install_submenus`
         // adds Find and Speech.
         // View
         item("View", "Show Sidebar", Some("cmd+ctrl+s"), |s, tx| route(s, tx, Cmd::ToggleSidebar)),
@@ -168,11 +168,49 @@ pub fn install(app: rune::App<App>) -> rune::App<App> {
     app
 }
 
-/// The menu's shortcuts for runs without a native menu bar (headless scripts and tests).
+/// The modifiers held besides Command. Off the Mac, Command is the Control key, so Rune
+/// reports both for one press; there Control says nothing more.
+pub fn chord_mods(ev: &KeyEvent) -> rune::Mods {
+    let mut m = ev.mods;
+    if !crate::platform::MAC && m.cmd {
+        m.ctrl = false;
+    }
+    m
+}
+
+/// The menu's shortcuts where there's no native menu bar: on Linux, and in headless scripts
+/// and tests. The chords are the menu's, with the Linux app's keys for the ones that need both
+/// Command and Control on the Mac.
 pub fn fallback_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
-    let m = ev.mods;
+    let m = chord_mods(ev);
+    let linux = !crate::platform::MAC;
     let cmd = match &ev.key {
+        Key::Tab if ev.mods.ctrl => {
+            if m.shift {
+                Cmd::PreviousTab
+            } else {
+                Cmd::NextTab
+            }
+        }
+        Key::Function(5) if linux => Cmd::Reload,
+        Key::Up if m.cmd && m.alt => Cmd::PreviousHeading,
+        Key::Down if m.cmd && m.alt => Cmd::NextHeading,
+        Key::Left if linux && m.alt && !m.cmd => Cmd::Back,
+        Key::Right if linux && m.alt && !m.cmd => Cmd::Forward,
         Key::Command(c) => match (*c, m.shift, m.alt, m.ctrl) {
+            ('n', false, false, false) => Cmd::NewWindow,
+            ('w', true, false, false) => Cmd::CloseWindow,
+            ('e', true, false, false) => Cmd::OpenInEditor,
+            ('e', false, false, false) => Cmd::UseSelectionForFind,
+            ('r', false, true, false) => Cmd::ShowInFinder,
+            ('c', false, true, false) => Cmd::CopyPath,
+            ('b', false, false, false) if linux => Cmd::ToggleSidebar,
+            ('q', false, false, false) if linux => Cmd::Quit,
+            (d @ '1'..='3', false, true, false) if linux => Cmd::Sidebar(match d {
+                '1' => SidebarMode::Outline,
+                '2' => SidebarMode::Files,
+                _ => SidebarMode::Recents,
+            }),
             ('t', false, false, false) => Cmd::NewTab,
             ('w', false, false, false) => Cmd::CloseTab,
             ('o', false, false, false) => Cmd::OpenDialog,
