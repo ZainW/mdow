@@ -28,42 +28,90 @@ fn run(program: &str, args: &[&std::ffi::OsStr]) -> bool {
         .is_ok()
 }
 
+/// A `file://` URI for a path, with everything outside the unreserved set percent-encoded, so
+/// spaces, `#`, `%` and commas (which `dbus-send` splits lists on) survive.
+fn file_uri(path: &Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~') {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
+}
+
+/// The desktop entry that opens a type by default, like `org.gnome.TextEditor.desktop`.
+fn default_app(mime: &str) -> Option<String> {
+    let output = Command::new("xdg-mime")
+        .args(["query", "default", mime])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
 /// Shows the file selected in Finder, or in the desktop's file manager.
 pub fn reveal_in_files(path: &Path) {
     if MAC {
         run("/usr/bin/open", &["-R".as_ref(), path.as_os_str()]);
         return;
     }
-    // File managers answer on this name and select the file; without one, open its folder.
-    let uri = format!("array:string:file://{}", path.display());
-    let shown = Command::new("dbus-send")
-        .args([
-            "--session",
-            "--print-reply",
-            "--dest=org.freedesktop.FileManager1",
-            "/org/freedesktop/FileManager1",
-            "org.freedesktop.FileManager1.ShowItems",
-            &uri,
-            "string:",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success());
-    if !shown && let Some(dir) = path.parent() {
-        run("xdg-open", &[dir.as_os_str()]);
-    }
+    let path = path.to_path_buf();
+    // Off the window's thread: the file manager may have to start before it answers.
+    std::thread::spawn(move || {
+        // File managers answer on this name and select the file; without one, open its folder.
+        let shown = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--print-reply",
+                "--reply-timeout=5000",
+                "--dest=org.freedesktop.FileManager1",
+                "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1.ShowItems",
+                &format!("array:string:{}", file_uri(&path)),
+                "string:",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !shown && let Some(dir) = path.parent() {
+            run("xdg-open", &[dir.as_os_str()]);
+        }
+    });
 }
 
 /// Opens the file in the default text editor.
 pub fn open_in_editor(path: &Path) {
     if MAC {
         run("/usr/bin/open", &["-t".as_ref(), path.as_os_str()]);
-    } else if !run("omarchy-launch-editor", &[path.as_os_str()]) {
-        // Omarchy knows the editor; elsewhere the desktop picks the app for the file.
-        run("xdg-open", &[path.as_os_str()]);
+        return;
     }
+    // Omarchy knows the editor.
+    if run("omarchy-launch-editor", &[path.as_os_str()]) {
+        return;
+    }
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        let ours = |app: &str| app.starts_with("com.zain.mdow");
+        // Elsewhere, the app for plain text is the editor. The app for markdown may well be
+        // Mdow itself, and opening the file there again isn't editing it.
+        let editor = default_app("text/plain").filter(|app| !ours(app));
+        if let Some(app) = editor
+            && run("gtk-launch", &[app.trim_end_matches(".desktop").as_ref(), path.as_os_str()])
+        {
+            return;
+        }
+        if !default_app("text/markdown").is_some_and(|app| ours(&app)) {
+            run("xdg-open", &[path.as_os_str()]);
+        }
+    });
 }
 
 /// Opens a linked file in its app, but only shows apps, folders, scripts and other executables in
@@ -149,18 +197,15 @@ pub fn label(mac: &'static str) -> &'static str {
     if MAC {
         return mac;
     }
+    use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::sync::Mutex;
-    static SEEN: Mutex<Option<HashMap<&'static str, &'static str>>> = Mutex::new(None);
-    let mut seen = SEEN.lock().unwrap();
-    let seen = seen.get_or_insert_with(HashMap::new);
-    if let Some(done) = seen.get(mac) {
-        return done;
+    // Labels are only made on the window's thread, a fixed set of them, each translated once.
+    thread_local! {
+        static SEEN: RefCell<HashMap<&'static str, &'static str>> = RefCell::new(HashMap::new());
     }
-    // A fixed set of labels, each translated once.
-    let done: &'static str = Box::leak(translate(mac).into_boxed_str());
-    seen.insert(mac, done);
-    done
+    SEEN.with_borrow_mut(|seen| {
+        *seen.entry(mac).or_insert_with(|| Box::leak(translate(mac).into_boxed_str()))
+    })
 }
 
 fn translate(mac: &str) -> String {
@@ -577,6 +622,16 @@ mod tests {
         assert_eq!(translate("Back (⌘[)"), "Back (Ctrl+[)");
         assert_eq!(translate("Show in Finder"), "Show in Files");
         assert_eq!(translate(""), "");
+    }
+
+    #[test]
+    fn file_uris_escape_what_would_break_them() {
+        assert_eq!(file_uri(Path::new("/home/u/a.md")), "file:///home/u/a.md");
+        assert_eq!(
+            file_uri(Path::new("/n/a, b #1 100%.md")),
+            "file:///n/a%2C%20b%20%231%20100%25.md"
+        );
+        assert_eq!(file_uri(Path::new("/n/é.md")), "file:///n/%C3%A9.md");
     }
 
     #[test]

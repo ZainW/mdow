@@ -942,7 +942,6 @@ impl App {
     }
 
     pub fn refresh_find(&mut self) {
-        let dark = self.dark();
         let Some(find) = self.find.as_mut() else { return };
         let query = find.query.text.clone();
         let pane_id = self.tabs[self.active.min(self.tabs.len() - 1)].pane().id;
@@ -954,7 +953,6 @@ impl App {
             line: self.prefs.line_spacing.multiple(),
             column: 600.0,
         };
-        let _ = dark;
         let p = self.palette();
         let matches = self
             .tabs
@@ -1147,7 +1145,9 @@ impl App {
             }
             Cmd::CloseWindow => tx.close_window(),
             Cmd::Quit => {
+                // Quitting skips the window's close handler, so do what it does.
                 self.save_session();
+                self.companion.shutdown();
                 tx.quit();
             }
             Cmd::Reload => {

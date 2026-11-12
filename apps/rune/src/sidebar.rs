@@ -208,7 +208,7 @@ fn outline(s: &App, p: &Palette) -> El {
                 })
             },
         )
-        .virtual_rows_version((doc.version, current, p.dark));
+        .virtual_rows_version((doc.version, current, p.id));
     col()
         .key("outline")
         .w_full()
@@ -283,7 +283,7 @@ fn files_view(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
         flat.iter().map(|(n, d)| (n.path.clone(), n.name.clone(), *d, n.is_dir())).collect();
     let count = rows.len();
     let version =
-        (rows.len(), query.clone(), tab.expanded.len(), current.clone(), p.dark, scan.tree.len());
+        (rows.len(), query.clone(), tab.expanded.len(), current.clone(), p.id, scan.tree.len());
     let list = col()
         .key("files-rows")
         .w_full()

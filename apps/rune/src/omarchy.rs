@@ -208,13 +208,8 @@ fn build(colors: &str, light_file: bool, rounding: f32) -> Palette {
     let bar = |color: Color| legible(color, &[well], 3.0);
     let accent = text(accent);
 
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(&(bg.hex(), fg.hex(), accent.hex(), chrome.hex()), &mut hasher);
-    // Ids 0 and 1 are Mdow's own light and dark.
-    let id = (std::hash::Hasher::finish(&hasher) as u32).max(2);
-
-    Palette {
-        id,
+    let palette = Palette {
+        id: 0,
         dark,
         // Omarchy's surfaces are flat and square, or as round as Hyprland's windows.
         radius: rounding.clamp(0.0, 16.0),
@@ -240,7 +235,12 @@ fn build(colors: &str, light_file: bool, rounding: f32) -> Palette {
         shadow: Color::BLACK.alpha(0.0),
         syntax: [code(dark_fg), code(bright_magenta), code(green), code(blue), code(orange)],
         alerts: [bar(blue), bar(green), bar(magenta), bar(yellow), bar(red)],
-    }
+    };
+    // The id names this exact palette to the caches of things drawn in its colours, so it is
+    // made from every colour in it. Ids 0 and 1 are Mdow's own light and dark.
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&format!("{palette:?}"), &mut hasher);
+    Palette { id: (std::hash::Hasher::finish(&hasher) as u32).max(2), ..palette }
 }
 
 #[cfg(test)]
@@ -259,6 +259,15 @@ mod tests {
         assert_eq!(p.chrome.hex()[..7].to_lowercase(), "#f2efe4");
         assert_eq!(p.radius, 0.0);
         assert!(p.id >= 2);
+    }
+
+    #[test]
+    fn any_colour_changes_the_id() {
+        let base = build(FLEXOKI, false, 0.0);
+        assert_eq!(base.id, build(FLEXOKI, false, 0.0).id);
+        // Same background, foreground and accent; only the muted lines differ.
+        let other = build(&FLEXOKI.replace("#B7B5AC", "#807E79"), false, 0.0);
+        assert_ne!(base.id, other.id);
     }
 
     #[test]

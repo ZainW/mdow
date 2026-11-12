@@ -134,7 +134,7 @@ pub fn document(s: &App, pane_id: u64, doc: &LoadedDoc, width: f32, p: &Palette)
         doc.version,
         st.size.to_bits(),
         column.to_bits(),
-        p.dark,
+        p.id,
         s.media_revision,
         s.find_revision,
         s.copied_code.map(|c| c.0),

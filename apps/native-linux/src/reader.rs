@@ -931,22 +931,29 @@ impl Reader {
             self.0.list.scroll_to(row as u32, gtk::ListScrollFlags::NONE, None);
         }
         let smooth = smooth && already && adw::is_animations_enabled(&self.0.root);
+        let mut built = false;
         if smooth {
             // An animated scroll aims once, so the rows it crosses need their real heights.
             let span = from.min(row)..=from.max(row) + EAGER_BELOW;
             for (index, clamp) in self.unbuilt() {
                 if span.contains(&index) {
                     self.build_row(index, &clamp);
+                    built = true;
                 }
             }
         }
         let weak = self.weak();
         let tries = Cell::new(0u32);
+        // Ticks come before layout: rows built just now are only in place by the one after.
+        let settling = Cell::new(built);
         self.0.list.add_tick_callback(move |_, _| {
             let Some(inner) = weak.upgrade() else { return glib::ControlFlow::Break };
             let reader = Reader(inner);
             if reader.0.reveal_generation.get() != generation {
                 return glib::ControlFlow::Break;
+            }
+            if settling.replace(false) {
+                return glib::ControlFlow::Continue;
             }
             tries.set(tries.get() + 1);
             let tries = tries.get();

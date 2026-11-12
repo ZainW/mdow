@@ -99,16 +99,13 @@ impl Raster {
     }
 }
 
-/// The fonts to set an SVG's text in. Reading the system's fonts takes a while, so drawings
-/// with no text in them (the logo, and formulas, whose glyphs are outlines) go without.
-fn fonts_for(svg: &[u8]) -> Arc<usvg::fontdb::Database> {
+/// No fonts at all, for drawings Mdow makes itself that hold no text: reading the system's
+/// fonts takes a while, and the welcome logo and most formulas would pay for it on the main
+/// thread. Anything a document brings (an image, which may embed others, or a diagram) gets
+/// the real ones.
+fn no_fonts() -> Arc<usvg::fontdb::Database> {
     static NONE: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
-    let gzipped = svg.starts_with(&[0x1f, 0x8b]);
-    if gzipped || svg.windows(5).any(|w| w == b"<text") {
-        fontdb()
-    } else {
-        NONE.get_or_init(|| Arc::new(usvg::fontdb::Database::new())).clone()
-    }
+    NONE.get_or_init(|| Arc::new(usvg::fontdb::Database::new())).clone()
 }
 
 fn fontdb() -> Arc<usvg::fontdb::Database> {
@@ -132,9 +129,10 @@ fn rasterize_svg(
     data: &[u8],
     scale: f64,
     resources: Option<std::path::PathBuf>,
+    text: bool,
 ) -> Result<Raster, String> {
     let options = usvg::Options {
-        fontdb: fonts_for(data),
+        fontdb: if text { fontdb() } else { no_fonts() },
         resources_dir: resources,
         font_family: "Inter Variable".to_string(),
         ..usvg::Options::default()
@@ -241,7 +239,7 @@ fn decode(
         head.contains("<svg") || (head.trim_start().starts_with("<?xml") && head.contains("svg"))
     };
     if looks_svg {
-        return rasterize_svg(&bytes, scale, dir).map(WorkOutput::Raster);
+        return rasterize_svg(&bytes, scale, dir, true).map(WorkOutput::Raster);
     }
     gdk::Texture::from_bytes(&glib::Bytes::from_owned(bytes))
         .map(WorkOutput::Texture)
@@ -388,6 +386,11 @@ fn math_svg(tex: &str, display: bool, size: f64, color: Rgba) -> Result<String, 
     Ok(ratex_svg::render_to_svg(&list, &svg_options))
 }
 
+/// RaTeX draws glyphs as outlines, and falls back to `<text>` for one it has no outline for.
+fn math_has_text(svg: &str) -> bool {
+    svg.contains("<text")
+}
+
 /// Whether a formula can be typeset, or has to show its TeX.
 pub fn math_parses(tex: &str) -> bool {
     ratex_parser::parser::parse(tex).is_ok()
@@ -410,7 +413,7 @@ pub fn math_paintable(
         return Ok(paintable);
     }
     let svg = math_svg(tex, display, size, color)?;
-    let raster = rasterize_svg(svg.as_bytes(), scale.max(1) as f64, None)?;
+    let raster = rasterize_svg(svg.as_bytes(), scale.max(1) as f64, None, math_has_text(&svg))?;
     let paintable = raster.into_paintable();
     MATH.with_borrow_mut(|cache| {
         if cache.len() >= CACHE_LIMIT {
@@ -450,7 +453,7 @@ fn print_image(raster: Raster) -> PrintImage {
 
 pub fn math_for_print(tex: &str, size: f64, color: Rgba) -> Option<PrintImage> {
     let svg = math_svg(tex, true, size, color).ok()?;
-    rasterize_svg(svg.as_bytes(), 4.0, None).ok().map(print_image)
+    rasterize_svg(svg.as_bytes(), 4.0, None, math_has_text(&svg)).ok().map(print_image)
 }
 
 pub fn mermaid_for_print(code: &str, palette: &Palette) -> Option<PrintImage> {
@@ -461,7 +464,7 @@ pub fn mermaid_for_print(code: &str, palette: &Palette) -> Option<PrintImage> {
     let svg = std::panic::catch_unwind(|| mermaid_rs_renderer::render_with_options(code, options))
         .ok()?
         .ok()?;
-    rasterize_svg(svg.as_bytes(), 3.0, None).ok().map(print_image)
+    rasterize_svg(svg.as_bytes(), 3.0, None, true).ok().map(print_image)
 }
 
 pub fn render_mermaid(
@@ -484,7 +487,7 @@ pub fn render_mermaid(
             std::panic::catch_unwind(|| mermaid_rs_renderer::render_with_options(&code, options))
                 .map_err(|_| "The diagram could not be laid out.".to_string())?
                 .map_err(|e| e.to_string())?;
-        rasterize_svg(svg.as_bytes(), scale, None).map(WorkOutput::Raster)
+        rasterize_svg(svg.as_bytes(), scale, None, true).map(WorkOutput::Raster)
     });
 }
 
@@ -492,7 +495,7 @@ pub fn render_mermaid(
 pub fn logo(size: f64, scale: i32) -> Option<gdk::Paintable> {
     const LOGO: &[u8] = include_bytes!("../assets/icons/mdow-logo.svg");
     let scale = scale.max(1) as f64;
-    let raster = rasterize_svg(LOGO, scale * size / 1024.0, None).ok()?;
+    let raster = rasterize_svg(LOGO, scale * size / 1024.0, None, false).ok()?;
     let paintable = raster.into_paintable();
     let texture = paintable.downcast_ref::<ScaledTexture>()?.imp().texture.borrow().clone()?;
     Some(ScaledTexture::new(texture, size, size).upcast())
@@ -507,7 +510,7 @@ mod tests {
     #[test]
     fn rasterizes_svg_at_scale() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>"#;
-        let raster = rasterize_svg(svg, 2.0, None).unwrap();
+        let raster = rasterize_svg(svg, 2.0, None, false).unwrap();
         assert_eq!((raster.width, raster.height), (80, 40));
         assert_eq!((raster.logical_width, raster.logical_height), (40.0, 20.0));
         assert_eq!(&raster.pixels[..4], &[255, 0, 0, 255]);
@@ -521,6 +524,6 @@ mod tests {
         };
         let svg = mermaid_rs_renderer::render_with_options("graph TD; A-->B", options).unwrap();
         assert!(svg.contains(&Palette::dark().muted.hex()));
-        assert!(rasterize_svg(svg.as_bytes(), 1.0, None).is_ok());
+        assert!(rasterize_svg(svg.as_bytes(), 1.0, None, true).is_ok());
     }
 }
