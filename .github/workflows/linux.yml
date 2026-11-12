@@ -36,6 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The app finds the desktop's libraries when it runs, but Rune's test harness links
+      # xkbcommon when it is built.
+      - name: Install libxkbcommon
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxkbcommon-dev
+
       # Rune pins its toolchain in apps/rune/rust-toolchain.toml.
       - name: Install Rust
         working-directory: apps/rune
