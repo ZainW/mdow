@@ -1,0 +1,44 @@
+[package]
+name = "mdow-rune"
+version = "1.16.3"
+edition = "2024"
+description = "Mdow for Mac on Rune: a quiet markdown reader drawn by Rune's own GPU renderer"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "mdow"
+path = "src/main.rs"
+
+[dependencies]
+# Rune is pre-release: pin a rev of its `dev` branch, which is never rewritten.
+rune = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821", features = ["native-file-dialog"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821" }
+rune-mac = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821" }
+comrak = { version = "0.59", default-features = false }
+syntect = { version = "5.3", default-features = false, features = ["parsing", "regex-onig"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
+mermaid-rs-renderer = { version = "0.3", default-features = false }
+latex-rust = "3"
+# Rune draws SVG with resvg 0.45; staying on it keeps one copy in the binary.
+resvg = { version = "0.45", default-features = false, features = ["text", "raster-images"] }
+htmd = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notify = "8"
+ureq = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+block2 = "0.6"
+objc2-web-kit = "0.3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2

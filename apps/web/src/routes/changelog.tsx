@@ -40,7 +40,7 @@ function ChangelogPage() {
         <p className="eyebrow">Changelog</p>
         <h1 className="font-display mt-3 text-4xl sm:text-5xl">What&rsquo;s new in Mdow</h1>
         <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-          Every release, newest first. Mdow updates itself in the background, or you can{' '}
+          Every release, newest first. To update,{' '}
           <Link to="/download" className="link-underline text-foreground">
             grab the latest build
           </Link>

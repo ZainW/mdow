@@ -110,7 +110,7 @@ pub fn hex(s: &str) -> Rgba {
 }
 
 /// What the stylesheet takes from Omarchy besides colours.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Omarchy {
     pub radius: u32,
     pub base_size: f64,
@@ -123,7 +123,7 @@ pub struct Omarchy {
     pub scrim: Rgba,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Syntax {
     pub fg: Rgba,
     pub comment: Rgba,
@@ -133,7 +133,7 @@ pub struct Syntax {
     pub constant: Rgba,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Palette {
     pub dark: bool,
     pub background: Rgba,
@@ -503,6 +503,12 @@ pub fn stylesheet(p: &Palette, prefs: &Prefs) -> String {
     let content_font = prefs.content_font.family();
     let code_font = prefs.code_font.family();
     let line_height = prefs.line_spacing.height();
+    // The window's font features (Inter's character variants) are inherited by the document,
+    // and HarfBuzz parses the list again for every run of text it shapes. The bundled Charter
+    // and Geist Mono have none of them, so with those the document goes without.
+    let bundled = prefs.content_font == crate::prefs::ContentFont::Charter
+        && prefs.code_font == crate::prefs::CodeFont::GeistMono;
+    let doc_features = if bundled { " font-feature-settings: normal;" } else { "" };
     let mut css = String::with_capacity(24 * 1024);
 
     // Libadwaita's named colours, as legacy @define-color and as the 1.6+ custom properties,
@@ -662,7 +668,7 @@ button.mdow-search:hover {{ background: {hover_fill}; color: {fg}; }}
 .mdow-reader:focus-visible {{ outline: none; }}
 .mdow-reader listview > row {{ background: none; padding: 0; border: none; outline: none; box-shadow: none; }}
 .mdow-reader listview > row:hover, .mdow-reader listview > row:selected {{ background: none; }}
-.md {{ font-family: {content_font}; font-size: {fs}px; color: {fg}; }}
+.md {{ font-family: {content_font}; font-size: {fs}px; color: {fg};{doc_features} }}
 .md label {{ line-height: {lh:.2}px; }}
 .md label link {{ color: {primary}; }}
 .md label link:hover {{ color: {primary}; }}
@@ -688,6 +694,7 @@ button.mdow-search:hover {{ background: {hover_fill}; color: {fg}; }}
         pane_header = t.pane_header,
         pane_header_text = t.pane_header_text,
         content_font = content_font,
+        doc_features = doc_features,
         fs = fs,
         lh = fs * line_height,
         selection = p.text_selection.css(),

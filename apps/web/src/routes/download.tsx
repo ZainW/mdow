@@ -29,7 +29,7 @@ export const Route = createFileRoute('/download')({
     meta: seo({
       title: 'Download Mdow for Mac',
       description:
-        'Download Mdow, the free and open source markdown reader: a native Mac app built in Swift, with a preview of Mdow for Linux.',
+        'Download Mdow, the free and open source markdown reader for Mac and Linux: one app on both, drawn by its own GPU renderer.',
       path: '/download',
     }),
     links: [canonical('/download')],
@@ -129,7 +129,7 @@ function DownloadPage() {
             ))}
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            On Mac, Mdow checks for updates in the background.{' '}
+            Mdow doesn&rsquo;t update itself yet: download the new version when one is out.{' '}
             <Link
               to="/docs/$"
               params={{ _splat: 'installation' }}

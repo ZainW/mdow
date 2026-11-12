@@ -1,4 +1,8 @@
-# Mdow for Linux
+# Mdow for Linux, on GTK
+
+> Mdow for Linux is now the Rune app in [`apps/rune`](../rune), the same app as on the Mac.
+> This one is no longer packaged or offered on the site. It stays in the tree, CI still checks
+> it, and the Rune app takes its fonts and icon from `assets/`.
 
 Mdow, built natively for the Linux desktop: Rust on GTK 4 and libadwaita. There's no web view,
 JavaScript runtime or cross-platform UI layer. Documents are drawn with real GTK widgets and
@@ -50,9 +54,10 @@ The fonts (Inter, Charter, Geist Mono, JetBrains Mono) are compiled in from
 From the repo root:
 
 ```sh
-pnpm run dev:linux               # cargo run
-pnpm run test:linux              # cargo test
-pnpm run install:linux           # release build into ~/.local (PREFIX=… to change)
+pnpm run dev:gtk                 # cargo run
+pnpm run test:gtk                # cargo test
+pnpm run install:gtk             # release build into ~/.local (PREFIX=… to change)
+pnpm run perf:gtk                # time startup, opening, scrolling, zoom and restyling
 ```
 
 Or with Cargo directly in this folder: `cargo run -- path/to/file.md`, `cargo test`,
@@ -70,8 +75,8 @@ the running window. To make Mdow the default markdown viewer:
 - **Reader**: GitHub-flavored markdown (comrak) with tables, task lists, alerts, footnotes and
   frontmatter titles. The top level of a document is a virtualized `GtkListView`, one row per
   block. Long code blocks and lists are split across rows, so multi-megabyte files open instantly.
-- **Code**: syntect with bat's grammars, coloured from the theme. It runs off the main thread and
-  shows a copy button on hover.
+- **Code**: syntect with bat's grammars, matched by Oniguruma and coloured from the theme. It runs
+  off the main thread and shows a copy button on hover.
 - **Math**: `$…$`, `$$…$$` and ` ```math ` blocks are typeset by RaTeX and rasterised by resvg in
   the text colour. Formulas that don't parse show their TeX.
 - **Mermaid**: laid out by mermaid-rs-renderer in Rust, themed with the palette, and rasterised by
@@ -163,3 +168,25 @@ Other variables used with it:
 - `MDOW_SCREENSHOT_FIND`: a query to search for.
 - `MDOW_SCREENSHOT_ACTION`: window actions to run, e.g. `win.theme=dark;win.settings`.
 - `MDOW_SCREENSHOT_CHEAT`: show the hold-Ctrl cheat sheet.
+
+### Performance
+
+`MDOW_PERF=1` logs how long things take as you use the app, as the Mac apps' variable of the
+same name does: each step of starting up, and for every document the time from asking for it to
+the frame that shows it, with how much of that was the main thread's.
+
+`scripts/perf.sh` (`pnpm run perf:gtk`) runs the lot and prints medians: startup, then
+opening, scrolling, jumping to the end, find, zoom and a theme change over four documents (this
+README, a long plan full of code, one with diagrams and formulas, and a few megabytes of
+everything), then four tabs. It runs without a display, on Broadway as above; `--display` runs on
+your desktop instead, which is the way to judge frame pacing. `--against other-binary` runs
+another build beside it, to see what a change did.
+
+A few things it measures that are worth knowing when changing the reader:
+
+- `GtkListView` keeps up to 200 rows bound around the view. Only the ones in or near the view are
+  built at once; the rest are blanks of about the right height, built a few a frame afterwards or
+  as they come near. `MDOW_EAGER_ROWS=1` builds them all at once, to compare.
+- A wrapping label is given a minimum width in characters. Without one GTK finds it by laying the
+  text out one character a line, which costs more than the rest of measuring a document.
+- Restyling only rebuilds rows when something they show has changed.

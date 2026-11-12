@@ -477,6 +477,9 @@ impl Panel {
 
     /// Restyles everything drawn from the palette or the fonts.
     pub fn set_style(self: &Rc<Self>, style: Rc<Style>) {
+        if *self.style.borrow() == style {
+            return;
+        }
         self.style.replace(style);
         for view in self.views.borrow_mut().drain(..) {
             self.list.remove(&view.root);

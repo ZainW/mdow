@@ -21,8 +21,7 @@ export function LandingLatestRelease({ release }: { release: LatestReleaseData }
             Quietly getting better.
           </h2>
           <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
-            Mdow ships small, careful releases and updates itself in the background. Every change is
-            written down.
+            Mdow ships small, careful releases. Every change is written down.
           </p>
           <div className="mt-8 flex flex-wrap gap-2">
             <Link to="/changelog" className="btn btn-secondary btn-md">
