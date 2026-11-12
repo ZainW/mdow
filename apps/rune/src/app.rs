@@ -445,6 +445,11 @@ impl App {
         {
             self.toast = None;
             changed = true;
+            // Rune lands a change no input caused at once; the toast should still fade out.
+            // A reload in the same poll keeps landing at once.
+            if changes.is_empty() {
+                tx.animated();
+            }
         }
         // Anchors wait for their rows to be laid out.
         let pending: Vec<(u64, String)> = self

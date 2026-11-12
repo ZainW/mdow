@@ -39,7 +39,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # CFBundleVersion is the commit count.
           fetch-depth: 0
@@ -134,7 +134,7 @@ jobs:
           mkdir -p dist/release
           ditto -c -k --keepParent "dist/Mdow Rune.app" "dist/release/Mdow-Rune-$VERSION.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-rune-mac
           path: apps/rune/dist/release/
@@ -163,12 +163,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # CFBundleVersion, which Sparkle compares, is the commit count.
           fetch-depth: 0
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: apps/macos/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
@@ -284,7 +284,7 @@ jobs:
             || { echo "::error::The appcast is missing sparkle:edSignature"; exit 1; }
           cat dist/release/mdow-appcast.xml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-mac
           path: apps/macos/dist/release/
@@ -318,7 +318,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Publish GitHub Release
         env:

@@ -28,7 +28,7 @@ From the repo root, turbo orchestrates the pnpm workspaces (the website):
 
 The native apps:
 
-- `pnpm run dev:rune` / `test:rune` / `install:rune` — run, test, or install Mdow (the Rune app) on this machine, Linux or Mac (Rust 1.99.1, pinned in its `rust-toolchain.toml`); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/rune/packaging/`), and `macos.yml` builds and tests it on a Mac
+- `pnpm run dev:rune` / `test:rune` / `install:rune` — run, test, or install Mdow (the Rune app) on this machine, Linux or Mac (Rust 1.100.0, pinned in its `rust-toolchain.toml`); `.github/workflows/linux.yml` builds its AppImage and Flatpak (`apps/rune/packaging/`), and `macos.yml` builds and tests it on a Mac
 - `pnpm run dev:gtk` / `test:gtk` / `install:gtk` — run, test, or install the GTK app (needs Rust, GTK ≥ 4.14, libadwaita ≥ 1.5)
 - `pnpm run perf:gtk` — time the GTK app starting up, opening documents, scrolling, zooming and restyling, without a display (`--against <binary>` compares two builds). For the Rune app, `MDOW_PERF=1` logs the same timings and `MDOW_ACTIONS` scripts it (`apps/rune/src/actions.rs`)
 - `pnpm run dev:mac` / `test:mac` / `install:mac` — run, test, or install the Swift app (needs Xcode 26+; macOS 15+ to run)

@@ -316,7 +316,8 @@ pub fn update(f: impl FnOnce(&mut Prefs)) -> Prefs {
     drop(guard);
     if after != before {
         REVISION.fetch_add(1, Ordering::Relaxed);
-        if !rune::is_headless() {
+        // Like `load`, tests and headless runs keep to memory and leave the real file alone.
+        if !rune::is_headless() && !cfg!(test) {
             let path = file();
             if let Some(dir) = path.parent() {
                 let _ = std::fs::create_dir_all(dir);

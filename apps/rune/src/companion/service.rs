@@ -189,8 +189,8 @@ fn server_exited(id: u64) {
     changed();
 }
 
-/// Stops the server right away, for idle time and the last window going away.
-fn stop_now() {
+/// Stops the server right away, for idle time, the last window going away and the app quitting.
+pub(super) fn stop_now() {
     let (server, listeners) = {
         let mut r = runtime();
         r.idle_generation += 1;

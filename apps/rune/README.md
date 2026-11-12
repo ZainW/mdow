@@ -29,7 +29,7 @@ pnpm run install:rune               # macOS: a release bundle in ~/Applications 
 
 Or in this folder: `cargo run -- README.md`, `cargo test`, and on the Mac `scripts/bundle.sh`,
 which writes `dist/Mdow Rune.app`, signed ad hoc unless `SIGN_IDENTITY` is set;
-`packaging/appimage.sh` builds the AppImage. Rust 1.99.1 is pinned in `rust-toolchain.toml`, as
+`packaging/appimage.sh` builds the AppImage. Rust 1.100.0 is pinned in `rust-toolchain.toml`, as
 Rune requires. Rune is pre-release, so `Cargo.toml` pins a rev of its `dev` branch.
 
 On the Mac, run the bundle rather than the bare binary when you need Finder's "Open With", the

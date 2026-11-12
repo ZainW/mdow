@@ -34,9 +34,9 @@ jobs:
       run:
         working-directory: apps/macos
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: apps/macos/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
@@ -48,7 +48,7 @@ jobs:
       - name: Zip the app
         run: ditto -c -k --keepParent "dist/Mdow.app" "dist/Mdow.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-mac
           path: apps/macos/dist/Mdow.zip
@@ -62,7 +62,7 @@ jobs:
       run:
         working-directory: apps/rune
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The bundle's build number is the commit count.
           fetch-depth: 0
@@ -93,7 +93,7 @@ jobs:
       - name: Zip the app
         run: ditto -c -k --keepParent "dist/Mdow Rune.app" "dist/Mdow-Rune.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-rune-mac
           path: apps/rune/dist/Mdow-Rune.zip
