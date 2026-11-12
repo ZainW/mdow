@@ -1,31 +1,66 @@
-# Mdow for Mac on Rune
+# Mdow
 
-Mdow for Mac rebuilt on [Rune](https://github.com/anomalyco/rune), a Rust UI framework with its
-own GPU renderer, text stack, layout and springs. It aims for parity with the Swift app in
-`apps/macos`: the same reader, chrome and behaviour, drawn by Rune instead of AppKit and TextKit.
-The look matches the Swift app: warm paper in light mode, neutral ink in dark, one clay accent,
-Charter for text, Inter for the interface and Geist Mono for code.
+Mdow on [Rune](https://github.com/anomalyco/rune), a Rust UI framework with its own GPU renderer,
+text stack, layout and springs. It is one app for Linux and macOS: the same reader, chrome and
+behaviour on both, with each system's own pieces where they belong (the Mac's menu bar, Finder
+and web views; on Linux the desktop's file manager and editor, Ctrl for ⌘, and the Omarchy
+theme). It is the app the site offers.
 
-It installs beside the Swift app as **Mdow Rune.app** (`com.zain.mdow.Rune`), with its own
-settings in `~/Library/Application Support/Mdow Rune/settings.json`.
+Away from Omarchy the look is Mdow's own: warm paper in light mode, neutral ink in dark, one clay
+accent, Charter for text, Inter for the interface and Geist Mono for code.
+
+- **macOS**: **Mdow Rune.app** (`com.zain.mdow.Rune`), with settings in
+  `~/Library/Application Support/Mdow Rune/settings.json`. It installs beside the Swift app in
+  `apps/macos`, which it replaced.
+- **Linux**: the `mdow` binary, with a desktop entry (`com.zain.mdow`) and settings in
+  `~/.config/mdow/settings.json`. CI packages it as an AppImage and a Flatpak
+  (`packaging/`). It replaced the GTK app in `apps/native-linux`.
 
 ## Run, test, install
 
-From the repo root:
+From the repo root, on either system:
 
 ```sh
-pnpm run dev:rune-mac README.md docs/   # debug bundle, run in the foreground
-pnpm run test:rune-mac                  # cargo test
-pnpm run install:rune-mac               # release bundle into ~/Applications (DEST=… to change)
+pnpm run dev:rune README.md docs/   # debug build, run in the foreground
+pnpm run test:rune                  # cargo test
+pnpm run install:rune               # macOS: a release bundle in ~/Applications (DEST=…)
+                                    # Linux: ~/.local/bin/mdow, desktop entry and icon (PREFIX=…)
 ```
 
-Or in this folder: `cargo run -- README.md`, `cargo test`, and `scripts/bundle.sh`, which writes
-`dist/Mdow Rune.app`, signed ad hoc unless `SIGN_IDENTITY` is set. Rust 1.99.1 is pinned in
-`rust-toolchain.toml`, as Rune requires. Rune is pre-release, so `Cargo.toml` pins a rev of its
-`dev` branch.
+Or in this folder: `cargo run -- README.md`, `cargo test`, and on the Mac `scripts/bundle.sh`,
+which writes `dist/Mdow Rune.app`, signed ad hoc unless `SIGN_IDENTITY` is set;
+`packaging/appimage.sh` builds the AppImage. Rust 1.99.1 is pinned in `rust-toolchain.toml`, as
+Rune requires. Rune is pre-release, so `Cargo.toml` pins a rev of its `dev` branch.
 
-Run the bundle rather than the bare binary when you need Finder's "Open With", the Dock icon or
-the app icon. `cargo run` is fine for everything else.
+On the Mac, run the bundle rather than the bare binary when you need Finder's "Open With", the
+Dock icon or the app icon. `cargo run` is fine for everything else.
+
+## On Linux
+
+- **Keys**: Ctrl where the Mac has ⌘, written out in tooltips and the shortcuts list
+  ("Ctrl+Shift+O"). The few chords that need both ⌘ and ⌃ on the Mac take the keys the GTK app
+  used: Ctrl+B for the sidebar, Ctrl+Alt+1–3 for its panes. Ctrl+Q quits, Alt+← and Alt+→ go
+  back and forward, Ctrl+Tab and Ctrl+Alt+→ change tabs, and F5 reloads. There's no menu bar:
+  everything is in the header, the ⋯ menu, Quick Open (Ctrl+K) and the keys.
+- **Windows**: the desktop draws the frame, so there's no gap for window buttons. Closing the
+  window ends the app, and the last session's tabs come back the next time it starts.
+- **Omarchy**: with Appearance on Automatic, the colours come from the current theme's
+  `colors.toml` (`src/omarchy.rs`), text that would be hard to read on the theme's surfaces is
+  nudged until it isn't, corners follow Hyprland's `decoration:rounding`, and `omarchy theme
+  set` recolours open windows, diagrams and formulas included. Light or Dark goes back to
+  Mdow's own colours. `MDOW_OMARCHY=off` turns it off; `MDOW_OMARCHY_THEME=<dir>` reads a
+  theme from somewhere else. Open in Editor uses `omarchy-launch-editor` where it exists.
+- **Files**: Show in Files asks the file manager to select the file (the
+  `org.freedesktop.FileManager1` name), and linked files open with `xdg-open`.
+- **HTML files** are read as documents (converted to markdown and drawn like any other), since
+  there's no WebKit to show the page in. Scripts and styles never run.
+- **Startup**: Vulkan isn't asked to load NVIDIA's driver on a machine with no NVIDIA GPU
+  (`platform::skip_absent_gpu_drivers`). Where its packages are installed without one, that
+  question took half a second before the first frame.
+- **Not on Linux yet**: printing and PDF export (WebKit does them on the Mac), Share, Speech,
+  Look Up, full screen from inside the app, and a window app ID (Rune doesn't set one, so
+  docks show a generic icon for the running window). A second launch opens a second window
+  rather than handing its files to the first.
 
 ### Checking changes without clicking around
 
@@ -54,10 +89,10 @@ settings and never write them. `src/tests.rs` drives the window the same way fro
 | `src/app.rs`                                                          | A window's state: tabs, panes, history, find, and every command.                                                                                                                       |
 | `src/ui.rs`, `sidebar.rs`, `quick_open.rs`, `sheets.rs`, `welcome.rs` | The header with tabs, the sidebar, Quick Open, Settings and Keyboard Shortcuts, the empty tab.                                                                                         |
 | `src/menu.rs`, `windows.rs`                                           | The menu bar and Dock menu; commands go to the window in front.                                                                                                                        |
-| `src/macos.rs`, `watch.rs`, `prefs.rs`                                | Appearance, Finder hand-offs and opened documents; live reload; settings.                                                                                                              |
+| `src/platform.rs`, `omarchy.rs`, `watch.rs`, `prefs.rs`               | What differs by system (appearance, file manager and editor hand-offs, opened documents, how shortcuts are written); the Omarchy theme; live reload; settings.                          |
 | `src/companion/`                                                      | The OpenCode companion.                                                                                                                                                                |
 
-## Parity with the Swift app
+## On the Mac: parity with the Swift app
 
 Matches:
 
@@ -92,7 +127,7 @@ Also matching, through AppKit and WebKit where Rune draws nothing of its own:
 - **Share** (the ⋯ menu), **Speech** (Edit › Speech, read by the system voice), Look Up and
   Search with Google on the selection's context menu.
 - **Menus**: File › Open Recent, Edit › Find and Speech, and View › Text Width are submenus made
-  in AppKit (`macos.rs`), as Rune's menus don't nest. Recent documents also reach the Dock menu.
+  in AppKit (`platform.rs`), as Rune's menus don't nest. Recent documents also reach the Dock menu.
 - **Context menus** on code blocks, outline headings, files and recents; a resizable sidebar,
   split and companion panel; Settings and Keyboard Shortcuts in windows of their own.
 - **⌘A then ⌘C** copies the whole document, including rows that aren't on screen.
@@ -109,4 +144,5 @@ Differs or missing:
   rows that have scrolled out.
 - **Look Up** opens Dictionary rather than AppKit's inline popover; Services and Writing Tools
   don't apply to Rune text.
-- **Updates and CI**: no Sparkle and no release job yet.
+- **Updates**: no Sparkle yet, so it doesn't update itself. Releases sign and notarize it
+  (`.github/workflows/release.yml`).

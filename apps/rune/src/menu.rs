@@ -197,6 +197,8 @@ pub fn fallback_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
         Key::Down if m.cmd && m.alt => Cmd::NextHeading,
         Key::Left if linux && m.alt && !m.cmd => Cmd::Back,
         Key::Right if linux && m.alt && !m.cmd => Cmd::Forward,
+        Key::Left if linux && m.alt && m.cmd => Cmd::PreviousTab,
+        Key::Right if linux && m.alt && m.cmd => Cmd::NextTab,
         Key::Command(c) => match (*c, m.shift, m.alt, m.ctrl) {
             ('n', false, false, false) => Cmd::NewWindow,
             ('w', true, false, false) => Cmd::CloseWindow,

@@ -37,6 +37,23 @@ describe('parseRelease', () => {
     expect(parsed.assets.mac).toBe('versioned')
   })
 
+  it('offers the Rune app over the Swift one, whatever the asset order', () => {
+    for (const assets of [
+      [
+        asset('Mdow-Rune-2.0.0.zip', 'rune'),
+        asset('Mdow-2.0.0.zip', 'swift'),
+        asset('Mdow.zip', 'alias'),
+      ],
+      [
+        asset('Mdow.zip', 'alias'),
+        asset('Mdow-2.0.0.zip', 'swift'),
+        asset('Mdow-Rune-2.0.0.zip', 'rune'),
+      ],
+    ]) {
+      expect(parseRelease(releaseWithAssets(assets))!.assets.mac).toBe('rune')
+    }
+  })
+
   it('falls back to the fixed-name Mac app zip', () => {
     const parsed = parseRelease(releaseWithAssets([asset('Mdow.zip', 'alias')]))!
     expect(parsed.assets.mac).toBe('alias')

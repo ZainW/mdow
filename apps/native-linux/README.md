@@ -1,4 +1,8 @@
-# Mdow for Linux
+# Mdow for Linux, on GTK
+
+> Mdow for Linux is now the Rune app in [`apps/rune`](../rune), the same app as on the Mac.
+> This one is no longer packaged or offered on the site. It stays in the tree, CI still checks
+> it, and the Rune app takes its fonts and icon from `assets/`.
 
 Mdow, built natively for the Linux desktop: Rust on GTK 4 and libadwaita. There's no web view,
 JavaScript runtime or cross-platform UI layer. Documents are drawn with real GTK widgets and
@@ -50,10 +54,10 @@ The fonts (Inter, Charter, Geist Mono, JetBrains Mono) are compiled in from
 From the repo root:
 
 ```sh
-pnpm run dev:linux               # cargo run
-pnpm run test:linux              # cargo test
-pnpm run install:linux           # release build into ~/.local (PREFIX=… to change)
-pnpm run perf:linux              # time startup, opening, scrolling, zoom and restyling
+pnpm run dev:gtk                 # cargo run
+pnpm run test:gtk                # cargo test
+pnpm run install:gtk             # release build into ~/.local (PREFIX=… to change)
+pnpm run perf:gtk                # time startup, opening, scrolling, zoom and restyling
 ```
 
 Or with Cargo directly in this folder: `cargo run -- path/to/file.md`, `cargo test`,
@@ -171,7 +175,7 @@ Other variables used with it:
 same name does: each step of starting up, and for every document the time from asking for it to
 the frame that shows it, with how much of that was the main thread's.
 
-`scripts/perf.sh` (`pnpm run perf:linux`) runs the lot and prints medians: startup, then
+`scripts/perf.sh` (`pnpm run perf:gtk`) runs the lot and prints medians: startup, then
 opening, scrolling, jumping to the end, find, zoom and a theme change over four documents (this
 README, a long plan full of code, one with diagrams and formulas, and a few megabytes of
 everything), then four tabs. It runs without a display, on Broadway as above; `--display` runs on

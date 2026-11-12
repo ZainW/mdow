@@ -11,20 +11,22 @@ Download the latest release from the [download page](/download) or [GitHub Relea
 
 ## macOS
 
-On Mac, Mdow is a native app, built in Swift on AppKit and TextKit, with its own paper-and-ink
-look. It needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-<version>.zip`
-from the [download page](/download), unzip it, and move `Mdow.app` to Applications.
+Mdow needs an Apple Silicon Mac running macOS 15 or newer. Download `Mdow-Rune-<version>.zip`
+from the [download page](/download), unzip it, and move `Mdow Rune.app` to Applications. It's
+signed and notarized.
 
-It's signed and notarized, and updates itself: it checks in the background, and you can check
-from **Mdow → Check for Updates…**.
+It is the same app as Mdow for Linux, drawn by its own GPU renderer, with the Mac's menu bar,
+Finder and web views where they belong.
 
-If you have the earlier Electron version of Mdow, the new app replaces it: move it to
-Applications over the old one. The Electron version and Mdow Native's beta are retired. Copies
-of either keep working but no longer get updates.
+If you have the earlier Mdow for Mac (`Mdow.app`, built in Swift), the two sit side by side
+with their own settings. The Swift app keeps updating itself for now, but new work goes into
+this one. The Electron version and Mdow Native's beta are retired; copies of either keep
+working but no longer get updates.
 
 ## Linux (preview)
 
-Mdow for Linux is a native GTK 4 and libadwaita app for x64. It's in preview, published as the
+Mdow for Linux is the same app as on the Mac, for x64, on any desktop with Wayland or X11 and
+a GPU with Vulkan or OpenGL. It's in preview, published as the
 [`linux-latest` pre-release](https://github.com/ZainW/mdow/releases/tag/linux-latest) on GitHub
 as an AppImage and a Flatpak bundle.
 
@@ -41,6 +43,10 @@ Or install the Flatpak bundle:
 flatpak install --user Mdow-*-x86_64.flatpak
 ```
 
+On [Omarchy](https://omarchy.org) it takes its colours and corners from the current theme and
+follows `omarchy theme set`. Settings › Appearance › Light or Dark goes back to Mdow's own
+colours.
+
 ## Windows
 
 Mdow is no longer built for Windows. Copies of the earlier Electron app keep working but no
@@ -48,5 +54,5 @@ longer get updates.
 
 ## Updates
 
-The Mac app updates itself in the background. The Linux preview doesn't: download a newer
-pre-release to update it.
+Mdow doesn't update itself yet. Download the new version from the [download page](/download)
+when the [changelog](/changelog) shows one; on Linux, download a newer pre-release.
