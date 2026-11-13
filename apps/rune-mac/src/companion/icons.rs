@@ -45,12 +45,6 @@ icon!(
     "mdow-co-warning",
     r#"<path d="M8.7 3.8a1.5 1.5 0 012.6 0l6 10.4a1.5 1.5 0 01-1.3 2.3H4a1.5 1.5 0 01-1.3-2.3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 8v3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10" cy="14" r=".9" fill="currentColor"/>"#
 );
-// exclamationmark.circle
-icon!(
-    ERROR,
-    "mdow-co-error",
-    r#"<circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M10 6.2v4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="13.6" r="1" fill="currentColor"/>"#
-);
 // exclamationmark
 icon!(
     BANG,
@@ -104,4 +98,28 @@ icon!(
     QUESTION,
     "mdow-co-question",
     r#"<path d="M5.5 2.5h9A1.5 1.5 0 0116 4v12a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 014 16V4a1.5 1.5 0 011.5-1.5z" stroke="currentColor" stroke-width="1.3"/><path d="M8.2 7.6a1.9 1.9 0 113 1.5c-.7.5-1.2.9-1.2 1.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="10" cy="13.6" r=".9" fill="currentColor"/>"#
+);
+// terminal: a command the agent ran (or was declined)
+icon!(
+    TERMINAL,
+    "mdow-co-terminal",
+    r#"<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 8l2.2 2-2.2 2M10.5 12.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>"#
+);
+// globe: a page the agent fetched
+icon!(
+    GLOBE,
+    "mdow-co-globe",
+    r#"<circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.3"/><path d="M3.5 10h13M10 3.5c-2 2-2.8 4.2-2.8 6.5s.8 4.5 2.8 6.5c2-2 2.8-4.2 2.8-6.5S12 5.5 10 3.5z" stroke="currentColor" stroke-width="1.2"/>"#
+);
+// arrow.clockwise: try again
+icon!(
+    REFRESH,
+    "mdow-co-refresh",
+    r#"<path d="M15.5 10a5.5 5.5 0 11-1.6-3.9M15.5 4v3.5H12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>"#
+);
+// arrow.up: send
+icon!(
+    ARROW_UP,
+    "mdow-co-arrow-up",
+    r#"<path d="M10 15.5v-11M5.5 9L10 4.5 14.5 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>"#
 );

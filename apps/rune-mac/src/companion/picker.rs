@@ -297,6 +297,8 @@ mod tests {
             current: None,
             stale: false,
             unavailable_reason: None,
+            efforts: Vec::new(),
+            effort: None,
         }
     }
 

@@ -10,6 +10,8 @@ pub struct Conversation {
     pub error: Option<String>,
     pub warnings: Vec<String>,
     pub tags: Vec<ContextTag>,
+    /// When the turn in flight was sent, in ms since 1970, for the working line's timer.
+    pub turn_started: Option<u64>,
     streaming_assistant: Option<String>,
 }
 
@@ -40,6 +42,7 @@ impl Conversation {
         let id = self.ensure_assistant();
         self.streaming = true;
         self.error = None;
+        self.turn_started = Some(now_ms());
         self.map_assistant(&id, |m| m.status = Some(MessageStatus::Streaming));
     }
 
@@ -53,6 +56,7 @@ impl Conversation {
         self.streaming_assistant = None;
         self.messages.clear();
         self.streaming = false;
+        self.turn_started = None;
         self.warnings.clear();
         self.error = None;
     }
@@ -130,6 +134,12 @@ impl Conversation {
                 self.streaming = true;
                 self.map_assistant(&id, |m| {
                     upsert(&mut m.parts, Part::Thinking { text, done: false });
+                    let now = now_ms();
+                    if let Some(i) =
+                        m.parts.iter().rposition(|p| matches!(p, Part::Thinking { .. }))
+                    {
+                        m.thinking.entry(i).or_insert((now, now)).1 = now;
+                    }
                     m.status = Some(MessageStatus::Streaming);
                 });
             }
@@ -218,6 +228,7 @@ impl Conversation {
     }
 
     fn end_turn(&mut self, status: MessageStatus, message_id: Option<&str>) {
+        self.turn_started = None;
         for m in &mut self.messages {
             if Some(m.id.as_str()) == message_id || m.status == Some(MessageStatus::Streaming) {
                 m.status = Some(status);

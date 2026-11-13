@@ -13,6 +13,25 @@ pub const INSTRUCTIONS: &str = "You are the writing companion inside Mdow, a cal
 - Do not run shell commands, reach outside this folder, or create new files unless the user asks for one.
 - Reply concisely in Markdown.";
 
+/// The instructions an ACP agent gets with its first prompt: it has no other way to take them.
+pub fn instructions(agent: super::Agent) -> String {
+    let edits = agent.edits();
+    // Codex reads with shell commands; the ones that only read the folder run.
+    let tools = if agent == super::Agent::Codex {
+        "- Read and search with simple read-only commands (cat, sed -n, rg, ls) and nothing else: any other command is declined. Make every change with apply_patch."
+    } else {
+        "- Do not run shell commands or reach outside this folder."
+    };
+    let changes = if edits {
+        "- When the user asks for a change, make it with your edit tool right away. Mdow shows the user every change as a diff to approve or reject before it is written, so do not ask for confirmation first.\n- Keep edits focused. Preserve each document's voice, structure and formatting, whether it is Markdown or HTML."
+    } else {
+        "- You can't edit files here. When the user asks for a change, show the new text in your answer so they can apply it."
+    };
+    format!(
+        "You are the writing companion inside Mdow, a calm reader for Markdown and HTML documents. The user is reading the documents in this folder and wants help understanding and improving them.\n\n- Answer questions about the documents. Read them with your tools instead of guessing, and mention documents by their path relative to the folder.\n{changes}\n{tools}\n- Stay inside this folder.\n- Reply concisely in Markdown."
+    )
+}
+
 /// Shell commands and other folders are off limits; edits always come back for review.
 pub fn session_permissions() -> Vec<PermissionRule> {
     vec![

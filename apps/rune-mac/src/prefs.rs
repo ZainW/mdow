@@ -210,6 +210,14 @@ pub struct Prefs {
     pub sidebar_width: f32,
     /// The companion's model, `providerID/modelID`; None uses OpenCode's default.
     pub companion_model: Option<String>,
+    /// The companion's agent: "opencode", "claude", "codex" or "cursor".
+    pub companion_agent: String,
+    /// Each ACP agent's command, when set in Settings, by agent.
+    pub companion_agent_commands: std::collections::BTreeMap<String, String>,
+    /// The model each ACP agent runs, by agent; missing uses the agent's own default.
+    pub companion_agent_models: std::collections::BTreeMap<String, String>,
+    /// The effort picked for each ACP model, by `agent/model`.
+    pub companion_efforts: std::collections::BTreeMap<String, String>,
     pub recents: Vec<PathBuf>,
     /// The tabs of each window at the last quit, for restoring them.
     pub session: Vec<Vec<PathBuf>>,
@@ -233,6 +241,10 @@ impl Default for Prefs {
             sidebar_open: true,
             sidebar_width: 240.0,
             companion_model: None,
+            companion_agent: "opencode".into(),
+            companion_agent_commands: Default::default(),
+            companion_agent_models: Default::default(),
+            companion_efforts: Default::default(),
             recents: Vec::new(),
             session: Vec::new(),
         }

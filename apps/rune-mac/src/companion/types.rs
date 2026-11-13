@@ -43,6 +43,17 @@ pub struct ModelState {
     pub current: Option<String>,
     pub stale: bool,
     pub unavailable_reason: Option<String>,
+    /// The current model's effort levels, for agents that offer them (empty otherwise).
+    pub efforts: Vec<EffortOption>,
+    /// The effort the current model runs at.
+    pub effort: Option<String>,
+}
+
+/// One of a model's effort levels, as an ACP agent offers it: "low", "high"…
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffortOption {
+    pub value: String,
+    pub name: String,
 }
 
 impl ModelState {
@@ -51,12 +62,21 @@ impl ModelState {
             options: Vec::new(),
             current: None,
             stale: true,
-            unavailable_reason: Some("Starting OpenCode…".into()),
+            unavailable_reason: Some("Starting…".into()),
+            efforts: Vec::new(),
+            effort: None,
         }
     }
 
     pub fn unavailable(reason: Option<String>) -> ModelState {
-        ModelState { options: Vec::new(), current: None, stale: true, unavailable_reason: reason }
+        ModelState {
+            options: Vec::new(),
+            current: None,
+            stale: true,
+            unavailable_reason: reason,
+            efforts: Vec::new(),
+            effort: None,
+        }
     }
 
     pub fn current_option(&self) -> Option<&ModelOption> {
@@ -148,6 +168,8 @@ pub struct ToolPart {
     pub input: Option<String>,
     pub output: Option<String>,
     pub error: Option<String>,
+    /// ACP's kind ("read", "search", "execute"…), when the agent says.
+    pub kind: Option<String>,
 }
 
 impl ToolPart {
@@ -163,7 +185,12 @@ impl ToolPart {
             input: None,
             output: None,
             error: None,
+            kind: None,
         }
+    }
+    pub fn kind(mut self, v: Option<String>) -> ToolPart {
+        self.kind = v;
+        self
     }
     pub fn input(mut self, v: Option<String>) -> ToolPart {
         self.input = v;
@@ -231,6 +258,10 @@ pub struct Message {
     pub parts: Vec<Part>,
     pub citations: Vec<Citation>,
     pub status: Option<MessageStatus>,
+    /// What a question carried: the document being viewed and the ones attached with @.
+    pub context: Option<String>,
+    /// When each reasoning part (by index) started and last grew, in ms since 1970.
+    pub thinking: std::collections::BTreeMap<usize, (u64, u64)>,
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -244,8 +275,24 @@ impl Message {
     pub fn new(role: Role, content: impl Into<String>, status: Option<MessageStatus>) -> Message {
         let content = content.into();
         let parts = if content.is_empty() { Vec::new() } else { vec![Part::Text(content.clone())] };
-        Message { id: new_id("msg"), role, content, parts, citations: Vec::new(), status }
+        Message {
+            id: new_id("msg"),
+            role,
+            content,
+            parts,
+            citations: Vec::new(),
+            status,
+            context: None,
+            thinking: Default::default(),
+        }
     }
+}
+
+/// Milliseconds since 1970.
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// What the service tells the conversation as a turn streams in.
@@ -262,7 +309,7 @@ pub enum Update {
         files: Option<Vec<FileChange>>,
         error: Option<String>,
     },
-    /// A status line in the reply; OpenCode 2 sends none yet.
+    /// A status line in the reply; no agent sends one yet.
     #[allow(dead_code)]
     Status(String),
     Citation(Citation),
