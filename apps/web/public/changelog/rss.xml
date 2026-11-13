@@ -6,16 +6,27 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.18.0</title>
+      <link>https://mdow.wania.app/changelog#v1-18-0</link>
+      <guid isPermaLink="false">v1.18.0</guid>
+      <pubDate>Fri, 13 Nov 2026 03:23:13 GMT</pubDate>
+      <description>Latest release.
+
+- Mdow for Linux is now a full release, not a preview: every version ships an AppImage and a Flatpak beside the Mac app, on the download page and GitHub Releases
+- The download page offers Linux visitors the AppImage directly
+- The chat beside your documents now works with Claude, Codex and Cursor as well as OpenCode. Reads inside the folder run, edits come back as diffs to accept or decline, and anything else is declined
+- The chat streams long answers much faster and stays</description>
+    </item>
+    <item>
       <title>v1.17.0</title>
       <link>https://mdow.wania.app/changelog#v1-17-0</link>
       <guid isPermaLink="false">v1.17.0</guid>
       <pubDate>Thu, 12 Nov 2026 04:54:19 GMT</pubDate>
-      <description>Latest release.
-
-- Mdow is now one app on Mac and Linux, drawn by its own GPU renderer instead of a different toolkit on each
+      <description>- Mdow is now one app on Mac and Linux, drawn by its own GPU renderer instead of a different toolkit on each
 - On Mac it is a new download, `Mdow Rune.app`, which installs beside the earlier app and keeps its own settings
 - On Linux it replaces the GTK preview: it opens faster, scrolls without dropped frames and uses about half the memory
-- On Omarchy it takes its colours and corners from your theme, and `omarchy theme set` recolours open windows at once, diagrams and formulas</description>
+- On Omarchy it takes its colours and corners from your theme, and `omarchy theme set` recolours open windows at once, diagrams and formulas included
+-</description>
     </item>
     <item>
       <title>v1.16.3</title>

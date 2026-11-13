@@ -5,9 +5,17 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.17.0
+## v1.18.0
 
 Latest release.
+
+- Mdow for Linux is now a full release, not a preview: every version ships an AppImage and a Flatpak beside the Mac app, on the download page and GitHub Releases
+- The download page offers Linux visitors the AppImage directly
+- The chat beside your documents now works with Claude, Codex and Cursor as well as OpenCode. Reads inside the folder run, edits come back as diffs to accept or decline, and anything else is declined
+- The chat streams long answers much faster and stays smooth in long conversations
+- The earlier Swift app for Mac (`Mdow.app`) and the GTK app for Linux are retired. The Swift app no longer gets updates, so move to `Mdow Rune.app` from the download page
+
+## v1.17.0
 
 - Mdow is now one app on Mac and Linux, drawn by its own GPU renderer instead of a different toolkit on each
 - On Mac it is a new download, `Mdow Rune.app`, which installs beside the earlier app and keeps its own settings
