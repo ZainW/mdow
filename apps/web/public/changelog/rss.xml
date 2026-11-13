@@ -6,13 +6,23 @@
     <description>What's new in Mdow</description>
     <language>en-us</language>
     <item>
+      <title>v1.17.0</title>
+      <link>https://mdow.wania.app/changelog#v1-17-0</link>
+      <guid isPermaLink="false">v1.17.0</guid>
+      <pubDate>Thu, 12 Nov 2026 04:54:19 GMT</pubDate>
+      <description>Latest release.
+
+- Mdow is now one app on Mac and Linux, drawn by its own GPU renderer instead of a different toolkit on each
+- On Mac it is a new download, `Mdow Rune.app`, which installs beside the earlier app and keeps its own settings
+- On Linux it replaces the GTK preview: it opens faster, scrolls without dropped frames and uses about half the memory
+- On Omarchy it takes its colours and corners from your theme, and `omarchy theme set` recolours open windows at once, diagrams and formulas</description>
+    </item>
+    <item>
       <title>v1.16.3</title>
       <link>https://mdow.wania.app/changelog#v1-16-3</link>
       <guid isPermaLink="false">v1.16.3</guid>
       <pubDate>Fri, 23 Oct 2026 15:43:32 GMT</pubDate>
-      <description>Latest release.
-
-- Mermaid diagrams now follow a theme change in every tab on Mac, including documents that were in the background when the theme changed</description>
+      <description>- Mermaid diagrams now follow a theme change in every tab on Mac, including documents that were in the background when the theme changed</description>
     </item>
     <item>
       <title>v1.16.2</title>

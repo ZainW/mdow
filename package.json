@@ -1,20 +1,21 @@
 {
   "name": "mdow-monorepo",
-  "version": "1.16.3",
+  "version": "1.17.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "dev:linux": "cargo run --manifest-path apps/native-linux/Cargo.toml",
-    "test:linux": "cargo test --manifest-path apps/native-linux/Cargo.toml",
-    "install:linux": "bash apps/native-linux/scripts/install.sh",
+    "dev:rune": "bash apps/rune/scripts/run.sh",
+    "test:rune": "cargo test --manifest-path apps/rune/Cargo.toml",
+    "install:rune": "bash apps/rune/scripts/install.sh",
     "dev:mac": "bash apps/macos/scripts/run.sh",
     "test:mac": "swift test --package-path apps/macos",
     "install:mac": "bash apps/macos/scripts/install.sh",
-    "dev:rune-mac": "bash apps/rune-mac/scripts/run.sh",
-    "test:rune-mac": "cargo test --manifest-path apps/rune-mac/Cargo.toml",
-    "install:rune-mac": "bash apps/rune-mac/scripts/install.sh",
+    "dev:gtk": "cargo run --manifest-path apps/native-linux/Cargo.toml",
+    "test:gtk": "cargo test --manifest-path apps/native-linux/Cargo.toml",
+    "install:gtk": "bash apps/native-linux/scripts/install.sh",
+    "perf:gtk": "bash apps/native-linux/scripts/perf.sh",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "fmt": "turbo fmt",
@@ -22,7 +23,7 @@
     "test": "turbo test"
   },
   "devDependencies": {
-    "turbo": "^2.11.10"
+    "turbo": "^2.11.11"
   },
-  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
+  "packageManager": "pnpm@12.18.0+sha512.9d7882d5dc82147ecfc4e062aa34834e0ad0296710a1837a1115ae012127d36b7109e321ac1598a1dd0a65597681b1e99917e12ed0d749eae91187943363beb3"
 }

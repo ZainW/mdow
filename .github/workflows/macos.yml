@@ -1,16 +1,21 @@
-name: Mac (AppKit)
+name: Mac
 
-# Builds and tests the Mac app (apps/macos) and uploads an ad hoc signed app as an artifact.
+# Builds and tests Mdow for Mac and uploads ad hoc signed apps as artifacts: the Rune app
+# (apps/rune), which is the one the site offers, and the Swift app (apps/macos).
 # Releases are built by release.yml, from the same `vX.Y.Z` tags as the rest of Mdow.
 'on':
   pull_request:
     paths:
       - 'apps/macos/**'
+      - 'apps/rune/**'
+      - 'apps/native-linux/assets/**'
       - '.github/workflows/macos.yml'
   push:
     branches: [main]
     paths:
       - 'apps/macos/**'
+      - 'apps/rune/**'
+      - 'apps/native-linux/assets/**'
       - '.github/workflows/macos.yml'
   workflow_dispatch:
 
@@ -29,9 +34,9 @@ jobs:
       run:
         working-directory: apps/macos
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: apps/macos/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
@@ -43,7 +48,52 @@ jobs:
       - name: Zip the app
         run: ditto -c -k --keepParent "dist/Mdow.app" "dist/Mdow.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-mac
           path: apps/macos/dist/Mdow.zip
+
+  # The Rune app: the same code as Mdow for Linux, with AppKit for the menu bar, web views and
+  # the Finder hand-offs.
+  rune:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/rune
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The bundle's build number is the commit count.
+          fetch-depth: 0
+
+      # Rune pins its toolchain in rust-toolchain.toml.
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal --component clippy --component rustfmt
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/rune
+
+      - name: Check
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - run: bash scripts/bundle.sh
+
+      - name: Run it without a window
+        run: |
+          "dist/Mdow Rune.app/Contents/MacOS/mdow" --snap "$RUNNER_TEMP/readme.png" --size 1200x800 README.md
+          test -s "$RUNNER_TEMP/readme.png"
+
+      - name: Zip the app
+        run: ditto -c -k --keepParent "dist/Mdow Rune.app" "dist/Mdow-Rune.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mdow-rune-mac
+          path: apps/rune/dist/Mdow-Rune.zip

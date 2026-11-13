@@ -9,6 +9,7 @@ use crate::doc::{self, Doc};
 use crate::files::{self, ErrorKind};
 use crate::media;
 use crate::omarchy;
+use crate::perf;
 use crate::prefs::{
     self, CodeFont, ContentFont, InterfaceScale, LineSpacing, Prefs, ReadingWidth, SidebarMode,
     ThemeMode,
@@ -25,7 +26,7 @@ use std::cell::{Cell, RefCell};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 thread_local! {
     /// Every open window, oldest first. This is what keeps a window's state alive.
@@ -191,6 +192,10 @@ fn parse(text: &str, path: &Path) -> Doc {
     if files::is_html(path) { doc::parse_html(text, path) } else { doc::parse_markdown(text, path) }
 }
 
+/// A step of an `MDOW_PERF_RUN` scenario: its label, how long to let it settle in
+/// milliseconds, and what it does.
+type BenchStep = (&'static str, u64, Box<dyn Fn(&Win)>);
+
 enum Loaded {
     Unchanged,
     Doc(u64, Doc),
@@ -334,6 +339,15 @@ impl Win {
             if prefs.window.maximized {
                 window.maximize();
             }
+        }
+
+        if perf::enabled() {
+            window.connect_realize(|window| {
+                if let Some(clock) = window.frame_clock() {
+                    clock.connect_before_paint(|_| perf::frame_began());
+                    clock.connect_after_paint(|_| perf::frame_drawn());
+                }
+            });
         }
 
         let first_window = WINDOWS.with_borrow(|windows| windows.is_empty());
@@ -974,8 +988,11 @@ impl Win {
         let weak_win = self.weak();
         let weak_tab = Rc::downgrade(tab);
         let path = tab.path();
+        let requested = Instant::now();
         glib::spawn_future_local(async move {
             let result = load(path.clone(), previous).await;
+            let name = files::display_name(&path);
+            perf::note(&format!("read and parse {name}"), requested);
             let (Some(inner), Some(tab)) = (weak_win.upgrade(), weak_tab.upgrade()) else { return };
             let win = Win(inner);
             if tab.generation.get() != generation {
@@ -990,6 +1007,7 @@ impl Win {
                     tab.content_hash.set(hash);
                     tab.error.set(None);
                     tab.page.set_icon(Some(&gio::ThemedIcon::new("text-x-generic-symbolic")));
+                    perf::mark(format!("open {name}"), requested);
                     tab.reader.set_document(doc, &path, keep_position && had_doc);
                     tab.stack.set_visible_child_name("reader");
                     if let Some(anchor) = tab.anchor.take() {
@@ -2396,6 +2414,7 @@ impl Win {
         if let Some(reader) = self.active_reader() {
             match target.parse::<usize>() {
                 Ok(row) => reader.scroll_to_row(row),
+                Err(_) if target == "end" => reader.scroll_to_row(usize::MAX),
                 Err(_) => {
                     reader.scroll_to_anchor(target);
                 }
@@ -2412,6 +2431,96 @@ impl Win {
 
     pub fn debug_cheat_sheet(&self) {
         self.0.cheat.set_visible(true);
+    }
+
+    /// Runs `MDOW_PERF_RUN` scenarios (comma separated: `scroll`, `jump`, `tabs`, `find`, `zoom`,
+    /// `theme`; anything else only waits) once the documents are up, logging each as `MDOW_PERF`
+    /// does, then quits.
+    pub fn run_bench(&self, scenarios: String) {
+        let weak = self.weak();
+        let waited = Cell::new(0u32);
+        glib::timeout_add_local(Duration::from_millis(50), move || {
+            let Some(inner) = weak.upgrade() else { return glib::ControlFlow::Break };
+            let win = Win(inner);
+            waited.set(waited.get() + 1);
+            let loading = win.0.tabs.borrow().iter().any(|t| t.page.is_loading());
+            if (loading || perf::frames_drawn() < 2) && waited.get() < 400 {
+                return glib::ControlFlow::Continue;
+            }
+            let mut steps: Vec<BenchStep> = vec![("settle", 400, Box::new(|_| {}))];
+            let action = |name: &'static str, target: Option<&'static str>| -> Box<dyn Fn(&Win)> {
+                Box::new(move |w: &Win| {
+                    let target = target.map(|t| t.to_variant());
+                    let _ = WidgetExt::activate_action(w.window(), name, target.as_ref());
+                })
+            };
+            for scenario in scenarios.split(',') {
+                match scenario {
+                    "scroll" => steps.push((
+                        "scroll",
+                        5200,
+                        Box::new(|w| {
+                            if let Some(reader) = w.active_reader() {
+                                reader.bench_scroll(4.0);
+                            }
+                        }),
+                    )),
+                    "tabs" => {
+                        for _ in 0..win.0.tab_view.n_pages() * 2 {
+                            steps.push(("switch tab", 300, Box::new(|w| w.cycle_tab(1))));
+                        }
+                    }
+                    "find" => {
+                        steps.push(("find", 500, Box::new(|w| w.debug_find("the"))));
+                        steps.push((
+                            "find next",
+                            300,
+                            Box::new(|w| {
+                                if let Some(reader) = w.active_reader() {
+                                    reader.find_step(1);
+                                }
+                            }),
+                        ));
+                    }
+                    "jump" => {
+                        steps.push(("jump to end", 500, Box::new(|w| w.debug_scroll("end"))));
+                        steps.push(("jump to start", 500, Box::new(|w| w.debug_scroll("0"))));
+                    }
+                    "zoom" => {
+                        for _ in 0..3 {
+                            steps.push(("zoom in", 400, action("win.zoom-in", None)));
+                        }
+                        steps.push(("zoom reset", 400, action("win.zoom-reset", None)));
+                    }
+                    "theme" => {
+                        steps.push(("theme dark", 600, action("win.theme", Some("dark"))));
+                        steps.push(("theme light", 600, action("win.theme", Some("light"))));
+                    }
+                    _ => {}
+                }
+            }
+            win.bench_step(Rc::new(steps), 0);
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn bench_step(&self, steps: Rc<Vec<BenchStep>>, index: usize) {
+        let Some((label, wait, run)) = steps.get(index) else {
+            perf::memory();
+            if let Some(app) = self.0.window.application() {
+                app.quit();
+            }
+            return;
+        };
+        perf::mark(*label, Instant::now());
+        run(self);
+        let weak = self.weak();
+        let steps = steps.clone();
+        glib::timeout_add_local_once(Duration::from_millis(*wait), move || {
+            if let Some(inner) = weak.upgrade() {
+                Win(inner).bench_step(steps, index + 1);
+            }
+        });
     }
 
     /// Reopen the last session: tabs, the active tab, the folder and the split pane.

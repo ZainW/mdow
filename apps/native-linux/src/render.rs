@@ -14,6 +14,7 @@ use gtk::{glib, pango, prelude::*};
 use std::fmt::Write;
 use std::rc::Rc;
 
+#[derive(PartialEq)]
 pub struct Style {
     pub palette: Rc<Palette>,
     /// Body font size in px (zoom applied).
@@ -187,6 +188,11 @@ pub struct Builder<'a> {
     pub labels: Vec<gtk::Label>,
 }
 
+/// The narrowest a wrapping label reports itself, in characters. Without it GTK finds a label's
+/// minimum width by laying its text out at width zero, which with `WordChar` wrapping is one
+/// character a line, and that costs as much as the rest of measuring a document put together.
+const MIN_LABEL_CHARS: i32 = 6;
+
 fn px(v: f64) -> i32 {
     v.round() as i32
 }
@@ -202,6 +208,7 @@ impl<'a> Builder<'a> {
         label.set_wrap(true);
         label.set_wrap_mode(pango::WrapMode::WordChar);
         label.set_natural_wrap_mode(gtk::NaturalWrapMode::Word);
+        label.set_width_chars(MIN_LABEL_CHARS);
         label.set_xalign(0.0);
         label.set_halign(gtk::Align::Fill);
         label.set_selectable(true);
@@ -601,6 +608,8 @@ impl<'a> Builder<'a> {
                 m.markup = format!("<span text_transform=\"uppercase\">{}</span>", m.markup);
             }
             let label = b.text_label(&m.markup, &[]);
+            // Cells are short, and a floor under every column would make wide tables overflow.
+            label.set_width_chars(-1);
             label.set_wrap(!scrolls);
             let align = table.aligns.get(col).copied().unwrap_or(Align::None);
             let (x, justify) = match align {

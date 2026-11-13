@@ -22,20 +22,29 @@ interface GhRelease {
 }
 
 const REPO = 'ZainW/mdow'
-/** The Mac app: `Mdow-<version>.zip`, and the same under a fixed name. */
-const MAC_APP_ALIAS = 'mdow.zip'
-const MAC_APP_VERSIONED = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
+/** The Mac app, built on Rune like Mdow for Linux: `Mdow-Rune-<version>.zip`. */
+const MAC_RUNE = /^mdow-rune-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
+/**
+ * The Swift app, which was the Mac download before the Rune one: `Mdow-<version>.zip`, and the
+ * same under a fixed name. It is still attached to releases for the copies that update
+ * themselves from it, but it is only offered for a release that has no Rune app.
+ */
+const MAC_SWIFT_ALIAS = 'mdow.zip'
+const MAC_SWIFT_VERSIONED = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
 
 export function parseRelease(release: GhRelease): ReleaseInfo | null {
   if (!release?.assets?.length) return null
 
-  let mac: string | null = null
+  let rune: string | null = null
+  let swift: string | null = null
   for (const asset of release.assets) {
     const normalized = asset.name.toLowerCase()
+    if (MAC_RUNE.test(normalized)) rune = asset.browser_download_url
     // The versioned name is the one the release notes and update feed point at.
-    if (MAC_APP_VERSIONED.test(normalized)) mac = asset.browser_download_url
-    else if (normalized === MAC_APP_ALIAS) mac ??= asset.browser_download_url
+    else if (MAC_SWIFT_VERSIONED.test(normalized)) swift = asset.browser_download_url
+    else if (normalized === MAC_SWIFT_ALIAS) swift ??= asset.browser_download_url
   }
+  const mac = rune ?? swift
 
   return {
     version: release.tag_name.replace(/^v/, ''),

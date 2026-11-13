@@ -13,9 +13,147 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Mdow on macOS: the Swift app in apps/macos, updated through Sparkle from the feed on the
-  # latest release.
+  # One draft for both Mac jobs to attach to: two jobs each making "the" draft would make two.
+  draft:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Ensure draft GitHub release exists
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "$TAG" --notes ""
+
+  # Mdow for Mac, the one the site offers: the Rune app in apps/rune, the same code as Mdow for
+  # Linux. It has no updater yet.
+  rune-mac:
+    needs: draft
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/rune
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # CFBundleVersion is the commit count.
+          fetch-depth: 0
+
+      - name: Check the tag matches the app version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ROOT="$(jq -r .version ../../package.json)"
+          if [[ "$ROOT" != "$VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($ROOT)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Rune pins its toolchain in rust-toolchain.toml.
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" \
+            --profile minimal
+          cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/rune
+
+      - run: cargo test --locked
+
+      - name: Import Apple signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
+          P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/rune-mac-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Using $IDENTITY"
+
+      - name: Build and sign
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash scripts/bundle.sh
+          codesign --verify --deep --strict --verbose=2 "dist/Mdow Rune.app"
+          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow Rune.app"
+          # It starts and draws without a window before anything is published.
+          "dist/Mdow Rune.app/Contents/MacOS/mdow" --snap "$RUNNER_TEMP/readme.png" --size 1200x800 README.md
+          test -s "$RUNNER_TEMP/readme.png"
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "dist/Mdow Rune.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "dist/Mdow Rune.app"
+          xcrun stapler validate "dist/Mdow Rune.app"
+          spctl --assess --type execute --verbose=2 "dist/Mdow Rune.app"
+
+      - name: Zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist/release
+          ditto -c -k --keepParent "dist/Mdow Rune.app" "dist/release/Mdow-Rune-$VERSION.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mdow-rune-mac
+          path: apps/rune/dist/release/
+          if-no-files-found: error
+
+      - name: Upload Mdow for Mac
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release upload "$GITHUB_REF_NAME" "dist/release/Mdow-Rune-$VERSION.zip" --clobber
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/rune-mac-signing.keychain-db" 2>/dev/null || true
+
+  # The Swift app in apps/macos, which was Mdow for Mac before the Rune app. The site no longer
+  # offers it, but copies of it update through Sparkle from the feed on the latest release, so
+  # each release still carries a build and its feed.
   mac-app:
+    needs: draft
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
@@ -25,12 +163,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # CFBundleVersion, which Sparkle compares, is the commit count.
           fetch-depth: 0
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: apps/macos/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
@@ -146,7 +284,7 @@ jobs:
             || { echo "::error::The appcast is missing sparkle:edSignature"; exit 1; }
           cat dist/release/mdow-appcast.xml
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdow-mac
           path: apps/macos/dist/release/
@@ -175,17 +313,20 @@ jobs:
   publish:
     needs:
       - mac-app
+      - rune-mac
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # Keep the release in draft until the Mac app's signed update feed is on it.
+          # Keep the release in draft until the Mac app the site offers is on it, and the Swift
+          # app's signed update feed.
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^Mdow-Rune-.*\.zip$'
           gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx mdow-appcast.xml
           gh release edit "$TAG" --draft=false --latest

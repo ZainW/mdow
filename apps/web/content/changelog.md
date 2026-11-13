@@ -5,9 +5,20 @@ description: What's new in Mdow
 
 # Changelog
 
-## v1.16.3
+## v1.17.0
 
 Latest release.
+
+- Mdow is now one app on Mac and Linux, drawn by its own GPU renderer instead of a different toolkit on each
+- On Mac it is a new download, `Mdow Rune.app`, which installs beside the earlier app and keeps its own settings
+- On Linux it replaces the GTK preview: it opens faster, scrolls without dropped frames and uses about half the memory
+- On Omarchy it takes its colours and corners from your theme, and `omarchy theme set` recolours open windows at once, diagrams and formulas included
+- Documents full of code blocks open with far less memory, and their code is coloured sooner
+- A line ending inside a paragraph no longer forces a line break, so text wrapped at 80 columns in its file flows to the reading width
+- This version doesn't update itself yet: get new versions from the download page. The earlier Mac app keeps updating itself for now
+- Not on Linux yet: printing and PDF export
+
+## v1.16.3
 
 - Mermaid diagrams now follow a theme change in every tab on Mac, including documents that were in the background when the theme changed
 
