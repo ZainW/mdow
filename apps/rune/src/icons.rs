@@ -125,11 +125,6 @@ icon!(
     r#"<rect x="2" y="2" width="16" height="16" rx="4.5" fill="currentColor" opacity="0.14"/><path d="M5.5 13.5v-7l2.75 3.5L11 6.5v7M13.5 6.5v7M12 11.5l1.5 2 1.5-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>"#
 );
 icon!(
-    SEND,
-    "mdow-send",
-    r#"<path d="M10 16V4.5M5 9.5l5-5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>"#
-);
-icon!(
     STOP,
     "mdow-stop",
     r#"<rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor"/>"#

@@ -10,7 +10,11 @@
 //! panel's own state. Its actor reports through a channel and the window's waker; `poll` folds
 //! the reports in on the UI thread.
 
+mod acp;
+mod agents;
+mod claude;
 mod client;
+mod codex;
 mod conversation;
 mod events;
 mod icons;
@@ -26,6 +30,7 @@ pub use settings::settings_group_layered;
 pub use view::panel;
 pub use view::panel_key as window_key;
 
+pub use agents::Agent;
 use conversation::Conversation;
 use rune::{TextEdit, Tx};
 use service::{Cmd, Handle, Msg};
@@ -46,6 +51,8 @@ pub fn stop_server() {
 
 pub struct Companion {
     pub open: bool,
+    /// The agent this window's chats run on.
+    agent: Agent,
     conversation: Conversation,
     composer: TextEdit,
     status: Option<RuntimeStatus>,
@@ -74,12 +81,15 @@ pub struct Companion {
     picker_index: usize,
     /// The panel's width as the user dragged it (clamped when drawn).
     width: f32,
+    /// The model and effort this window's chat runs on, over the agent's shared list.
+    session_model: Option<service::SessionModel>,
 }
 
 impl Default for Companion {
     fn default() -> Self {
         Companion {
             open: false,
+            agent: Agent::from_raw(&crate::prefs::get().companion_agent).unwrap_or_default(),
             conversation: Conversation::default(),
             composer: TextEdit::new(""),
             status: None,
@@ -99,6 +109,7 @@ impl Default for Companion {
             picker_query: TextEdit::new(""),
             picker_index: 0,
             width: saved_width(),
+            session_model: None,
         }
     }
 }
@@ -130,13 +141,20 @@ impl Companion {
                     Msg::Restore { tool_call_id, permission_id } => self
                         .conversation
                         .mark_reviewed(&tool_call_id, ChangeStatus::Pending, Some(permission_id)),
+                    Msg::Session(shown) => {
+                        shown.apply(self.agent, &mut self.models);
+                        self.session_model = Some(shown);
+                    }
                 }
             }
         }
         let revision = service::revision();
         if revision != self.revision && self.handle.is_some() && !self.demo {
             self.revision = revision;
-            let (status, models) = service::snapshot();
+            let (status, mut models) = service::snapshot(self.agent);
+            if let Some(shown) = &self.session_model {
+                shown.apply(self.agent, &mut models);
+            }
             if status != self.status || models != self.models {
                 self.status = status;
                 self.models = models;
@@ -149,6 +167,14 @@ impl Companion {
             if self.visible && !self.is_available() {
                 self.connect();
             }
+        }
+        // The working line's timer counts whole seconds while a reply streams in: wake as the
+        // next one ticks over.
+        if self.open && self.conversation.streaming {
+            let now = types::now_ms();
+            let since = self.conversation.turn_started.unwrap_or(now);
+            let into = now.saturating_sub(since) % 1000;
+            tx.wake_after(Duration::from_millis(1000 - into + 10));
         }
         if let Some((_, at)) = &self.copied {
             let left = Duration::from_millis(1500).saturating_sub(at.elapsed());
@@ -209,7 +235,7 @@ impl Companion {
             return;
         }
         let directory = self.directory.clone().unwrap_or_else(logic::home);
-        self.send_cmd(Cmd::Connect { directory });
+        self.send_cmd(Cmd::Connect { agent: self.agent, directory });
     }
 
     /// Sends `text` with what the window shows as context.
@@ -221,10 +247,19 @@ impl Companion {
         let directory = logic::session_directory(doc, folder, &logic::home());
         self.directory = Some(directory.clone());
         self.conversation.append_user_message(trimmed);
+        let mut carried: Vec<String> =
+            doc.map(|d| events::basename(&d.to_string_lossy())).into_iter().collect();
+        carried.extend(
+            self.conversation.tags.iter().map(|t| format!("@{}", events::basename(&t.path))),
+        );
+        if let Some(m) = self.conversation.messages.last_mut() {
+            m.context = (!carried.is_empty()).then(|| carried.join("  "));
+        }
         self.conversation.begin_request();
         let Some(h) = &self.handle else { return };
         let epoch = h.epoch.load(Ordering::SeqCst);
         h.send(Cmd::Send {
+            agent: self.agent,
             text: trimmed.to_string(),
             active_path: doc.map(|d| d.to_string_lossy().into_owned()),
             tags: self.conversation.tags.clone(),
@@ -272,13 +307,43 @@ impl Companion {
     }
 
     fn select_model(&mut self, value: &str) {
-        match service::select_model(value) {
+        match service::select_model(self.agent, value) {
             Ok(()) => {
                 self.conversation.error = None;
                 self.models.current = Some(value.to_string());
                 self.send_cmd(Cmd::SwitchModel(value.to_string()));
             }
             Err(e) => self.conversation.error = Some(e),
+        }
+    }
+
+    fn select_effort(&mut self, value: &str) {
+        service::select_effort(self.agent, value);
+        self.models.effort = Some(value.to_string());
+        self.send_cmd(Cmd::SwitchEffort(value.to_string()));
+    }
+
+    /// Runs this window's chats on `agent`, from a new chat, and makes it the default.
+    fn choose_agent(&mut self, agent: Agent) {
+        if agent == self.agent {
+            return;
+        }
+        if self.conversation.streaming {
+            self.stop();
+        }
+        self.new_chat();
+        self.agent = agent;
+        self.session_model = None;
+        crate::prefs::update(|p| p.companion_agent = agent.raw().to_string());
+        if self.demo {
+            return;
+        }
+        let (status, models) = service::snapshot(agent);
+        self.status = status;
+        self.models = models;
+        self.revision = 0;
+        if self.open {
+            self.connect();
         }
     }
 
@@ -297,8 +362,14 @@ impl Companion {
     }
 
     /// A transcript with every kind of part, for screenshots (`MDOW_COMPANION_DEMO=1` with the
-    /// `companion` scene).
+    /// `companion` scene). `MDOW_COMPANION_AGENT` picks the agent, `MDOW_COMPANION_STATE` shows
+    /// the greeting (`empty`) or a turn still working (`working`).
     fn fill_demo(&mut self) {
+        if let Some(agent) =
+            std::env::var("MDOW_COMPANION_AGENT").ok().and_then(|a| Agent::from_raw(&a))
+        {
+            self.agent = agent;
+        }
         if let Some(which) = std::env::var_os("MDOW_COMPANION_PICKER") {
             self.picker = Some(if which == "settings" {
                 picker::PickerFor::Settings
@@ -308,36 +379,80 @@ impl Companion {
             self.picker_query = TextEdit::new("");
             self.picker_query.focused = true;
         }
-        self.status = Some(RuntimeStatus::new(Availability::Available, Some("2.2.6".into()), None));
+        let version = (!self.agent.is_acp()).then(|| "2.2.6".to_string());
+        self.status = Some(RuntimeStatus::new(Availability::Available, version, None));
         let option = |provider: &str, provider_name: &str, id: &str, name: &str| ModelOption {
-            value: format!("{provider}/{id}"),
+            value: if self.agent.is_acp() { id.to_string() } else { format!("{provider}/{id}") },
             name: name.into(),
             provider_id: provider.into(),
             provider_name: provider_name.into(),
         };
+        let (options, current) = match self.agent {
+            Agent::Codex => (
+                vec![
+                    option("OpenAI", "OpenAI", "gpt-6-codex", "GPT-6 Codex"),
+                    option("OpenAI", "OpenAI", "gpt-6", "GPT-6"),
+                    option("OpenAI", "OpenAI", "gpt-6-mini", "GPT-6 Mini"),
+                ],
+                "gpt-6-codex",
+            ),
+            Agent::OpenCode => (
+                vec![
+                    option("opencode", "OpenCode Zen", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+                    option("opencode", "OpenCode Zen", "gpt-6", "GPT-6"),
+                    option("openrouter", "OpenRouter", "deepseek-v4", "DeepSeek V4"),
+                ],
+                "opencode/claude-sonnet-5-5",
+            ),
+            _ => (
+                vec![
+                    option("Anthropic", "Anthropic", "claude-opus-5-5", "Claude Opus 5.5"),
+                    option("Anthropic", "Anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
+                    option("Anthropic", "Anthropic", "claude-haiku-5-5", "Claude Haiku 5.5"),
+                ],
+                "claude-sonnet-5-5",
+            ),
+        };
+        let effort = |v: &str, n: &str| EffortOption { value: v.into(), name: n.into() };
         self.models = ModelState {
-            options: vec![
-                option("opencode", "OpenCode Zen", "claude-sonnet-5-5", "Claude Sonnet 5.5"),
-                option("opencode", "OpenCode Zen", "gpt-6", "GPT-6"),
-                option("opencode", "OpenCode Zen", "gemini-4-pro", "Gemini 4 Pro"),
-                option("openrouter", "OpenRouter", "deepseek-v4", "DeepSeek V4"),
-                option("openrouter", "OpenRouter", "ling", "Ling"),
-            ],
-            current: Some("opencode/claude-sonnet-5-5".into()),
+            options,
+            current: Some(current.into()),
             stale: false,
             unavailable_reason: None,
+            efforts: if self.agent.is_acp() {
+                vec![effort("low", "Low"), effort("medium", "Medium"), effort("high", "High")]
+            } else {
+                Vec::new()
+            },
+            effort: self.agent.is_acp().then(|| "medium".to_string()),
         };
+        let state = std::env::var("MDOW_COMPANION_STATE").unwrap_or_default();
+        if state == "empty" {
+            return;
+        }
         let c = &mut self.conversation;
         c.append_user_message("Summarize this document, then fix the typo in the intro.");
+        if let Some(m) = c.messages.last_mut() {
+            m.context = Some("README.md".into());
+        }
         c.begin_request();
         c.apply(Update::Thinking(
-            "The user wants a summary and a fix. I'll read the README first.".into(),
+            "The user wants a summary and a fix. I'll read the README first, then look for the typo."
+                .into(),
         ));
+        if let Some(m) = c.messages.last_mut() {
+            m.thinking.insert(0, (now_ms() - 6_000, now_ms()));
+        }
         c.apply(Update::ThinkingDone);
         c.apply(Update::Tool(
             ToolPart::new("t1", "Read README.md", ToolState::Completed)
+                .kind(Some("read".into()))
                 .input(Some("{\n  \"path\": \"README.md\"\n}".into()))
                 .output(Some("1: # Mdow".into())),
+        ));
+        c.apply(Update::Tool(
+            ToolPart::new("t2", "Searched for “Markdwon”", ToolState::Completed)
+                .kind(Some("search".into())),
         ));
         c.apply(Update::Citation(Citation {
             source_id: "read:/README.md".into(),
@@ -362,6 +477,47 @@ impl Companion {
             }]),
             error: None,
         });
+        if state == "working" {
+            c.apply(Update::Change {
+                tool_call_id: "e1".into(),
+                permission_id: None,
+                status: ChangeStatus::Applied,
+                files: None,
+                error: None,
+            });
+            c.apply(Update::Done("x".into()));
+            c.append_user_message("Is the install section still right for Linux?");
+            if let Some(m) = c.messages.last_mut() {
+                m.context = Some("README.md".into());
+            }
+            c.begin_request();
+            c.turn_started = Some(now_ms() - 7_000);
+            c.apply(Update::Tool(
+                ToolPart::new("t3", "Read docs/install.md", ToolState::Running)
+                    .kind(Some("read".into())),
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+impl Companion {
+    /// A long chat for benchmarks: `turns` finished turns, then one streaming in.
+    pub fn bench_transcript(&mut self, turns: usize) {
+        self.open = true;
+        self.demo = true;
+        self.demo_filled = true;
+        for _ in 0..turns {
+            self.fill_demo();
+            self.conversation.apply(Update::Done("x".into()));
+        }
+        self.conversation.append_user_message("And the rest?");
+        self.conversation.begin_request();
+    }
+
+    /// One more word of the reply streaming in.
+    pub fn bench_word(&mut self) {
+        self.conversation.apply(Update::Delta("word ".into()));
     }
 }
 

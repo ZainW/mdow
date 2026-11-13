@@ -2,6 +2,7 @@
 //! conversations start with. Ported from the Swift app's `CompanionSettingsSection.swift`, in the
 //! look of `crate::sheets`' groups.
 
+use super::agents::Agent;
 use super::picker::{self, PickerFor};
 use super::service;
 use super::types::Availability;
@@ -19,12 +20,13 @@ pub fn settings_group_layered(s: &App, p: &Palette, k: &rune_kit::Kit, layer: &m
 
 fn group(s: &App, p: &Palette, layered: bool) -> El {
     let c = &s.companion;
+    let agent = c.agent;
     let saved = s.prefs.companion_model.clone();
     let available = c.status.as_ref().is_some_and(|st| st.availability == Availability::Available);
     let status_text = match &c.status {
         None => "Starts when you open the companion".to_string(),
         Some(st) if st.availability == Availability::Available => {
-            format!("Connected to OpenCode {}", st.version.clone().unwrap_or_default())
+            format!("Connected to {} {}", agent.name(), st.version.clone().unwrap_or_default())
                 .trim()
                 .to_string()
         }
@@ -91,10 +93,57 @@ fn group(s: &App, p: &Palette, layered: bool) -> El {
         }
     };
 
-    let rows = vec![
+    let agent_menu = row()
+        .key("companion-settings-agent")
+        .h(28.0)
+        .gap(6.0)
+        .center_y()
+        .px(10.0)
+        .radius(6.0)
+        .fill(p.well)
+        .border(1.0, p.line)
+        .hover(p.hover)
+        .role("combobox")
+        .label(format!("Agent: {}", agent.name()))
+        .focusable(true)
+        .child(text(agent.name()).font(theme::ui(12.5, 500.0)).color(p.text))
+        .child(rune::icon(&icons::CHEVRON_DOWN, 12.0).color(p.tertiary))
+        .on_press_tx(|s: &mut App, tx: &mut Tx| {
+            let current = s.companion.agent;
+            let mut menu = rune::PopupMenu::new();
+            for a in Agent::ALL {
+                menu = menu.item(
+                    rune::PopupItem::new(a.raw(), format!("{} — {}", a.name(), a.blurb()))
+                        .checked(a == current),
+                );
+            }
+            tx.popup_menu(
+                menu,
+                "companion-settings-agent",
+                |s: &mut App, picked: Option<&str>, _tx: &mut Tx| {
+                    if let Some(a) = picked.and_then(Agent::from_raw) {
+                        s.companion.choose_agent(a);
+                    }
+                },
+            );
+        });
+    let mut rows = vec![
+        setting(
+            "Agent",
+            Some("What the companion runs on. Another agent starts a new chat."),
+            agent_menu,
+            p,
+        ),
         setting("Status", None, status, p),
-        setting("Default model", Some("New conversations start with this model."), model, p),
     ];
+    if !agent.is_acp() {
+        rows.push(setting(
+            "Default model",
+            Some("New conversations start with this model."),
+            model,
+            p,
+        ));
+    }
     let mut box_ = col().w_full().radius(10.0).fill(p.paper).border(1.0, p.line);
     let n = rows.len();
     for (i, r) in rows.into_iter().enumerate() {
@@ -108,7 +157,10 @@ fn group(s: &App, p: &Palette, layered: bool) -> El {
         .child(text("COMPANION").font(rune::TextStyle { tracking: 0.5, ..theme::ui(10.5, 600.0) }).color(p.tertiary).px(4.0))
         .child(box_)
         .child(
-            text("The companion runs on OpenCode 2 on this Mac and uses the providers you have signed in to there. You can also choose a model from the companion’s message box.")
+            text(match agent {
+                Agent::OpenCode => "OpenCode 2 runs on this Mac and uses the providers you have signed in to there. You can also choose a model from the companion’s message box.",
+                _ => "Claude, Codex and Cursor run through the Agent Client Protocol with your own plans. Choose the model and effort from the companion’s message box; each agent keeps its own.",
+            })
                 .font(theme::ui(12.0, 400.0).lh(17.0))
                 .color(p.tertiary)
                 .wrap()
