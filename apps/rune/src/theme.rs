@@ -11,25 +11,25 @@ pub const CARD_RADIUS: f32 = 12.0;
 /// Room for the close, minimise and zoom buttons at the left of the header.
 pub const TRAFFIC_LIGHTS_WIDTH: f32 = 86.0;
 
-/// The interface and code families, embedded from the Linux app's assets.
+/// The interface and code families, embedded from `assets/fonts`.
 pub const UI_FAMILY: &str = "Inter Variable";
 pub const MONO_FAMILY: &str = "Geist Mono";
 
 pub static FONTS: &[&[u8]] = &[
-    include_bytes!("../../native-linux/assets/fonts/Inter-400.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Inter-500.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Inter-600.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Inter-700.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Inter-Italic-400.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Inter-Italic-600.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/GeistMono-400.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/GeistMono-500.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/GeistMono-700.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/GeistMono-Italic-400.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Charter-Regular.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Charter-Bold.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Charter-Italic.ttf"),
-    include_bytes!("../../native-linux/assets/fonts/Charter-BoldItalic.ttf"),
+    include_bytes!("../assets/fonts/Inter-400.ttf"),
+    include_bytes!("../assets/fonts/Inter-500.ttf"),
+    include_bytes!("../assets/fonts/Inter-600.ttf"),
+    include_bytes!("../assets/fonts/Inter-700.ttf"),
+    include_bytes!("../assets/fonts/Inter-Italic-400.ttf"),
+    include_bytes!("../assets/fonts/Inter-Italic-600.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-400.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-500.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-700.ttf"),
+    include_bytes!("../assets/fonts/GeistMono-Italic-400.ttf"),
+    include_bytes!("../assets/fonts/Charter-Regular.ttf"),
+    include_bytes!("../assets/fonts/Charter-Bold.ttf"),
+    include_bytes!("../assets/fonts/Charter-Italic.ttf"),
+    include_bytes!("../assets/fonts/Charter-BoldItalic.ttf"),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]

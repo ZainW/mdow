@@ -10,11 +10,11 @@ Away from Omarchy the look is Mdow's own: warm paper in light mode, neutral ink 
 accent, Charter for text, Inter for the interface and Geist Mono for code.
 
 - **macOS**: **Mdow Rune.app** (`com.zain.mdow.Rune`), with settings in
-  `~/Library/Application Support/Mdow Rune/settings.json`. It installs beside the Swift app in
-  `apps/macos`, which it replaced.
+  `~/Library/Application Support/Mdow Rune/settings.json`. It replaced the earlier Swift app
+  (`Mdow.app`), and installs beside it.
 - **Linux**: the `mdow` binary, with a desktop entry (`com.zain.mdow`) and settings in
   `~/.config/mdow/settings.json`. CI packages it as an AppImage and a Flatpak
-  (`packaging/`). It replaced the GTK app in `apps/native-linux`.
+  (`packaging/`). It replaced the earlier GTK app.
 
 ## Run, test, install
 
@@ -83,7 +83,7 @@ settings and never write them. `src/tests.rs` drives the window the same way fro
 
 | Path                                                                  | What it does                                                                                                                                                                           |
 | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/doc.rs`, `files.rs`, `highlight.rs`                              | Markdown (comrak) and HTML into blocks, folder scans, links, syntect highlighting. Shared with `apps/native-linux`.                                                                    |
+| `src/doc.rs`, `files.rs`, `highlight.rs`                              | Markdown (comrak) and HTML into blocks, folder scans, links, syntect highlighting.                                                                                                     |
 | `src/reader/`                                                         | Blocks to Rune elements: one virtual row per top-level block, so long documents open and scroll as fast as short ones. Inline markdown becomes one selectable rich text per paragraph. |
 | `src/media.rs`                                                        | Images (local, remote, SVG), Mermaid (mermaid-rs-renderer) and display math (latex-rust), rasterised off the main thread.                                                              |
 | `src/app.rs`                                                          | A window's state: tabs, panes, history, find, and every command.                                                                                                                       |

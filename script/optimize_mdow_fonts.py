@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path(os.environ.get("MDOW_FONT_CACHE", "/tmp/mdow-font-src"))
-GPUI_FONTS = ROOT / "apps/native-linux/assets/fonts"
+GPUI_FONTS = ROOT / "apps/rune/assets/fonts"
 WEB_FONTS = ROOT / "apps/web/src/assets/fonts"
 LICENSE_DIR = GPUI_FONTS / "licenses"
 

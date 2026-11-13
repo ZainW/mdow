@@ -7,9 +7,10 @@ const sample = {
   published_at: '2026-04-26T10:00:00Z',
   html_url: 'https://github.com/ZainW/mdow/releases/tag/v1.2.3',
   assets: [
-    { name: 'Mdow-1.2.3.zip', browser_download_url: 'https://example.test/Mdow-1.2.3.zip' },
-    { name: 'Mdow.zip', browser_download_url: 'https://example.test/Mdow.zip' },
-    { name: 'mdow-appcast.xml', browser_download_url: 'https://example.test/mdow-appcast.xml' },
+    {
+      name: 'Mdow-Rune-1.2.3.zip',
+      browser_download_url: 'https://example.test/Mdow-Rune-1.2.3.zip',
+    },
   ],
 }
 
@@ -27,36 +28,18 @@ describe('parseRelease', () => {
     expect(result.version).toBe('1.2.3')
     expect(result.htmlUrl).toBe('https://github.com/ZainW/mdow/releases/tag/v1.2.3')
     expect(result.publishedAt).toBe('2026-04-26T10:00:00Z')
-    expect(result.assets.mac).toBe('https://example.test/Mdow-1.2.3.zip')
+    expect(result.assets.mac).toBe('https://example.test/Mdow-Rune-1.2.3.zip')
   })
 
-  it('prefers the versioned Mac app zip, whatever the asset order', () => {
+  it('ignores the retired Swift app', () => {
     const parsed = parseRelease(
-      releaseWithAssets([asset('Mdow.zip', 'alias'), asset('Mdow-2.0.0.zip', 'versioned')]),
+      releaseWithAssets([
+        asset('Mdow.zip', 'alias'),
+        asset('Mdow-2.0.0.zip', 'swift'),
+        asset('mdow-appcast.xml', 'feed'),
+      ]),
     )!
-    expect(parsed.assets.mac).toBe('versioned')
-  })
-
-  it('offers the Rune app over the Swift one, whatever the asset order', () => {
-    for (const assets of [
-      [
-        asset('Mdow-Rune-2.0.0.zip', 'rune'),
-        asset('Mdow-2.0.0.zip', 'swift'),
-        asset('Mdow.zip', 'alias'),
-      ],
-      [
-        asset('Mdow.zip', 'alias'),
-        asset('Mdow-2.0.0.zip', 'swift'),
-        asset('Mdow-Rune-2.0.0.zip', 'rune'),
-      ],
-    ]) {
-      expect(parseRelease(releaseWithAssets(assets))!.assets.mac).toBe('rune')
-    }
-  })
-
-  it('falls back to the fixed-name Mac app zip', () => {
-    const parsed = parseRelease(releaseWithAssets([asset('Mdow.zip', 'alias')]))!
-    expect(parsed.assets.mac).toBe('alias')
+    expect(parsed.assets.mac).toBeNull()
   })
 
   it('ignores the retired Electron and Mdow Native archives', () => {
@@ -68,6 +51,24 @@ describe('parseRelease', () => {
       ]),
     )!
     expect(parsed.assets.mac).toBeNull()
+  })
+
+  it('finds the Linux AppImage and Flatpak', () => {
+    const parsed = parseRelease(
+      releaseWithAssets([
+        asset('Mdow-Rune-2.0.0.zip', 'rune'),
+        asset('Mdow-2.0.0-x86_64.AppImage', 'appimage'),
+        asset('Mdow-2.0.0-x86_64.flatpak', 'flatpak'),
+        asset('Mdow-2.0.0-linux-SHA256SUMS', 'sums'),
+      ]),
+    )!
+    expect(parsed.assets).toEqual({ mac: 'rune', appImage: 'appimage', flatpak: 'flatpak' })
+  })
+
+  it('leaves Linux empty for a release without it', () => {
+    const parsed = parseRelease(sample)!
+    expect(parsed.assets.appImage).toBeNull()
+    expect(parsed.assets.flatpak).toBeNull()
   })
 
   it('strips the leading v from tag_name', () => {

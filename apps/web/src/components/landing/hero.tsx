@@ -65,7 +65,7 @@ export function LandingHero({ release, downloadUrl, latest }: LandingHeroProps) 
           <p className="mt-5 text-[13px] text-muted-foreground">
             Free and open source{release ? ` · v${release.version}` : ''} ·{' '}
             <Link to="/download" className="link-underline">
-              Linux preview
+              Also on Linux
             </Link>
           </p>
         </IntroSection>

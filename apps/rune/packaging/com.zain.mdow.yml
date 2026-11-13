@@ -37,15 +37,12 @@ modules:
       - install -d /app/share/applications
       - sed 's|@BINDIR@/||' apps/rune/data/com.zain.mdow.desktop.in > /app/share/applications/com.zain.mdow.desktop
       - install -Dm644 apps/rune/data/com.zain.mdow.metainfo.xml /app/share/metainfo/com.zain.mdow.metainfo.xml
-      - install -Dm644 apps/native-linux/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.svg
+      - install -Dm644 apps/rune/assets/icons/mdow-logo.svg /app/share/icons/hicolor/scalable/apps/com.zain.mdow.svg
     sources:
-      # The app, and the fonts and icon it shares with apps/native-linux.
+      # The app, with its fonts and icon.
       - type: dir
         path: ..
         dest: apps/rune
         skip:
           - target
           - dist
-      - type: dir
-        path: ../../native-linux/assets
-        dest: apps/native-linux/assets

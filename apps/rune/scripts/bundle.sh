@@ -21,7 +21,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "target/$CONFIGURATION/mdow" "$APP/Contents/MacOS/mdow"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > "$APP/Contents/Info.plist"
-cp ../macos/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 if [[ -n "${SIGN_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"

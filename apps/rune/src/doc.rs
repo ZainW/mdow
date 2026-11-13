@@ -4,7 +4,6 @@
 //! long code blocks and lists are split into several rows so no single row gets huge, the same
 //! trick that keeps giant documents fast.
 
-// Shared with apps/native-linux, which uses the parts this app doesn't.
 #![allow(dead_code)]
 
 use comrak::nodes::{AlertType, ListType, Node, NodeValue, TableAlignment};

@@ -1,6 +1,5 @@
 //! Reading documents, scanning folders, and resolving links.
 
-// Shared with apps/native-linux, which uses the parts this app doesn't.
 #![allow(dead_code)]
 
 use std::cmp::Ordering;
