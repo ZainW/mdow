@@ -21,24 +21,19 @@ Mdow is a fast markdown viewer for macOS and Linux. Open files, browse folders, 
 
 Download the latest release from the [Releases](https://github.com/ZainW/mdow/releases) page.
 
-| Platform | Format                                                                |
-| -------- | --------------------------------------------------------------------- |
-| macOS    | `Mdow-Rune-<version>.zip`                                              |
-| Linux    | AppImage or Flatpak, from the `linux-latest` pre-release (a preview)   |
+| Platform | Format                                                         |
+| -------- | -------------------------------------------------------------- |
+| macOS    | `Mdow-Rune-<version>.zip`                                      |
+| Linux    | `Mdow-<version>-x86_64.AppImage` or `Mdow-<version>-x86_64.flatpak` |
 
 Mdow is one app on both (`apps/rune`): Rust on [Rune](https://github.com/anomalyco/rune), drawn
 by its own GPU renderer, for Apple Silicon Macs on macOS 15 or newer and for x64 Linux. On
 Omarchy it takes its colours from the current theme.
 
-The apps it replaced are still in the tree: the Swift app (`apps/macos`), which releases keep
-building so the copies of it that update themselves still can, and the GTK app
-(`apps/native-linux`).
-
 ## Development
 
 This is a pnpm monorepo. The website lives in `apps/web` and the app in `apps/rune` (a Cargo
-crate), with the earlier Swift app in `apps/macos` and the earlier GTK app in
-`apps/native-linux`.
+crate).
 
 ```sh
 # Install dependencies
@@ -55,12 +50,6 @@ pnpm run test
 pnpm run dev:rune README.md
 pnpm run test:rune
 pnpm run install:rune
-
-# The earlier Swift and GTK apps: run, test
-pnpm run dev:mac
-pnpm run test:mac
-pnpm run dev:gtk
-pnpm run test:gtk
 ```
 
 ## License

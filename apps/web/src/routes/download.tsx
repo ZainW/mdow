@@ -5,7 +5,7 @@ import { DownloadButton, PlatformIcon } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
 import { PlatformDownloadRow, type DownloadFormat } from '~/components/platform-download-row'
 import { formatReleaseDate, versionAnchor } from '~/lib/release-format'
-import { detectPlatform, LINUX_PREVIEW_URL, type PlatformId } from '~/lib/download-links'
+import { detectPlatform, type PlatformId } from '~/lib/download-links'
 import { fetchLatestRelease, type ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL, RELEASES_URL } from '~/lib/site'
 import { canonical, seo } from '~/lib/seo'
@@ -27,7 +27,7 @@ export const Route = createFileRoute('/download')({
   loader: () => loadDownloadData(),
   head: () => ({
     meta: seo({
-      title: 'Download Mdow for Mac',
+      title: 'Download Mdow for Mac and Linux',
       description:
         'Download Mdow, the free and open source markdown reader for Mac and Linux: one app on both, drawn by its own GPU renderer.',
       path: '/download',
@@ -57,8 +57,15 @@ function buildPlatforms(release: ReleaseInfo): PlatformBlock[] {
     {
       id: 'linux',
       platform: 'Linux',
-      description: 'Preview · x64 · AppImage or Flatpak from the latest pre-release',
-      formats: [{ label: 'Pre-release', detail: 'GitHub', url: LINUX_PREVIEW_URL }],
+      description: 'x64 · Wayland or X11 · a GPU with Vulkan or OpenGL',
+      formats: [
+        ...(release.assets.appImage
+          ? [{ label: 'AppImage', detail: '.AppImage', url: release.assets.appImage }]
+          : []),
+        ...(release.assets.flatpak
+          ? [{ label: 'Flatpak', detail: '.flatpak', url: release.assets.flatpak }]
+          : []),
+      ],
     },
   ]
 }
@@ -70,7 +77,22 @@ function DownloadPage() {
   }
 
   const platforms = release ? buildPlatforms(release) : []
-  const primary = release?.assets.mac
+  const primary =
+    os === 'linux' && release?.assets.appImage
+      ? {
+          href: release.assets.appImage,
+          platform: 'linux' as const,
+          label: 'Download for Linux',
+          note: 'x64 AppImage · Free and open source',
+        }
+      : release?.assets.mac
+        ? {
+            href: release.assets.mac,
+            platform: 'mac' as const,
+            label: 'Download for macOS',
+            note: 'Apple Silicon · Free and open source',
+          }
+        : null
 
   return (
     <div className="mx-auto max-w-4xl px-5 pb-24 pt-14 sm:px-6 md:pt-20">
@@ -101,12 +123,10 @@ function DownloadPage() {
         )}
         {primary && (
           <div className="mt-9 flex flex-col items-center gap-3">
-            <DownloadButton href={primary} platform="mac" size="lg">
-              Download for macOS
+            <DownloadButton href={primary.href} platform={primary.platform} size="lg">
+              {primary.label}
             </DownloadButton>
-            <p className="text-[13px] text-muted-foreground">
-              Apple Silicon · Free and open source
-            </p>
+            <p className="text-[13px] text-muted-foreground">{primary.note}</p>
           </div>
         )}
       </header>

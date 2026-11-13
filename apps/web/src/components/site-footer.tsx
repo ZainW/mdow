@@ -16,7 +16,7 @@ export function SiteFooter() {
               Mdow
             </Link>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              A quiet place to read markdown. Free and open source for macOS, with a Linux preview.
+              A quiet place to read markdown. Free and open source for macOS and Linux.
             </p>
           </div>
           <FooterColumn title="Product">

@@ -59,7 +59,7 @@ install -d "$(dirname "$DESKTOP")"
 sed "s|@BINDIR@|$PREFIX/bin|g" "data/$APP_ID.desktop.in" >"$DESKTOP"
 chmod 644 "$DESKTOP"
 install -Dm644 "data/$APP_ID.metainfo.xml" "$METAINFO"
-install -Dm644 ../native-linux/assets/icons/mdow-logo.svg "$ICON"
+install -Dm644 assets/icons/mdow-logo.svg "$ICON"
 refresh
 echo "Installed $BIN"
 case ":$PATH:" in

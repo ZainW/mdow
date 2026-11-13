@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # One draft for both Mac jobs to attach to: two jobs each making "the" draft would make two.
+  # One draft for both apps to attach to: two jobs each making "the" draft would make two.
   draft:
     runs-on: ubuntu-latest
     env:
@@ -26,8 +26,7 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --draft --title "$TAG" --notes ""
 
-  # Mdow for Mac, the one the site offers: the Rune app in apps/rune, the same code as Mdow for
-  # Linux. It has no updater yet.
+  # Mdow for Mac: the Rune app in apps/rune, the same code as Mdow for Linux. It has no updater yet.
   rune-mac:
     needs: draft
     runs-on: macos-26
@@ -149,171 +148,60 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/rune-mac-signing.keychain-db" 2>/dev/null || true
 
-  # The Swift app in apps/macos, which was Mdow for Mac before the Rune app. The site no longer
-  # offers it, but copies of it update through Sparkle from the feed on the latest release, so
-  # each release still carries a build and its feed.
-  mac-app:
-    needs: draft
-    runs-on: macos-26
-    timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: apps/macos
+  # Mdow for Linux: the same Rune app, built and tested by linux.yml as an AppImage and a Flatpak.
+  linux-build:
+    uses: ./.github/workflows/linux.yml
+
+  linux:
+    needs: [draft, linux-build]
+    runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          # CFBundleVersion, which Sparkle compares, is the commit count.
-          fetch-depth: 0
-
-      - uses: actions/cache@v6
-        with:
-          path: apps/macos/.build
-          key: swiftpm-${{ runner.os }}-${{ hashFiles('apps/macos/Package.resolved') }}
 
       - name: Check the tag matches the app version
         id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ROOT="$(jq -r .version ../../package.json)"
+          ROOT="$(jq -r .version package.json)"
           if [[ "$ROOT" != "$VERSION" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($ROOT)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Check the Sparkle key is configured
-        env:
-          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-        run: |
-          if [[ -z "$SPARKLE_PRIVATE_ED_KEY" ]]; then
-            echo "::error::SPARKLE_PRIVATE_ED_KEY is not set; refusing to release without updates"
-            exit 1
-          fi
-
-      - run: swift test
-
-      - name: Import Apple signing certificate
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.CSC_LINK }}
-          P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/mac-app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(uuidgen)
-
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          rm -f "$CERTIFICATE_PATH"
-
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
-            | awk -F'"' '/Developer ID Application/{print $2; exit}')
-          if [[ -z "$IDENTITY" ]]; then
-            echo "::error::No Developer ID Application identity found in $KEYCHAIN_PATH"
-            security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-            exit 1
-          fi
-          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-          echo "Using $IDENTITY"
-
-      - name: Build and sign
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          bash scripts/bundle.sh
-          codesign --verify --deep --strict --verbose=2 "dist/Mdow.app"
-          codesign --verify --strict -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "dist/Mdow.app"
-
-      - name: Notarize and staple
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          ditto -c -k --keepParent "dist/Mdow.app" "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait
-          xcrun stapler staple "dist/Mdow.app"
-          xcrun stapler validate "dist/Mdow.app"
-          spctl --assess --type execute --verbose=2 "dist/Mdow.app"
-
-      - name: Zip and write the appcast
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
-        run: |
-          set -euo pipefail
-          ZIP="Mdow-$VERSION.zip"
-          mkdir -p dist/release
-          ditto -c -k --keepParent "dist/Mdow.app" "dist/release/$ZIP"
-          # A copy under a fixed name, for links to the latest download.
-          cp "dist/release/$ZIP" dist/release/Mdow.zip
-
-          # generate_appcast signs every archive in the folder, so give it only the versioned zip.
-          FEED_DIR="$RUNNER_TEMP/appcast"
-          rm -rf "$FEED_DIR" && mkdir -p "$FEED_DIR"
-          cp "dist/release/$ZIP" "$FEED_DIR/"
-          printf '%s' "$SPARKLE_PRIVATE_ED_KEY" \
-            | .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
-              --ed-key-file - \
-              --download-url-prefix "https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME/" \
-              --link "https://github.com/$GH_REPO/releases/tag/$GITHUB_REF_NAME" \
-              --maximum-versions 1 \
-              --maximum-deltas 0 \
-              -o "$FEED_DIR/mdow-appcast.xml" \
-              "$FEED_DIR"
-          cp "$FEED_DIR/mdow-appcast.xml" dist/release/
-
-          grep -F "releases/download/$GITHUB_REF_NAME/$ZIP" dist/release/mdow-appcast.xml >/dev/null \
-            || { echo "::error::The appcast does not point at $ZIP"; exit 1; }
-          grep -F 'sparkle:edSignature' dist/release/mdow-appcast.xml >/dev/null \
-            || { echo "::error::The appcast is missing sparkle:edSignature"; exit 1; }
-          cat dist/release/mdow-appcast.xml
-
-      - uses: actions/upload-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
-          name: mdow-mac
-          path: apps/macos/dist/release/
-          if-no-files-found: error
+          name: appimage
+          path: linux
 
-      - name: Ensure draft GitHub release exists
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --draft --title "$TAG" --notes ""
+      - uses: actions/download-artifact@v8
+        with:
+          name: flatpak
+          path: linux
 
-      - name: Upload Mdow for Mac
+      - name: Upload Mdow for Linux
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
+          cd linux
+          test -f "Mdow-$VERSION-x86_64.AppImage"
+          test -f "Mdow-$VERSION-x86_64.flatpak"
+          sha256sum "Mdow-$VERSION-x86_64.AppImage" "Mdow-$VERSION-x86_64.flatpak" \
+            > "Mdow-$VERSION-linux-SHA256SUMS"
           gh release upload "$GITHUB_REF_NAME" \
-            "dist/release/Mdow-$VERSION.zip" \
-            dist/release/Mdow.zip \
-            dist/release/mdow-appcast.xml \
+            "Mdow-$VERSION-x86_64.AppImage" \
+            "Mdow-$VERSION-x86_64.flatpak" \
+            "Mdow-$VERSION-linux-SHA256SUMS" \
             --clobber
-
-      - name: Clean up keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/mac-app-signing.keychain-db" 2>/dev/null || true
 
   publish:
     needs:
-      - mac-app
       - rune-mac
+      - linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -325,8 +213,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          # Keep the release in draft until the Mac app the site offers is on it, and the Swift
-          # app's signed update feed.
+          # Keep the release in draft until the Mac app, the AppImage and the Flatpak are all on it.
           gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^Mdow-Rune-.*\.zip$'
-          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx mdow-appcast.xml
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^Mdow-.*-x86_64\.AppImage$'
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -E '^Mdow-.*-x86_64\.flatpak$'
           gh release edit "$TAG" --draft=false --latest

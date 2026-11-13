@@ -9,7 +9,7 @@ Do this on a clean `main` that matches `origin/main`. Do not skip changelog/RSS.
 
 ## 1. Version
 
-Bump `version` in the root `package.json`. Both Mac bundles (`apps/rune/scripts/bundle.sh`, `apps/macos/scripts/bundle.sh`) and the Linux packages read it, and the release workflow fails if it does not match the tag. Leave `apps/web/package.json` alone.
+Bump `version` in the root `package.json`. The Mac bundle (`apps/rune/scripts/bundle.sh`) and the Linux packages read it, and the release workflow fails if it does not match the tag. Leave `apps/web/package.json` alone.
 
 Patch for fixes and small additions. Minor for user-facing features. Match recent history (`1.5.1` command palette, `1.4.1` native beta).
 
@@ -57,7 +57,7 @@ Do not force-push. Do not skip hooks.
 
 ## 5. GitHub Release notes
 
-Pushing the tag starts `.github/workflows/release.yml`. It creates a draft named after the tag, uploads the Mac app (the Rune app, `Mdow-Rune-X.Y.Z.zip`, signed and notarized) and the earlier Swift app with its update feed, then publishes with `--latest` once both are attached.
+Pushing the tag starts `.github/workflows/release.yml`. It creates a draft named after the tag, uploads the Mac app (the Rune app, `Mdow-Rune-X.Y.Z.zip`, signed and notarized), Mdow for Linux (the same Rune app as `Mdow-X.Y.Z-x86_64.AppImage` and `Mdow-X.Y.Z-x86_64.flatpak`, built by `linux.yml`, with `Mdow-X.Y.Z-linux-SHA256SUMS`), then publishes with `--latest` once all of them are attached.
 
 As soon as the draft exists, set notes from the changelog bullets (no `Latest release.` line):
 
@@ -68,7 +68,7 @@ EOF
 )"
 ```
 
-If the draft is not there yet, wait and retry. Do not `gh release create` a published release before CI finishes; the workflow publishes the draft only once the Mac apps are on it.
+If the draft is not there yet, wait and retry. Do not `gh release create` a published release before CI finishes; the workflow publishes the draft only once the Mac and Linux apps are on it.
 
 ## 6. Website
 
@@ -89,7 +89,7 @@ Poll `gh run list --workflow=release.yml --branch vX.Y.Z` until the run succeeds
 gh release view vX.Y.Z
 ```
 
-The release must be published (not draft), marked latest, and include `Mdow-Rune-X.Y.Z.zip` (the download the site offers) and the Swift app's `Mdow-X.Y.Z.zip`, `Mdow.zip` and `mdow-appcast.xml` (for copies that update from it). Mdow for Linux is released separately by `.github/workflows/linux.yml`, which refreshes `linux-latest` on every push to `main` that touches the app.
+The release must be published (not draft), marked latest, and include `Mdow-Rune-X.Y.Z.zip`, `Mdow-X.Y.Z-x86_64.AppImage` and `Mdow-X.Y.Z-x86_64.flatpak`.
 
 There is no Homebrew tap updater in this repo. Skip it.
 

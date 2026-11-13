@@ -52,7 +52,7 @@ export function LandingCta({ downloadUrl }: LandingCtaProps) {
               <AppleIcon className="size-3.5" /> macOS
             </span>
             <span className="flex items-center gap-1.5">
-              <LinuxIcon className="size-3.5" /> Linux preview
+              <LinuxIcon className="size-3.5" /> Linux
             </span>
           </div>
         </div>

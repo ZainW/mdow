@@ -7,7 +7,7 @@ order: 1
 
 # Getting Started
 
-Mdow is a quiet AI markdown reader for Mac, with a Linux preview. Open Markdown or local HTML files in a focused desktop app, then ask questions about your documents through an installed ACP provider.
+Mdow is a quiet AI markdown reader for Mac and Linux. Open Markdown or local HTML files in a focused desktop app, then ask questions about your documents through an installed ACP provider.
 
 ## Quick start
 

@@ -5,6 +5,10 @@ export interface ReleaseInfo {
   assets: {
     /** The Mac app's zip. */
     mac: string | null
+    /** Mdow for Linux, the same app: `Mdow-<version>-x86_64.AppImage`. */
+    appImage: string | null
+    /** And as a Flatpak bundle: `Mdow-<version>-x86_64.flatpak`. */
+    flatpak: string | null
   }
 }
 
@@ -24,33 +28,26 @@ interface GhRelease {
 const REPO = 'ZainW/mdow'
 /** The Mac app, built on Rune like Mdow for Linux: `Mdow-Rune-<version>.zip`. */
 const MAC_RUNE = /^mdow-rune-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
-/**
- * The Swift app, which was the Mac download before the Rune one: `Mdow-<version>.zip`, and the
- * same under a fixed name. It is still attached to releases for the copies that update
- * themselves from it, but it is only offered for a release that has no Rune app.
- */
-const MAC_SWIFT_ALIAS = 'mdow.zip'
-const MAC_SWIFT_VERSIONED = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?\.zip$/
+const LINUX_APPIMAGE = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?-x86_64\.appimage$/
+const LINUX_FLATPAK = /^mdow-\d+\.\d+\.\d+(-[0-9a-z.]+)?-x86_64\.flatpak$/
 
 export function parseRelease(release: GhRelease): ReleaseInfo | null {
   if (!release?.assets?.length) return null
 
-  let rune: string | null = null
-  let swift: string | null = null
+  let mac: string | null = null
+  let appImage: string | null = null
+  let flatpak: string | null = null
   for (const asset of release.assets) {
     const normalized = asset.name.toLowerCase()
-    if (MAC_RUNE.test(normalized)) rune = asset.browser_download_url
-    // The versioned name is the one the release notes and update feed point at.
-    else if (MAC_SWIFT_VERSIONED.test(normalized)) swift = asset.browser_download_url
-    else if (normalized === MAC_SWIFT_ALIAS) swift ??= asset.browser_download_url
+    if (MAC_RUNE.test(normalized)) mac = asset.browser_download_url
+    else if (LINUX_APPIMAGE.test(normalized)) appImage = asset.browser_download_url
+    else if (LINUX_FLATPAK.test(normalized)) flatpak = asset.browser_download_url
   }
-  const mac = rune ?? swift
-
   return {
     version: release.tag_name.replace(/^v/, ''),
     publishedAt: release.published_at,
     htmlUrl: release.html_url,
-    assets: { mac },
+    assets: { mac, appImage, flatpak },
   }
 }
 
