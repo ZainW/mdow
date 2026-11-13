@@ -4,8 +4,8 @@
 //! A Mac app launched from Finder gets a minimal PATH, so the login shell's PATH is asked for as
 //! well as the usual install folders. Mdow owns its server instead of borrowing the user's
 //! background service, so it controls the credentials and the server's lifetime matches the
-//! app's: it is stopped on quit (`atexit`), on SIGTERM, SIGINT and SIGHUP, and an orphan left by
-//! a crash is stopped the next time one starts.
+//! app's: it is stopped on quit (`stop_server_process`, from Rune's fast exit), on SIGTERM, SIGINT
+//! and SIGHUP, and an orphan left by a crash is stopped the next time one starts.
 
 use super::logic;
 use super::types::{Availability, RuntimeStatus};
@@ -339,11 +339,16 @@ fn stop_orphan() {
     }
 }
 
-extern "C" fn stop_at_exit() {
+/// Sends the server SIGTERM, whether it is running or still starting.
+pub fn stop_server_process() {
     let pid = SERVER_PID.load(Ordering::SeqCst);
     if pid > 0 {
         unsafe { kill(pid, SIGTERM) };
     }
+}
+
+extern "C" fn stop_at_exit() {
+    stop_server_process();
 }
 
 extern "C" fn stop_on_signal(sig: i32) {
@@ -354,8 +359,9 @@ extern "C" fn stop_on_signal(sig: i32) {
     }
 }
 
-/// Stops the server when Mdow exits or is told to (SIGTERM, SIGINT, SIGHUP), then lets the
-/// signal end Mdow as before.
+/// Stops the server when Mdow is told to end (SIGTERM, SIGINT, SIGHUP), then lets the signal end
+/// Mdow as before. The `atexit` hook covers an orderly exit; a quit ends through Rune's fast exit,
+/// which skips it, so `companion::stop_server` stops the server there.
 pub fn install_cleanup() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| unsafe {

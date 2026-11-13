@@ -243,6 +243,7 @@ fn main() {
     rune::prewarm_gpu();
     platform::install_open_handler();
     omarchy::start();
+    rune::fast_exit(companion::stop_server);
     let app = rune::App::new(spec(init_main))
         .on_window(|w| webview::attach(windows::MAIN, w))
         .on_frame_drawn(|_rt| {

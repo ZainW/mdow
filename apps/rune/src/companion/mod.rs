@@ -35,6 +35,15 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use types::*;
 
+/// Stops the OpenCode server as the app ends (`rune::fast_exit`). Rune ends a quitting app
+/// without dropping its windows or running `atexit`, so neither the last window's `Handle` nor
+/// `process::install_cleanup`'s hook gets to stop it. A server still starting isn't in the
+/// service yet, so it goes by its process id too.
+pub fn stop_server() {
+    service::stop_now();
+    process::stop_server_process();
+}
+
 pub struct Companion {
     pub open: bool,
     conversation: Conversation,

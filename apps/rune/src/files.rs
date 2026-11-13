@@ -113,11 +113,10 @@ fn skip(name: &str) -> bool {
     name.starts_with('.') || IGNORED_DIRS.contains(&name)
 }
 
-/// Natural-ish, case-insensitive name order (like `localeCompare`).
+/// Names in the order a person reads them: the system's collator, digit runs by value
+/// (`file2` before `file10`), as Finder and Rune's own `FileTree` sort.
 pub fn compare_names(a: &str, b: &str) -> Ordering {
-    let la = a.to_lowercase();
-    let lb = b.to_lowercase();
-    la.cmp(&lb).then_with(|| a.cmp(b))
+    rune::text::compare_names(a, b)
 }
 
 /// Documents under `root`, folders first, empty folders dropped, capped at `MAX_FILES`.
@@ -456,6 +455,12 @@ mod tests {
         let filtered = filter_tree(&scan.tree, &root, "page");
         assert_eq!(count_files(&filtered), 1);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn names_sort_digit_runs_by_value() {
+        assert_eq!(compare_names("file2.md", "file10.md"), Ordering::Less);
+        assert_eq!(compare_names("alpha.md", "Zed.md"), Ordering::Less);
     }
 
     #[test]

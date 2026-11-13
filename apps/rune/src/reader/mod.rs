@@ -38,28 +38,21 @@ pub struct Match {
     pub range: Range<usize>,
 }
 
-/// Every match of `query` in `doc`, case-insensitively, in reading order.
+/// Every match of `query` in `doc`, in reading order: case-insensitive, and accent-insensitive
+/// while the query has no accents (`cafe` finds `café`), as Safari's find is.
 pub fn find(doc: &LoadedDoc, query: &str, st: &ReadStyle, p: &Palette) -> Vec<Match> {
-    let needle = query.to_lowercase();
-    if needle.is_empty() {
+    if query.is_empty() {
         return Vec::new();
     }
+    let fold = rune_kit::search::Fold::default();
     let mut out = Vec::new();
     let mut texts = Vec::new();
     for (row, b) in doc.doc.blocks.iter().enumerate() {
         texts.clear();
         blocks::texts(b, &mut texts, st, p);
         for (ti, t) in texts.iter().enumerate() {
-            let hay = t.to_lowercase();
-            // Lowercasing can change byte lengths; only trust ranges when it didn't.
-            if hay.len() != t.len() {
-                continue;
-            }
-            let mut from = 0;
-            while let Some(at) = hay[from..].find(&needle) {
-                let start = from + at;
-                out.push(Match { row, text: ti, range: start..start + needle.len() });
-                from = start + needle.len().max(1);
+            for range in fold.find(t, query) {
+                out.push(Match { row, text: ti, range });
                 if out.len() >= 10_000 {
                     return out;
                 }

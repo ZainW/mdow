@@ -12,9 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 # Rune is pre-release: pin a rev of its `dev` branch, which is never rewritten.
-rune = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821", features = ["native-file-dialog"] }
-rune-kit = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821" }
-rune-mac = { git = "https://github.com/anomalyco/rune", rev = "fa07f485dd52d8f66db317460566ef4dc4784821" }
+# Rune's defaults less `embedded-fonts`: Mdow registers its own Inter (`theme::FONTS`), so Rune's
+# copy would be 1.25 MB of dead weight. `tooling` keeps `--snap` and the other headless runs in
+# release builds, which the release workflow uses to check the signed app draws.
+rune = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d", default-features = false, features = ["accessibility", "dbus", "metal-backend", "ogg-audio", "svg", "native-file-dialog", "tooling"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
+rune-mac = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
 comrak = { version = "0.59", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["parsing", "regex-onig"] }
 two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
@@ -34,6 +37,15 @@ objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 block2 = "0.6"
 objc2-web-kit = "0.3"
+
+# Rune builds a few crates as published plus its own patches (`vendor/` in Rune), and a
+# dependency's `[patch]` doesn't reach the app that builds it, so the app repeats Rune's table
+# at the same rev. parley_engine's bidi fix matters everywhere; the rest are Windows-only.
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "dbd9335bd59b479d5f894c36d49648a725c6213d" }
 
 [profile.release]
 lto = "thin"
