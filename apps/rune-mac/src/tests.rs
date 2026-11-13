@@ -117,3 +117,36 @@ fn select_all_copies_rows_that_were_never_on_screen() {
     assert!(text.starts_with("Paragraph 0."));
     assert!(text.ends_with("Paragraph 399."), "the whole document, not only mounted rows");
 }
+
+/// How long a frame takes while a reply streams into a long chat in the companion.
+/// `cargo test --release bench_companion_frame -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bench_companion_frame() {
+    let dir = fixture();
+    let mut rt = runtime(vec![dir.join("README.md")]);
+    for turns in [1, 20, 100] {
+        rt.update_if(|s, _| {
+            s.companion = Default::default();
+            s.companion.bench_transcript(turns);
+            true
+        });
+        rt.frame(1.0 / 60.0);
+        let mut times = Vec::new();
+        for _ in 0..60 {
+            rt.update_if(|s, _| {
+                s.companion.bench_word();
+                true
+            });
+            let began = std::time::Instant::now();
+            rt.frame(1.0 / 60.0);
+            times.push(began.elapsed());
+        }
+        times.sort();
+        eprintln!(
+            "{turns:>3} turns: median {:?}, worst {:?} a frame",
+            times[times.len() / 2],
+            times[times.len() - 1]
+        );
+    }
+}

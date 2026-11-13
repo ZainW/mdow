@@ -124,8 +124,9 @@ impl Conversation {
                 let id = self.ensure_assistant();
                 self.streaming = true;
                 self.map_assistant(&id, |m| {
+                    // The content is the text parts joined: this adds to the last one.
+                    m.content.push_str(&text);
                     upsert(&mut m.parts, Part::Text(text));
-                    m.content = text_of(&m.parts);
                     m.status = Some(MessageStatus::Streaming);
                 });
             }
@@ -236,13 +237,6 @@ impl Conversation {
             }
         }
     }
-}
-
-pub fn text_of(parts: &[Part]) -> String {
-    parts
-        .iter()
-        .filter_map(|p| if let Part::Text(t) = p { Some(t.as_str()) } else { None })
-        .collect()
 }
 
 pub fn upsert(parts: &mut Vec<Part>, part: Part) {
@@ -358,6 +352,26 @@ mod tests {
             files: Some(vec![file()]),
             error: None,
         }
+    }
+
+    /// A long answer, streamed word by word, with a tool call every so often.
+    /// `cargo test --release bench_long_stream -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_long_stream() {
+        let mut c = Conversation::default();
+        c.append_user_message("Hi");
+        c.begin_request();
+        let began = std::time::Instant::now();
+        for i in 0..20_000 {
+            c.apply(Update::Delta("word ".into()));
+            if i % 2000 == 0 {
+                c.apply(Update::Thinking("hmm".into()));
+            }
+        }
+        let took = began.elapsed();
+        eprintln!("20k deltas: {took:?} ({:?} each)", took / 20_000);
+        assert_eq!(c.messages[1].content.len(), 100_000);
     }
 
     #[test]

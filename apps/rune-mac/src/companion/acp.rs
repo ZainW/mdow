@@ -16,11 +16,13 @@ use super::events::basename;
 use super::logic::display_path;
 use super::types::*;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 /// What an agent tells the window that owns a session.
 #[derive(Debug)]
@@ -58,6 +60,112 @@ pub(super) fn deliver(session: &str, event: Event) -> bool {
     sent
 }
 
+// MARK: Shared by every agent's client
+
+/// How long a request other than a prompt may take before the agent counts as stuck, so a hung
+/// agent (waiting at a login prompt, say) can't hold the window's actor.
+pub(super) const PATIENCE: Duration = Duration::from_secs(60);
+
+/// Waits for a reply: a prompt as long as it runs, anything else up to [`PATIENCE`].
+pub(super) fn wait(
+    rx: &Receiver<Result<Value, String>>,
+    agent: Agent,
+    prompt: bool,
+) -> Result<Value, String> {
+    let name = agent.process();
+    if prompt {
+        return rx.recv().unwrap_or_else(|_| Err(format!("{name} stopped.")));
+    }
+    match rx.recv_timeout(PATIENCE) {
+        Ok(reply) => reply,
+        Err(RecvTimeoutError::Timeout) => Err(format!("{name} didn’t answer.")),
+        Err(RecvTimeoutError::Disconnected) => Err(format!("{name} stopped.")),
+    }
+}
+
+/// Whether `path`, absolute or relative to `directory`, is inside `directory`.
+pub(super) fn within(path: &str, directory: &str) -> bool {
+    resolve(&Path::new(directory).join(path)).starts_with(resolve(Path::new(directory)))
+}
+
+/// A path with `..` and `.` gone and links followed as far as it exists, so a file not made
+/// yet resolves too (`../../.zshrc` mustn't pass as inside).
+fn resolve(path: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut plain = std::path::PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                plain.pop();
+            }
+            Component::CurDir => {}
+            other => plain.push(other),
+        }
+    }
+    let mut existing = plain.as_path();
+    let mut rest = Vec::new();
+    while !existing.exists()
+        && let (Some(name), Some(parent)) = (existing.file_name(), existing.parent())
+    {
+        rest.push(name);
+        existing = parent;
+    }
+    let mut real = existing.canonicalize().unwrap_or_else(|_| existing.to_path_buf());
+    real.extend(rest.iter().rev());
+    real
+}
+
+/// Reads an agent's stderr on its own thread, handing each part to `keep`.
+pub(super) fn read_errors(
+    mut stderr: impl Read + Send + 'static,
+    mut keep: impl FnMut(&str) + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 4096];
+        while let Ok(n) = stderr.read(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+            keep(&String::from_utf8_lossy(&buffer[..n]));
+        }
+    });
+}
+
+/// Adds to the end of stderr kept for error messages: the last couple of kilobytes is enough.
+pub(super) fn keep_errors(errors: &mut String, part: &str) {
+    errors.push_str(part);
+    if errors.len() > 2000 {
+        let mut cut = errors.len() - 2000;
+        while !errors.is_char_boundary(cut) {
+            cut += 1;
+        }
+        errors.drain(..cut);
+    }
+}
+
+/// "Codex stopped.", with the end of what it said on stderr.
+pub(super) fn stopped(agent: Agent, errors: &str) -> String {
+    let name = agent.process();
+    let detail = errors.trim();
+    if detail.is_empty() {
+        return format!("{name} stopped.");
+    }
+    let tail: String =
+        detail.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
+    explain(agent, &format!("{name} stopped. {tail}"))
+}
+
+/// An effort level's name: "high" → "High", "xhigh" → "Extra high".
+pub(super) fn effort_name(level: &str) -> String {
+    match level {
+        "xhigh" => "Extra high".into(),
+        other => {
+            let mut c = other.chars();
+            c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     child: Option<Child>,
@@ -67,6 +175,8 @@ struct State {
     errors: String,
     /// Bumped per launch, so a stale reader's exit doesn't end a newer process's requests.
     generation: u64,
+    /// The sessions this process started: a relaunched agent knows none of the old ones.
+    sessions: HashSet<String>,
 }
 
 pub struct Client {
@@ -115,7 +225,7 @@ pub fn alive(agent: Agent, session: &str) -> bool {
     match agent {
         Agent::Claude => super::claude::alive(session),
         Agent::Codex => super::codex::alive(session),
-        _ => client(agent).is_running(),
+        _ => client(agent).has_session(session),
     }
 }
 
@@ -132,7 +242,19 @@ impl Client {
             _ => {}
         }
         self.start()?;
-        self.send(method, params)
+        let reply = self.send(method, params)?;
+        if method == "session/new"
+            && let Some(id) = reply.get("sessionId").and_then(Value::as_str)
+        {
+            self.lock().sessions.insert(id.to_string());
+        }
+        Ok(reply)
+    }
+
+    /// Whether the running process started this session.
+    fn has_session(&self, session: &str) -> bool {
+        let s = self.lock();
+        s.stdin.is_some() && s.sessions.contains(session)
     }
 
     pub fn notify(&self, method: &str, params: Value) {
@@ -194,7 +316,7 @@ impl Client {
             id
         };
         self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
-        rx.recv().unwrap_or_else(|_| Err(format!("{} stopped.", self.agent.process())))
+        wait(&rx, self.agent, method == "session/prompt")
     }
 
     fn write(&self, message: &Value) {
@@ -251,34 +373,18 @@ impl Client {
             .spawn()
             .map_err(|e| format!("Couldn’t start {name} at {}: {e}", command[0]))?;
         let stdout = child.stdout.take().ok_or_else(|| format!("No output from {name}."))?;
-        let mut stderr = child.stderr.take().ok_or_else(|| format!("No output from {name}."))?;
+        let stderr = child.stderr.take().ok_or_else(|| format!("No output from {name}."))?;
         let generation = {
             let mut s = self.lock();
             s.generation += 1;
             s.stdin = child.stdin.take();
             s.child = Some(child);
             s.errors.clear();
+            s.sessions.clear();
             s.generation
         };
         let me = self.clone();
-        std::thread::spawn(move || {
-            let mut buffer = [0u8; 4096];
-            while let Ok(n) = stderr.read(&mut buffer) {
-                if n == 0 {
-                    break;
-                }
-                let mut s = me.lock();
-                s.errors.push_str(&String::from_utf8_lossy(&buffer[..n]));
-                // Kept for error messages: the last couple of kilobytes is enough.
-                if s.errors.len() > 2000 {
-                    let mut cut = s.errors.len() - 2000;
-                    while !s.errors.is_char_boundary(cut) {
-                        cut += 1;
-                    }
-                    s.errors.drain(..cut);
-                }
-            }
-        });
+        read_errors(stderr, move |part| keep_errors(&mut me.lock().errors, part));
         let me = self.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).split(b'\n') {
@@ -309,15 +415,7 @@ impl Client {
             }
             (std::mem::take(&mut s.waiting), std::mem::take(&mut s.errors))
         };
-        let detail = errors.trim();
-        let tail: String =
-            detail.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-        let name = self.agent.process();
-        let failure = if detail.is_empty() {
-            format!("{name} stopped.")
-        } else {
-            format!("{name} stopped. {tail}")
-        };
+        let failure = stopped(self.agent, &errors);
         for (_, tx) in waiting {
             let _ = tx.send(Err(failure.clone()));
         }
@@ -376,7 +474,8 @@ impl Client {
 }
 
 /// Answers a permission request by the tool's kind: reads and searches run, edits go to the
-/// session's window for review, and the rest is declined and shown in the chat.
+/// session's window for review, and the rest is declined and shown in the chat. Only the kind
+/// counts: a delete, a move or an edit outside the folder carries a diff too, and is declined.
 pub(super) fn decide(agent: Agent, session: &str, id: Value, call: Value, options: Vec<Value>) {
     let client = client(agent);
     let kind = call.get("kind").and_then(Value::as_str).unwrap_or("other");
@@ -384,7 +483,7 @@ pub(super) fn decide(agent: Agent, session: &str, id: Value, call: Value, option
         client.respond(id, &options, true);
         return;
     }
-    let reviewable = agent.edits() && (kind == "edit" || !diffs(&call).is_empty());
+    let reviewable = agent.edits() && kind == "edit";
     if reviewable
         && deliver(
             session,
@@ -937,6 +1036,20 @@ pub fn unified_diff(name: &str, old: &str, new: &str) -> (String, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paths_stay_in_the_folder_and_errors_keep_their_end() {
+        let dir = std::env::temp_dir();
+        let d = dir.to_string_lossy();
+        assert!(within("note.md", &d) && within(&format!("{d}/a/b.md"), &d));
+        assert!(!within("/etc/hosts", &d) && !within("../outside.md", &d));
+        let mut errors = String::new();
+        keep_errors(&mut errors, &"é".repeat(1500));
+        keep_errors(&mut errors, "the end");
+        assert!(errors.len() <= 2001 && errors.ends_with("the end"));
+        assert_eq!(effort_name("xhigh"), "Extra high");
+        assert_eq!(effort_name("low"), "Low");
+    }
 
     #[test]
     fn diffs_a_one_line_fix_with_context() {

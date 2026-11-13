@@ -72,6 +72,8 @@ pub struct Companion {
     picker_index: usize,
     /// The panel's width as the user dragged it (clamped when drawn).
     width: f32,
+    /// The model and effort this window's chat runs on, over the agent's shared list.
+    session_model: Option<service::SessionModel>,
 }
 
 impl Default for Companion {
@@ -98,6 +100,7 @@ impl Default for Companion {
             picker_query: TextEdit::new(""),
             picker_index: 0,
             width: saved_width(),
+            session_model: None,
         }
     }
 }
@@ -129,13 +132,20 @@ impl Companion {
                     Msg::Restore { tool_call_id, permission_id } => self
                         .conversation
                         .mark_reviewed(&tool_call_id, ChangeStatus::Pending, Some(permission_id)),
+                    Msg::Session(shown) => {
+                        shown.apply(self.agent, &mut self.models);
+                        self.session_model = Some(shown);
+                    }
                 }
             }
         }
         let revision = service::revision();
         if revision != self.revision && self.handle.is_some() && !self.demo {
             self.revision = revision;
-            let (status, models) = service::snapshot(self.agent);
+            let (status, mut models) = service::snapshot(self.agent);
+            if let Some(shown) = &self.session_model {
+                shown.apply(self.agent, &mut models);
+            }
             if status != self.status || models != self.models {
                 self.status = status;
                 self.models = models;
@@ -149,9 +159,13 @@ impl Companion {
                 self.connect();
             }
         }
-        // The working line's timer counts while a reply streams in.
+        // The working line's timer counts whole seconds while a reply streams in: wake as the
+        // next one ticks over.
         if self.open && self.conversation.streaming {
-            tx.wake_after(Duration::from_millis(250));
+            let now = types::now_ms();
+            let since = self.conversation.turn_started.unwrap_or(now);
+            let into = now.saturating_sub(since) % 1000;
+            tx.wake_after(Duration::from_millis(1000 - into + 10));
         }
         if let Some((_, at)) = &self.copied {
             let left = Duration::from_millis(1500).saturating_sub(at.elapsed());
@@ -310,6 +324,7 @@ impl Companion {
         }
         self.new_chat();
         self.agent = agent;
+        self.session_model = None;
         crate::prefs::update(|p| p.companion_agent = agent.raw().to_string());
         if self.demo {
             return;
@@ -473,6 +488,27 @@ impl Companion {
                     .kind(Some("read".into())),
             ));
         }
+    }
+}
+
+#[cfg(test)]
+impl Companion {
+    /// A long chat for benchmarks: `turns` finished turns, then one streaming in.
+    pub fn bench_transcript(&mut self, turns: usize) {
+        self.open = true;
+        self.demo = true;
+        self.demo_filled = true;
+        for _ in 0..turns {
+            self.fill_demo();
+            self.conversation.apply(Update::Done("x".into()));
+        }
+        self.conversation.append_user_message("And the rest?");
+        self.conversation.begin_request();
+    }
+
+    /// One more word of the reply streaming in.
+    pub fn bench_word(&mut self) {
+        self.conversation.apply(Update::Delta("word ".into()));
     }
 }
 

@@ -45,6 +45,9 @@ struct State {
     /// The prompt waiting on its result.
     turn: Option<Sender<Result<Value, String>>>,
     cancelled: bool,
+    /// Stopped turns whose result hasn't come yet. Claude Code answers messages in order, so
+    /// the next results, and what streams before them, belong to those turns, not the new one.
+    stale: u32,
     /// Permission requests waiting on the user, by request id: the tool's input and whether it
     /// was an edit.
     asked: HashMap<String, (Value, bool)>,
@@ -193,7 +196,7 @@ fn start(directory: &str, instructions: &str) -> Result<Value, String> {
         .spawn()
         .map_err(|e| format!("Couldn’t start Claude Code at {}: {e}", program[0]))?;
     let stdout = child.stdout.take().ok_or("No output from Claude Code.")?;
-    let mut stderr = child.stderr.take().ok_or("No output from Claude Code.")?;
+    let stderr = child.stderr.take().ok_or("No output from Claude Code.")?;
     let s = Arc::new(Session {
         id: id.clone(),
         directory: directory.to_string(),
@@ -205,23 +208,7 @@ fn start(directory: &str, instructions: &str) -> Result<Value, String> {
         }),
     });
     let me = s.clone();
-    std::thread::spawn(move || {
-        let mut buffer = [0u8; 4096];
-        while let Ok(n) = stderr.read(&mut buffer) {
-            if n == 0 {
-                break;
-            }
-            let mut st = me.lock();
-            st.errors.push_str(&String::from_utf8_lossy(&buffer[..n]));
-            if st.errors.len() > 2000 {
-                let mut cut = st.errors.len() - 2000;
-                while !st.errors.is_char_boundary(cut) {
-                    cut += 1;
-                }
-                st.errors.drain(..cut);
-            }
-        }
-    });
+    acp::read_errors(stderr, move |part| acp::keep_errors(&mut me.lock().errors, part));
     let me = s.clone();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).split(b'\n') {
@@ -269,7 +256,7 @@ fn options(st: &State) -> Vec<Value> {
     let levels = efforts(st);
     if !levels.is_empty() {
         let choices: Vec<Value> =
-            levels.iter().map(|l| json!({"value": l, "name": effort_name(l)})).collect();
+            levels.iter().map(|l| json!({"value": l, "name": acp::effort_name(l)})).collect();
         out.push(json!({"id": "effort", "category": "thought_level", "currentValue": st.effort, "options": choices}));
     }
     out
@@ -284,16 +271,6 @@ fn efforts(st: &State) -> Vec<String> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
         .unwrap_or_default()
-}
-
-fn effort_name(level: &str) -> String {
-    match level {
-        "xhigh" => "Extra high".into(),
-        other => {
-            let mut c = other.chars();
-            c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
-        }
-    }
 }
 
 impl Session {
@@ -331,27 +308,32 @@ impl Session {
             st.waiting.insert(id.clone(), tx);
         }
         self.write(&json!({"type": "control_request", "request_id": id, "request": request}));
-        rx.recv().unwrap_or_else(|_| Err("Claude Code stopped.".into()))
+        acp::wait(&rx, Agent::Claude, false)
     }
 
     /// Sends the user's message and waits for the turn's result.
     fn prompt(&self, text: &str) -> Result<Value, String> {
         let (tx, rx) = channel();
-        {
-            let mut st = self.lock();
-            if st.stdin.is_none() {
-                return Err("Claude Code stopped.".into());
-            }
-            st.turn = Some(tx);
-            st.cancelled = false;
+        if self.lock().stdin.is_none() {
+            return Err("Claude Code stopped.".into());
         }
+        self.begin(tx);
         self.write(&json!({
             "type": "user",
             "message": {"role": "user", "content": text},
             "parent_tool_use_id": null,
             "session_id": self.id,
         }));
-        rx.recv().unwrap_or_else(|_| Err("Claude Code stopped.".into()))
+        acp::wait(&rx, Agent::Claude, true)
+    }
+
+    /// Makes `tx` the turn's waiter. A stopped turn still running: its result isn't this one's.
+    fn begin(&self, tx: Sender<Result<Value, String>>) {
+        let mut st = self.lock();
+        if st.turn.replace(tx).is_some() {
+            st.stale += 1;
+        }
+        st.cancelled = false;
     }
 
     fn interrupt(&self) {
@@ -414,16 +396,10 @@ impl Session {
             if let Some(mut child) = st.child.take() {
                 let _ = child.wait();
             }
+            st.stale = 0;
             (std::mem::take(&mut st.waiting), st.turn.take(), std::mem::take(&mut st.errors))
         };
-        let detail = errors.trim();
-        let tail: String =
-            detail.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-        let failure = if detail.is_empty() {
-            "Claude Code stopped.".to_string()
-        } else {
-            acp::explain(Agent::Claude, &format!("Claude Code stopped. {tail}"))
-        };
+        let failure = acp::stopped(Agent::Claude, &errors);
         for (_, tx) in waiting {
             let _ = tx.send(Err(failure.clone()));
         }
@@ -438,8 +414,10 @@ impl Session {
 
     fn handle(&self, message: Value) {
         let kind = message.get("type").and_then(Value::as_str).unwrap_or("");
-        // Subagents' messages carry their parent call; Mdow gives Claude no subagents.
-        let top = message.get("parent_tool_use_id").is_none_or(Value::is_null);
+        // Subagents' messages carry their parent call; Mdow gives Claude no subagents. A
+        // stopped turn's last words are dropped.
+        let top =
+            message.get("parent_tool_use_id").is_none_or(Value::is_null) && self.lock().stale == 0;
         match kind {
             "control_response" => {
                 let response = message.get("response").cloned().unwrap_or_default();
@@ -557,6 +535,10 @@ impl Session {
         let (turn, cancelled) = {
             let mut st = self.lock();
             st.streamed.clear();
+            if st.stale > 0 {
+                st.stale -= 1;
+                return;
+            }
             (st.turn.take(), std::mem::take(&mut st.cancelled))
         };
         let Some(tx) = turn else { return };
@@ -606,8 +588,9 @@ impl Session {
         let tool = s("tool_name");
         let input = request.get("input").cloned().unwrap_or(json!({}));
         let (mut kind, title) = describe(tool, &input);
-        // Claude Code asks about a read only when it's outside the folder.
-        if (kind == "read" || kind == "search") && !self.inside(&input) {
+        // Claude Code asks about a read only when it's outside the folder; an edit there is
+        // declined like any other change outside it.
+        if !self.inside(&input) {
             kind = "other";
         }
         let mut call = json!({
@@ -635,18 +618,10 @@ impl Session {
         );
     }
 
-    /// Whether a read or search stays in the folder.
+    /// Whether a tool's file or folder is in the session's folder.
     fn inside(&self, input: &Value) -> bool {
         let path = ["file_path", "path"].iter().find_map(|k| input.get(*k).and_then(Value::as_str));
-        let Some(path) = path else { return true };
-        let absolute = if path.starts_with('/') {
-            std::path::PathBuf::from(path)
-        } else {
-            std::path::Path::new(&self.directory).join(path)
-        };
-        let absolute = absolute.canonicalize().unwrap_or(absolute);
-        let directory = std::path::Path::new(&self.directory);
-        absolute.starts_with(directory.canonicalize().unwrap_or(directory.to_path_buf()))
+        path.is_none_or(|p| acp::within(p, &self.directory))
     }
 }
 
@@ -720,7 +695,27 @@ mod tests {
         assert!(session.inside(&json!({"file_path": path})));
         assert!(session.inside(&json!({"pattern": "*.md"})));
         assert!(!session.inside(&json!({"file_path": "/etc/hosts"})));
+        assert!(!session.inside(&json!({"file_path": "../../.zshrc"})));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_stopped_turns_result_doesnt_end_the_next() {
+        let s = Session { id: "t".into(), directory: "/".into(), state: Mutex::default() };
+        let (old, old_rx) = channel();
+        s.begin(old);
+        s.interrupt();
+        // Sent again before the stopped turn's result came.
+        let (new, new_rx) = channel();
+        s.begin(new);
+        assert!(old_rx.recv().is_err(), "the stopped turn's waiter is let go");
+        let stream = json!({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "late"}}});
+        s.handle(stream);
+        assert!(s.lock().streamed.is_empty(), "the stopped turn's words are dropped");
+        s.handle(json!({"type": "result", "subtype": "error_during_execution", "is_error": true}));
+        assert!(new_rx.try_recv().is_err());
+        s.handle(json!({"type": "result", "subtype": "success", "stop_reason": "end_turn"}));
+        assert_eq!(new_rx.try_recv().unwrap().unwrap()["stopReason"], "end_turn");
     }
 
     #[test]

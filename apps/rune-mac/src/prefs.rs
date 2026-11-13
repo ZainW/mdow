@@ -212,7 +212,7 @@ pub struct Prefs {
     pub companion_model: Option<String>,
     /// The companion's agent: "opencode", "claude", "codex" or "cursor".
     pub companion_agent: String,
-    /// Each ACP agent's command, when set in Settings, by agent.
+    /// Each agent's own command, by agent, set by hand here: Settings has no field for it.
     pub companion_agent_commands: std::collections::BTreeMap<String, String>,
     /// The model each ACP agent runs, by agent; missing uses the agent's own default.
     pub companion_agent_models: std::collections::BTreeMap<String, String>,

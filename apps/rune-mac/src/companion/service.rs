@@ -428,6 +428,29 @@ pub enum Msg {
         tool_call_id: String,
         permission_id: String,
     },
+    /// The model and effort this window's own chat runs on.
+    Session(SessionModel),
+}
+
+/// What an agent's chat in one window runs on. The model list is shared by every window, but
+/// each window's chat keeps its own model and effort.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionModel {
+    pub agent: Agent,
+    pub model: String,
+    pub efforts: Vec<EffortOption>,
+    pub effort: Option<String>,
+}
+
+impl SessionModel {
+    /// Shows it over the shared list, where it's for the agent shown.
+    pub fn apply(&self, agent: Agent, models: &mut ModelState) {
+        if self.agent == agent {
+            models.current = Some(self.model.clone());
+            models.efforts = self.efforts.clone();
+            models.effort = self.effort.clone();
+        }
+    }
 }
 
 /// The window's end of its actor.
@@ -954,8 +977,32 @@ pub fn select_effort(agent: Agent, value: &str) {
 
 impl Actor {
     /// Starts the agent and a session in `directory`, which lists the models.
+    /// Whether this window's chat is with `agent` in `directory`, and its agent still has it.
+    fn has_session(&self, agent: Agent, directory: &str) -> bool {
+        self.acp.as_ref().is_some_and(|a| {
+            a.agent == agent && a.directory == directory && acp::alive(a.agent, &a.id)
+        })
+    }
+
+    /// Takes a session's settings: noted for the agent's next chats, and shown in this window.
+    fn take_options(&mut self, options: Vec<Value>) {
+        let Some(session) = &mut self.acp else { return };
+        let agent = session.agent;
+        absorb_options(agent, &options);
+        let shown = acp::efforts(&options).map(|(model, e)| SessionModel {
+            agent,
+            model,
+            efforts: e.values,
+            effort: (!e.current.is_empty()).then_some(e.current),
+        });
+        session.options = options;
+        if let Some(shown) = shown {
+            self.emit(Msg::Session(shown));
+        }
+    }
+
     fn acp_connect(&mut self, agent: Agent, directory: &str) {
-        if self.acp.as_ref().is_some_and(|a| a.agent == agent && a.directory == directory) {
+        if self.has_session(agent, directory) {
             return;
         }
         if let Err(e) = self.acp_session(agent, directory) {
@@ -970,7 +1017,7 @@ impl Actor {
     }
 
     fn acp_session(&mut self, agent: Agent, directory: &str) -> Result<(), String> {
-        if self.acp.as_ref().is_some_and(|a| a.agent == agent && a.directory == directory) {
+        if self.has_session(agent, directory) {
             return Ok(());
         }
         self.close_acp();
@@ -1034,7 +1081,6 @@ impl Actor {
         {
             options = o;
         }
-        absorb_options(agent, &options);
         acp::route(&id, self.me.clone(), self.waker.clone());
         self.acp = Some(AcpSession {
             agent,
@@ -1042,10 +1088,11 @@ impl Actor {
             directory: directory.to_string(),
             translator: acp::Translator::new(directory),
             reviews: HashMap::new(),
-            options,
+            options: Vec::new(),
             // Claude and Codex have them in their system prompt.
             instructed: agent.native(),
         });
+        self.take_options(options);
         Ok(())
     }
 
@@ -1120,9 +1167,7 @@ impl Actor {
                 if update.get("sessionUpdate").and_then(Value::as_str)
                     == Some("config_option_update")
                 {
-                    let options = acp::options(&update);
-                    session.options = options.clone();
-                    absorb_options(session.agent, &options);
+                    self.take_options(acp::options(&update));
                     return;
                 }
                 let updates = session.translator.translate(&update);
@@ -1218,13 +1263,13 @@ impl Actor {
 
     fn acp_switch_model(&mut self, value: &str) {
         let Some(session) = &mut self.acp else { return };
-        match acp::set_model(session.agent, &session.id, &session.options, value) {
+        let agent = session.agent;
+        match acp::set_model(agent, &session.id, &session.options, value) {
             Ok(options) => {
-                session.options = options.clone();
-                absorb_options(session.agent, &options);
+                self.take_options(options.clone());
                 // The new model's own effort, when one was picked for it.
                 if let Some((model, e)) = acp::efforts(&options)
-                    && let Some(chosen) = chosen_effort(session.agent, &model)
+                    && let Some(chosen) = chosen_effort(agent, &model)
                     && chosen != e.current
                     && e.values.iter().any(|v| v.value == chosen)
                 {
@@ -1242,10 +1287,7 @@ impl Actor {
             return;
         }
         match acp::set_option(session.agent, &session.id, &e.config_id, value) {
-            Ok(options) => {
-                session.options = options.clone();
-                absorb_options(session.agent, &options);
-            }
+            Ok(options) => self.take_options(options),
             Err(e) => self.emit(Msg::Error(e)),
         }
     }
@@ -1325,6 +1367,7 @@ mod tests {
                 }
                 Msg::Error(e) => panic!("{e}"),
                 Msg::Restore { .. } => panic!("review was refused"),
+                Msg::Session(_) => {}
             }
         }
         let text = std::fs::read_to_string(&notes).unwrap();
@@ -1364,6 +1407,7 @@ mod tests {
         let directory = dir.to_string_lossy().into_owned();
 
         let handle = spawn(Arc::new(|| {}));
+        let began = std::time::Instant::now();
         handle.send(Cmd::Connect { agent, directory: directory.clone() });
         handle.send(Cmd::Send {
             agent,
@@ -1379,7 +1423,8 @@ mod tests {
                 .rx
                 .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
                 .expect("turn timed out");
-            eprintln!("{msg:?}");
+            // Each message with when it came: the first word, the diff card, the end.
+            eprintln!("{:>6}ms {msg:?}", began.elapsed().as_millis());
             match msg {
                 Msg::Update(Update::Change {
                     tool_call_id,

@@ -4,10 +4,12 @@
 //!
 //! One server serves every window; each chat is an ephemeral thread on it, kept out of Codex's
 //! own history. A thread runs in the workspace-write sandbox with the "untrusted" approval
-//! policy, so Codex asks before every patch and every command outside its known-safe set. Mdow
-//! answers by the same rules as for the other agents (`acp::decide`): commands that only read or
-//! search the folder run, patches go to the window as diffs to accept or decline, and anything
-//! else is declined. (In the read-only sandbox Codex won't propose edits at all.)
+//! policy, so Codex asks before every patch and every command outside its known-safe set (the
+//! read-only ones, which run without asking). Mdow answers by the same rules as for the other
+//! agents (`acp::decide`): patches inside the folder go to the window as diffs to accept or
+//! decline, and every command it asks about is declined, since a command Codex isn't sure of
+//! can write however its parse labels it. (In the read-only sandbox Codex won't propose edits
+//! at all.)
 //!
 //! Like `claude.rs`, the module answers the requests an ACP agent does and reports in ACP's
 //! shapes; [`super::acp::Client`] hands Codex's requests here.
@@ -16,7 +18,7 @@ use super::acp::{self, Event};
 use super::agents::Agent;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{LazyLock, Mutex, MutexGuard};
@@ -31,6 +33,8 @@ struct Thread {
     turn: Option<String>,
     done: Option<Sender<Result<Value, String>>>,
     cancelled: bool,
+    /// Stopped turns still winding down: what they say, and their end, isn't the new turn's.
+    stale: HashSet<String>,
     /// Patches as Codex proposed them, by item.
     changes: HashMap<String, Value>,
     /// Text has been said this turn, and the message saying it now.
@@ -38,6 +42,18 @@ struct Thread {
     message: String,
     /// Items whose text or summary arrived in parts.
     streamed: HashSet<String>,
+}
+
+impl Thread {
+    /// Makes `tx` the turn's waiter. A stopped turn that hasn't ended yet: its end isn't this
+    /// one's.
+    fn begin(&mut self, tx: Sender<Result<Value, String>>) {
+        if let Some(old) = self.turn.take() {
+            self.stale.insert(old);
+        }
+        self.done = Some(tx);
+        self.cancelled = false;
+    }
 }
 
 #[derive(Default)]
@@ -121,8 +137,10 @@ pub fn respond(id: &Value, allow: bool) {
     write(&json!({"id": rpc, "result": {"decision": decision}}));
 }
 
-pub fn alive(_thread: &str) -> bool {
-    lock().stdin.is_some()
+/// Whether the server is running and still has the thread (a restarted one has none).
+pub fn alive(thread: &str) -> bool {
+    let st = lock();
+    st.stdin.is_some() && st.threads.contains_key(thread)
 }
 
 /// Ends a chat: its turn stops and the server lets the thread go.
@@ -169,7 +187,7 @@ fn call(method: &str, params: Value) -> Result<Value, String> {
         id
     };
     write(&json!({"id": id, "method": method, "params": params}));
-    rx.recv().unwrap_or_else(|_| Err("Codex stopped.".into()))
+    acp::wait(&rx, Agent::Codex, false)
 }
 
 /// Sends a request whose reply nothing waits on.
@@ -199,7 +217,7 @@ fn start() -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Couldn’t start Codex at {}: {e}", program[0]))?;
     let stdout = child.stdout.take().ok_or("No output from Codex.")?;
-    let mut stderr = child.stderr.take().ok_or("No output from Codex.")?;
+    let stderr = child.stderr.take().ok_or("No output from Codex.")?;
     let generation = {
         let mut st = lock();
         st.generation += 1;
@@ -209,23 +227,7 @@ fn start() -> Result<(), String> {
         st.models.clear();
         st.generation
     };
-    std::thread::spawn(move || {
-        let mut buffer = [0u8; 4096];
-        while let Ok(n) = stderr.read(&mut buffer) {
-            if n == 0 {
-                break;
-            }
-            let mut st = lock();
-            st.errors.push_str(&String::from_utf8_lossy(&buffer[..n]));
-            if st.errors.len() > 2000 {
-                let mut cut = st.errors.len() - 2000;
-                while !st.errors.is_char_boundary(cut) {
-                    cut += 1;
-                }
-                st.errors.drain(..cut);
-            }
-        }
-    });
+    acp::read_errors(stderr, |part| acp::keep_errors(&mut lock().errors, part));
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).split(b'\n') {
             let Ok(line) = line else { break };
@@ -264,17 +266,11 @@ fn exited(generation: u64) {
         if let Some(mut child) = st.child.take() {
             let _ = child.wait();
         }
-        let done: Vec<_> = st.threads.values_mut().filter_map(|t| t.done.take()).collect();
+        // Its threads went with it.
+        let done: Vec<_> = st.threads.drain().filter_map(|(_, mut t)| t.done.take()).collect();
         (std::mem::take(&mut st.waiting), done, std::mem::take(&mut st.errors))
     };
-    let detail = errors.trim();
-    let tail: String =
-        detail.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-    let failure = if detail.is_empty() {
-        "Codex stopped.".to_string()
-    } else {
-        acp::explain(Agent::Codex, &format!("Codex stopped. {tail}"))
-    };
+    let failure = acp::stopped(Agent::Codex, &errors);
     for tx in waiting.into_values().chain(done) {
         let _ = tx.send(Err(failure.clone()));
     }
@@ -331,8 +327,7 @@ fn prompt(id: &str, text: &str) -> Result<Value, String> {
     let (model, effort) = {
         let mut st = lock();
         let t = st.threads.get_mut(id).ok_or("This chat with Codex has ended.")?;
-        t.done = Some(tx);
-        t.cancelled = false;
+        t.begin(tx);
         t.said = false;
         t.message.clear();
         (t.model.clone(), t.effort.clone())
@@ -363,7 +358,7 @@ fn prompt(id: &str, text: &str) -> Result<Value, String> {
             return Err(acp::explain(Agent::Codex, &e));
         }
     }
-    rx.recv().unwrap_or_else(|_| Err("Codex stopped.".into()))
+    acp::wait(&rx, Agent::Codex, true)
 }
 
 fn interrupt(id: &str) {
@@ -420,7 +415,7 @@ fn efforts(models: &[Value], model: &str) -> Vec<(String, String)> {
         .map(|a| {
             a.iter()
                 .filter_map(|e| e.get("reasoningEffort").and_then(Value::as_str))
-                .map(|l| (l.to_string(), effort_name(l)))
+                .map(|l| (l.to_string(), acp::effort_name(l)))
                 .collect()
         })
         .unwrap_or_default()
@@ -432,16 +427,6 @@ fn default_effort(models: &[Value], model: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string()
-}
-
-fn effort_name(level: &str) -> String {
-    match level {
-        "xhigh" => "Extra high".into(),
-        other => {
-            let mut c = other.chars();
-            c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
-        }
-    }
 }
 
 fn update(thread: &str, update: Value) {
@@ -474,6 +459,19 @@ fn handle(message: Value) {
 fn notification(method: &str, p: &Value) {
     let s = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let thread = s("threadId");
+    let turn = p.get("turnId").or(p.pointer("/turn/id")).and_then(Value::as_str).unwrap_or("");
+    // A stopped turn's last words, and its end, once a new turn has begun.
+    let stale = {
+        let mut st = lock();
+        match st.threads.get_mut(&thread) {
+            Some(t) if method == "turn/completed" => t.stale.remove(turn),
+            Some(t) => t.stale.contains(turn),
+            None => false,
+        }
+    };
+    if stale {
+        return;
+    }
     match method {
         "item/agentMessage/delta" => {
             let (item, delta) = (s("itemId"), s("delta"));
@@ -523,6 +521,7 @@ fn notification(method: &str, p: &Value) {
                 t.turn = None;
                 t.streamed.clear();
                 t.changes.clear();
+                t.stale.clear();
                 (t.done.take(), std::mem::take(&mut t.cancelled))
             };
             let Some(tx) = done else { return };
@@ -633,7 +632,7 @@ fn command_call(item: &Value, directory: &str) -> Value {
     let actions: Vec<Value> =
         item.get("commandActions").and_then(Value::as_array).cloned().unwrap_or_default();
     let inside =
-        |a: &Value| a.get("path").and_then(Value::as_str).is_none_or(|p| within(p, directory));
+        |a: &Value| a.get("path").and_then(Value::as_str).is_none_or(|p| acp::within(p, directory));
     let kinds: HashSet<String> = actions.iter().map(|a| s(a, "type")).collect();
     let reads = !actions.is_empty()
         && actions.iter().all(inside)
@@ -680,7 +679,7 @@ fn change_call(id: &str, changes: &Value, directory: &str) -> Value {
             kind = "delete";
         } else if moved {
             kind = "move";
-        } else if !within(path, directory) {
+        } else if !acp::within(path, directory) {
             kind = "other";
         }
         let old = if change == "add" { None } else { std::fs::read_to_string(path).ok() };
@@ -697,16 +696,104 @@ fn change_call(id: &str, changes: &Value, directory: &str) -> Value {
     json!({"toolCallId": id, "title": format!("{verb} {}", paths.join(", ")), "kind": kind, "content": content})
 }
 
-fn within(path: &str, directory: &str) -> bool {
-    let path = std::path::Path::new(path);
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::path::Path::new(directory).join(path)
+/// Whether a command only reads the folder: read-only programs, perhaps piped, with no
+/// redirection, substitution or chaining, no flag that writes or runs something, and no path
+/// outside the folder. Anything it can't be sure of is false.
+fn reads_only(command: &str, directory: &str) -> bool {
+    let Some(segments) = words(command) else { return false };
+    // Codex runs commands through a login shell: `/usr/bin/bash -lc 'cat notes.md'`.
+    if let [only] = segments.as_slice()
+        && let [shell, flag, inner] = only.as_slice()
+        && matches!(program(shell), "bash" | "zsh" | "sh")
+        && matches!(flag.as_str(), "-c" | "-lc")
+    {
+        return reads_only(inner, directory);
+    }
+    segments.iter().all(|w| safe(w, directory))
+}
+
+fn program(word: &str) -> &str {
+    word.rsplit('/').next().unwrap_or(word)
+}
+
+/// A command's words, split at pipes, as a POSIX shell would quote them; None for anything but
+/// plain words and pipes.
+fn words(command: &str) -> Option<Vec<Vec<String>>> {
+    let mut segments = vec![Vec::new()];
+    let mut word = String::new();
+    let mut quoted = false;
+    let mut quote: Option<char> = None;
+    let mut chars = command.chars().peekable();
+    let end_word = |segments: &mut Vec<Vec<String>>, word: &mut String, quoted: &mut bool| {
+        if *quoted || !word.is_empty() {
+            segments.last_mut().unwrap().push(std::mem::take(word));
+        }
+        *quoted = false;
     };
-    let absolute = absolute.canonicalize().unwrap_or(absolute);
-    let directory = std::path::Path::new(directory);
-    absolute.starts_with(directory.canonicalize().unwrap_or(directory.to_path_buf()))
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some('"'), '$' | '`' | '\\') => return None,
+            (Some(_), c) => word.push(c),
+            (None, '\'' | '"') => {
+                quote = Some(c);
+                quoted = true;
+            }
+            (None, ' ' | '\t') => end_word(&mut segments, &mut word, &mut quoted),
+            (None, '|') => {
+                if chars.peek() == Some(&'|') {
+                    return None;
+                }
+                end_word(&mut segments, &mut word, &mut quoted);
+                if segments.last()?.is_empty() {
+                    return None;
+                }
+                segments.push(Vec::new());
+            }
+            (None, ';' | '&' | '>' | '<' | '$' | '`' | '(' | ')' | '{' | '}' | '\\' | '\n') => {
+                return None;
+            }
+            (None, c) => word.push(c),
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    end_word(&mut segments, &mut word, &mut quoted);
+    segments.iter().all(|s| !s.is_empty()).then_some(segments)
+}
+
+/// One piped part of a command: a read-only program on paths in the folder.
+fn safe(words: &[String], directory: &str) -> bool {
+    let Some((name, args)) = words.split_first() else { return false };
+    let inside = |a: &String| {
+        let value = if a.starts_with('-') { a.split_once('=').map_or("", |v| v.1) } else { a };
+        !value.starts_with('~')
+            && (!(value.starts_with('/') || value.contains("..")) || acp::within(value, directory))
+    };
+    if !args.iter().all(inside) {
+        return false;
+    }
+    let has = |flags: &[&str]| args.iter().any(|a| flags.iter().any(|f| a.starts_with(f)));
+    match program(name) {
+        "cat" | "head" | "tail" | "ls" | "wc" | "nl" | "stat" | "file" | "pwd" | "echo"
+        | "grep" => true,
+        // `--pre` runs a program on each file.
+        "rg" => !has(&["--pre"]),
+        "find" => {
+            !has(&["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"])
+        }
+        // Only printing lines: `sed -n '1,80p' notes.md`.
+        "sed" => {
+            let script = args.iter().find(|a| !a.starts_with('-'));
+            args.iter().any(|a| a == "-n")
+                && args.iter().filter(|a| a.starts_with('-')).all(|a| a == "-n")
+                && script.is_some_and(|s| {
+                    s.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '$' | 'p' | ';'))
+                })
+        }
+        _ => false,
+    }
 }
 
 /// Applies a unified diff's hunks (no file headers) to `old`.
@@ -754,9 +841,18 @@ fn approval(id: Value, method: &str, params: Option<&Value>) {
         }
     };
     let call = match method {
+        // Codex's parse (`commandActions`) only describes a command (`find … -delete` parses as
+        // a search), so whether it runs is Mdow's own reading of the command.
         "item/commandExecution/requestApproval" if !directory.is_empty() => {
             let item = json!({"id": s("itemId"), "command": s("command"), "commandActions": p.get("commandActions")});
-            command_call(&item, &directory)
+            let mut call = command_call(&item, &directory);
+            if !reads_only(&s("command"), &directory) {
+                call["kind"] = json!("execute");
+                call["title"] = json!(format!("Run {}", s("command")));
+            } else if call["kind"] == "execute" {
+                call["kind"] = json!("search");
+            }
+            call
         }
         "item/fileChange/requestApproval" if !directory.is_empty() => {
             change_call(&s("itemId"), &changes.unwrap_or(json!([])), &directory)
@@ -808,5 +904,60 @@ mod tests {
         assert_eq!(command_call(&search, &d)["title"], "Search for cat");
         let delete = json!([{"path": note, "kind": {"type": "delete"}, "diff": ""}]);
         assert_eq!(change_call("x", &delete, &d)["kind"], "delete");
+        let outside = json!([{"path": "/etc/hosts", "kind": {"type": "update"}, "diff": "@@ -1 +1 @@\n-a\n+b\n"}]);
+        assert_eq!(change_call("x", &outside, &d)["kind"], "other");
+    }
+
+    #[test]
+    fn only_commands_that_read_the_folder_run() {
+        let dir = std::env::temp_dir();
+        let d = dir.to_string_lossy();
+        for ok in [
+            "/usr/bin/bash -lc 'cat notes.md'",
+            "rg -n 'cat|dog' . | head -20",
+            "sed -n '1,80p' notes.md",
+            "find . -name '*.md'",
+            "ls -la",
+            "grep -rn \"Teh\" .",
+        ] {
+            assert!(reads_only(ok, &d), "{ok}");
+        }
+        for no in [
+            "find . -name '*.md' -delete",
+            "find . -exec rm {} ;",
+            "bash -lc 'cat notes.md > copy.md'",
+            "cat /etc/hosts",
+            "cat ../../.zshrc",
+            "cat ~/.zshrc",
+            "rg --pre=sh x .",
+            "sed -i 's/a/b/' notes.md",
+            "sed -n 'w out' notes.md",
+            "cat notes.md && rm notes.md",
+            "echo \"$(rm -rf .)\"",
+            "rm notes.md",
+            "python3 -c 'print(1)'",
+            "cat 'unterminated",
+        ] {
+            assert!(!reads_only(no, &d), "{no}");
+        }
+    }
+
+    #[test]
+    fn a_stopped_turns_end_doesnt_end_the_next() {
+        let id = "mdow-test-thread";
+        lock().threads.insert(id.into(), Thread { turn: Some("old".into()), ..Thread::default() });
+        let (tx, rx) = channel();
+        lock().threads.get_mut(id).unwrap().begin(tx);
+        let ended =
+            |turn: &str| json!({"threadId": id, "turn": {"id": turn, "status": "interrupted"}});
+        notification("turn/started", &json!({"threadId": id, "turn": {"id": "new"}}));
+        notification("turn/completed", &ended("old"));
+        assert!(rx.try_recv().is_err());
+        notification(
+            "turn/completed",
+            &json!({"threadId": id, "turn": {"id": "new", "status": "completed"}}),
+        );
+        assert_eq!(rx.try_recv().unwrap().unwrap()["stopReason"], "end_turn");
+        lock().threads.remove(id);
     }
 }

@@ -11,8 +11,8 @@ use crate::app::App;
 use crate::icons;
 use crate::theme::{self, GUTTER, Palette};
 use rune::{
-    Color, Cursor, Drag, El, Family, Icon, Key, KeyEvent, Link, LoopSpec, PopupItem, PopupMenu,
-    ScrollSpec, Span, TextStyle, Tx, col, el, icon, rich, row, text,
+    Color, Cursor, Drag, El, Family, GrowthSpec, Icon, Key, KeyEvent, Link, LoopSpec, PopupItem,
+    PopupMenu, ScrollSpec, Span, TextStyle, Tx, col, el, icon, rich, row, text,
 };
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -258,7 +258,7 @@ pub fn panel(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
     } else if c.conversation.messages.is_empty() {
         root = root.child(empty_state(s, p, k));
     } else {
-        root = root.child(messages(s, p, k));
+        root = root.child(messages(s, p));
         if let Some(change) = c.conversation.pending_change() {
             root = root.child(review_bar(s, change, p));
         }
@@ -517,31 +517,61 @@ fn command_line(i: usize, command: &str, p: &Palette) -> El {
 
 // MARK: Messages
 
-fn messages(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
+/// The transcript's rows after its messages: the failed turn's error, then any warnings.
+fn trailing_rows(conversation: &super::conversation::Conversation) -> usize {
+    let failed =
+        conversation.messages.last().is_some_and(|m| m.status == Some(MessageStatus::Error));
+    usize::from(failed) + conversation.warnings.len()
+}
+
+/// The transcript, one virtual row per message: only those on screen are built, so a long chat
+/// costs a frame no more than a short one.
+fn messages(s: &App, p: &Palette) -> El {
     let conversation = &s.companion.conversation;
-    let mut list = col()
+    let count = conversation.messages.len() + trailing_rows(conversation);
+    let version = (
+        conversation.messages.first().map(|m| m.id.clone()),
+        conversation.messages.last().map(|m| m.id.clone()),
+        trailing_rows(conversation),
+        p.dark,
+    );
+    let list = col()
         .key("companion-list")
         .w_full()
-        .gap(16.0)
         .pl(LEADING + 2.0)
         .pr(TRAILING + 2.0)
         .pt(10.0)
-        .pb(12.0);
-    let last = conversation.messages.len().saturating_sub(1);
-    for (i, m) in conversation.messages.iter().enumerate() {
-        list = list.child(match m.role {
-            Role::User => user_message(m, p),
-            Role::Assistant => assistant_message(s, m, i == last, p, k),
-        });
-    }
-    if conversation.messages.last().is_some_and(|m| m.status == Some(MessageStatus::Error))
-        && let Some(last_user) = conversation.messages.iter().rev().find(|m| m.role == Role::User)
-    {
-        list = list.child(turn_error(conversation.error.as_deref(), last_user.content.clone(), p));
-    }
-    for (i, warning) in conversation.warnings.iter().enumerate() {
-        list = list.child(note(format!("companion-warning-{i}"), &ci::WARNING, warning, p));
-    }
+        .growth(GrowthSpec::default())
+        .virtual_rows(
+            count,
+            120.0,
+            |s: &App, i| {
+                let c = &s.companion.conversation;
+                match c.messages.get(i) {
+                    Some(m) => format!("companion-row-{}", m.id).into(),
+                    None => format!("companion-row-after-{}", i - c.messages.len()).into(),
+                }
+            },
+            |s: &App, i| {
+                let p = Palette::get(s.dark());
+                let c = &s.companion.conversation;
+                let row = match c.messages.get(i) {
+                    Some(m) if m.role == Role::User => user_message(m, &p),
+                    Some(m) => {
+                        let latest = i + 1 == c.messages.len();
+                        assistant_message(s, m, latest, &p, &p.kit())
+                    }
+                    None => trailing_row(c, i - c.messages.len(), &p),
+                };
+                let key = match c.messages.get(i) {
+                    Some(m) => format!("companion-row-{}", m.id),
+                    None => format!("companion-row-after-{}", i - c.messages.len()),
+                };
+                // The gap between messages, as each row's own bottom space.
+                col().key(key).w_full().pb(16.0).child(row)
+            },
+        )
+        .virtual_rows_version(version);
     // Short conversations start at the top; long ones open at, and follow, the newest reply.
     col()
         .key("companion-scroll")
@@ -550,6 +580,25 @@ fn messages(s: &App, p: &Palette, k: &rune_kit::Kit) -> El {
         .min_h(0.0)
         .scroll(ScrollSpec { stick_bottom: true })
         .child(list)
+}
+
+/// The `n`th row after the messages: the failed turn's error first, then the warnings.
+fn trailing_row(conversation: &super::conversation::Conversation, n: usize, p: &Palette) -> El {
+    let failed =
+        conversation.messages.last().is_some_and(|m| m.status == Some(MessageStatus::Error));
+    if failed && n == 0 {
+        let retry = conversation
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::User)
+            .map(|m| m.content.clone())
+            .unwrap_or_default();
+        return turn_error(conversation.error.as_deref(), retry, p);
+    }
+    let i = n - usize::from(failed);
+    let warning = conversation.warnings.get(i).map(String::as_str).unwrap_or("");
+    note(format!("companion-warning-{i}"), &ci::WARNING, warning, p)
 }
 
 /// A quiet line in the transcript: "Stopped", a warning.
