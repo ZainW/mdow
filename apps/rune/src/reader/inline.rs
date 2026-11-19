@@ -158,7 +158,7 @@ fn walk(inlines: &[Inline], st: &InlineStyle, fmt: Fmt, out: &mut Flat) {
                 out.maths.push((start..out.text.len(), tex.clone()));
             }
             Inline::FootnoteRef(label) => {
-                // A superscript number, as the Swift app sets it.
+                // A superscript number.
                 const SUP: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
                 let sup: Option<String> =
                     label.chars().map(|c| c.to_digit(10).map(|d| SUP[d as usize])).collect();

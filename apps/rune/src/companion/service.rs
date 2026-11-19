@@ -1,4 +1,4 @@
-//! The companion's service, ported from the Swift app's `CompanionService.swift`.
+//! The companion's service.
 //!
 //! - The runtime is shared by every window: the private OpenCode server (started when a
 //!   companion first opens, stopped when the app quits, the last window goes, or no pane has

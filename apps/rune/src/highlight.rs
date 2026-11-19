@@ -168,7 +168,7 @@ pub fn highlight(lang: &str, code: &str) -> std::rc::Rc<[Span]> {
     spans
 }
 
-/// The language's name for a code block's label, as the Swift app shows it.
+/// The language's name for a code block's label.
 pub fn display_name(lang: &str) -> Option<String> {
     let lang = lang.trim();
     if lang.is_empty() {

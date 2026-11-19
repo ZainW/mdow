@@ -20,9 +20,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = Path(os.environ.get("MDOW_FONT_CACHE", "/tmp/mdow-font-src"))
-GPUI_FONTS = ROOT / "apps/rune/assets/fonts"
+APP_FONTS = ROOT / "apps/rune/assets/fonts"
 WEB_FONTS = ROOT / "apps/web/src/assets/fonts"
-LICENSE_DIR = GPUI_FONTS / "licenses"
+LICENSE_DIR = APP_FONTS / "licenses"
 
 SOURCES = {
     "inter": (
@@ -201,7 +201,7 @@ def optimize_variable(
     subset(instanced, staged, unicodes)
     write_outputs(staged, web_name)
     for weight in gpui_weights:
-        write_static_instance(staged, GPUI_FONTS / f"{gpui_name}-{weight}.ttf", weight)
+        write_static_instance(staged, APP_FONTS / f"{gpui_name}-{weight}.ttf", weight)
     return staged
 
 
@@ -222,7 +222,7 @@ def optimize_static(
     subfamily: str,
     unicodes: str,
 ) -> Path:
-    dest = GPUI_FONTS / gpui_name
+    dest = APP_FONTS / gpui_name
     subset(src, dest, unicodes)
     set_family(dest, family, subfamily)
     write_outputs(dest, None)
@@ -331,7 +331,7 @@ def main() -> int:
     copy_license(geist_license, "Geist-OFL.txt")
 
     print("wrote optimized fonts to")
-    print(f"  {GPUI_FONTS}")
+    print(f"  {APP_FONTS}")
     print(f"  {WEB_FONTS}")
     return 0
 

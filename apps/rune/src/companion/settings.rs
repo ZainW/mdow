@@ -1,6 +1,5 @@
 //! The Companion section of Settings: what it runs on, whether it's connected, and the model new
-//! conversations start with. Ported from the Swift app's `CompanionSettingsSection.swift`, in the
-//! look of `crate::sheets`' groups.
+//! conversations start with. Drawn in the look of `crate::sheets`' groups.
 
 use super::agents::Agent;
 use super::picker::{self, PickerFor};

@@ -1,4 +1,4 @@
-//! The menu bar, laid out as the Swift app's: File, Edit (with Find), View, Go, Window and
+//! The menu bar: File, Edit (with Find), View, Go, Window and
 //! Help, plus Settings in the app menu. Submenus Rune's menus can't hold (Open Recent, Find,
 //! Speech, Text Width) are added in AppKit by `platform::install_submenus`. Rune adds the
 //! standard Edit and Window items (Copy, Select All, Minimize).

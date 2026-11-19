@@ -1,5 +1,5 @@
 //! The OpenCode companion: a trailing panel to chat with OpenCode about the document and its
-//! folder, ported from the Swift app's `Companion` sources.
+//! folder.
 //!
 //! - `types`, `conversation`, `events` and `logic` are the pure parts (and their tests).
 //! - `client` speaks OpenCode 2's HTTP API, `process` finds and runs `opencode serve`.
@@ -527,7 +527,7 @@ fn context(s: &crate::app::App) -> (Option<PathBuf>, Option<PathBuf>) {
     (tab.pane().path().map(Path::to_path_buf), tab.folder.clone())
 }
 
-/// The panel's width, as Swift's split item allows: 300 to 560 points, 380 by default.
+/// The panel's width: 300 to 560 points, 380 by default.
 pub const MIN_WIDTH: f32 = 300.0;
 pub const MAX_WIDTH: f32 = 560.0;
 pub const DEFAULT_WIDTH: f32 = 380.0;

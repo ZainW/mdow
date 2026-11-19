@@ -1,7 +1,7 @@
 //! WebKit, for what Rune can't draw: HTML files shown as the page itself (in a `WKWebView` with
 //! page scripts off, laid over the pane), and printing or exporting a document as a paginated
-//! PDF with real text. Pages that have no dark mode are darkened in dark mode, as in the Swift
-//! app, by a script in Mdow's own content world.
+//! PDF with real text. Pages that have no dark mode are darkened in dark mode by a
+//! script in Mdow's own content world.
 
 #[cfg(target_os = "macos")]
 use crate::app::Cmd;

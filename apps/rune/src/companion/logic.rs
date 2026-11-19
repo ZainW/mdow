@@ -1,5 +1,4 @@
-//! The pure parts of the companion service, ported from the Swift app's `CompanionLogic.swift`
-//! and the reply-text splitting in `CompanionPartViews.swift`.
+//! The pure parts of the companion service, and the splitting of reply text into parts.
 
 use super::client::{ModelInfo, PermissionRule, ProviderInfo};
 use super::types::*;

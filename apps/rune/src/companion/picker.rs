@@ -1,6 +1,6 @@
 //! The model picker: a searchable popover grouped by provider, as OpenCode can offer hundreds of
-//! models. Ported from the Swift app's `ModelPicker` and `ModelList`. The composer's picker
-//! switches the conversation's model; the one in Settings sets the default for new ones.
+//! models. The composer's picker switches the conversation's model; the one in Settings sets the
+//! default for new ones.
 
 use super::service;
 use super::types::*;

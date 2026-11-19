@@ -1,5 +1,5 @@
-//! Mdow for Mac on Rune: the Swift app's reader, chrome and behaviour, drawn by Rune's GPU
-//! renderer instead of AppKit and TextKit.
+//! Mdow on Rune: the reader, its chrome and behaviour, drawn by Rune's GPU renderer on Linux
+//! and the Mac.
 //!
 //! `cargo run -- README.md docs/` opens a window. Rune's headless tools work too:
 //! `cargo run -- --snap out.png --size 1200x800 README.md` renders the window without one.

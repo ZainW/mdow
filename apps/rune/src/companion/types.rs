@@ -1,4 +1,4 @@
-//! The companion's data model, ported from the Swift app's `CompanionTypes.swift`.
+//! The companion's data model.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
