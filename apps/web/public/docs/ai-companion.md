@@ -1,34 +1,39 @@
 ---
 title: AI Companion
-description: Ask questions about local markdown files through OpenCode and ACP
+description: Ask questions about your markdown with Claude Code, Codex, Cursor or OpenCode
 category: Guide
 order: 3
 ---
 
 # AI Companion
 
-Mdow includes a local, read-only AI companion for understanding documents without moving your workflow into another editor. It connects to installed AI providers through the Agent Client Protocol (ACP).
+The companion is a panel beside the document where you can ask about what you're reading. It runs an agent you already have on your machine, so there's no Mdow account and no separate model bill.
 
-## Supported context
+## Agents
 
-You control what accompanies each question:
+Pick an agent from the companion's header. Mdow finds each one on your `PATH`, including your login shell's, and needs no Node install for any of them.
+
+| Agent    | How Mdow runs it                 | Uses                              |
+| -------- | -------------------------------- | --------------------------------- |
+| OpenCode | Its own server, `opencode serve` | The providers you use in OpenCode |
+| Claude   | Claude Code's stream-json mode   | Your Claude plan                  |
+| Codex    | Codex's app server               | Your ChatGPT plan                 |
+| Cursor   | The Agent Client Protocol (ACP)  | Cursor's agent, read-only         |
+
+To use a command somewhere else, set it under `companionAgentCommands` in Mdow's settings file.
+
+## Context
+
+You choose what goes with each question:
 
 - The focused document
-- Supported files from the open folder
-- Specific files or folders selected with `@` tags
-
-Mdow shows the context it assembled and adds clickable citations to answers so you can return to the relevant source.
-
-## Providers
-
-Mdow can detect OpenCode and Codex ACP installations. You can also select a compatible custom executable. Provider and model availability depends on what is installed and configured on your machine.
-
-Using OpenCode means Mdow can work with providers and subscriptions already configured there instead of requiring a separate Mdow model account.
-
-## Read-only by design
-
-The companion can read the context you select and answer questions about it, but it does not edit files. Continue using your preferred editor for changes while Mdow stays focused on reading and understanding.
+- Files from the open folder
+- Specific files or folders, picked with `@` tags
 
 ## Source citations
 
-Answers can reference the local files used as context. Select a citation to open its source in Mdow and verify the answer against the original document.
+Answers link back to the files they draw on. Select a citation to open its source in Mdow and check the answer against the original.
+
+## Edits need your OK
+
+Mdow never changes a document on its own. Reading, searching and thinking run freely. When an agent wants to edit a file, the change comes back as a diff that you accept or decline, and the tab shows that a review is waiting. Anything else, like running a command, fetching from the web or deleting a file, is declined and shown in the chat.

@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       ...seo({
         title: 'Mdow: A Quiet Markdown Reader for Mac',
         description:
-          'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
+          'A fast, native markdown reader for macOS and Linux. Mermaid, math and code drawn on the GPU, your Omarchy theme, and answers from Claude, Codex, Cursor or OpenCode. Free and open source.',
       }),
     ],
     links: [

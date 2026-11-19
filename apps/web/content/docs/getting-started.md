@@ -7,7 +7,7 @@ order: 1
 
 # Getting Started
 
-Mdow is a quiet AI markdown reader for Mac and Linux. Open Markdown or local HTML files in a focused desktop app, then ask questions about your documents through an installed ACP provider.
+Mdow is a native markdown reader for macOS and Linux. Open Markdown or local HTML files in a focused desktop app, then ask about your documents with Claude Code, Codex, Cursor or OpenCode.
 
 ## Quick start
 
@@ -19,9 +19,9 @@ Mdow is a quiet AI markdown reader for Mac and Linux. Open Markdown or local HTM
 
 ## AI companion
 
-Open the companion to ask about the focused document or an open folder. Add specific files and folders with `@` tags when you want tighter context. Mdow connects through an installed provider such as OpenCode or Codex ACP and includes clickable source citations in its answers.
+Open the companion to ask about the focused document or an open folder. Add specific files and folders with `@` tags when you want tighter context. Mdow runs the agent you choose, Claude Code, Codex, Cursor or OpenCode, and its answers include clickable source citations.
 
-The companion is read-only and does not modify your documents. See the [AI companion guide](/docs/ai-companion) for provider and context details.
+The companion never changes a document without your OK: suggested edits come back as diffs to accept or decline. See the [AI companion guide](/docs/ai-companion) for provider and context details.
 
 ## Supported formats
 

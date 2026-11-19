@@ -54,7 +54,7 @@ export function CompanionMock() {
           </span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="size-1.5 rounded-full bg-[oklch(0.68_0.15_150)]" />
-            OpenCode
+            Claude
           </span>
         </div>
         <div className="space-y-3 p-4">
@@ -73,6 +73,23 @@ export function CompanionMock() {
           <div className="flex flex-wrap gap-1.5 pt-1">
             <SourceChip n={1} path="sync.md" line="42" />
             <SourceChip n={2} path="decisions/007.md" line="12" />
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border-subtle font-mono text-[11px]">
+            <div className="flex items-center justify-between border-b border-border-subtle bg-surface px-3 py-1.5 text-muted-foreground">
+              <span>Suggested edit · sync.md</span>
+              <span className="flex gap-1.5 font-sans text-[11px]">
+                <span className="rounded-md border border-border px-2 py-0.5">Decline</span>
+                <span className="rounded-md bg-primary px-2 py-0.5 text-primary-foreground">
+                  Accept
+                </span>
+              </span>
+            </div>
+            <div className="bg-[oklch(0.62_0.17_25/0.08)] px-3 py-1 text-[oklch(0.55_0.17_25)] dark:text-[oklch(0.75_0.13_25)]">
+              − the later edit wins
+            </div>
+            <div className="bg-[oklch(0.65_0.14_150/0.1)] px-3 py-1 text-[oklch(0.5_0.13_150)] dark:text-[oklch(0.78_0.12_150)]">
+              + the later clock wins; the other is kept
+            </div>
           </div>
         </div>
       </Pane>
@@ -98,46 +115,33 @@ function SourceChip({ n, path, line }: { n: number; path: string; line: string }
   )
 }
 
-export function SpeedMock() {
+export function MathMock() {
   return (
-    <Illustration label="A 9 megabyte markdown file opens in about one and a half seconds">
-      <div className="flex items-end gap-3">
-        <span className="font-display text-[4.5rem] leading-[0.85] tracking-tight">1.5</span>
-        <span className="pb-1 text-sm text-muted-foreground">
-          seconds to open
-          <br />a 9 MB document
-        </span>
-      </div>
-      <div className="mt-6 space-y-2.5 text-xs">
-        <SpeedBar label="v1.10" width="18%" value="1.5 s" highlight />
-        <SpeedBar label="v1.9" width="90%" value="5× slower" />
+    <Illustration label="A typeset formula: a precedes b if and only if every entry of a is at most the matching entry of b">
+      <div className="text-center font-serif">
+        <div className="text-[1.9rem] leading-none tracking-tight">
+          <i>a</i> <span className="mx-1">⪯</span> <i>b</i>
+          <span className="mx-3 text-muted-foreground">⟺</span>∀<i>i</i>, <i>a</i>
+          <sub className="text-[0.55em]">
+            <i>i</i>
+          </sub>{' '}
+          ≤ <i>b</i>
+          <sub className="text-[0.55em]">
+            <i>i</i>
+          </sub>
+        </div>
+        <div className="mt-5 text-[1.5rem] leading-none text-muted-foreground">
+          <i>e</i>
+          <sup className="text-[0.6em]">
+            <i>iπ</i>
+          </sup>{' '}
+          + 1 = 0
+        </div>
+        <p className="mt-6 font-mono text-[11px] text-faint">
+          $$ a \preceq b \iff \forall i,\ a_i \le b_i $$
+        </p>
       </div>
     </Illustration>
-  )
-}
-
-function SpeedBar({
-  label,
-  width,
-  value,
-  highlight = false,
-}: {
-  label: string
-  width: string
-  value: string
-  highlight?: boolean
-}) {
-  return (
-    <div className="grid grid-cols-[2.75rem_1fr] items-center gap-2">
-      <span className="font-mono text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-2">
-        <div
-          className={cn('h-2 rounded-full', highlight ? 'bg-accent' : 'bg-border-strong')}
-          style={{ width }}
-        />
-        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{value}</span>
-      </div>
-    </div>
   )
 }
 

@@ -3,6 +3,8 @@ import { createServerFn } from '@tanstack/react-start'
 import { setResponseHeader } from '@tanstack/react-start/server'
 import { LandingHero } from '~/components/landing/hero'
 import { LandingFeatures } from '~/components/landing/features'
+import { LandingEngine } from '~/components/landing/engine'
+import { LandingThemeShowcase } from '~/components/landing/theme-showcase'
 import { LandingReaderSection } from '~/components/landing/reader-section'
 import { LandingLatestRelease } from '~/components/landing/latest-release'
 import { LandingCta } from '~/components/landing/cta'
@@ -35,20 +37,16 @@ const loadHomeData = createServerFn({ method: 'GET' }).handler(async () => {
     }
   }
 
-  return {
-    release,
-    downloadUrl: release?.assets.mac ?? null,
-    latestRelease,
-  }
+  return { release, latestRelease }
 })
 
 export const Route = createFileRoute('/')({
   loader: () => loadHomeData(),
   head: ({ loaderData }) => ({
     meta: seo({
-      title: 'Mdow: A Quiet Markdown Reader for Mac',
+      title: 'Mdow: A Native Markdown Reader for macOS and Linux',
       description:
-        'A fast, focused markdown reader for your notes, docs, and READMEs. Browse folders, render Mermaid and Shiki, and ask questions with OpenCode or Codex. Free and open source.',
+        'A fast, GPU-rendered markdown reader for your notes, docs and READMEs, written in Rust. Native Mermaid, math and code, your Omarchy theme, and answers from Claude, Codex, Cursor or OpenCode. Free and open source.',
     }),
     links: [canonical('/')],
     scripts: [
@@ -60,7 +58,8 @@ export const Route = createFileRoute('/')({
           name: 'Mdow',
           url: SITE_URL,
           image: absoluteUrl('/og-image.png'),
-          description: 'A native Mac markdown reader with local AI chat through OpenCode and ACP.',
+          description:
+            'A native, GPU-rendered markdown reader for macOS and Linux, with a companion that runs Claude Code, Codex, Cursor or OpenCode.',
           applicationCategory: 'UtilitiesApplication',
           operatingSystem: 'macOS, Linux',
           softwareVersion: loaderData?.release?.version,
@@ -73,11 +72,12 @@ export const Route = createFileRoute('/')({
             priceCurrency: 'USD',
           },
           featureList: [
-            'Local AI chat through OpenCode and ACP',
-            'Clickable source citations',
-            'Markdown and local HTML reading',
-            'Shiki syntax highlighting',
-            'Mermaid diagrams',
+            'Companion chat with Claude Code, Codex, Cursor and OpenCode',
+            'Clickable source citations and reviewable edits',
+            'GPU-rendered markdown and local HTML reading',
+            'Native Mermaid diagrams and LaTeX math',
+            'Syntax highlighting',
+            'Omarchy theme support',
             'Folder browsing and document outlines',
           ],
           sameAs: ['https://github.com/ZainW/mdow'],
@@ -94,16 +94,18 @@ export const Route = createFileRoute('/')({
 })
 
 function HomePage() {
-  const { release, downloadUrl, latestRelease } = Route.useLoaderData()
+  const { release, latestRelease } = Route.useLoaderData()
 
   return (
     <>
-      <LandingHero release={release} downloadUrl={downloadUrl} latest={latestRelease} />
+      <LandingHero release={release} latest={latestRelease} />
+      <LandingEngine />
       <LandingFeatures />
+      <LandingThemeShowcase />
       <LandingReaderSection />
       {latestRelease && <LandingLatestRelease release={latestRelease} />}
-      <LandingCta downloadUrl={downloadUrl} />
-      <DownloadBar release={release} downloadUrl={downloadUrl} />
+      <LandingCta release={release} />
+      <DownloadBar release={release} />
     </>
   )
 }

@@ -519,7 +519,152 @@
     animation: pulse-dot 2.4s ease-in-out infinite;
   }
 
+  /* ── Landing: hero ── */
+  .hero-glow {
+    background:
+      radial-gradient(
+        ellipse 50% 45% at 50% 40%,
+        color-mix(in oklch, var(--accent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 35% 30% at 20% 70%,
+        color-mix(in oklch, var(--link) 12%, transparent),
+        transparent 70%
+      );
+    filter: blur(24px);
+  }
+  .hero-tilt {
+    perspective: 1800px;
+  }
+  .hero-tilt > * {
+    animation: hero-settle 1200ms var(--ease-out) 150ms both;
+    transform-origin: 50% 0%;
+  }
+  @keyframes hero-settle {
+    from {
+      transform: rotateX(14deg) scale(0.96);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  /* ── Landing: the dark "under the hood" band, dark in both site themes ── */
+  .engine-band {
+    --engine-bg: oklch(0.19 0.006 60);
+    --engine-line: oklch(0.3 0.008 60);
+    --engine-muted: oklch(0.72 0.01 70);
+    --engine-accent: oklch(0.76 0.13 50);
+    background: var(--engine-bg);
+    color: oklch(0.95 0.006 75);
+  }
+  .engine-grid {
+    background-image:
+      radial-gradient(
+        ellipse 60% 70% at 85% 0%,
+        color-mix(in oklch, var(--engine-accent) 16%, transparent),
+        transparent 70%
+      ),
+      linear-gradient(to right, oklch(1 0 0 / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(1 0 0 / 0.04) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      48px 48px,
+      48px 48px;
+    mask-image: linear-gradient(to bottom, black 30%, transparent);
+  }
+
+  /* ── Landing: the theme showcase, coloured by --t-* on .themed ── */
+  .themed,
+  .themed *,
+  .theme-halo {
+    transition-property: background-color, border-color, color, fill, stroke, opacity;
+    transition-duration: 450ms;
+    transition-timing-function: var(--ease-in-out);
+  }
+  .themed {
+    background: var(--t-bg);
+    color: var(--t-fg);
+  }
+  .themed-side {
+    background: var(--t-side);
+    border-color: var(--t-line);
+  }
+  .themed-muted {
+    color: var(--t-muted);
+  }
+  .themed-active,
+  .themed-tab {
+    background: color-mix(in srgb, var(--t-line) 70%, transparent);
+    color: var(--t-fg);
+  }
+  .themed-accent {
+    color: var(--t-accent);
+  }
+  .themed-callout {
+    border-color: var(--t-accent);
+    background: color-mix(in srgb, var(--t-accent) 10%, transparent);
+  }
+  .themed-code {
+    background: var(--t-side);
+    border-color: var(--t-line);
+  }
+  .themed-kw {
+    color: var(--t-keyword);
+  }
+  .themed-fn {
+    color: var(--t-fn);
+  }
+  .themed-str {
+    color: var(--t-string);
+  }
+  .themed-stroke {
+    stroke: var(--t-muted);
+  }
+  .themed-node {
+    fill: var(--t-side);
+    stroke: var(--t-line);
+  }
+  .themed-node-accent {
+    fill: color-mix(in srgb, var(--t-accent) 14%, transparent);
+    stroke: var(--t-accent);
+  }
+  .themed-fill {
+    fill: var(--t-fg);
+  }
+  .themed-fill-accent {
+    fill: var(--t-accent);
+  }
+  .theme-halo {
+    background: radial-gradient(
+      ellipse 60% 55% at 55% 45%,
+      color-mix(in srgb, var(--t-accent) 30%, transparent),
+      transparent 70%
+    );
+    filter: blur(30px);
+    opacity: 0.8;
+  }
+  .theme-command {
+    animation: theme-command-in 400ms var(--ease-out) both;
+  }
+  @keyframes theme-command-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .hero-tilt > *,
+    .theme-command {
+      animation: none;
+    }
+    .themed,
+    .themed *,
+    .theme-halo {
+      transition-duration: 0ms;
+    }
     .intro-animate,
     .animate-pop-in,
     .animate-slide-in-left,

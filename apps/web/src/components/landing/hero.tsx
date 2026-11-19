@@ -1,23 +1,24 @@
 import { Link } from '@tanstack/react-router'
-import { DownloadButton } from '~/components/download-button'
 import { ArrowRightIcon } from '~/components/icons'
 import { IntroSection } from '~/components/landing/intro-section'
-import { btnPrimary, btnSecondary } from '~/lib/button-styles'
+import { btnSecondary } from '~/lib/button-styles'
 import type { ReleaseInfo } from '~/lib/github-releases'
 import { AppWindow } from './app-window'
+import { DownloadCta, OtherPlatformLink } from './download-cta'
 
 interface LandingHeroProps {
   release: ReleaseInfo | null
-  downloadUrl: string | null
   latest: { version: string; anchor: string; headline: string } | null
 }
 
-export function LandingHero({ release, downloadUrl, latest }: LandingHeroProps) {
+const PROOF = ['Written in Rust', 'Drawn on the GPU', 'No browser engine', 'Free and open source']
+
+export function LandingHero({ release, latest }: LandingHeroProps) {
   return (
     <section className="relative isolate overflow-hidden">
       <div
         aria-hidden
-        className="bg-paper absolute inset-x-0 top-0 -z-10 h-[46rem] [mask-image:radial-gradient(ellipse_70%_80%_at_50%_0%,black_40%,transparent)]"
+        className="bg-paper absolute inset-x-0 top-0 -z-10 h-[52rem] [mask-image:radial-gradient(ellipse_70%_80%_at_50%_0%,black_40%,transparent)]"
       />
       <div className="mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-6 md:pb-28 md:pt-24">
         <IntroSection className="mx-auto max-w-3xl text-center">
@@ -34,47 +35,54 @@ export function LandingHero({ release, downloadUrl, latest }: LandingHeroProps) 
               <ArrowRightIcon className="size-3.5 shrink-0 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
             </Link>
           )}
-          <h1 className="font-display text-[2.75rem] leading-[1.02] sm:text-6xl md:text-7xl md:leading-[0.98]">
-            A quiet place to
+          <h1 className="font-display text-balance text-[2.75rem] leading-[1.02] sm:text-6xl md:text-7xl md:leading-[0.98]">
+            Your markdown,
             <br />
-            read <em className="italic">markdown</em>.
+            <em className="italic">beautifully</em> read.
           </h1>
-          <p className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl sm:leading-relaxed">
-            Mdow is a fast, focused reader for your notes, docs, and READMEs. Open a file or a whole
-            folder, and ask questions about it with the AI tools you already use.
+          <p className="mx-auto mt-7 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground sm:text-xl sm:leading-relaxed">
+            Mdow is a native markdown reader for macOS and Linux. Diagrams, math and code show up
+            the instant you open a file. When you have a question, Claude, Codex, Cursor or OpenCode
+            can answer it from your docs.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            {downloadUrl ? (
-              <DownloadButton
-                href={downloadUrl}
-                platform="mac"
-                size="lg"
-                className="w-full max-w-72 sm:w-auto"
-              >
-                Download for macOS
-              </DownloadButton>
-            ) : (
-              <Link to="/download" className={btnPrimary('lg', 'w-full max-w-72 sm:w-auto')}>
-                Download for free
-              </Link>
-            )}
+            <DownloadCta release={release} className="w-full max-w-72 sm:w-auto" />
             <Link to="/docs" className={btnSecondary('lg', 'w-full max-w-72 sm:w-auto')}>
               Read the docs
             </Link>
           </div>
           <p className="mt-5 text-[13px] text-muted-foreground">
-            Free and open source{release ? ` · v${release.version}` : ''} ·{' '}
-            <Link to="/download" className="link-underline">
-              Also on Linux
-            </Link>
+            {release ? `v${release.version} · ` : ''}
+            <OtherPlatformLink className="link-underline" />
           </p>
         </IntroSection>
-        <IntroSection delay={1} className="mx-auto mt-16 max-w-5xl md:mt-20">
-          <AppWindow
-            name="reading"
-            priority
-            alt="Mdow showing a sync engine architecture document with a folder sidebar, tabs, a Mermaid flowchart, and a highlighted TypeScript code block"
+
+        <IntroSection delay={1} className="relative mx-auto mt-16 max-w-5xl md:mt-20">
+          <div
+            aria-hidden
+            className="hero-glow pointer-events-none absolute -inset-x-16 -top-10 bottom-0 -z-10"
           />
+          <div className="hero-tilt">
+            <AppWindow
+              name="reading"
+              priority
+              alt="Mdow showing a sync engine architecture document with a folder sidebar, tabs, a Mermaid flowchart, and a highlighted TypeScript code block"
+            />
+          </div>
+        </IntroSection>
+
+        <IntroSection delay={2}>
+          <ul
+            className="mx-auto mt-12 flex max-w-3xl flex-wrap items-center justify-center gap-x-6 gap-y-3 text-[13px] text-muted-foreground"
+            aria-label="What Mdow is built on"
+          >
+            {PROOF.map((p) => (
+              <li key={p} className="flex items-center gap-2">
+                <span aria-hidden className="size-1 rounded-full bg-accent" />
+                {p}
+              </li>
+            ))}
+          </ul>
         </IntroSection>
       </div>
     </section>

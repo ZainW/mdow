@@ -2,16 +2,16 @@ import { AppWindow } from './app-window'
 
 const PRINCIPLES = [
   {
-    title: 'Read-only by design',
-    body: 'Mdow never changes your files, and neither does the AI companion. Your editor stays the source of truth.',
+    title: 'Your files stay yours',
+    body: 'Mdow never writes to your files on its own. When an agent suggests a change, you see the diff and decide. Your editor stays the source of truth.',
   },
   {
     title: 'No setup, no account',
-    body: 'Open a file, open a folder, or drag something in. The companion uses providers already configured on your machine.',
+    body: 'Open a file, open a folder, or drag something in. The companion runs the agents you already have signed in.',
   },
   {
     title: 'Plain files, anywhere',
-    body: 'Markdown, MDX, and local HTML straight from disk. Nothing to import, nothing to sync.',
+    body: 'Markdown, MDX and local HTML straight from disk. Nothing to import, nothing to sync, no telemetry.',
   },
 ]
 

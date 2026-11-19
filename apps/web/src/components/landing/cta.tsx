@@ -1,15 +1,16 @@
 import { Link } from '@tanstack/react-router'
-import { DownloadButton } from '~/components/download-button'
 import { AppleIcon, GitHubIcon, LinuxIcon } from '~/components/icons'
 import { Logo } from '~/components/logo'
-import { btnPrimary, btnSecondary } from '~/lib/button-styles'
+import { btnSecondary } from '~/lib/button-styles'
+import type { ReleaseInfo } from '~/lib/github-releases'
 import { GITHUB_URL } from '~/lib/site'
+import { DownloadCta } from './download-cta'
 
 interface LandingCtaProps {
-  downloadUrl: string | null
+  release: ReleaseInfo | null
 }
 
-export function LandingCta({ downloadUrl }: LandingCtaProps) {
+export function LandingCta({ release }: LandingCtaProps) {
   return (
     <section className="px-5 pb-20 sm:px-6 md:pb-28">
       <div className="surface-card relative mx-auto max-w-6xl overflow-hidden rounded-3xl px-6 py-16 text-center sm:py-20">
@@ -20,23 +21,10 @@ export function LandingCta({ downloadUrl }: LandingCtaProps) {
             Open something worth reading.
           </h2>
           <p className="mx-auto mt-4 max-w-md text-lg leading-relaxed text-muted-foreground">
-            Free and open source. No account, no setup, just your files.
+            Free and open source under MIT. No account, no setup, just your files.
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            {downloadUrl ? (
-              <DownloadButton
-                href={downloadUrl}
-                platform="mac"
-                size="lg"
-                className="w-full max-w-72 sm:w-auto"
-              >
-                Download for macOS
-              </DownloadButton>
-            ) : (
-              <Link to="/download" className={btnPrimary('lg', 'w-full max-w-72 sm:w-auto')}>
-                Download for free
-              </Link>
-            )}
+            <DownloadCta release={release} className="w-full max-w-72 sm:w-auto" />
             <a
               href={GITHUB_URL}
               className={btnSecondary('lg', 'w-full max-w-72 sm:w-auto')}
@@ -48,12 +36,12 @@ export function LandingCta({ downloadUrl }: LandingCtaProps) {
             </a>
           </div>
           <div className="mt-8 flex items-center justify-center gap-5 text-[13px] text-muted-foreground">
-            <span className="flex items-center gap-1.5">
+            <Link to="/download" className="flex items-center gap-1.5 hover:text-foreground">
               <AppleIcon className="size-3.5" /> macOS
-            </span>
-            <span className="flex items-center gap-1.5">
-              <LinuxIcon className="size-3.5" /> Linux
-            </span>
+            </Link>
+            <Link to="/download" className="flex items-center gap-1.5 hover:text-foreground">
+              <LinuxIcon className="size-3.5" /> AppImage and Flatpak
+            </Link>
           </div>
         </div>
       </div>
