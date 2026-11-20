@@ -1,5 +1,5 @@
-//! The header's and sidebar's icons: thin line drawings on a 20 point grid, close to the SF
-//! Symbols the Swift app uses.
+//! The header's and sidebar's icons: thin line drawings on a 20 point grid, close to Apple's SF
+//! Symbols.
 
 use rune::Icon;
 

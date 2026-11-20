@@ -1,5 +1,5 @@
-//! Settings (⌘,) and Keyboard Shortcuts (⌘/): windows of their own in Mdow's style, as in the
-//! Swift app (`window_view`), or sheets over the window in headless runs, which have one window.
+//! Settings (⌘,) and Keyboard Shortcuts (⌘/): windows of their own in Mdow's style
+//! (`window_view`), or sheets over the window in headless runs, which have one window.
 
 use crate::app::{App, Sheet};
 use crate::icons;

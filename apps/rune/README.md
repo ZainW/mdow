@@ -10,11 +10,10 @@ Away from Omarchy the look is Mdow's own: warm paper in light mode, neutral ink 
 accent, Charter for text, Inter for the interface and Geist Mono for code.
 
 - **macOS**: **Mdow Rune.app** (`com.zain.mdow.Rune`), with settings in
-  `~/Library/Application Support/Mdow Rune/settings.json`. It replaced the earlier Swift app
-  (`Mdow.app`), and installs beside it.
+  `~/Library/Application Support/Mdow Rune/settings.json`.
 - **Linux**: the `mdow` binary, with a desktop entry (`com.zain.mdow`) and settings in
   `~/.config/mdow/settings.json`. CI packages it as an AppImage and a Flatpak
-  (`packaging/`). It replaced the earlier GTK app.
+  (`packaging/`).
 
 ## Run, test, install
 
@@ -38,8 +37,8 @@ Dock icon or the app icon. `cargo run` is fine for everything else.
 ## On Linux
 
 - **Keys**: Ctrl where the Mac has ⌘, written out in tooltips and the shortcuts list
-  ("Ctrl+Shift+O"). The few chords that need both ⌘ and ⌃ on the Mac take the keys the GTK app
-  used: Ctrl+B for the sidebar, Ctrl+Alt+1–3 for its panes. Ctrl+Q quits, Alt+← and Alt+→ go
+  ("Ctrl+Shift+O"). The few chords that need both ⌘ and ⌃ on the Mac take other keys on
+  Linux: Ctrl+B for the sidebar, Ctrl+Alt+1–3 for its panes. Ctrl+Q quits, Alt+← and Alt+→ go
   back and forward, Ctrl+Tab and Ctrl+Alt+→ change tabs, and F5 reloads. There's no menu bar:
   everything is in the header, the ⋯ menu, Quick Open (Ctrl+K) and the keys.
 - **Windows**: the desktop draws the frame, so there's no gap for window buttons. Closing the
@@ -92,13 +91,13 @@ settings and never write them. `src/tests.rs` drives the window the same way fro
 | `src/platform.rs`, `omarchy.rs`, `watch.rs`, `prefs.rs`               | What differs by system (appearance, file manager and editor hand-offs, opened documents, how shortcuts are written); the Omarchy theme; live reload; settings.                          |
 | `src/companion/`                                                      | The OpenCode companion.                                                                                                                                                                |
 
-## On the Mac: parity with the Swift app
+## On the Mac
 
-Matches:
+What it does:
 
 - **Reader**: GitHub-flavoured markdown with tables, task lists, alerts, footnotes, frontmatter
   titles, and the raw HTML READMEs use. Text selects and copies across blocks.
-- **Code**: syntax colours for the grammars bat ships (more languages than the Swift highlighter),
+- **Code**: syntax colours for the grammars bat ships (a long list of languages),
   a language label and a copy button on hover.
 - **Math**: `$$…$$` and ` ```math ` blocks are typeset natively with STIX Two Math.
 - **Mermaid**: drawn natively in the palette's colours, no browser engine.
@@ -117,7 +116,7 @@ Matches:
   from Finder, the Dock or `open`, links to other documents open in place (⌘-click for a new
   tab), the last session's tabs come back, and the window frame is remembered.
 
-Also matching, through AppKit and WebKit where Rune draws nothing of its own:
+Also, through AppKit and WebKit where Rune draws nothing of its own:
 
 - **HTML files** open in a `WKWebView` laid over the pane, with page scripts off, darkened in dark
   mode when the page has no dark look of its own, and searched with WebKit's find.
@@ -131,13 +130,12 @@ Also matching, through AppKit and WebKit where Rune draws nothing of its own:
 - **Context menus** on code blocks, outline headings, files and recents; a resizable sidebar,
   split and companion panel; Settings and Keyboard Shortcuts in windows of their own.
 - **⌘A then ⌘C** copies the whole document, including rows that aren't on screen.
-- `MDOW_ACTIONS` and `MDOW_PERF=1` work as in the Swift app (`src/actions.rs`, `src/perf.rs`), and
+- `MDOW_ACTIONS` and `MDOW_PERF=1` script and time the app (`src/actions.rs`, `src/perf.rs`), and
   `MDOW_ACTIONS="glide=12600,15"` with `--native --trace t.jsonl --frames 900` measures scrolling.
 
 Differs or missing:
 
-- **Scrolling** drops a frame or two in a 900-frame glide on a quiet machine (the Swift app
-  drops none), and more when the CPU is busy: Rune redraws the window each frame while it
+- **Scrolling** drops a frame or two in a 900-frame glide on a quiet machine, and more when the CPU is busy: Rune redraws the window each frame while it
   scrolls, where AppKit lets the compositor move what's already drawn.
 - **Selection and VoiceOver** reach only the rows near the viewport (Rune builds no others);
   ⌘A and copy are handled for the whole document, but a drag across a long document can't select

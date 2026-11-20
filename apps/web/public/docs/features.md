@@ -7,11 +7,13 @@ order: 4
 
 # Features
 
-## Local AI companion
+## Native and GPU-rendered
 
-Ask questions about the focused document, an open folder, or files and folders selected with `@` tags. Mdow sends the context you choose through an installed ACP provider such as OpenCode or Codex ACP, then links citations in the answer back to the source files.
+Mdow is written in Rust on Rune, a UI framework with its own GPU renderer. There's no browser engine behind the page. Each top-level block is its own virtual row, so long documents open and scroll as easily as short ones.
 
-The companion is read-only. It helps you understand local documents without modifying them, and it uses providers already configured on your machine rather than requiring a separate Mdow model account.
+## AI companion
+
+Ask about the focused document, an open folder, or files and folders picked with `@` tags, with Claude Code, Codex, Cursor or OpenCode. Citations link back to the source files, and any edit an agent suggests comes back as a diff for you to accept or decline. See the [AI companion guide](/docs/ai-companion).
 
 ## Tabbed reading
 
@@ -25,17 +27,25 @@ Use split view to compare two documents in the same window. Each pane can target
 
 ## Syntax highlighting
 
-Mdow uses Shiki for accurate, editor-quality syntax highlighting across 30+ languages. Both light and dark themes are supported.
+Code blocks get syntax colours for every grammar bat ships, a language label, and a copy button on hover, in both light and dark themes.
 
 ![Mdow rendering a document with syntax highlighting and Mermaid](/screenshots/reading-light.webp)
 
 ## Mermaid diagrams
 
-Mermaid diagram blocks are rendered inline — flowcharts, sequence diagrams, class diagrams, and more.
+Mermaid blocks are drawn natively, in the theme's colours, right where you wrote them. No browser or JavaScript is involved.
+
+## Math
+
+`$$…$$` and ` ```math ` blocks, and inline math, are typeset natively with STIX Two Math.
 
 ## Light and dark themes
 
-Mdow follows your system preference automatically, or you can set a preference manually. The warm light theme uses stone/sand tones, while the dark theme is pure neutral gray.
+Mdow follows your system's appearance, or you can pick Light or Dark in Settings. Light is warm paper, dark is neutral ink, with one clay accent.
+
+## Omarchy themes
+
+On Omarchy, with Appearance on Automatic, Mdow takes its colours from the current theme and its corners from Hyprland. Run `omarchy theme set` and open windows recolour, diagrams and formulas included.
 
 ## HTML documents
 
@@ -57,9 +67,9 @@ Press `Cmd+F` to search within the current document. Matches are highlighted as 
 
 When you edit a file in your text editor, Mdow picks up changes automatically and refreshes the view.
 
-## Wide reading mode
+## Text width
 
-Hide chrome and expand the reading column when you want fewer distractions. Toggle wide mode from the toolbar or command palette.
+Choose how wide the reading column is in Settings, or from View › Text Width on the Mac.
 
 ## Drag and drop
 

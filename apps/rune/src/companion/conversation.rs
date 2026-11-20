@@ -1,5 +1,4 @@
-//! The conversation shown in the companion pane: messages and the parts they stream in. Ported
-//! from the Swift app's `CompanionConversation.swift`.
+//! The conversation shown in the companion pane: messages and the parts they stream in.
 
 use super::types::*;
 

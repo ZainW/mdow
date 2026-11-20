@@ -1,4 +1,4 @@
-//! Event-stream parsing and translation, ported from the Swift app's `OpencodeEvents.swift`.
+//! Event-stream parsing and translation.
 
 use super::types::*;
 use serde_json::{Map, Value};

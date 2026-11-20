@@ -634,8 +634,8 @@ fn convert_inlines<'a>(node: Node<'a>) -> Vec<Inline> {
         };
         match &data.value {
             NodeValue::Text(text) => push(&mut stack, Inline::Text(text.to_string())),
-            // A line ending inside a paragraph is a space, as in the Swift and Linux apps and
-            // on GitHub: prose wrapped at 80 columns in its file flows to the reading width.
+            // A line ending inside a paragraph is a space, as on GitHub:
+            // prose wrapped at 80 columns in its file flows to the reading width.
             NodeValue::SoftBreak => push(&mut stack, Inline::Text(" ".to_string())),
             NodeValue::LineBreak => push(&mut stack, Inline::Break),
             NodeValue::Code(code) => push(&mut stack, Inline::Code(code.literal.clone())),

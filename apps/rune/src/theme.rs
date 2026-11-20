@@ -1,5 +1,5 @@
-//! Mdow's colours and type, shared by the reader and the window around it. The values are the
-//! Swift app's `Palette` (warm paper in light mode, neutral ink in dark, one clay accent).
+//! Mdow's colours and type, shared by the reader and the window around it. The palette is warm
+//! paper in light mode, neutral ink in dark, one clay accent.
 
 use rune::{Color, Family, TextStyle};
 use std::cell::RefCell;

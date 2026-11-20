@@ -8,18 +8,18 @@ import {
   CompanionMock,
   DiagramMock,
   LiveReloadMock,
+  MathMock,
   PaletteMock,
-  SpeedMock,
   TreeMock,
 } from './mocks'
 
 const EXTRAS = [
-  'Tabs and side-by-side split view',
-  'Find in document with highlighted matches',
-  'Local HTML files in a sandboxed viewer',
-  'Light and dark themes that follow your system',
-  'Drag and drop files or whole folders',
-  'Wide reading mode for fewer distractions',
+  'Tabs, more windows and side-by-side split view',
+  'Find in document, with every match counted',
+  'Tables, task lists, alerts and footnotes',
+  'Back and forward through the links you follow',
+  'Your last session’s tabs come back on launch',
+  'Print and export real-text PDFs on the Mac',
 ]
 
 export function LandingFeatures() {
@@ -45,10 +45,10 @@ export function LandingFeatures() {
             title="Ask your documents"
             description={
               <>
-                Chat about the open file, a whole folder, or anything you{' '}
-                <code className="font-mono text-[0.92em] text-foreground">@</code>-mention. Answers
-                come from the ACP agent you already run, like OpenCode or Codex, with citations that
-                jump straight to the source.
+                Chat about the open file, its folder, or anything you{' '}
+                <code className="font-mono text-[0.92em] text-foreground">@</code>-mention, with
+                Claude Code, Codex, Cursor or OpenCode. Citations jump straight to the source, and
+                any edit an agent suggests comes back as a diff for you to accept or decline.
               </>
             }
             link={{ label: 'How the companion works', slug: 'ai-companion' }}
@@ -57,36 +57,36 @@ export function LandingFeatures() {
           </FeatureCard>
           <FeatureCard
             className="lg:col-span-2"
-            title="Fast with huge files"
-            description="Multi-megabyte documents open in about a second. Highlighting and diagrams render as you scroll to them."
+            title="Real math"
+            description="LaTeX in $$ blocks and inline is typeset natively, on the baseline of the words around it."
           >
-            <SpeedMock />
+            <MathMock />
           </FeatureCard>
           <FeatureCard
             className="lg:col-span-2"
             title="Editor-grade code"
-            description="Shiki highlighting, the engine behind VS Code, themed for light and dark."
+            description="Syntax colours for every language bat knows, a label for each block and a copy button on hover."
           >
             <CodeMock />
           </FeatureCard>
           <FeatureCard
             className="lg:col-span-2"
             title="Mermaid, inline"
-            description="Flowcharts and sequence diagrams render right where you wrote them."
+            description="Flowcharts and sequence diagrams, drawn natively in your theme’s colours. No browser, no JavaScript."
           >
             <DiagramMock />
           </FeatureCard>
           <FeatureCard
             className="lg:col-span-2"
             title="Folders and outlines"
-            description="Browse a project as a tree and jump between headings in long reads."
+            description="Browse a project as a tree. The outline follows along as you read."
           >
             <TreeMock />
           </FeatureCard>
           <FeatureCard
             className="lg:col-span-3"
             title="Keyboard first"
-            description={`Jump to any file or action from the command palette with ${modKey}K. Hold ${modKey} for a cheat sheet.`}
+            description={`Quick Open (${modKey}K) finds any heading, file or command. Every shortcut is one ${modKey}/ away.`}
             link={{ label: 'All shortcuts', slug: 'shortcuts' }}
           >
             <PaletteMock modKey={modKey} />
@@ -94,7 +94,7 @@ export function LandingFeatures() {
           <FeatureCard
             className="md:col-span-2 lg:col-span-3"
             title="Live as you save"
-            description="Mdow watches your files. Save in your editor and only the parts that changed re-render, right where you left off."
+            description="Mdow watches your files. Save in your editor and the page updates where you left off."
           >
             <LiveReloadMock />
           </FeatureCard>

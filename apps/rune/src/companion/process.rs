@@ -1,5 +1,4 @@
-//! Finding `opencode` and running Mdow's private `opencode serve`, ported from the Swift app's
-//! `OpencodeProcess.swift`.
+//! Finding `opencode` and running Mdow's private `opencode serve`.
 //!
 //! A Mac app launched from Finder gets a minimal PATH, so the login shell's PATH is asked for as
 //! well as the usual install folders. Mdow owns its server instead of borrowing the user's

@@ -127,8 +127,8 @@ impl LineSpacing {
             LineSpacing::Relaxed => "Relaxed",
         }
     }
-    /// Line height as a multiple of the font size. TextKit's line height multiple applies to
-    /// the font's own line height (about 1.2 em), so these read as the Swift app's values.
+    /// Line height as a multiple of the font size, measured against the font's own line height
+    /// (about 1.2 em), as TextKit's line height multiple is.
     pub fn multiple(self) -> f32 {
         match self {
             LineSpacing::Compact => 1.18 * 1.2,

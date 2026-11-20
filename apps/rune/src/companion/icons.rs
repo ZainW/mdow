@@ -1,5 +1,5 @@
 //! The companion's own icons, drawn like `crate::icons`: thin lines on a 20 point grid, close
-//! to the SF Symbols the Swift companion uses.
+//! to Apple's SF Symbols.
 
 use rune::Icon;
 

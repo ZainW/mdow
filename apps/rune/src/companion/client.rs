@@ -1,5 +1,5 @@
-//! A small client for the OpenCode 2 HTTP API (`opencode serve`), ported from the Swift app's
-//! `OpencodeClient.swift`. The published SDK still targets the pre-2.0 event names, so Mdow
+//! A small client for the OpenCode 2 HTTP API (`opencode serve`). The published SDK
+//! still targets the pre-2.0 event names, so Mdow
 //! speaks to the endpoints it needs directly.
 
 use super::events::{OpencodeEvent, SseParser};

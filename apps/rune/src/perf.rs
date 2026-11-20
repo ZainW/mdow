@@ -1,5 +1,5 @@
 //! `MDOW_PERF=1` logs how long opening and switching documents take, from the request to the
-//! frame that shows the result, as the Swift app's variable of the same name logs its steps.
+//! frame that shows the result.
 
 use std::cell::RefCell;
 use std::time::Instant;
@@ -38,8 +38,8 @@ thread_local! {
     static BENCH: RefCell<Option<(Instant, f64, Vec<Instant>)>> = const { RefCell::new(None) };
 }
 
-/// Records the frames drawn over the next `seconds`, then logs their pacing as the Swift app's
-/// scroll benchmark does: hitches are frames that took over one and a half refresh intervals.
+/// Records the frames drawn over the next `seconds`, then logs their pacing: hitches are
+/// frames that took over one and a half refresh intervals.
 pub fn bench(seconds: f64) {
     BENCH.with_borrow_mut(|b| *b = Some((Instant::now(), seconds, Vec::new())));
 }

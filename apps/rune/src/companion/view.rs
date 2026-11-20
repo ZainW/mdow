@@ -1,6 +1,4 @@
-//! The companion panel: setup states, the conversation and the composer. Ported from the Swift
-//! app's `CompanionPanel`, `CompanionMessagesView`, `CompanionPartViews`, `CompanionComposer`
-//! and `CompanionStyle`.
+//! The companion panel: setup states, the conversation and the composer.
 
 use super::agents::Agent;
 use super::icons as ci;
@@ -187,7 +185,7 @@ fn disclosure(
 
 // MARK: Panel
 
-/// The width the panel draws at: the dragged width, clamped to Swift's range and to the room
+/// The width the panel draws at: the dragged width, clamped to its range and to the room
 /// the window leaves the document.
 fn shown_width(s: &App) -> f32 {
     let mut width = s.companion.width.clamp(super::MIN_WIDTH, super::MAX_WIDTH);

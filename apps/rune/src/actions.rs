@@ -1,5 +1,5 @@
 //! `MDOW_ACTIONS` runs steps once a window has launched, for checking things in the real app
-//! without clicking, as the Swift app's variable of the same name does. Steps are separated by
+//! without clicking. Steps are separated by
 //! `;`: `export=/tmp/out.pdf`, `find=text`, `palette`, `settings`, `split`, `appearance=dark`,
 //! `newtab`, `open=/path`, `zoom=in|out`, `companion`, `selectall`, `glide=distance,seconds`
 //! (scrolls and logs how the frames went), `wait` and `quit`.
